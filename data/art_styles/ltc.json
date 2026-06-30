@@ -1,0 +1,69 @@
+[
+    {
+        "name": "01. New cards",
+        "firstNumber": 1,
+        "lastNumber": 80
+    },
+    {
+        "name": "02. Borderless Face Commander",
+        "firstNumber": 81,
+        "lastNumber": 84
+    },
+    {
+        "name": "03. Commander Extended Art",
+        "firstNumber": 85,
+        "lastNumber": 160
+    },
+    {
+        "name": "04. Commander Reprint",
+        "firstNumber": 161,
+        "lastNumber": 347
+    },
+    {
+        "name": "05. Realms & Relics",
+        "firstNumber": 348,
+        "lastNumber": 377
+    },
+    {
+        "name": "06. Surge Foil Realms & Relics",
+        "firstNumber": 378,
+        "lastNumber": 407
+    },
+    {
+        "name": "06z. Surge Foil Realms & Relics: serialized",
+        "firstNumber": 378,
+        "lastNumber": 407,
+        "suffix": "z"
+    },
+    {
+        "name": "07. The Rings of Power",
+        "firstNumber": 408,
+        "lastNumber": 410
+    },
+    {
+        "name": "07z. The Rings of Power: Serialized",
+        "firstNumber": 408,
+        "lastNumber": 410,
+        "suffix": "z"
+    },
+    {
+        "name": "08. Commander Showcase Scrolls",
+        "firstNumber": 411,
+        "lastNumber": 490
+    },
+    {
+        "name": "09. Holiday Scene",
+        "firstNumber": 491,
+        "lastNumber": 514
+    },
+    {
+        "name": "10. Brothers Hildebrand Borderless",
+        "firstNumber": 515,
+        "lastNumber": 534
+    },
+    {
+        "name": "11. Holiday Scene Surge Foil",
+        "firstNumber": 535,
+        "lastNumber": 558
+    }
+]

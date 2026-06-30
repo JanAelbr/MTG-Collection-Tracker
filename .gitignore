@@ -1,0 +1,58 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+server-frontend/node_modules/
+server-frontend/dist/
+
+# Archives and local artifacts
+*.zip
+*.pkl
+
+# Local database and generated output
+collection.db
+collection.db-journal
+data/*.db
+reports/
+logs/*
+!logs/.gitkeep
+
+# Downloaded / cached market data
+data/cardmarket_price_guide.json
+data/cardmarket_price_guide.pkl
+data/scryfall_cache/
+
+# Personal purchase and deck data (copy data/example.csv to data/{set}.csv locally)
+data/*.csv
+!data/example.csv
+data/decks/*.csv
+data/decks/sources/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# IDE and tooling
+.vscode/*.code-workspace
+.idea/
+.cursor/
+
+# Local test output
+test_run_output.txt

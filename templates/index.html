@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="utf-8">
+
+<title>MTG - Collection tracker</title>
+
+<link rel="stylesheet" href="assets/report.css">
+
+</head>
+
+<body class="index-report">
+
+<div class="index-shell">
+    <header class="index-header">
+        <h1>MTG - Collection tracker</h1>
+    </header>
+
+    <section class="index-panel">
+        <h2>Reports</h2>
+        <nav class="index-report-links">
+            {{REPORT_LINKS}}
+        </nav>
+    </section>
+
+    <section class="index-panel index-panel-note">
+        <h2>Daily update</h2>
+        <p>Run <code>python scripts/update_prices_report.py</code> to refresh prices and regenerate all reports.</p>
+        <p>On Windows you can also use <code>scripts/run_daily_update.ps1</code> or register a scheduled task with <code>scripts/register_daily_task.ps1</code>.</p>
+    </section>
+</div>
+
+{{REPORT_FOOTER}}
+
+</body>
+</html>

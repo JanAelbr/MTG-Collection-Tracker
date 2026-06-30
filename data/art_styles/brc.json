@@ -1,0 +1,32 @@
+[
+    {
+        "name": "01. New deck cards",
+        "firstNumber": 1,
+        "lastNumber": 20
+    },
+    {
+        "name": "02. Booster exclusives",
+        "firstNumber": 21,
+        "lastNumber": 28
+    },
+    {
+        "name": "03. Retro basic lands",
+        "firstNumber": 29,
+        "lastNumber": 38
+    },
+    {
+        "name": "04. Display commanders",
+        "firstNumber": 39,
+        "lastNumber": 40
+    },
+    {
+        "name": "05. Extended art",
+        "firstNumber": 41,
+        "lastNumber": 67
+    },
+    {
+        "name": "06. Reprints",
+        "firstNumber": 68,
+        "lastNumber": 211
+    }
+]

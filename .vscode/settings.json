@@ -1,0 +1,28 @@
+{
+  "terminal.integrated.defaultProfile.windows": "PowerShell (Bypass)",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell (Bypass)": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell",
+      "args": ["-NoExit", "-ExecutionPolicy", "Bypass"]
+    },
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell"
+    }
+  },
+  "powershell.enableProfileLoading": false,
+  "powershell.integratedConsole.focusConsoleOnExecute": true,
+  "powershell.promptToUpdatePowerShell": false,
+  "powershell.scriptAnalysis.enable": true,
+  "powershell.powerShellAdditionalExeArgs": [
+    "-ExecutionPolicy",
+    "Bypass"
+  ],
+  "files.associations": {
+    "*.ps1": "powershell"
+  },
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.PowerShell"
+  }
+}

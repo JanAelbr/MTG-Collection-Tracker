@@ -1,0 +1,71 @@
+import pandas as pd
+
+from api.services.pricing_service import price_from_strategy
+
+
+def apply_strategy_to_owned_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+
+    updated = df.copy()
+    for idx, row in updated.iterrows():
+        finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
+        current = price_from_strategy(
+            row.get("cardmarket_url") or None,
+            finish,
+            strategy,
+            market_value=_nullable_float(row.get("market_value")),
+            market_value_foil=_nullable_float(row.get("market_value_foil")),
+            market_value_etched=_nullable_float(row.get("market_value_etched")),
+        )
+        updated.at[idx, "current_value"] = current
+        purchase = row.get("purchase_value")
+        if purchase is not None and not pd.isna(purchase) and current is not None:
+            updated.at[idx, "profit_loss"] = current - float(purchase)
+        else:
+            updated.at[idx, "profit_loss"] = None
+    return updated
+
+
+def apply_strategy_to_deck_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+
+    updated = df.copy()
+    in_catalog = updated["in_catalog"].fillna(0).astype(int) == 1
+    for idx in updated.index:
+        if not in_catalog.loc[idx]:
+            continue
+        row = updated.loc[idx]
+        finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
+        unit = price_from_strategy(
+            row.get("cardmarket_url") or None,
+            finish,
+            strategy,
+            market_value=_nullable_float(row.get("market_value")),
+            market_value_foil=_nullable_float(row.get("market_value_foil")),
+            market_value_etched=_nullable_float(row.get("market_value_etched")),
+        )
+        qty = int(row["qty"])
+        owned_qty = int(row["owned_qty"])
+        updated.at[idx, "unit_value"] = unit
+        if unit is None:
+            updated.at[idx, "current_value"] = None
+            updated.at[idx, "profit_loss"] = None
+            continue
+        current_value = unit * qty
+        updated.at[idx, "current_value"] = current_value
+        purchase = row.get("purchase_value")
+        if purchase is not None and not pd.isna(purchase) and owned_qty > 0:
+            invested = float(purchase) * owned_qty
+            updated.at[idx, "invested"] = invested
+            updated.at[idx, "profit_loss"] = current_value - invested
+        else:
+            updated.at[idx, "profit_loss"] = None
+    return updated
+
+
+def _nullable_float(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)

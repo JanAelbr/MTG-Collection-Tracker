@@ -1,0 +1,62 @@
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from lib.art_styles import (  # noqa: E402
+    DEFAULT_ART_STYLE_NAME,
+    ensure_art_style_rules_file,
+    get_art_style,
+)
+
+
+class ArtStyleTests(unittest.TestCase):
+    def test_40k_borderless_commander(self):
+        self.assertEqual(get_art_style("40k", "1"), "01. Borderless commanders")
+
+    def test_40k_surge_foil_matches_numeric_range(self):
+        self.assertEqual(get_art_style("40k", "249"), "04. Reprints")
+        self.assertEqual(get_art_style("40k", "249★"), "04. Reprints")
+
+    def test_snc_alchemy_promo_prefix(self):
+        self.assertEqual(get_art_style("snc", "A-6"), "06. Alchemy promos")
+        self.assertEqual(get_art_style("snc", "6"), "01. Main set")
+
+    def test_ltr_release_promo_and_serialized_poster(self):
+        self.assertEqual(get_art_style("ltr", "0"), "00. Release promo")
+        self.assertEqual(get_art_style("ltr", "731"), "14. Borderless poster")
+        self.assertEqual(get_art_style("ltr", "731z"), "14z. Borderless poster: serialized")
+        self.assertEqual(get_art_style("ltr", "A-246"), "17. Alchemy promos")
+
+    def test_clb_main_and_commander_sections(self):
+        self.assertEqual(get_art_style("clb", "100"), "01. Main set")
+        self.assertEqual(get_art_style("clb", "400"), "02. Extended art")
+        self.assertEqual(get_art_style("clb", "640"), "03. Commander deck cards")
+        self.assertEqual(get_art_style("clb", "900"), "04. Commander deck lands")
+
+    def test_missing_rules_file_defaults_to_all(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        art_styles_dir = Path(temp_dir.name) / "art_styles"
+        art_styles_dir.mkdir()
+
+        with (
+            patch("lib.art_styles.ART_STYLES_DIR", art_styles_dir),
+            patch("lib.config.ART_STYLES_DIR", art_styles_dir),
+        ):
+            ensure_art_style_rules_file("abc")
+            rules_path = art_styles_dir / "abc.json"
+            self.assertTrue(rules_path.is_file())
+            self.assertEqual(get_art_style("abc", "1"), DEFAULT_ART_STYLE_NAME)
+            self.assertEqual(get_art_style("abc", "promo"), DEFAULT_ART_STYLE_NAME)
+            self.assertEqual(get_art_style("abc", "A-1"), DEFAULT_ART_STYLE_NAME)
+
+
+if __name__ == "__main__":
+    unittest.main()

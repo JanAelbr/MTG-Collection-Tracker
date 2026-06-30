@@ -1,0 +1,17 @@
+[
+    {
+        "name": "01. Alternate-Art Borderless Cards",
+        "firstNumber": 1,
+        "lastNumber": 45
+    },
+    {
+        "name": "02. Surge Foil Alternate-Art Borderless Cards",
+        "firstNumber": 46,
+        "lastNumber": 90
+    },
+    {
+        "name": "03. Dwarten language cards",
+        "firstNumber": 91,
+        "lastNumber": 95
+    }
+]

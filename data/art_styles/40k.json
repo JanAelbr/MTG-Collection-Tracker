@@ -1,0 +1,27 @@
+[
+    {
+        "name": "01. Borderless commanders",
+        "firstNumber": 1,
+        "lastNumber": 8
+    },
+    {
+        "name": "02. New cards",
+        "firstNumber": 9,
+        "lastNumber": 168
+    },
+    {
+        "name": "03. Extended art commanders",
+        "firstNumber": 169,
+        "lastNumber": 180
+    },
+    {
+        "name": "04. Reprints",
+        "firstNumber": 181,
+        "lastNumber": 317
+    },
+    {
+        "name": "05. Display commanders",
+        "firstNumber": 318,
+        "lastNumber": 321
+    }
+]

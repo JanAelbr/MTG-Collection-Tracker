@@ -1,0 +1,12 @@
+[
+    {
+        "name": "01. New cards",
+        "firstNumber": 1,
+        "lastNumber": 59
+    },
+    {
+        "name": "02. Reprints",
+        "firstNumber": 60,
+        "lastNumber": 307
+    }
+]

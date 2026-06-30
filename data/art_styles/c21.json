@@ -1,0 +1,22 @@
+[
+    {
+        "name": "01. New cards",
+        "firstNumber": 1,
+        "lastNumber": 81
+    },
+    {
+        "name": "02. Reprints",
+        "firstNumber": 82,
+        "lastNumber": 327
+    },
+    {
+        "name": "03. Extended art",
+        "firstNumber": 328,
+        "lastNumber": 407
+    },
+    {
+        "name": "04. Deck reprints",
+        "firstNumber": 408,
+        "lastNumber": 409
+    }
+]

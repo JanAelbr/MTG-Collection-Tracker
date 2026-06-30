@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="utf-8">
+
+<title>MTG - Collection tracker</title>
+
+<link rel="stylesheet"
+href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+
+<link rel="stylesheet" href="{{ASSET_CSS}}">
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+
+</head>
+
+<body class="storage-report">
+
+<h1>MTG - Collection tracker</h1>
+
+<div class="report-layout">
+    <aside class="side-nav">
+        {{SIDE_NAV}}
+    </aside>
+
+    <main class="report-content">
+        <div class="storage-overview" id="storageOverview"></div>
+
+        <div class="storage-layout">
+            <nav class="storage-location-nav" id="storageLocationNav" aria-label="Storage locations"></nav>
+
+            <div class="storage-detail">
+                <div class="storage-detail-header">
+                    <h2 id="storageLocationTitle">Storage</h2>
+                    <p id="storageLocationDescription" class="storage-location-description"></p>
+                    <p id="storageLocationStats" class="storage-location-stats"></p>
+                </div>
+
+                <div class="tables-row storage-table-row">
+                    <div class="table-panel cards-panel storage-cards-panel">
+                        <table id="storageTable" class="display storage-table">
+                            <thead>
+                                <tr>
+                                    <th>Set</th>
+                                    <th>#</th>
+                                    <th>Card</th>
+                                    <th>Art Style</th>
+                                    <th>Finish</th>
+                                    <th>Copies</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+{{REPORT_FOOTER}}
+
+<script src="{{DATA_JS}}"></script>
+<script src="{{ASSET_TOOLTIP_JS}}"></script>
+<script src="{{ASSET_FORMAT_JS}}"></script>
+<script src="{{PAGE_JS}}"></script>
+
+</body>
+</html>

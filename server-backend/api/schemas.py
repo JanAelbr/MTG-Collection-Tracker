@@ -1,0 +1,111 @@
+from pydantic import BaseModel, Field, model_validator
+
+
+class SettingsUpdate(BaseModel):
+    priceStrategy: str | None = None
+    favoriteSets: list[str] | None = None
+    compareDate: str | None = None
+    pageSize: int | None = Field(default=None, ge=25, le=100)
+    collectionCardScale: int | None = Field(default=None, ge=75, le=150)
+    setSortMode: str | None = None
+    setPickerMode: str | None = None
+    defaultStorageLocation: str | None = None
+
+
+class StorageLocationCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+
+
+class StorageLocationUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+
+
+def _resolve_finish_field(values: dict) -> dict:
+    if values.get("finish") is not None:
+        return values
+    foil = values.get("foil")
+    if foil is not None:
+        values["finish"] = foil
+        return values
+    raise ValueError("finish or foil is required")
+
+
+class OwnershipUpdate(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    owned: bool
+    purchaseValue: float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class OwnershipBulkItem(BaseModel):
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    owned: bool
+    purchaseValue: float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class OwnershipBulkUpdate(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    items: list[OwnershipBulkItem] = Field(min_length=1)
+
+
+class BulkAssignItem(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class BulkAssignStorage(BaseModel):
+    locationSlug: str = Field(min_length=1, max_length=120)
+    items: list[BulkAssignItem] = Field(min_length=1)
+
+
+class CopyAdjust(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    delta: int = Field(ge=-1, le=1)
+    locationSlug: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class CopyStorageUpdate(BaseModel):
+    locationSlug: str = Field(min_length=1, max_length=120)
+
+
+class ManagerSetCreate(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)

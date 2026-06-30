@@ -1,0 +1,59 @@
+export const FOIL_FILTER_KEY = "reportFoilFilter";
+
+export function getStoredFoilFilter() {
+  const stored = localStorage.getItem(FOIL_FILTER_KEY);
+  if (stored === "foil" || stored === "nonfoil" || stored === "etched") {
+    return stored;
+  }
+  return "all";
+}
+
+export function storeFoilFilter(value) {
+  localStorage.setItem(FOIL_FILTER_KEY, value);
+}
+
+export const ALL_CARDS_SORT_KEY = "collectionAllCardsSort";
+
+const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "changeEuro", "changePct"]);
+
+function normalizeAllCardsSort(sort) {
+  if (sort === "change") {
+    return "changeEuro";
+  }
+  return ALL_CARDS_SORT_FIELDS.has(sort) ? sort : "number";
+}
+
+export function defaultAllCardsSortDir(sort) {
+  return sort === "number" ? "asc" : "desc";
+}
+
+export function getStoredAllCardsSort() {
+  const stored = localStorage.getItem(ALL_CARDS_SORT_KEY);
+  if (!stored) {
+    return { sort: "value", dir: "desc" };
+  }
+  if (stored === "value") {
+    return { sort: "value", dir: "desc" };
+  }
+  if (stored === "number") {
+    return { sort: "number", dir: "asc" };
+  }
+  try {
+    const parsed = JSON.parse(stored);
+    const sort = normalizeAllCardsSort(parsed.sort);
+    const dir = parsed.dir === "desc" ? "desc" : "asc";
+    return { sort, dir };
+  } catch {
+    return { sort: "number", dir: "asc" };
+  }
+}
+
+export function storeAllCardsSort(sort, dir) {
+  localStorage.setItem(
+    ALL_CARDS_SORT_KEY,
+    JSON.stringify({
+      sort: normalizeAllCardsSort(sort),
+      dir: dir === "desc" ? "desc" : "asc",
+    }),
+  );
+}

@@ -1,0 +1,22 @@
+[
+    {
+        "name": "01. Main set",
+        "firstNumber": 1,
+        "lastNumber": 361
+    },
+    {
+        "name": "02. Extended art",
+        "firstNumber": 362,
+        "lastNumber": 522
+    },
+    {
+        "name": "03. Commander deck cards",
+        "firstNumber": 523,
+        "lastNumber": 877
+    },
+    {
+        "name": "04. Commander deck lands",
+        "firstNumber": 878,
+        "lastNumber": 936
+    }
+]
