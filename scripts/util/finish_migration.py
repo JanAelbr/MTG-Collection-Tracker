@@ -306,7 +306,20 @@ def _migrate_card_instances(conn: sqlite3.Connection) -> None:
     )
 
 
+def _finish_schema_current(conn: sqlite3.Connection) -> bool:
+    for table in ("purchases", "card_prices", "deck_cards", "card_instances"):
+        if not _table_exists(conn, table):
+            continue
+        if not _table_has_column(conn, table, "finish"):
+            return False
+        if _table_has_column(conn, table, "foil"):
+            return False
+    return True
+
+
 def ensure_finish_migration(conn: sqlite3.Connection) -> None:
+    if _finish_schema_current(conn):
+        return
     _backfill_card_finish_flags(conn)
     _ensure_etched_only_temp(conn)
     _migrate_purchases(conn)

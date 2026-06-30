@@ -13,6 +13,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 from api.services import manager_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
+from util.set_catalog import ensure_sets_table  # noqa: E402
 
 
 class ManagerApiServiceTests(unittest.TestCase):
@@ -294,6 +295,66 @@ class ManagerApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(updated["copies"][0]["locationSlug"], deck_slug)
         self.assertEqual(updated["copies"][1]["locationSlug"], "storage:general")
+
+    @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
+    @patch("api.services.manager_service.purchase_csv_path")
+    def test_remove_set_without_owned_cards(self, mock_csv_path, _mock_decks):
+        csv_file = Path(self.temp_dir.name) / "mb2.csv"
+        csv_file.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
+        mock_csv_path.return_value = csv_file
+
+        result = manager_service.remove_set(self.conn, "MB2")
+
+        self.assertTrue(result["removed"])
+        self.assertEqual(result["setCode"], "MB2")
+        self.assertFalse(csv_file.exists())
+
+    @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
+    @patch("api.services.manager_service.purchase_csv_path")
+    def test_remove_set_with_owned_cards_fails(self, mock_csv_path, _mock_decks):
+        csv_file = Path(self.temp_dir.name) / "ltr.csv"
+        csv_file.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
+        mock_csv_path.return_value = csv_file
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES ('LTR', '1', 1.0, 0)
+            """
+        )
+        self.conn.commit()
+
+        with self.assertRaises(manager_service.ManagerError):
+            manager_service.remove_set(self.conn, "LTR")
+
+    @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
+    @patch("api.services.manager_service.list_set_csv_files")
+    def test_prune_orphan_catalogs(self, mock_csv_files, _mock_decks):
+        tracked = Path(self.temp_dir.name) / "ltr.csv"
+        tracked.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
+        mock_csv_files.return_value = [tracked]
+        ensure_sets_table(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES ('ORPH', '1', 'Orphan Card', '', 1.0, NULL, NULL, 1, 0, 0, NULL, NULL, NULL)
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO sets (set_code, name, updated_at) VALUES ('ORPH', 'Orphan', '2026-01-01')"
+        )
+        self.conn.commit()
+
+        result = manager_service.prune_orphan_catalogs(self.conn)
+
+        self.assertEqual(result["removedSets"], ["ORPH"])
+        self.assertEqual(result["deletedCards"], 1)
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM cards WHERE set_code = 'ORPH'"
+        ).fetchone()
+        self.assertEqual(row[0], 0)
 
 
 if __name__ == "__main__":

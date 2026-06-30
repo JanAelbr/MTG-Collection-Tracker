@@ -24,6 +24,10 @@ export function collectionScopeFromRoute(route) {
 const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "changeEuro", "changePct"]);
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
+import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
+
+const ALL_CARDS_TYPE_FILTERS = COLLECTION_TYPE_FILTER_VALUES;
+const ALL_CARDS_COLOR_FILTERS = new Set(["W", "U", "B", "R", "G", "C"]);
 
 export function defaultAllCardsSortDirForField(sort) {
   return sort === "number" ? "asc" : "desc";
@@ -49,7 +53,20 @@ export function allCardsFiltersFromRoute(route) {
   const pageParam = Number(route.query?.page);
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
-  return { ownedFilter, foilFilter, sort, sortDir, page };
+  const typeParam = route.query?.type;
+  const typeFilter = typeof typeParam === "string" && ALL_CARDS_TYPE_FILTERS.has(typeParam)
+    ? typeParam
+    : "all";
+
+  const colorsParam = route.query?.colors;
+  const colorFilters = typeof colorsParam === "string"
+    ? colorsParam
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
+    : [];
+
+  return { ownedFilter, foilFilter, sort, sortDir, page, typeFilter, colorFilters };
 }
 
 export function allCardsRouteQuery({
@@ -57,6 +74,8 @@ export function allCardsRouteQuery({
   artStyle = "",
   ownedFilter = "owned",
   foilFilter = "all",
+  typeFilter = "all",
+  colorFilters = [],
   sort = "value",
   sortDir = "desc",
   page = 1,
@@ -67,6 +86,12 @@ export function allCardsRouteQuery({
   }
   if (foilFilter !== "all") {
     query.finish = foilFilter;
+  }
+  if (typeFilter !== "all") {
+    query.type = typeFilter;
+  }
+  if (colorFilters.length) {
+    query.colors = colorFilters.join(",");
   }
   if (sort !== "value") {
     query.sort = sort;
@@ -128,7 +153,15 @@ export function collectionNavQuery(route, targetPath) {
   if (targetPath === "/collection/all") {
     const filters = route.path === "/collection/all"
       ? allCardsFiltersFromRoute(route)
-      : { ownedFilter: "owned", foilFilter: "all", sort: "value", sortDir: "desc", page: 1 };
+      : {
+        ownedFilter: "owned",
+        foilFilter: "all",
+        typeFilter: "all",
+        colorFilters: [],
+        sort: "value",
+        sortDir: "desc",
+        page: 1,
+      };
     return allCardsRouteQuery({ setCode, artStyle, ...filters });
   }
   return collectionScopeToQuery(setCode, artStyle);

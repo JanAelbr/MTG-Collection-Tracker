@@ -110,6 +110,14 @@ async function loadStats() {
   });
 }
 
+async function onSetsChanged(event) {
+  if (event?.sets && payload.value) {
+    payload.value = { ...payload.value, sets: event.sets };
+  } else {
+    await loadStats();
+  }
+}
+
 watch(setCode, () => {
   syncSetRoute();
   loadStats();
@@ -138,6 +146,7 @@ onMounted(() => {
       v-model="setCode"
       layout="banner"
       :sets="sets"
+      @sets-changed="onSetsChanged"
     />
 
     <div class="reports-toolbar">

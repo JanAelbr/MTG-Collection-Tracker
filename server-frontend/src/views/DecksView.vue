@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
+import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
 import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
@@ -181,16 +182,20 @@ onMounted(async () => {
               Value
             </button>
           </div>
-          <LoadingIndicator v-if="loadingBrowse" compact label="Refreshing…" />
         </div>
 
-        <DeckGallery
-          :decks="decks"
-          :pages="browsePages"
-          :active-deck-id="deckId"
-          :sort-by="gallerySort"
-          @select="selectBrowseDeck"
-        />
+        <GalleryLoadingOverlay
+          :loading="loadingBrowse && !!browseIndex"
+          label="Refreshing decks…"
+        >
+          <DeckGallery
+            :decks="decks"
+            :pages="browsePages"
+            :active-deck-id="deckId"
+            :sort-by="gallerySort"
+            @select="selectBrowseDeck"
+          />
+        </GalleryLoadingOverlay>
       </div>
 
       <template v-if="browseStats && activeBrowseDeck">
@@ -365,13 +370,17 @@ onMounted(async () => {
             </div>
           </div>
 
-          <p v-if="!filteredBrowseCards.length" class="storage-empty">
-            No cards match the current filters.
-          </p>
+          <GalleryLoadingOverlay
+            :loading="loadingBrowse"
+            label="Loading deck cards…"
+          >
+            <p v-if="!filteredBrowseCards.length" class="storage-empty">
+              No cards match the current filters.
+            </p>
 
-          <DeckCardGrid v-else-if="deckCardsView === 'images'" :groups="groupedBrowseCards" />
+            <DeckCardGrid v-else-if="deckCardsView === 'images'" :groups="groupedBrowseCards" />
 
-          <table v-else class="reports-table deck-cards-table">
+            <table v-else class="reports-table deck-cards-table">
             <thead>
               <tr>
                 <th>Color</th>
@@ -420,6 +429,7 @@ onMounted(async () => {
               </template>
             </tbody>
           </table>
+          </GalleryLoadingOverlay>
         </section>
       </template>
     </template>

@@ -7,6 +7,8 @@ const meta = ref(null);
 const { settings: pricingSettings } = usePricingSettings();
 const storageLocations = ref([]);
 const settingsMessage = ref("");
+const catalogMessage = ref("");
+const catalogPruning = ref(false);
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
@@ -189,6 +191,30 @@ async function triggerPriceSync() {
   }
 }
 
+async function pruneOrphanCatalogs() {
+  catalogMessage.value = "";
+  if (!window.confirm(
+    "Remove card catalogs for sets that are no longer tracked? Owned purchase CSVs and deck sets are kept.",
+  )) {
+    return;
+  }
+  catalogPruning.value = true;
+  try {
+    const result = await api.pruneOrphanCatalogs();
+    clearClientCache();
+    const count = result.removedSets?.length || 0;
+    if (!count) {
+      catalogMessage.value = "No orphan catalogs found.";
+      return;
+    }
+    catalogMessage.value = `Removed catalogs for ${count} set(s): ${result.removedSets.join(", ")}.`;
+  } catch (error) {
+    catalogMessage.value = error.message || "Could not clear orphan catalogs.";
+  } finally {
+    catalogPruning.value = false;
+  }
+}
+
 onMounted(async () => {
   await Promise.all([refreshMeta(), loadPricingSettings(), loadStorageLocations(), refreshSyncStatus()]);
   if (syncStatus.value?.status === "running") {
@@ -320,6 +346,29 @@ onUnmounted(stopPolling);
         </label>
       </div>
       <p v-if="settingsMessage" class="home-sync-message">{{ settingsMessage }}</p>
+    </section>
+
+    <section class="home-panel">
+      <h2>Catalog maintenance</h2>
+      <p class="home-intro">
+        Removing a set from the browser only deletes its purchase CSV. Use this to clear leftover
+        Scryfall catalogs for sets you no longer track.
+      </p>
+      <div class="home-sync-panel">
+        <div class="home-sync-copy">
+          <strong>Clear orphan catalogs</strong>
+          <p>Deletes card data for sets that are not in <code>data/*.csv</code> or referenced by decks.</p>
+          <p v-if="catalogMessage" class="home-sync-message">{{ catalogMessage }}</p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="catalogPruning"
+          @click="pruneOrphanCatalogs"
+        >
+          {{ catalogPruning ? "Clearing…" : "Clear orphan catalogs" }}
+        </button>
+      </div>
     </section>
 
     <section class="home-panel">

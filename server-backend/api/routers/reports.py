@@ -69,6 +69,10 @@ def report_cards(
 
     foilFilter: str = Query(default="all"),
 
+    typeFilter: str = Query(default="all"),
+
+    colors: str = Query(default=""),
+
     compareDate: str | None = Query(default=None),
 
     pageSize: int = Query(default=25, ge=1, le=500),
@@ -86,6 +90,10 @@ def report_cards(
         "ownedFilter": ownedFilter,
 
         "foilFilter": foilFilter,
+
+        "typeFilter": typeFilter,
+
+        "colors": colors,
 
         "compareDate": compareDate,
 
@@ -118,6 +126,10 @@ def report_cards(
                 owned_filter=ownedFilter,
 
                 foil_filter=foilFilter,
+
+                type_filter=typeFilter,
+
+                color_filters=colors,
 
                 compare_date=compareDate,
 

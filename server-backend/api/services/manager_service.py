@@ -1,15 +1,23 @@
 import sqlite3
 
 from api.cache import bump_cache_epoch
-from lib.config import EXCLUDED_SET_CODES, purchase_csv_path
+from lib.config import EXCLUDED_SET_CODES, list_set_csv_files, purchase_csv_path
+from lib.deck_csv import list_deck_sync_set_codes
 from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
 from report.manager_data import load_manager_cards_for_set
 from util.card_metadata import card_metadata_api
 from api.services import settings_service
-from report.report_data import build_art_style_options_for_set, build_sorted_set_options
+from report.report_data import (
+    build_art_style_options_for_set,
+    build_sorted_set_options,
+    format_set_option_label,
+    get_set_display_names,
+    load_owned_count_by_set,
+)
 from api.services.storage_service import StorageError, get_location
 from util.card_finishes import normalize_finish
+from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
 
 MANAGER_CARDS_PAGE_SIZE = 100
 MAX_OWNED_COPIES = 3
@@ -543,12 +551,90 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
         raise ManagerError(f"Set {normalized} already exists")
 
     csv_path.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
+    try:
+        catalog_count = import_set_catalog_from_scryfall(conn, normalized)
+    except ValueError as exc:
+        csv_path.unlink(missing_ok=True)
+        raise ManagerError(str(exc), status_code=404) from exc
+
     bump_cache_epoch()
-    set_names = get_set_display_names()
+    set_names = get_set_display_names(refresh=True)
     return {
         "setCode": normalized,
         "label": format_set_option_label(normalized, set_names),
         "csvPath": str(csv_path),
+        "catalogCount": catalog_count,
+    }
+
+
+def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
+    normalized = set_code.strip().upper()
+    _validate_set_code(normalized)
+
+    deck_codes = {code.upper() for code in list_deck_sync_set_codes()}
+    if normalized in deck_codes:
+        raise ManagerError("Cannot remove a set that is referenced by a deck")
+
+    owned_counts = load_owned_count_by_set(conn)
+    if owned_counts.get(normalized, 0) > 0:
+        raise ManagerError("Cannot remove a set that has owned cards")
+
+    csv_path = purchase_csv_path(normalized)
+    if not csv_path.exists():
+        raise ManagerError(f"Set {normalized} does not exist", status_code=404)
+
+    csv_path.unlink()
+
+    favorites = settings_service.get_favorite_sets(conn)
+    if normalized in {code.upper() for code in favorites}:
+        settings_service.save_favorite_sets(
+            conn,
+            [code for code in favorites if code.upper() != normalized],
+        )
+
+    bump_cache_epoch()
+    get_set_display_names(refresh=True)
+    return {"setCode": normalized, "removed": True}
+
+
+def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
+    tracked = {path.stem.upper() for path in list_set_csv_files()}
+    tracked |= {code.upper() for code in list_deck_sync_set_codes()}
+
+    rows = conn.execute("SELECT DISTINCT set_code FROM cards").fetchall()
+    orphan_codes = sorted(
+        {
+            str(row[0]).upper()
+            for row in rows
+            if row[0] and str(row[0]).upper() not in tracked
+        }
+    )
+
+    deleted_cards = 0
+    deleted_prices = 0
+    has_prices = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_prices'"
+    ).fetchone()
+    for code in orphan_codes:
+        deleted_cards += conn.execute(
+            "DELETE FROM cards WHERE set_code = ?",
+            (code,),
+        ).rowcount
+        if has_prices:
+            deleted_prices += conn.execute(
+                "DELETE FROM card_prices WHERE set_code = ?",
+                (code,),
+            ).rowcount
+        conn.execute("DELETE FROM sets WHERE set_code = ?", (code,))
+
+    if orphan_codes:
+        bump_cache_epoch()
+        get_set_display_names(refresh=True)
+
+    return {
+        "removedSets": orphan_codes,
+        "deletedCards": deleted_cards,
+        "deletedPrices": deleted_prices,
     }
 
 

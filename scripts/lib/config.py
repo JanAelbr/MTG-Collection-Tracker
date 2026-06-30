@@ -1,7 +1,6 @@
 """Shared path configuration for the MTG collection tracker."""
 
 import os
-import shutil
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -13,8 +12,6 @@ FRONTEND_DIST = FRONTEND_DIR / "dist"
 APP_TITLE = "MTG - Collection tracker"
 HTTP_USER_AGENT = "MtgCollectionTracker/1.0"
 APP_DATA_DIR_NAME = "MtgCollectionTracker"
-
-LEGACY_DB_PATH = REPO_ROOT / "collection.db"
 
 
 def default_app_data_dir() -> Path:
@@ -31,19 +28,7 @@ APP_DATA_DIR = default_app_data_dir()
 def resolve_db_path(app_data_dir: Path | None = None) -> Path:
     target_dir = app_data_dir or APP_DATA_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    db_path = target_dir / "collection.db"
-    _migrate_legacy_db(db_path)
-    return db_path
-
-
-def _migrate_legacy_db(db_path: Path) -> None:
-    if db_path.exists() or not LEGACY_DB_PATH.exists():
-        return
-
-    shutil.move(str(LEGACY_DB_PATH), str(db_path))
-    legacy_journal = LEGACY_DB_PATH.with_name(f"{LEGACY_DB_PATH.name}-journal")
-    if legacy_journal.exists():
-        shutil.move(str(legacy_journal), str(db_path.with_name(f"{db_path.name}-journal")))
+    return target_dir / "collection.db"
 
 
 DB_PATH = resolve_db_path()

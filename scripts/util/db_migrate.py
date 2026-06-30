@@ -52,9 +52,6 @@ def ensure_card_columns(conn: sqlite3.Connection) -> None:
             continue
         cursor.execute(f"ALTER TABLE cards ADD COLUMN {column_name} {column_type}")
     _backfill_card_types(conn)
-    from util.finish_migration import ensure_finish_migration
-
-    ensure_finish_migration(conn)
 
 
 # Remove duplicate purchase rows, keeping the earliest insert per card finish.

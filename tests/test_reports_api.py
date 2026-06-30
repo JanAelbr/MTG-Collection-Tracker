@@ -147,6 +147,66 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["totalMatches"], 1)
         self.assertGreater(payload["cards"][0]["priceChange"], 0)
 
+    def test_apply_filters_by_type_and_color(self):
+        cards = [
+            {
+                "setCode": "LTR",
+                "collectorNumber": "1",
+                "artStyle": "",
+                "finish": 0,
+                "owned": True,
+                "cardType": "creature",
+                "colors": ["U"],
+            },
+            {
+                "setCode": "LTR",
+                "collectorNumber": "2",
+                "artStyle": "",
+                "finish": 0,
+                "owned": True,
+                "cardType": "instant",
+                "colors": ["R"],
+            },
+        ]
+        filtered = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="all",
+            foil_filter="all",
+            type_filter="creature",
+            color_filters=["U"],
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["collectorNumber"], "1")
+
+    def test_apply_filters_by_enchantment_type(self):
+        cards = [
+            {
+                "setCode": "LTR",
+                "collectorNumber": "1",
+                "cardType": "enchantment",
+                "colors": ["G"],
+            },
+            {
+                "setCode": "LTR",
+                "collectorNumber": "2",
+                "cardType": "creature",
+                "colors": ["G"],
+            },
+        ]
+        filtered = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="all",
+            foil_filter="all",
+            type_filter="enchantment",
+            color_filters=[],
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["collectorNumber"], "1")
+
     @patch("api.services.reports_service.load_ranked_cards_data")
     def test_instance_only_card_is_marked_owned(self, load_ranked):
         import pandas as pd

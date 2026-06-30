@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
 import CardPreview from "../components/CardPreview.vue";
@@ -9,7 +9,7 @@ import { fetchPricingSettings, usePricingSettings } from "../composables/pricing
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, hasFinish } from "../utils/finishes";
-import { formatArtStyleDropdownLabel, artStyleOptionValue } from "../utils/format";
+import ArtStylePicker from "../components/ArtStylePicker.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -28,11 +28,6 @@ const storageLocations = ref([]);
 const assignLocationSlug = ref("");
 const { pageSize, setPickerMode } = usePricingSettings();
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
-
-const addSetEditor = reactive({
-  open: false,
-  setCode: "",
-});
 
 const visibleCards = computed(() => cardsPayload.value?.cards || []);
 const totalPages = computed(() => cardsPayload.value?.totalPages || 1);
@@ -82,6 +77,23 @@ function toggleRow(card) {
     next.add(key);
   }
   selectedRows.value = next;
+}
+
+async function onSetsChanged(event) {
+  if (event?.sets) {
+    sets.value = event.sets;
+  } else {
+    let preferred = selectedSetCode.value;
+    if (event?.removed && event.setCode === preferred) {
+      preferred = "";
+    } else if (event?.setCode && !event?.removed) {
+      preferred = event.setCode;
+    }
+    await loadSets(preferred);
+  }
+  if (selectedSetCode.value) {
+    await loadCards();
+  }
 }
 
 async function loadSets(preferredSet = "") {
@@ -178,25 +190,6 @@ async function assignSelectedToStorage() {
   window.alert(`Moved ${result.moved} card instance(s).`);
 }
 
-function openAddSetEditor() {
-  addSetEditor.open = true;
-  addSetEditor.setCode = "";
-}
-
-function closeAddSetEditor() {
-  addSetEditor.open = false;
-}
-
-async function saveAddSet() {
-  const setCode = addSetEditor.setCode.trim().toUpperCase();
-  if (!setCode) {
-    return;
-  }
-  await api.createManagerSet({ setCode });
-  closeAddSetEditor();
-  await loadSets(setCode);
-}
-
 function goToPage(nextPage) {
   page.value = Math.min(Math.max(1, nextPage), totalPages.value);
 }
@@ -254,6 +247,7 @@ onMounted(async () => {
       :sets="sets"
       show-favorites
       @toggle-favorite="toggleFavorite"
+      @sets-changed="onSetsChanged"
     />
 
     <div class="manager-layout manager-layout--single">
@@ -280,19 +274,10 @@ onMounted(async () => {
               class="manager-search"
               placeholder="Search cards…"
             />
-            <label class="manager-filter">
-              <span>Art style</span>
-              <select v-model="artStyle">
-                <option value="">All art styles</option>
-                <option
-                  v-for="style in artStyles"
-                  :key="artStyleOptionValue(style)"
-                  :value="artStyleOptionValue(style)"
-                >
-                  {{ formatArtStyleDropdownLabel(style) }}
-                </option>
-              </select>
-            </label>
+            <ArtStylePicker
+              v-model="artStyle"
+              :art-styles="artStyles"
+            />
             <div class="manager-filter">
               <span>Finish filter</span>
               <div class="button-group deck-gallery-sort-group">
@@ -353,9 +338,6 @@ onMounted(async () => {
             </label>
             <button type="button" class="btn btn-secondary" @click="assignSelectedToStorage">
               Assign storage
-            </button>
-            <button type="button" class="btn btn-primary" @click="openAddSetEditor">
-              Add set
             </button>
           </div>
         </div>
@@ -464,31 +446,6 @@ onMounted(async () => {
           </button>
         </div>
       </div>
-    </div>
-
-    <div v-if="addSetEditor.open" class="modal-backdrop" @click.self="closeAddSetEditor">
-      <form class="modal-card" @submit.prevent="saveAddSet">
-        <h3>Add set</h3>
-        <p class="manager-help">
-          Creates an empty <code>data/{set}.csv</code>. Run price sync to import the catalog.
-        </p>
-        <label>
-          <span>Set code</span>
-          <input
-            v-model="addSetEditor.setCode"
-            type="text"
-            maxlength="16"
-            placeholder="e.g. LTR"
-            required
-          />
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" @click="closeAddSetEditor">
-            Cancel
-          </button>
-          <button type="submit" class="btn btn-primary">Create</button>
-        </div>
-      </form>
     </div>
   </div>
 </template>

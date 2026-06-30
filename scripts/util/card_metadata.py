@@ -42,6 +42,23 @@ TYPE_PRIORITY = (
     "vanguard",
 )
 
+COLLECTION_FILTER_TYPES = frozenset({
+    "creature",
+    "planeswalker",
+    "enchantment",
+    "artifact",
+    "instant",
+    "sorcery",
+    "land",
+    "battle",
+    "kindred",
+    "tribal",
+})
+
+COLLECTION_TYPE_GROUPS = COLLECTION_FILTER_TYPES | {"others"}
+
+COLLECTION_COLOR_FILTERS = frozenset({"W", "U", "B", "R", "G", "C"})
+
 
 def normalize_card_colors(colors: list[str] | tuple[str, ...]) -> list[str]:
     unique = {str(color).upper() for color in colors if color}
@@ -49,6 +66,39 @@ def normalize_card_colors(colors: list[str] | tuple[str, ...]) -> list[str]:
         unique,
         key=lambda color: WUBRG_ORDER.index(color) if color in WUBRG_ORDER else 99,
     )
+
+
+def collection_type_group(card_type: str) -> str:
+    normalized = str(card_type or "").lower()
+    if normalized in COLLECTION_TYPE_GROUPS - {"others"}:
+        return normalized
+    return "others"
+
+
+def parse_collection_color_filters(colors: str | None) -> list[str]:
+    if not colors:
+        return []
+    return [
+        part
+        for part in str(colors).upper().split(",")
+        if part in COLLECTION_COLOR_FILTERS
+    ]
+
+
+def card_matches_collection_type_filter(card: dict, type_filter: str) -> bool:
+    if not type_filter or type_filter == "all":
+        return True
+    card_type = str(card.get("cardType") or card.get("card_type") or "").lower()
+    return card_type == str(type_filter).strip().lower()
+
+
+def card_matches_collection_color_filter(card: dict, color_filters: list[str]) -> bool:
+    if not color_filters:
+        return True
+    colors = card.get("colors") or []
+    if "C" in color_filters and not colors:
+        return True
+    return any(color in colors for color in color_filters if color != "C")
 
 
 def encode_card_colors(colors: list[str]) -> str:

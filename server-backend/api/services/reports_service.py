@@ -6,7 +6,13 @@ from report.ranked_cards_data import DEFAULT_PAGE_SIZE, load_ranked_cards_data, 
 from report.report_data import build_art_style_options, build_sorted_set_options
 from api.services.pricing_service import price_from_strategy
 from api.services import settings_service
-from util.card_metadata import card_metadata_api
+from util.card_metadata import (
+    COLLECTION_FILTER_TYPES,
+    card_matches_collection_color_filter,
+    card_matches_collection_type_filter,
+    card_metadata_api,
+    parse_collection_color_filters,
+)
 from util.price_history import (
     card_price_key,
     default_compare_date,
@@ -20,6 +26,7 @@ _ENRICHED_REPORTS_TTL = 300
 REPORT_TYPES = frozenset({"top", "risers", "fallers", "all"})
 OWNED_FILTERS = frozenset({"owned", "all", "unowned"})
 FOIL_FILTERS = frozenset({"all", "nonfoil", "foil", "etched"})
+TYPE_FILTERS = frozenset({"all", *COLLECTION_FILTER_TYPES})
 
 
 class ReportsError(Exception):
@@ -63,6 +70,8 @@ def list_report_cards(
     art_style: str = "",
     owned_filter: str = "owned",
     foil_filter: str = "all",
+    type_filter: str = "all",
+    color_filters: str = "",
     compare_date: str | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> dict:
@@ -77,6 +86,12 @@ def list_report_cards(
     normalized_foil = (foil_filter or "all").strip().lower()
     if normalized_foil not in FOIL_FILTERS:
         raise ReportsError("Invalid foil filter")
+
+    normalized_type = (type_filter or "all").strip().lower()
+    if normalized_type not in TYPE_FILTERS:
+        raise ReportsError("Invalid type filter")
+
+    parsed_colors = parse_collection_color_filters(color_filters)
 
     settings = settings_service.get_settings(conn)
     strategy = settings["priceStrategy"]
@@ -94,6 +109,8 @@ def list_report_cards(
         art_style=art_style,
         owned_filter=normalized_owned,
         foil_filter=normalized_foil,
+        type_filter=normalized_type,
+        color_filters=parsed_colors,
     )
     ranked = _rank_cards(filtered, normalized_report)
     if normalized_report == "all":
@@ -111,6 +128,8 @@ def list_report_cards(
         "artStyle": art_style,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
+        "typeFilter": normalized_type,
+        "colorFilters": parsed_colors,
         "compareDate": selected_compare,
         "pageSize": page_size,
         "totalMatches": len(ranked),
@@ -277,6 +296,8 @@ def _apply_filters(
     art_style: str,
     owned_filter: str,
     foil_filter: str,
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
 ) -> list[dict]:
     result = cards
     if set_code and set_code != "All":
@@ -294,6 +315,16 @@ def _apply_filters(
         result = [card for card in result if card["owned"]]
     elif owned_filter == "unowned":
         result = [card for card in result if not card["owned"]]
+    if type_filter and type_filter != "all":
+        result = [
+            card for card in result
+            if card_matches_collection_type_filter(card, type_filter)
+        ]
+    if color_filters:
+        result = [
+            card for card in result
+            if card_matches_collection_color_filter(card, color_filters)
+        ]
     return result
 
 

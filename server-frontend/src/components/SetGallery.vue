@@ -7,9 +7,11 @@ const props = defineProps({
   sets: { type: Array, default: () => [] },
   activeSetCode: { type: String, default: "" },
   showFavorites: { type: Boolean, default: false },
+  manageSets: { type: Boolean, default: false },
+  deletingSetCode: { type: String, default: "" },
 });
 
-const emit = defineEmits(["select", "toggleFavorite"]);
+const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set"]);
 
 const galleryRef = ref(null);
 
@@ -21,6 +23,17 @@ function setIconUri(set) {
 
 function countLabel(set) {
   return formatSetCountLabel(set);
+}
+
+function canDelete(set) {
+  if (!props.manageSets || !set?.setCode || set.setCode === "All") {
+    return false;
+  }
+  return (set.ownedCount ?? 0) === 0;
+}
+
+function isDeleting(set) {
+  return props.deletingSetCode && props.deletingSetCode === set.setCode;
 }
 
 function scrollActiveIntoView(behavior = "smooth") {
@@ -38,9 +51,24 @@ function onSelect(setCode) {
   emit("select", setCode);
 }
 
+function onCardKeydown(event, setCode) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    onSelect(setCode);
+  }
+}
+
 function onToggleFavorite(event, set) {
   event.stopPropagation();
   emit("toggleFavorite", set);
+}
+
+function onRemove(event, set) {
+  event.stopPropagation();
+  if (isDeleting(set)) {
+    return;
+  }
+  emit("remove-set", set);
 }
 
 watch(() => props.activeSetCode, () => scrollActiveIntoView());
@@ -54,25 +82,41 @@ onMounted(() => scrollActiveIntoView("auto"));
 
 <template>
   <div ref="galleryRef" class="set-gallery" aria-label="Sets">
-    <button
+    <div
       v-for="set in visibleSets"
       :key="set.setCode"
-      type="button"
       class="set-gallery-card"
       :class="{ active: set.setCode === activeSetCode }"
+      role="button"
+      tabindex="0"
+      :aria-label="`Select ${setShortName(set)}`"
       @click="onSelect(set.setCode)"
+      @keydown="onCardKeydown($event, set.setCode)"
     >
       <button
         v-if="showFavorites && set.setCode !== 'All'"
         type="button"
-        class="set-gallery-favorite"
+        class="set-gallery-favorite set-gallery-favorite--left"
         :class="{ 'is-favorite': set.favorite }"
         :aria-pressed="set.favorite ? 'true' : 'false'"
         :aria-label="set.favorite ? `Unfavourite ${setShortName(set)}` : `Favourite ${setShortName(set)}`"
         :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
-        @click="onToggleFavorite($event, set)"
+        @click.stop="onToggleFavorite($event, set)"
       >
         {{ set.favorite ? "★" : "☆" }}
+      </button>
+
+      <button
+        v-if="canDelete(set)"
+        type="button"
+        class="set-gallery-delete"
+        :disabled="isDeleting(set)"
+        :aria-label="`Remove set ${set.setCode}`"
+        title="Remove set (catalog is kept)"
+        @click.stop="onRemove($event, set)"
+      >
+        <span v-if="isDeleting(set)" class="loading-spinner set-gallery-delete-spinner" aria-hidden="true" />
+        <span v-else aria-hidden="true">×</span>
       </button>
 
       <div class="set-gallery-icon-wrap">
@@ -92,6 +136,22 @@ onMounted(() => scrollActiveIntoView("auto"));
         <span class="set-gallery-code">{{ set.setCode === "All" ? "All" : set.setCode }}</span>
         <span class="set-gallery-name">{{ setShortName(set) }}</span>
         <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
+      </div>
+    </div>
+
+    <button
+      v-if="manageSets"
+      type="button"
+      class="set-gallery-card set-gallery-card--add"
+      aria-label="Add set"
+      @click="emit('add-set')"
+    >
+      <div class="set-gallery-icon-wrap">
+        <span class="set-gallery-add-icon" aria-hidden="true">+</span>
+      </div>
+      <div class="set-gallery-meta">
+        <span class="set-gallery-code">Add</span>
+        <span class="set-gallery-name">New set</span>
       </div>
     </button>
   </div>

@@ -364,6 +364,46 @@ body {
   margin-top: 4px;
 }
 
+.gallery-loading-wrap {
+  position: relative;
+  min-height: 140px;
+}
+
+.gallery-loading-wrap.is-loading .gallery-loading-content {
+  pointer-events: none;
+  user-select: none;
+}
+
+.gallery-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(2px);
+  border-radius: inherit;
+}
+
+.gallery-loading-overlay .loading-indicator {
+  padding: 16px 22px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1b5e20;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.gallery-loading-overlay .loading-spinner {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+  border-color: #c8e6c9;
+  border-top-color: #1b5e20;
+}
+
 .loading-indicator {
   display: inline-flex;
   align-items: center;
@@ -726,6 +766,26 @@ body {
 
 .collection-finish-group .filter-button {
   padding: 6px 10px;
+}
+
+.collection-type-color-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.collection-type-filter select {
+  min-width: 148px;
+}
+
+.collection-color-group {
+  flex-wrap: wrap;
+}
+
+.collection-color-filter {
+  min-width: 36px;
+  padding: 4px 8px;
 }
 
 .collection-search-art-panel {
@@ -1329,6 +1389,13 @@ body {
   cursor: pointer;
   scroll-snap-align: start;
   text-align: center;
+  font: inherit;
+  color: inherit;
+}
+
+.set-gallery-card:focus-visible {
+  outline: 2px solid #1b5e20;
+  outline-offset: 2px;
 }
 
 .set-gallery-card:hover {
@@ -1346,7 +1413,7 @@ body {
   position: absolute;
   top: 6px;
   right: 6px;
-  z-index: 1;
+  z-index: 2;
   width: 24px;
   height: 24px;
   border: 1px solid #e8e8e8;
@@ -1363,6 +1430,80 @@ body {
 .set-gallery-favorite.is-favorite {
   border-color: #f9a825;
   color: #f57f17;
+}
+
+.set-gallery-favorite--left {
+  right: auto;
+  left: 6px;
+}
+
+.set-gallery-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #bbb;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.set-gallery-delete:hover:not(:disabled) {
+  border-color: #ef9a9a;
+  background: #fff5f5;
+  color: #c62828;
+}
+
+.set-gallery-delete:disabled {
+  cursor: default;
+}
+
+.set-gallery-delete-spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.set-gallery-card--add {
+  border-style: dashed;
+  border-color: #cfd8dc;
+  background: #fafafa;
+  color: #666;
+}
+
+.set-gallery-card--add:hover {
+  border-color: #1b5e20;
+  background: #f4faf4;
+  color: #1b5e20;
+}
+
+.set-gallery-add-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #f0f0f0;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.set-gallery-card--add:hover .set-gallery-add-icon {
+  background: #e8f5e9;
+}
+
+.set-picker-add-status {
+  margin: 12px 0;
 }
 
 .set-gallery-icon-wrap {
@@ -1418,6 +1559,186 @@ body {
 .set-gallery-count {
   font-size: 11px;
   color: #888;
+}
+
+.browse-select {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.browse-select.is-disabled {
+  opacity: 0.65;
+}
+
+.browse-select-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+
+.browse-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.browse-select-trigger:hover:not(:disabled) {
+  border-color: #bbb;
+}
+
+.browse-select.is-open .browse-select-trigger,
+.browse-select-trigger:focus-visible {
+  border-color: #1b5e20;
+  outline: none;
+  box-shadow: 0 0 0 1px #1b5e20;
+}
+
+.browse-select-trigger:disabled {
+  cursor: not-allowed;
+}
+
+.browse-select-arrow {
+  flex: 0 0 30px;
+  width: 30px;
+  min-height: 34px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  color: #444;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.browse-select-arrow:hover:not(:disabled) {
+  border-color: #1b5e20;
+  color: #1b5e20;
+  background: #f4faf4;
+}
+
+.browse-select-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.browse-select-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-select-chevron {
+  flex: 0 0 auto;
+  color: #888;
+  font-size: 11px;
+}
+
+.browse-select-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
+
+.browse-select-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.browse-select-icon-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.browse-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.browse-select-filter {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.browse-select-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.browse-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #222;
+}
+
+.browse-select-option:hover,
+.browse-select-option.active {
+  background: #e8f5e9;
+}
+
+.browse-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-select-empty {
+  padding: 8px;
+  color: #888;
+  font-size: 13px;
+}
+
+.set-picker-dropdown .browse-select {
+  min-width: 220px;
 }
 
 .card-interactive {

@@ -1,0 +1,51 @@
+"""Import one set's card catalog from Scryfall into the local database."""
+
+from datetime import date
+import sqlite3
+
+from lib.art_styles import ensure_art_style_rules_file
+from lib.config import HTTP_USER_AGENT
+from util.db_migrate import ensure_card_columns
+from util.set_catalog import ensure_sets_table, sync_set_metadata
+
+
+def import_set_catalog_from_scryfall(
+    conn: sqlite3.Connection,
+    set_code: str,
+    *,
+    force_scryfall: bool = True,
+) -> int:
+    from update_prices import sync_set_catalog
+
+    normalized = set_code.strip().upper()
+    if not normalized:
+        raise ValueError("Set code is required")
+
+    ensure_sets_table(conn)
+    ensure_card_columns(conn)
+    ensure_art_style_rules_file(normalized.lower())
+
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    headers = {"User-Agent": HTTP_USER_AGENT}
+
+    if not sync_set_metadata(
+        cursor,
+        normalized,
+        headers,
+        today,
+        force_scryfall=force_scryfall,
+    ):
+        raise ValueError(f"Set {normalized} was not found on Scryfall")
+
+    count = sync_set_catalog(
+        cursor,
+        normalized.lower(),
+        today,
+        {normalized},
+        force_scryfall=force_scryfall,
+    )
+    if count == 0:
+        raise ValueError(f"No cards found for set {normalized} on Scryfall")
+
+    return count

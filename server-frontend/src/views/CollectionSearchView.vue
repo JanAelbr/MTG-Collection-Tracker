@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ignoreAborted } from "../api";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SearchArtBrowser from "../components/SearchArtBrowser.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
@@ -381,8 +382,6 @@ onMounted(async () => {
             Etched
           </button>
         </div>
-
-        <LoadingIndicator v-if="loading" compact label="Searching…" />
       </div>
     </div>
 
@@ -415,14 +414,16 @@ onMounted(async () => {
     </div>
 
     <div v-else-if="searchQuery.trim() && cards.length" class="table-panel cards-panel reports-cards-panel">
-      <CollectionCardGrid
-        :cards="cards"
-        :show-unowned-badge="false"
-        :card-scale="collectionCardScale"
-        browse-names
-        :selected-name="selectedCardName"
-        @browse-name="browseCardName"
-      />
+      <GalleryLoadingOverlay :loading="loading" label="Searching cards…">
+        <CollectionCardGrid
+          :cards="cards"
+          :show-unowned-badge="false"
+          :card-scale="collectionCardScale"
+          browse-names
+          :selected-name="selectedCardName"
+          @browse-name="browseCardName"
+        />
+      </GalleryLoadingOverlay>
     </div>
 
     <div v-if="searchQuery.trim() && totalPages > 1" class="manager-pagination">

@@ -83,7 +83,51 @@ def create_set(body: ManagerSetCreate, conn: sqlite3.Connection = Depends(get_db
 
     try:
 
-        return manager_service.add_set(conn, body.setCode)
+        result = manager_service.add_set(conn, body.setCode)
+
+        conn.commit()
+
+        return result
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.delete("/sets/{set_code}")
+
+def delete_set(set_code: str, conn: sqlite3.Connection = Depends(get_db)):
+
+    try:
+
+        result = manager_service.remove_set(conn, set_code)
+
+        conn.commit()
+
+        return result
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.post("/catalogs/prune-orphans")
+
+def prune_orphan_catalogs(conn: sqlite3.Connection = Depends(get_db)):
+
+    try:
+
+        result = manager_service.prune_orphan_catalogs(conn)
+
+        conn.commit()
+
+        return result
 
     except ManagerError as exc:
 

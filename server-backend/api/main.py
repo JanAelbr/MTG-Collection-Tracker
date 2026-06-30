@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -5,10 +6,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.db import connect
 from api.routers import cards, decks, health, manager, meta, prices, reports, settings, stats, storage
 from lib.config import FRONTEND_DIST, REPORTS_DIR
+from util.schema import ensure_database_schema
 
 OPENAPI_PATH_PREFIXES = ("docs", "redoc", "openapi.json")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    conn = connect()
+    try:
+        ensure_database_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    yield
+
 
 app = FastAPI(
     title="MTG Collection API",
@@ -20,6 +35,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
     openapi_tags=[
         {"name": "health", "description": "Service health checks."},
         {"name": "meta", "description": "App metadata (price freshness, cache epoch)."},

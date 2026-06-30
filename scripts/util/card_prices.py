@@ -96,7 +96,6 @@ def ensure_card_prices_table(conn: sqlite3.Connection) -> None:
 
     conn.executescript(CARD_PRICES_TABLE_SQL)
     ensure_finish_migration(conn)
-    prune_owned_price_history(conn)
 
 
 # Store one owned finish snapshot for a date and source.

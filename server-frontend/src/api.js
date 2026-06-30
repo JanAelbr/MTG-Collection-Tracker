@@ -296,6 +296,22 @@ export const api = {
 
     }),
 
+  deleteManagerSet: (setCode) =>
+
+    apiRequest(`/manager/sets/${encodeURIComponent(setCode)}`, {
+
+      method: "DELETE",
+
+    }),
+
+  pruneOrphanCatalogs: () =>
+
+    apiRequest("/manager/catalogs/prune-orphans", {
+
+      method: "POST",
+
+    }),
+
   toggleManagerSetFavorite: (setCode) =>
 
     apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/favorite`, {
@@ -395,6 +411,14 @@ export const api = {
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
 
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
+
+    if (params.typeFilter && params.typeFilter !== "all") {
+      query.set("typeFilter", params.typeFilter);
+    }
+
+    if (params.colorFilters?.length) {
+      query.set("colors", params.colorFilters.join(","));
+    }
 
     if (params.compareDate) query.set("compareDate", params.compareDate);
 

@@ -4,13 +4,21 @@ import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ReportTopCardsHero from "../components/ReportTopCardsHero.vue";
 import CardPreview from "../components/CardPreview.vue";
 import SetPicker from "../components/SetPicker.vue";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { defaultAllCardsSortDir, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
-import { formatArtStyleDropdownLabel, artStyleOptionValue, formatEuro, formatPriceChange, formatProfit } from "../utils/format";
+import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
+import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
+import ArtStylePicker from "../components/ArtStylePicker.vue";
+import ManaSymbols from "../components/ManaSymbols.vue";
+import { DECK_COLOR_ORDER } from "../utils/deckCards";
+import {
+  COLLECTION_TYPE_LABELS,
+  COLLECTION_TYPE_ORDER,
+} from "../utils/collectionTypes";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
 import {
   allCardsFiltersFromRoute,
@@ -38,6 +46,8 @@ const setCode = ref("All");
 const artStyle = ref("");
 const ownedFilter = ref("owned");
 const foilFilter = ref("all");
+const typeFilter = ref("all");
+const colorFilters = ref([]);
 const allCardsPage = ref(1);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
@@ -48,6 +58,10 @@ const syncRunning = ref(false);
 let pollTimer = null;
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
 const routeSyncReady = ref(false);
+const applyingRouteQuery = ref(false);
+const routeQuerySyncInFlight = ref(false);
+const collectionHydrated = ref(false);
+let suppressPageRouteRead = false;
 
 const sets = computed(() => meta.value?.sets || []);
 const patchedSets = computed(() => {
@@ -94,16 +108,59 @@ function applyScopeFromRoute() {
   artStyle.value = isAllSetsCode(setCode.value) ? "" : fromRoute.artStyle;
 }
 
-function applyAllCardsFiltersFromRoute() {
+function applyServerFiltersFromRoute() {
   if (!isAllView.value) {
     return;
   }
   const filters = allCardsFiltersFromRoute(route);
   ownedFilter.value = filters.ownedFilter;
   foilFilter.value = filters.foilFilter;
-  allCardsSort.value = filters.sort;
-  allCardsSortDir.value = filters.sortDir;
-  allCardsPage.value = filters.page;
+  typeFilter.value = filters.typeFilter;
+  colorFilters.value = [...filters.colorFilters];
+}
+
+function applyClientQueryFromRoute() {
+  if (!isAllView.value) {
+    return;
+  }
+  const filters = allCardsFiltersFromRoute(route);
+  applyingRouteQuery.value = true;
+  try {
+    allCardsSort.value = filters.sort;
+    allCardsSortDir.value = filters.sortDir;
+    if ("page" in route.query) {
+      allCardsPage.value = filters.page;
+    }
+  } finally {
+    applyingRouteQuery.value = false;
+  }
+}
+
+function hydrateCollectionFromRoute() {
+  applyingRouteQuery.value = true;
+  try {
+    applyScopeFromRoute();
+    if (isAllView.value) {
+      applyAllCardsFiltersFromRoute();
+      applyStoredAllCardsSortIfNeeded();
+    }
+  } finally {
+    applyingRouteQuery.value = false;
+  }
+}
+
+function applyAllCardsFiltersFromRoute() {
+  applyServerFiltersFromRoute();
+  applyClientQueryFromRoute();
+}
+
+function applyStoredAllCardsSortIfNeeded() {
+  if (!isAllView.value || route.query?.sort) {
+    return;
+  }
+  const stored = getStoredAllCardsSort();
+  allCardsSort.value = stored.sort;
+  allCardsSortDir.value = stored.dir;
 }
 
 function routeQueriesMatch(nextQuery) {
@@ -277,6 +334,23 @@ async function loadMeta() {
   reconcileSetCountPatches();
 }
 
+async function onSetsChanged(event) {
+  if (event?.sets) {
+    if (meta.value) {
+      meta.value = { ...meta.value, sets: event.sets };
+    } else {
+      meta.value = { sets: event.sets };
+    }
+    reconcileSetCountPatches();
+  } else {
+    clearClientCache();
+    await loadMeta();
+  }
+  if (isAllView.value) {
+    await loadCards();
+  }
+}
+
 const statsLink = computed(() => ({
   path: "/stats",
   query: collectionScopeToQuery(setCode.value),
@@ -298,6 +372,8 @@ async function loadCards() {
       artStyle: isAllSetsView.value ? "" : artStyle.value,
       ownedFilter: isAllView.value ? ownedFilter.value : "owned",
       foilFilter: isAllView.value ? foilFilter.value : "all",
+      typeFilter: isAllView.value ? typeFilter.value : "all",
+      colorFilters: isAllView.value ? colorFilters.value : [],
       pageSize: pageSize.value,
     });
     mergeOwnershipPatchesIntoCards(cardsPayload.value?.cards);
@@ -394,6 +470,8 @@ function allCardsArtStyleLink(card) {
       artStyle: card.artStyle,
       ownedFilter: ownedFilter.value,
       foilFilter: foilFilter.value,
+      typeFilter: typeFilter.value,
+      colorFilters: colorFilters.value,
       sort: allCardsSort.value,
       sortDir: allCardsSortDir.value,
       page: 1,
@@ -407,14 +485,71 @@ function syncViewFromRoute() {
     viewType.value = view;
     if (view === "all") {
       applyAllCardsFiltersFromRoute();
+      applyStoredAllCardsSortIfNeeded();
     } else {
       ownedFilter.value = "owned";
+      typeFilter.value = "all";
+      colorFilters.value = [];
     }
   }
 }
 
+function buildCollectionQuery() {
+  return allCardsRouteQuery({
+    setCode: setCode.value,
+    artStyle: artStyle.value,
+    ownedFilter: ownedFilter.value,
+    foilFilter: foilFilter.value,
+    typeFilter: typeFilter.value,
+    colorFilters: colorFilters.value,
+    sort: allCardsSort.value,
+    sortDir: allCardsSortDir.value,
+    page: allCardsPage.value,
+  });
+}
+
+function replaceRouteQuery(query) {
+  if (routeQueriesMatch(query)) {
+    return Promise.resolve();
+  }
+  routeQuerySyncInFlight.value = true;
+  return router.replace({
+    path: route.path,
+    query,
+  }).finally(() => {
+    routeQuerySyncInFlight.value = false;
+  });
+}
+
+function pushCollectionRoute() {
+  if (!isAllView.value) {
+    return replaceRouteQuery(collectionScopeToQuery(setCode.value, artStyle.value));
+  }
+  return replaceRouteQuery(buildCollectionQuery());
+}
+
+function replacePageInRoute(page) {
+  const query = { ...route.query };
+  if (page <= 1) {
+    delete query.page;
+  } else {
+    query.page = String(page);
+  }
+  suppressPageRouteRead = true;
+  return replaceRouteQuery(query).finally(() => {
+    queueMicrotask(() => {
+      suppressPageRouteRead = false;
+    });
+  });
+}
+
 function goToAllCardsPage(page) {
-  allCardsPage.value = Math.max(1, Math.min(page, allCardsTotalPages.value));
+  const nextPage = Math.max(1, Math.min(page, allCardsTotalPages.value));
+  if (allCardsPage.value === nextPage) {
+    return;
+  }
+  allCardsPage.value = nextPage;
+  replacePageInRoute(nextPage);
 }
 
 function resetAllCardsPage() {
@@ -443,12 +578,14 @@ function updateAllCardsSort(event) {
   allCardsSortDir.value = defaultAllCardsSortDir(allCardsSort.value);
   storeAllCardsSort(allCardsSort.value, allCardsSortDir.value);
   resetAllCardsPage();
+  pushCollectionRoute();
 }
 
 function toggleAllCardsSortDir() {
   allCardsSortDir.value = allCardsSortDir.value === "asc" ? "desc" : "asc";
   storeAllCardsSort(allCardsSort.value, allCardsSortDir.value);
   resetAllCardsPage();
+  pushCollectionRoute();
 }
 
 function setOwnedFilter(value) {
@@ -466,35 +603,40 @@ function setFoilFilter(value) {
   storeFoilFilter(value);
 }
 
-function syncCollectionRoute() {
-  const query = isAllView.value
-    ? allCardsRouteQuery({
-      setCode: setCode.value,
-      artStyle: artStyle.value,
-      ownedFilter: ownedFilter.value,
-      foilFilter: foilFilter.value,
-      sort: allCardsSort.value,
-      sortDir: allCardsSortDir.value,
-      page: allCardsPage.value,
-    })
-    : collectionScopeToQuery(setCode.value, artStyle.value);
-  if (routeQueriesMatch(query)) {
+function setTypeFilter(value) {
+  const next = value || "all";
+  if (typeFilter.value === next) {
     return;
   }
-  router.replace({
-    path: route.path,
-    query,
-  });
+  typeFilter.value = next;
+}
+
+function onTypeFilterChange(event) {
+  setTypeFilter(event.target.value);
+}
+
+function toggleColorFilter(color) {
+  if (colorFilters.value.includes(color)) {
+    colorFilters.value = colorFilters.value.filter((item) => item !== color);
+    return;
+  }
+  colorFilters.value = [...colorFilters.value, color];
+}
+
+function clearColorFilters() {
+  colorFilters.value = [];
+}
+
+function syncCollectionRoute() {
+  return pushCollectionRoute();
 }
 
 watch(
   () => route.params.view,
   () => {
     syncViewFromRoute();
-    applyScopeFromRoute();
-    if (isAllView.value) {
-      applyAllCardsFiltersFromRoute();
-    } else {
+    hydrateCollectionFromRoute();
+    if (!isAllView.value) {
       resetAllCardsPage();
     }
     if (routeSyncReady.value) {
@@ -504,31 +646,34 @@ watch(
   },
 );
 
-watch([setCode, artStyle, ownedFilter, foilFilter, allCardsSort, allCardsSortDir, pageSize], () => {
-  if (!routeSyncReady.value) {
+watch([setCode, artStyle, ownedFilter, foilFilter, typeFilter, colorFilters, pageSize], () => {
+  if (
+    !routeSyncReady.value
+    || applyingRouteQuery.value
+    || !collectionHydrated.value
+    || suppressPageRouteRead
+  ) {
     return;
   }
   if (isAllSetsView.value && artStyle.value) {
     artStyle.value = "";
     return;
   }
-  if (isAllView.value) {
-    resetAllCardsPage();
+  if (!isAllView.value) {
+    return;
   }
-  syncCollectionRoute();
+  resetAllCardsPage();
+  pushCollectionRoute();
   loadCards();
 });
 
-watch(allCardsPage, () => {
-  if (!routeSyncReady.value || !isAllView.value) {
+watch(allCardsTotalPages, (totalPages) => {
+  if (applyingRouteQuery.value || loadingCards.value || routeQuerySyncInFlight.value || !cards.value.length) {
     return;
   }
-  syncCollectionRoute();
-});
-
-watch(allCardsTotalPages, (totalPages) => {
   if (allCardsPage.value > totalPages) {
     allCardsPage.value = totalPages;
+    replacePageInRoute(allCardsPage.value);
   }
 });
 
@@ -538,36 +683,99 @@ watch(
     route.query.art,
     route.query.owned,
     route.query.finish,
-    route.query.sort,
-    route.query.dir,
-    route.query.page,
+    route.query.type,
+    route.query.colors,
   ],
   () => {
-    if (!routeSyncReady.value) {
+    if (!routeSyncReady.value || suppressPageRouteRead) {
       return;
     }
     const prevSet = setCode.value;
     const prevArt = artStyle.value;
     const prevOwned = ownedFilter.value;
     const prevFinish = foilFilter.value;
-    const prevSort = allCardsSort.value;
-    const prevSortDir = allCardsSortDir.value;
-    const prevPage = allCardsPage.value;
-    applyScopeFromRoute();
-    if (isAllView.value) {
-      applyAllCardsFiltersFromRoute();
+    const prevType = typeFilter.value;
+    const prevColors = colorFilters.value.join(",");
+    applyingRouteQuery.value = true;
+    try {
+      applyScopeFromRoute();
+      if (isAllView.value) {
+        applyServerFiltersFromRoute();
+      }
+    } finally {
+      applyingRouteQuery.value = false;
     }
     const changed = setCode.value !== prevSet
       || artStyle.value !== prevArt
       || (isAllView.value && (
         ownedFilter.value !== prevOwned
         || foilFilter.value !== prevFinish
-        || allCardsSort.value !== prevSort
-        || allCardsSortDir.value !== prevSortDir
-        || allCardsPage.value !== prevPage
+        || typeFilter.value !== prevType
+        || colorFilters.value.join(",") !== prevColors
       ));
     if (changed) {
+      if (isAllView.value) {
+        resetAllCardsPage();
+        pushCollectionRoute();
+      }
       loadCards();
+    }
+  },
+);
+
+watch(
+  () => route.query.page,
+  (pageParam) => {
+    if (
+      !routeSyncReady.value
+      || !isAllView.value
+      || routeQuerySyncInFlight.value
+      || suppressPageRouteRead
+    ) {
+      return;
+    }
+    applyingRouteQuery.value = true;
+    try {
+      if (pageParam == null || pageParam === "") {
+        if (!("page" in route.query)) {
+          allCardsPage.value = 1;
+        }
+        return;
+      }
+      const parsed = Number(pageParam);
+      allCardsPage.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    } finally {
+      applyingRouteQuery.value = false;
+    }
+  },
+);
+
+watch(
+  () => route.query.sort,
+  () => {
+    if (!routeSyncReady.value || !isAllView.value || routeQuerySyncInFlight.value) {
+      return;
+    }
+    applyingRouteQuery.value = true;
+    try {
+      allCardsSort.value = allCardsFiltersFromRoute(route).sort;
+    } finally {
+      applyingRouteQuery.value = false;
+    }
+  },
+);
+
+watch(
+  () => route.query.dir,
+  () => {
+    if (!routeSyncReady.value || !isAllView.value || routeQuerySyncInFlight.value) {
+      return;
+    }
+    applyingRouteQuery.value = true;
+    try {
+      allCardsSortDir.value = allCardsFiltersFromRoute(route).sortDir;
+    } finally {
+      applyingRouteQuery.value = false;
     }
   },
 );
@@ -582,13 +790,10 @@ watch(ownershipRevision, async () => {
 onMounted(async () => {
   syncViewFromRoute();
   await Promise.all([fetchPricingSettings(), loadMeta(), loadAppMeta(), refreshSyncStatus()]);
-  applyScopeFromRoute();
-  if (isAllView.value) {
-    applyAllCardsFiltersFromRoute();
-  }
+  hydrateCollectionFromRoute();
   routeSyncReady.value = true;
-  syncCollectionRoute();
   await loadCards();
+  collectionHydrated.value = true;
   if (syncStatus.value?.status === "running") {
     startPolling();
   }
@@ -627,6 +832,7 @@ onUnmounted(stopPolling);
       v-model="setCode"
       layout="banner"
       :sets="selectableSets"
+      @sets-changed="onSetsChanged"
     />
 
     <div class="reports-toolbar">
@@ -637,18 +843,11 @@ onUnmounted(stopPolling);
           :sets="selectableSets"
         />
 
-        <label class="manager-filter">
-          <select v-model="artStyle" :disabled="isAllSetsView" aria-label="Art style">
-            <option value="">All art styles</option>
-            <option
-              v-for="style in artStyles"
-              :key="artStyleOptionValue(style)"
-              :value="artStyleOptionValue(style)"
-            >
-              {{ formatArtStyleDropdownLabel(style) }}
-            </option>
-          </select>
-        </label>
+        <ArtStylePicker
+          v-model="artStyle"
+          :art-styles="artStyles"
+          :disabled="isAllSetsView"
+        />
 
         <div v-if="isAllView" class="button-group collection-ownership-group">
             <button
@@ -712,6 +911,44 @@ onUnmounted(stopPolling);
           </button>
         </div>
 
+        <div v-if="isAllView" class="collection-type-color-filters">
+          <label class="manager-filter collection-type-filter">
+            <span>Type</span>
+            <select :value="typeFilter" @change="onTypeFilterChange">
+              <option value="all">All types</option>
+              <option
+                v-for="type in COLLECTION_TYPE_ORDER"
+                :key="type"
+                :value="type"
+              >
+                {{ COLLECTION_TYPE_LABELS[type] }}
+              </option>
+            </select>
+          </label>
+
+          <div class="button-group collection-color-group">
+            <button
+              v-for="color in DECK_COLOR_ORDER"
+              :key="color"
+              type="button"
+              class="filter-button collection-color-filter"
+              :class="{ active: colorFilters.includes(color) }"
+              :title="color === 'C' ? 'Colorless' : color"
+              @click="toggleColorFilter(color)"
+            >
+              <ManaSymbols :colors="color === 'C' ? [] : [color]" :size="18" />
+            </button>
+            <button
+              v-if="colorFilters.length"
+              type="button"
+              class="filter-button"
+              @click="clearColorFilters"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
         <label v-if="isAllView" class="manager-filter">
           <span>Image size</span>
           <select :value="collectionCardScale" @change="updateCollectionCardScale">
@@ -747,7 +984,6 @@ onUnmounted(stopPolling);
         <RouterLink :to="statsLink" class="btn btn-secondary btn-small">
           View stats
         </RouterLink>
-        <LoadingIndicator v-if="loadingCards" compact label="Updating cards…" />
       </div>
     </div>
 
@@ -770,37 +1006,40 @@ onUnmounted(stopPolling);
     </div>
 
     <div v-else-if="isAllView" class="table-panel cards-panel reports-cards-panel">
-      <CollectionCardGrid
-        :cards="paginatedAllCards"
-        :show-unowned-badge="ownedFilter === 'all'"
-        :show-finish-badge="true"
-        :card-scale="collectionCardScale"
-        :price-change-mode="allCardsSort === 'changeEuro' || allCardsSort === 'changePct' ? allCardsSort : ''"
-      />
-      <div v-if="allCardsTotalPages > 1" class="manager-pagination collection-pagination">
-        <button
-          type="button"
-          class="btn btn-secondary btn-small"
-          :disabled="allCardsPage <= 1"
-          @click="goToAllCardsPage(allCardsPage - 1)"
-        >
-          Previous
-        </button>
-        <span>Page {{ allCardsPage }} / {{ allCardsTotalPages }}</span>
-        <button
-          type="button"
-          class="btn btn-secondary btn-small"
-          :disabled="allCardsPage >= allCardsTotalPages"
-          @click="goToAllCardsPage(allCardsPage + 1)"
-        >
-          Next
-        </button>
-      </div>
+      <GalleryLoadingOverlay :loading="loadingCards" label="Updating cards…">
+        <CollectionCardGrid
+          :cards="paginatedAllCards"
+          :show-unowned-badge="ownedFilter === 'all'"
+          :show-finish-badge="true"
+          :card-scale="collectionCardScale"
+          :price-change-mode="allCardsSort === 'changeEuro' || allCardsSort === 'changePct' ? allCardsSort : ''"
+        />
+        <div v-if="allCardsTotalPages > 1" class="manager-pagination collection-pagination">
+          <button
+            type="button"
+            class="btn btn-secondary btn-small"
+            :disabled="allCardsPage <= 1"
+            @click="goToAllCardsPage(allCardsPage - 1)"
+          >
+            Previous
+          </button>
+          <span>Page {{ allCardsPage }} / {{ allCardsTotalPages }}</span>
+          <button
+            type="button"
+            class="btn btn-secondary btn-small"
+            :disabled="allCardsPage >= allCardsTotalPages"
+            @click="goToAllCardsPage(allCardsPage + 1)"
+          >
+            Next
+          </button>
+        </div>
+      </GalleryLoadingOverlay>
     </div>
 
     <div v-else class="table-panel cards-panel reports-cards-panel">
-      <ReportTopCardsHero :cards="displayCards" />
-      <table class="reports-table">
+      <GalleryLoadingOverlay :loading="loadingCards" label="Updating cards…">
+        <ReportTopCardsHero :cards="displayCards" />
+        <table class="reports-table">
         <thead>
           <tr>
             <th>#</th>
@@ -872,6 +1111,7 @@ onUnmounted(stopPolling);
           </tr>
         </tbody>
       </table>
+      </GalleryLoadingOverlay>
     </div>
   </div>
 </template>

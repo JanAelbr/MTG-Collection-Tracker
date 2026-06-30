@@ -376,7 +376,7 @@ Use `python scripts/update_prices_report.py` for price update + report generatio
 
 ## Data model
 
-Database: `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` on Windows, or `~/MtgCollectionTracker/collection.db` elsewhere (SQLite; migrated automatically from the old repo-root file)
+Database: `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` on Windows, or `~/MtgCollectionTracker/collection.db` elsewhere (SQLite)
 
 ```mermaid
 erDiagram
