@@ -8,15 +8,17 @@ export function useAsyncLoad() {
   async function run(task) {
     const token = ++activeToken;
     loading.value = true;
+    const isCurrent = () => token === activeToken;
     try {
-      return await task();
+      const result = await task(isCurrent);
+      return isCurrent() ? result : undefined;
     } catch (error) {
-      if (isApiAbortError(error)) {
+      if (isApiAbortError(error) || !isCurrent()) {
         return undefined;
       }
       throw error;
     } finally {
-      if (token === activeToken) {
+      if (isCurrent()) {
         loading.value = false;
       }
     }

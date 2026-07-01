@@ -5,6 +5,7 @@ import { api, clearClientCache, ignoreAborted } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
+import PageControls from "../components/PageControls.vue";
 import ReportTopCardsHero from "../components/ReportTopCardsHero.vue";
 import CardPreview from "../components/CardPreview.vue";
 import SetPicker from "../components/SetPicker.vue";
@@ -20,6 +21,7 @@ import {
   COLLECTION_TYPE_ORDER,
 } from "../utils/collectionTypes";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
+import { filterCollectionCards } from "../utils/collectionFilters";
 import {
   allCardsFiltersFromRoute,
   allCardsRouteQuery,
@@ -41,6 +43,8 @@ const router = useRouter();
 const meta = ref(null);
 const appMeta = ref(null);
 const cardsPayload = ref(null);
+const allViewScopeCards = ref([]);
+const allViewScopeKey = ref("");
 const viewType = ref("all");
 const setCode = ref("All");
 const artStyle = ref("");
@@ -76,12 +80,34 @@ const selectableSets = computed(() => {
   return patchedSets.value.filter((set) => !isAllSetsCode(set.setCode));
 });
 const artStyles = computed(() => cardsPayload.value?.artStyles || []);
-const cards = computed(() => cardsPayload.value?.cards || []);
+const cards = computed(() => {
+  if (isAllView.value) {
+    ownershipRevision.value;
+    return filterCollectionCards(allViewScopeCards.value, {
+      setCode: setCode.value,
+      artStyle: isAllSetsView.value ? "" : artStyle.value,
+      ownedFilter: ownedFilter.value,
+      foilFilter: foilFilter.value,
+      typeFilter: typeFilter.value,
+      colorFilters: colorFilters.value,
+    });
+  }
+  return cardsPayload.value?.cards || [];
+});
 const isAllView = computed(() => viewType.value === "all");
 const isAllSetsView = computed(() => isAllSetsCode(setCode.value));
+const showSetCatalogReload = computed(() => viewType.value !== "all" && viewType.value !== "top");
 
 function isAllSetsCode(code) {
   return !code || String(code).toLowerCase() === "all";
+}
+
+function currentAllViewScopeKey() {
+  return `${setCode.value}|${isAllSetsView.value ? "" : artStyle.value}`;
+}
+
+function invalidateAllViewScope() {
+  allViewScopeKey.value = "";
 }
 
 function defaultSetCode() {
@@ -346,6 +372,14 @@ async function onSetsChanged(event) {
     clearClientCache();
     await loadMeta();
   }
+  if (event?.catalogReloaded) {
+    clearClientCache();
+    invalidateAllViewScope();
+    if (isAllView.value || event.setCode === setCode.value) {
+      await loadCards();
+    }
+    return;
+  }
   if (isAllView.value) {
     await loadCards();
   }
@@ -365,15 +399,40 @@ async function loadAppMeta() {
 }
 
 async function loadCards() {
+  if (isAllView.value) {
+    const scopeKey = currentAllViewScopeKey();
+    if (allViewScopeKey.value === scopeKey) {
+      return;
+    }
+    await runCardsLoad(async () => {
+      const payload = await api.getReportCards({
+        report: "all",
+        setCode: setCode.value,
+        artStyle: isAllSetsView.value ? "" : artStyle.value,
+        ownedFilter: "all",
+        foilFilter: "all",
+        typeFilter: "all",
+        colorFilters: [],
+        pageSize: pageSize.value,
+      });
+      cardsPayload.value = payload;
+      allViewScopeCards.value = payload.cards || [];
+      allViewScopeKey.value = scopeKey;
+      mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
+      reconcileOwnershipPatches(allViewScopeCards.value);
+    });
+    return;
+  }
+
   await runCardsLoad(async () => {
     cardsPayload.value = await api.getReportCards({
       report: viewType.value,
       setCode: setCode.value,
       artStyle: isAllSetsView.value ? "" : artStyle.value,
-      ownedFilter: isAllView.value ? ownedFilter.value : "owned",
-      foilFilter: isAllView.value ? foilFilter.value : "all",
-      typeFilter: isAllView.value ? typeFilter.value : "all",
-      colorFilters: isAllView.value ? colorFilters.value : [],
+      ownedFilter: "owned",
+      foilFilter: "all",
+      typeFilter: "all",
+      colorFilters: [],
       pageSize: pageSize.value,
     });
     mergeOwnershipPatchesIntoCards(cardsPayload.value?.cards);
@@ -420,6 +479,7 @@ function startPolling() {
       stopPolling();
       if (syncStatus.value?.status === "completed") {
         clearClientCache();
+        invalidateAllViewScope();
         await loadMeta();
         await loadCards();
       }
@@ -636,6 +696,7 @@ watch(
   () => {
     syncViewFromRoute();
     hydrateCollectionFromRoute();
+    invalidateAllViewScope();
     if (!isAllView.value) {
       resetAllCardsPage();
     }
@@ -646,7 +707,7 @@ watch(
   },
 );
 
-watch([setCode, artStyle, ownedFilter, foilFilter, typeFilter, colorFilters, pageSize], () => {
+function onCollectionScopeChange() {
   if (
     !routeSyncReady.value
     || applyingRouteQuery.value
@@ -659,10 +720,65 @@ watch([setCode, artStyle, ownedFilter, foilFilter, typeFilter, colorFilters, pag
     artStyle.value = "";
     return;
   }
+  invalidateAllViewScope();
+  resetAllCardsPage();
   if (!isAllView.value) {
+    pushCollectionRoute();
+    loadCards();
+    return;
+  }
+  pushCollectionRoute();
+  loadCards();
+}
+
+watch(setCode, (newSet, oldSet) => {
+  if (
+    !routeSyncReady.value
+    || applyingRouteQuery.value
+    || !collectionHydrated.value
+    || suppressPageRouteRead
+    || newSet === oldSet
+  ) {
+    return;
+  }
+  if (artStyle.value) {
+    artStyle.value = "";
+    return;
+  }
+  onCollectionScopeChange();
+});
+
+watch(artStyle, () => {
+  onCollectionScopeChange();
+});
+
+watch([ownedFilter, foilFilter, typeFilter, colorFilters], () => {
+  if (
+    !routeSyncReady.value
+    || applyingRouteQuery.value
+    || !collectionHydrated.value
+    || suppressPageRouteRead
+    || !isAllView.value
+  ) {
     return;
   }
   resetAllCardsPage();
+  pushCollectionRoute();
+});
+
+watch(pageSize, () => {
+  if (
+    !routeSyncReady.value
+    || applyingRouteQuery.value
+    || !collectionHydrated.value
+    || suppressPageRouteRead
+  ) {
+    return;
+  }
+  resetAllCardsPage();
+  if (isAllView.value) {
+    return;
+  }
   pushCollectionRoute();
   loadCards();
 });
@@ -714,11 +830,21 @@ watch(
         || colorFilters.value.join(",") !== prevColors
       ));
     if (changed) {
+      const scopeChanged = setCode.value !== prevSet || artStyle.value !== prevArt;
       if (isAllView.value) {
         resetAllCardsPage();
         pushCollectionRoute();
+        if (scopeChanged) {
+          invalidateAllViewScope();
+          loadCards();
+        }
+      } else {
+        if (scopeChanged) {
+          resetAllCardsPage();
+          pushCollectionRoute();
+        }
+        loadCards();
       }
-      loadCards();
     }
   },
 );
@@ -780,13 +906,6 @@ watch(
   },
 );
 
-watch(ownershipRevision, async () => {
-  if (!routeSyncReady.value) {
-    return;
-  }
-  await loadMeta();
-});
-
 onMounted(async () => {
   syncViewFromRoute();
   await Promise.all([fetchPricingSettings(), loadMeta(), loadAppMeta(), refreshSyncStatus()]);
@@ -832,6 +951,7 @@ onUnmounted(stopPolling);
       v-model="setCode"
       layout="banner"
       :sets="selectableSets"
+      :show-reload-catalog="showSetCatalogReload"
       @sets-changed="onSetsChanged"
     />
 
@@ -1006,6 +1126,13 @@ onUnmounted(stopPolling);
     </div>
 
     <div v-else-if="isAllView" class="table-panel cards-panel reports-cards-panel">
+      <PageControls
+        v-if="allCardsTotalPages > 1"
+        :page="allCardsPage"
+        :total-pages="allCardsTotalPages"
+        class="collection-pagination collection-pagination--top"
+        @update:page="goToAllCardsPage"
+      />
       <GalleryLoadingOverlay :loading="loadingCards" label="Updating cards…">
         <CollectionCardGrid
           :cards="paginatedAllCards"
@@ -1014,25 +1141,13 @@ onUnmounted(stopPolling);
           :card-scale="collectionCardScale"
           :price-change-mode="allCardsSort === 'changeEuro' || allCardsSort === 'changePct' ? allCardsSort : ''"
         />
-        <div v-if="allCardsTotalPages > 1" class="manager-pagination collection-pagination">
-          <button
-            type="button"
-            class="btn btn-secondary btn-small"
-            :disabled="allCardsPage <= 1"
-            @click="goToAllCardsPage(allCardsPage - 1)"
-          >
-            Previous
-          </button>
-          <span>Page {{ allCardsPage }} / {{ allCardsTotalPages }}</span>
-          <button
-            type="button"
-            class="btn btn-secondary btn-small"
-            :disabled="allCardsPage >= allCardsTotalPages"
-            @click="goToAllCardsPage(allCardsPage + 1)"
-          >
-            Next
-          </button>
-        </div>
+        <PageControls
+          v-if="allCardsTotalPages > 1"
+          :page="allCardsPage"
+          :total-pages="allCardsTotalPages"
+          class="collection-pagination collection-pagination--bottom"
+          @update:page="goToAllCardsPage"
+        />
       </GalleryLoadingOverlay>
     </div>
 

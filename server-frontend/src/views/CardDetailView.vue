@@ -1,13 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api } from "../api";
+import { api, clearClientCache } from "../api";
 import CardVariantGallery from "../components/CardVariantGallery.vue";
 import CardInteractiveImage from "../components/CardInteractiveImage.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
+import { getOwnershipPatch, isFinishDataOwned } from "../composables/cardContextMenu";
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
-import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, normalizeFinish } from "../utils/finishes";
+import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, hasFinish, normalizeFinish } from "../utils/finishes";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,6 +16,9 @@ const router = useRouter();
 const card = ref(null);
 const selectedFinish = ref(FINISH_NONFOIL);
 const priceStrategy = ref("trend");
+const purchaseDrafts = ref({});
+const purchaseSaving = ref(null);
+const finishSaving = ref(null);
 const { loading, run } = useAsyncLoad();
 
 const availableFinishes = computed(() =>
@@ -59,6 +63,9 @@ const menuCard = computed(() => {
   return {
     ...card.value,
     finish: selectedFinish.value,
+    hasNonfoil: availableFinishes.value.includes(FINISH_NONFOIL),
+    hasFoil: availableFinishes.value.includes(FINISH_FOIL),
+    hasEtched: availableFinishes.value.includes(FINISH_ETCHED),
   };
 });
 
@@ -66,26 +73,191 @@ const showVariantGallery = computed(
   () => (card.value?.variantGallery?.cards?.length || 0) > 1,
 );
 
+const hasAnyOwned = computed(() =>
+  finishRows.value.some((row) => isFinishDataOwned(row.data)),
+);
+
+function isFinishOwnedElsewhere(finish) {
+  return finishRows.value.some(
+    (row) => row.finish !== finish && isFinishDataOwned(row.data),
+  );
+}
+
+function finishChangeOptions(fromFinish) {
+  return availableFinishes.value
+    .filter((finish) => finish === fromFinish || !isFinishOwnedElsewhere(finish))
+    .map((finish) => ({
+      value: finish,
+      label: finishLabel(finish),
+    }));
+}
+
+async function changeOwnedFinish(fromFinish, event) {
+  const toFinish = normalizeFinish(event.target.value);
+  if (!card.value || fromFinish === toFinish) {
+    return;
+  }
+
+  finishSaving.value = fromFinish;
+  try {
+    await api.changeOwnershipFinish({
+      setCode: card.value.setCode,
+      collectorNumber: card.value.collectorNumber,
+      fromFinish,
+      toFinish,
+    });
+    clearClientCache();
+    if (selectedFinish.value === fromFinish) {
+      selectedFinish.value = toFinish;
+      await router.replace({
+        params: {
+          setCode: route.params.setCode,
+          collectorNumber: route.params.collectorNumber,
+        },
+        query: toFinish === FINISH_NONFOIL ? {} : { finish: String(toFinish) },
+      });
+    }
+    await loadCard();
+  } catch {
+    event.target.value = String(fromFinish);
+  } finally {
+    finishSaving.value = null;
+  }
+}
+
 function formatGainLoss(value) {
   return formatProfit(value);
+}
+
+function syncPurchaseDrafts() {
+  const next = {};
+  for (const finish of availableFinishes.value) {
+    const purchaseValue = card.value?.finishes?.[String(finish)]?.purchaseValue;
+    next[finish] = purchaseValue != null ? String(purchaseValue) : "";
+  }
+  purchaseDrafts.value = next;
+}
+
+function applySavedPurchasePrice(finish, purchaseValue) {
+  const finishKey = String(finish);
+  const finishData = card.value?.finishes?.[finishKey];
+  if (!finishData || !card.value) {
+    return;
+  }
+  const currentValue = finishData.currentValue;
+  const profitLoss = currentValue != null ? currentValue - purchaseValue : null;
+  card.value = {
+    ...card.value,
+    finishes: {
+      ...card.value.finishes,
+      [finishKey]: {
+        ...finishData,
+        purchaseValue,
+        profitLoss,
+      },
+    },
+  };
+  syncPurchaseDrafts();
+}
+
+async function cancelPendingCardLoad() {
+  await run(async () => {});
+}
+
+function parsePurchaseInput(raw) {
+  if (raw === "" || raw == null) {
+    return null;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return value;
+}
+
+async function savePurchasePrice(finish) {
+  const finishData = card.value?.finishes?.[String(finish)];
+  if (!card.value || !isFinishDataOwned(finishData)) {
+    return;
+  }
+
+  const draft = purchaseDrafts.value[finish];
+  const parsed = parsePurchaseInput(draft);
+  if (parsed === undefined) {
+    syncPurchaseDrafts();
+    return;
+  }
+  if (parsed == null) {
+    syncPurchaseDrafts();
+    return;
+  }
+
+  const current = finishData?.purchaseValue;
+  if (current != null && Math.abs(parsed - current) < 0.0001) {
+    return;
+  }
+  if (current == null && parsed === 0) {
+    return;
+  }
+
+  purchaseSaving.value = finish;
+  try {
+    await cancelPendingCardLoad();
+    await api.updateOwnership({
+      setCode: card.value.setCode,
+      collectorNumber: card.value.collectorNumber,
+      finish,
+      owned: true,
+      purchaseValue: parsed,
+    });
+    clearClientCache();
+    applySavedPurchasePrice(finish, parsed);
+  } catch {
+    syncPurchaseDrafts();
+  } finally {
+    purchaseSaving.value = null;
+  }
 }
 
 function storageRoute(slug) {
   return { path: "/storage", query: { location: slug } };
 }
 
-async function loadCard() {
-  await run(async () => {
+async function loadCard(options = {}) {
+  await run(async (isCurrent) => {
     const finishQuery = route.query.finish == null
       ? undefined
       : normalizeFinish(route.query.finish);
-    card.value = await api.getCardDetail(
+    const nextCard = await api.getCardDetail(
       route.params.setCode,
       route.params.collectorNumber,
       { finish: finishQuery },
     );
+    if (!isCurrent()) {
+      return;
+    }
+    card.value = nextCard;
     selectedFinish.value = normalizeFinish(card.value.selectedFinish ?? FINISH_NONFOIL);
     priceStrategy.value = card.value.priceStrategy || "trend";
+    if (!options.preserveDrafts) {
+      syncPurchaseDrafts();
+    }
+  });
+}
+
+async function onCardFinishChanged(toFinish) {
+  const normalized = normalizeFinish(toFinish);
+  if (selectedFinish.value === normalized) {
+    await loadCard();
+    return;
+  }
+  selectedFinish.value = normalized;
+  await router.replace({
+    params: {
+      setCode: route.params.setCode,
+      collectorNumber: route.params.collectorNumber,
+    },
+    query: normalized === FINISH_NONFOIL ? {} : { finish: String(normalized) },
   });
 }
 
@@ -95,6 +267,41 @@ watch(
     loadCard();
   },
 );
+
+async function onOwnershipChanged() {
+  if (purchaseSaving.value != null || !card.value) {
+    return;
+  }
+  const finish = selectedFinish.value;
+  const patch = getOwnershipPatch({ ...card.value, finish });
+  if (!patch) {
+    return;
+  }
+  const finishKey = String(finish);
+  const existing = card.value.finishes?.[finishKey];
+  if (!existing) {
+    return;
+  }
+  const owned = patch.owned;
+  const purchaseValue = owned ? (existing.purchaseValue ?? 0) : null;
+  const currentValue = existing.currentValue;
+  const profitLoss = purchaseValue != null && currentValue != null
+    ? currentValue - purchaseValue
+    : null;
+  card.value = {
+    ...card.value,
+    finishes: {
+      ...card.value.finishes,
+      [finishKey]: {
+        ...existing,
+        owned,
+        purchaseValue,
+        profitLoss,
+      },
+    },
+  };
+  syncPurchaseDrafts();
+}
 
 onMounted(loadCard);
 </script>
@@ -113,6 +320,8 @@ onMounted(loadCard);
           :alt="card.name"
           :card="menuCard"
           img-class="card-detail-image"
+          @finish-changed="onCardFinishChanged"
+          @ownership-changed="onOwnershipChanged"
         />
         <div v-else class="card-detail-image card-detail-image-empty">No image</div>
       </div>
@@ -155,6 +364,32 @@ onMounted(loadCard);
               {{ row.label }}
             </span>
           </div>
+          <div v-if="hasAnyOwned" class="card-detail-pricing-row">
+            <span class="card-detail-pricing-label">Owned as</span>
+            <span
+              v-for="row in finishRows"
+              :key="`owned-finish-${row.finish}`"
+              class="card-detail-pricing-value"
+            >
+              <select
+                v-if="isFinishDataOwned(row.data) && finishChangeOptions(row.finish).length > 1"
+                class="card-detail-finish-select"
+                :value="row.finish"
+                :disabled="finishSaving === row.finish || loading"
+                @change="changeOwnedFinish(row.finish, $event)"
+              >
+                <option
+                  v-for="option in finishChangeOptions(row.finish)"
+                  :key="`${row.finish}-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <span v-else-if="isFinishDataOwned(row.data)">{{ row.label }}</span>
+              <span v-else class="card-detail-pricing-empty">—</span>
+            </span>
+          </div>
           <div class="card-detail-pricing-row">
             <span class="card-detail-pricing-label">Current value</span>
             <span
@@ -191,7 +426,25 @@ onMounted(loadCard);
               :key="`purchase-${row.finish}`"
               class="card-detail-pricing-value"
             >
-              {{ formatEuro(row.data?.purchaseValue) }}
+              <label
+                v-if="isFinishDataOwned(row.data)"
+                class="card-detail-purchase-field"
+              >
+                <span class="card-detail-purchase-currency">€</span>
+                <input
+                  v-model="purchaseDrafts[row.finish]"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputmode="decimal"
+                  class="card-detail-purchase-input"
+                  :disabled="purchaseSaving === row.finish || loading"
+                  placeholder="0.00"
+                  @blur="savePurchasePrice(row.finish)"
+                  @keydown.enter="$event.target.blur()"
+                />
+              </label>
+              <span v-else class="card-detail-pricing-empty">—</span>
             </span>
           </div>
           <div class="card-detail-pricing-row">

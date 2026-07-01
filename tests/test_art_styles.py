@@ -13,6 +13,8 @@ from lib.art_styles import (  # noqa: E402
     DEFAULT_ART_STYLE_NAME,
     ensure_art_style_rules_file,
     get_art_style,
+    save_art_style_rules,
+    validate_art_style_rules,
 )
 
 
@@ -56,6 +58,31 @@ class ArtStyleTests(unittest.TestCase):
             self.assertEqual(get_art_style("abc", "1"), DEFAULT_ART_STYLE_NAME)
             self.assertEqual(get_art_style("abc", "promo"), DEFAULT_ART_STYLE_NAME)
             self.assertEqual(get_art_style("abc", "A-1"), DEFAULT_ART_STYLE_NAME)
+
+    def test_save_and_normalize_rules(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        art_styles_dir = Path(temp_dir.name) / "art_styles"
+        art_styles_dir.mkdir()
+
+        with (
+            patch("lib.art_styles.ART_STYLES_DIR", art_styles_dir),
+            patch("lib.config.ART_STYLES_DIR", art_styles_dir),
+        ):
+            saved = save_art_style_rules(
+                "ltr",
+                [
+                    {"name": "Main set", "firstNumber": 1, "lastNumber": 10},
+                    {"name": "Alchemy", "prefix": "A-"},
+                ],
+            )
+            self.assertEqual(len(saved), 2)
+            self.assertEqual(get_art_style("ltr", "5"), "Main set")
+            self.assertEqual(get_art_style("ltr", "A-5"), "Alchemy")
+
+    def test_validate_rules_rejects_empty_name(self):
+        errors = validate_art_style_rules([{"firstNumber": 1, "lastNumber": 2}])
+        self.assertTrue(errors)
 
 
 if __name__ == "__main__":

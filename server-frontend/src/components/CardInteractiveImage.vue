@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import {
   adjustCardCopyCount,
   applyOptimisticCopyCount,
+  changeCardOwnershipFinish,
   effectiveDeckOwnedQty,
   fetchCardCopyState,
   isEffectivelyOwned,
@@ -12,7 +13,16 @@ import {
   storageLocations,
   updateCardCopyStorage,
 } from "../composables/cardContextMenu";
-import { cardRouteQuery } from "../utils/finishes";
+import {
+  cardFinish,
+  cardRouteQuery,
+  FINISH_ETCHED,
+  FINISH_FOIL,
+  FINISH_NONFOIL,
+  finishLabel,
+  hasFinish,
+  normalizeFinish,
+} from "../utils/finishes";
 
 const MAX_COPIES = 3;
 
@@ -24,6 +34,8 @@ const props = defineProps({
   loading: { type: String, default: "lazy" },
   showDetails: { type: Boolean, default: true },
 });
+
+const emit = defineEmits(["finish-changed", "ownership-changed"]);
 
 const router = useRouter();
 const isHovered = ref(false);
@@ -50,6 +62,13 @@ const effectivelyOwned = computed(() => {
   ownershipRevision.value;
   return isEffectivelyOwned(props.card);
 });
+const availableFinishes = computed(() =>
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => hasFinish(props.card, finish)),
+);
+const currentFinish = computed(() => cardFinish(props.card));
+const showFinishSelector = computed(
+  () => effectivelyOwned.value && availableFinishes.value.length > 1,
+);
 
 watch(
   () => [
@@ -202,6 +221,7 @@ async function onAdjust(delta) {
     );
     copyState.value = state;
     defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
+    emit("ownership-changed");
   } catch (error) {
     panelError.value = error.message || "Could not update owned count.";
     try {
@@ -249,6 +269,27 @@ async function onCopyStorageChange(copy, event) {
           : item
       )),
     };
+  } finally {
+    panelLoading.value = false;
+  }
+}
+
+async function onFinishChange(event) {
+  const toFinish = normalizeFinish(event.target.value);
+  if (!isInteractive.value || panelLoading.value || toFinish === currentFinish.value) {
+    return;
+  }
+  panelLoading.value = true;
+  panelError.value = "";
+  try {
+    const state = await changeCardOwnershipFinish(props.card, toFinish);
+    copyState.value = state;
+    defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
+    event.target.value = String(toFinish);
+    emit("finish-changed", toFinish);
+  } catch (error) {
+    panelError.value = error.message || "Could not change finish.";
+    event.target.value = String(currentFinish.value);
   } finally {
     panelLoading.value = false;
   }
@@ -307,6 +348,30 @@ function onViewDetails(event) {
       >
         Details
       </button>
+
+      <div
+        v-if="showFinishSelector"
+        class="card-interactive-finish"
+        @click.stop
+        @mousedown.stop
+      >
+        <span class="card-interactive-label">Finish</span>
+        <select
+          :value="currentFinish"
+          :disabled="panelLoading"
+          @change="onFinishChange"
+          @click.stop
+          @mousedown.stop
+        >
+          <option
+            v-for="finish in availableFinishes"
+            :key="finish"
+            :value="finish"
+          >
+            {{ finishLabel(finish) }}
+          </option>
+        </select>
+      </div>
 
       <div class="card-interactive-owned" @click.stop @mousedown.stop>
         <span class="card-interactive-label">Owned</span>

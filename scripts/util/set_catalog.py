@@ -12,17 +12,23 @@ CREATE TABLE IF NOT EXISTS sets (
     name TEXT NOT NULL,
     released_at TEXT,
     scryfall_uri TEXT,
+    icon_svg_uri TEXT,
     updated_at TEXT NOT NULL
 );
 """
 
+SET_COLUMNS = {
+    "icon_svg_uri": "TEXT",
+}
+
 UPSERT_SET_SQL = """
-INSERT INTO sets (set_code, name, released_at, scryfall_uri, updated_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO sets (set_code, name, released_at, scryfall_uri, icon_svg_uri, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(set_code) DO UPDATE SET
     name = excluded.name,
     released_at = COALESCE(excluded.released_at, sets.released_at),
     scryfall_uri = COALESCE(excluded.scryfall_uri, sets.scryfall_uri),
+    icon_svg_uri = COALESCE(excluded.icon_svg_uri, sets.icon_svg_uri),
     updated_at = excluded.updated_at
 """
 
@@ -30,6 +36,18 @@ ON CONFLICT(set_code) DO UPDATE SET
 # Create the sets catalog table when missing.
 def ensure_sets_table(conn: sqlite3.Connection) -> None:
     conn.executescript(SETS_TABLE_SQL)
+
+
+# Add missing sets columns without recreating the database.
+def ensure_sets_columns(conn: sqlite3.Connection) -> None:
+    ensure_sets_table(conn)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(sets)")
+    existing = {row[1] for row in cursor.fetchall()}
+    for column_name, column_type in SET_COLUMNS.items():
+        if column_name in existing:
+            continue
+        cursor.execute(f"ALTER TABLE sets ADD COLUMN {column_name} {column_type}")
 
 
 # Store one set row from a Scryfall set payload.
@@ -40,10 +58,11 @@ def upsert_set_row(
     released_at: str | None,
     scryfall_uri: str | None,
     updated_at: str,
+    icon_svg_uri: str | None = None,
 ) -> None:
     cursor.execute(
         UPSERT_SET_SQL,
-        (set_code.upper(), name, released_at, scryfall_uri, updated_at),
+        (set_code.upper(), name, released_at, scryfall_uri, icon_svg_uri, updated_at),
     )
 
 
@@ -109,6 +128,7 @@ def sync_set_metadata(
         payload.get("released_at"),
         payload.get("scryfall_uri"),
         updated_at or date.today().isoformat(),
+        payload.get("icon_svg_uri"),
     )
     return True
 
@@ -123,17 +143,34 @@ def load_set_display_names(conn: sqlite3.Connection) -> dict[str, str]:
 # Load set metadata keyed by uppercase set code for client payloads.
 def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
     ensure_sets_table(conn)
+    ensure_sets_columns(conn)
     rows = conn.execute(
-        "SELECT set_code, name, released_at, scryfall_uri FROM sets ORDER BY set_code"
+        "SELECT set_code, name, released_at, scryfall_uri, icon_svg_uri FROM sets ORDER BY set_code"
     ).fetchall()
     return {
         set_code.upper(): {
             "name": name,
             "released_at": released_at,
             "scryfall_uri": scryfall_uri,
+            "icon_svg_uri": icon_svg_uri,
         }
-        for set_code, name, released_at, scryfall_uri in rows
+        for set_code, name, released_at, scryfall_uri, icon_svg_uri in rows
     }
+
+
+# Load Scryfall icon URIs keyed by uppercase set code.
+def load_set_icon_uris(conn: sqlite3.Connection) -> dict[str, str]:
+    ensure_sets_table(conn)
+    ensure_sets_columns(conn)
+    rows = conn.execute(
+        """
+        SELECT set_code, icon_svg_uri
+        FROM sets
+        WHERE icon_svg_uri IS NOT NULL AND icon_svg_uri != ''
+        ORDER BY set_code
+        """
+    ).fetchall()
+    return {set_code.upper(): icon_svg_uri for set_code, icon_svg_uri in rows}
 
 
 # Return uppercase set codes that appear in purchases.
@@ -167,6 +204,59 @@ def sets_missing_metadata(cursor: sqlite3.Cursor, set_codes: list[str]) -> list[
     return missing
 
 
+# Return catalog set codes that still need a Scryfall metadata fetch.
+def sets_needing_metadata_sync(cursor: sqlite3.Cursor, set_codes: list[str]) -> list[str]:
+    needing: list[str] = []
+    for set_code in set_codes:
+        row = cursor.execute(
+            "SELECT icon_svg_uri FROM sets WHERE set_code = ? LIMIT 1",
+            (set_code.upper(),),
+        ).fetchone()
+        if not row or not row[0]:
+            needing.append(set_code)
+    return needing
+
+
+# Return distinct catalog set codes that do not have a stored icon URI yet.
+def load_set_codes_missing_icon(conn: sqlite3.Connection) -> list[str]:
+    ensure_sets_table(conn)
+    ensure_sets_columns(conn)
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards' LIMIT 1"
+    ).fetchone():
+        return []
+    rows = conn.execute(
+        """
+        SELECT DISTINCT c.set_code
+        FROM cards c
+        LEFT JOIN sets s ON s.set_code = c.set_code
+        WHERE COALESCE(s.icon_svg_uri, '') = ''
+        ORDER BY c.set_code
+        """
+    ).fetchall()
+    return [set_code.upper() for set_code, in rows]
+
+
+# Fetch and store icon URIs for catalog sets that are missing them.
+def backfill_missing_set_icon_uris(
+    conn: sqlite3.Connection,
+    headers: dict[str, str],
+    *,
+    force_scryfall: bool = False,
+) -> int:
+    codes = load_set_codes_missing_icon(conn)
+    if not codes:
+        return 0
+
+    cursor = conn.cursor()
+    stamp = date.today().isoformat()
+    synced = 0
+    for set_code in codes:
+        if sync_set_metadata(cursor, set_code, headers, stamp, force_scryfall=force_scryfall):
+            synced += 1
+    return synced
+
+
 # Fetch and store Scryfall metadata for owned and deck-list sets.
 def sync_catalog_set_metadata(
     conn: sqlite3.Connection,
@@ -176,12 +266,13 @@ def sync_catalog_set_metadata(
     force_scryfall: bool = False,
 ) -> int:
     ensure_sets_table(conn)
+    ensure_sets_columns(conn)
     catalog_codes = sorted(load_catalog_set_codes(conn))
     if not catalog_codes:
         return 0
 
     cursor = conn.cursor()
-    missing_codes = sets_missing_metadata(cursor, catalog_codes)
+    missing_codes = sets_needing_metadata_sync(cursor, catalog_codes)
     if not missing_codes:
         return 0
 

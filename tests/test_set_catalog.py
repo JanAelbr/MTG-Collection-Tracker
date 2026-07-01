@@ -16,8 +16,10 @@ from util.set_catalog import (  # noqa: E402
     load_catalog_set_codes,
     load_owned_set_codes,
     load_set_display_names,
+    load_set_icon_uris,
     load_sets_catalog,
     prune_unowned_sets,
+    sync_set_metadata,
     upsert_set_from_card,
     upsert_set_row,
 )
@@ -78,6 +80,29 @@ class SetCatalogTests(unittest.TestCase):
         self.assertEqual(catalog["LTR"]["name"], "The Lord of the Rings: Tales of Middle-earth")
         self.assertEqual(catalog["LTR"]["released_at"], "2023-06-09")
         self.assertEqual(catalog["LTR"]["scryfall_uri"], "https://scryfall.com/sets/ltr")
+
+    def test_sync_set_metadata_stores_icon_svg_uri(self):
+        payload = {
+            "code": "hob",
+            "name": "The Hobbit",
+            "released_at": "2026-06-13",
+            "scryfall_uri": "https://scryfall.com/sets/hob",
+            "icon_svg_uri": "https://svgs.scryfall.io/sets/hob.svg?1782705600",
+        }
+        with patch("util.set_catalog.fetch_scryfall_set", return_value=payload):
+            synced = sync_set_metadata(
+                self.cursor,
+                "HOB",
+                {"User-Agent": "test"},
+                "2026-06-15",
+            )
+        self.conn.commit()
+        self.assertTrue(synced)
+        icon_uris = load_set_icon_uris(self.conn)
+        self.assertEqual(
+            icon_uris["HOB"],
+            "https://svgs.scryfall.io/sets/hob.svg?1782705600",
+        )
 
     def test_format_set_option_label_uses_catalog(self):
         upsert_set_row(

@@ -1,11 +1,21 @@
 import sqlite3
 
-from api.cache import bump_cache_epoch
+from api.cache import bump_cache_epoch, get_cache_epoch, memory_cache
+from lib.art_styles import (
+    load_art_style_rules,
+    refresh_art_styles_for_set,
+    save_art_style_rules,
+    validate_art_style_rules,
+)
 from lib.config import EXCLUDED_SET_CODES, list_set_csv_files, purchase_csv_path
 from lib.deck_csv import list_deck_sync_set_codes
 from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
-from report.manager_data import load_manager_cards_for_set
+from report.manager_data import (
+    count_manager_cards_for_set,
+    load_manager_cards_for_set,
+    query_manager_cards_for_set,
+)
 from util.card_metadata import card_metadata_api
 from api.services import settings_service
 from report.report_data import (
@@ -16,11 +26,13 @@ from report.report_data import (
     load_owned_count_by_set,
 )
 from api.services.storage_service import StorageError, get_location
-from util.card_finishes import normalize_finish
+from util.card_finishes import finish_label, has_finish_flag, normalize_finish
+from util.app_tables import ensure_app_tables
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
 
 MANAGER_CARDS_PAGE_SIZE = 100
 MAX_OWNED_COPIES = 3
+_MANAGER_SET_CACHE_TTL = 300
 
 
 class ManagerError(Exception):
@@ -65,6 +77,59 @@ def list_art_styles(conn: sqlite3.Connection, set_code: str) -> list[dict]:
     return build_art_style_options_for_set(conn, set_code)
 
 
+def get_art_style_rules(set_code: str) -> list[dict]:
+    normalized = set_code.strip().upper()
+    _validate_set_code(normalized)
+    return load_art_style_rules(normalized.lower())
+
+
+def save_art_style_rules_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+    rules: list[dict],
+) -> dict:
+    normalized = set_code.strip().upper()
+    _validate_set_code(normalized)
+
+    errors = validate_art_style_rules(rules)
+    if errors:
+        raise ManagerError(errors[0], status_code=400)
+
+    try:
+        saved_rules = save_art_style_rules(normalized, rules)
+    except ValueError as exc:
+        raise ManagerError(str(exc), status_code=400) from exc
+
+    updated_cards = refresh_art_styles_for_set(conn, normalized)
+    bump_cache_epoch()
+    art_styles = build_art_style_options_for_set(conn, normalized)
+    return {
+        "setCode": normalized,
+        "rules": saved_rules,
+        "artStyles": art_styles,
+        "updatedCards": updated_cards,
+    }
+
+
+def _cached_manager_cards_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+) -> list[dict]:
+    normalized = set_code.upper()
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key(
+        "manager.set_cards.full",
+        {"setCode": normalized},
+        epoch,
+    )
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    cards = load_manager_cards_for_set(conn, normalized)
+    memory_cache.set(cache_key, cards, _MANAGER_SET_CACHE_TTL)
+    return cards
+
+
 def list_set_cards(
     conn: sqlite3.Connection,
     set_code: str,
@@ -76,38 +141,31 @@ def list_set_cards(
     page_size: int = MANAGER_CARDS_PAGE_SIZE,
 ) -> dict:
     _validate_set_code(set_code)
-    cards = load_manager_cards_for_set(conn, set_code.upper())
-    art_styles = build_art_style_options_for_set(conn, set_code)
+    normalized = set_code.upper()
+    art_styles = build_art_style_options_for_set(conn, normalized)
 
-    filtered = cards
-    if finish_filter == "foil":
-        filtered = [card for card in filtered if card.get("has_foil")]
-    elif finish_filter == "nonfoil":
-        filtered = [card for card in filtered if card.get("has_nonfoil")]
-    elif finish_filter == "etched":
-        filtered = [card for card in filtered if card.get("has_etched")]
-
-    if art_style:
-        filtered = [card for card in filtered if card["art_style"] == art_style]
-
-    term = search.strip().lower()
-    if term:
-        filtered = [
-            card
-            for card in filtered
-            if term in str(card["collector_number"]).lower()
-            or term in str(card["name"]).lower()
-            or term in str(card.get("art_style", "")).lower()
-        ]
-
-    total = len(filtered)
+    total = count_manager_cards_for_set(
+        conn,
+        normalized,
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+    )
     safe_page = max(1, page)
     safe_page_size = max(1, min(page_size, 500))
     start = (safe_page - 1) * safe_page_size
-    page_cards = filtered[start : start + safe_page_size]
+    page_cards = query_manager_cards_for_set(
+        conn,
+        normalized,
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+        offset=start,
+        limit=safe_page_size,
+    )
 
     return {
-        "setCode": set_code.upper(),
+        "setCode": normalized,
         "artStyles": art_styles,
         "cards": [_serialize_manager_card(card) for card in page_cards],
         "page": safe_page,
@@ -128,6 +186,14 @@ def set_ownership(
     resync: bool = True,
 ) -> dict:
     _validate_set_code(set_code)
+    normalized_set, normalized_number, normalized_finish = _normalized_print(
+        set_code,
+        collector_number,
+        finish,
+    )
+    was_owned = (
+        get_owned_copy_count(conn, normalized_set, normalized_number, normalized_finish) > 0
+    )
     _apply_ownership(
         conn,
         set_code=set_code,
@@ -136,10 +202,109 @@ def set_ownership(
         owned=owned,
         purchase_value=purchase_value,
     )
-    if resync:
+    price_only_update = owned and was_owned and purchase_value is not None
+    if resync and not price_only_update:
         sync_card_instances(conn)
     bump_cache_epoch()
     return get_card_ownership(conn, set_code.upper(), collector_number)
+
+
+def change_ownership_finish(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str,
+    collector_number: str,
+    from_finish: int,
+    to_finish: int,
+) -> dict:
+    _validate_set_code(set_code)
+    normalized_set, normalized_number, source_finish = _normalized_print(
+        set_code,
+        collector_number,
+        from_finish,
+    )
+    _, _, target_finish = _normalized_print(
+        set_code,
+        collector_number,
+        to_finish,
+    )
+
+    if source_finish == target_finish:
+        raise ManagerError("Choose a different finish")
+
+    if get_owned_copy_count(conn, normalized_set, normalized_number, source_finish) <= 0:
+        raise ManagerError("Card is not owned in that finish")
+
+    if get_owned_copy_count(conn, normalized_set, normalized_number, target_finish) > 0:
+        raise ManagerError("Already owned in that finish")
+
+    card_row = conn.execute(
+        """
+        SELECT has_nonfoil, has_foil, has_etched
+        FROM cards
+        WHERE set_code = ? AND collector_number = ?
+        """,
+        (normalized_set, normalized_number),
+    ).fetchone()
+    if card_row is None:
+        raise ManagerError("Card not found", status_code=404)
+    if not has_finish_flag(card_row, target_finish):
+        raise ManagerError(f"Card is not available as {finish_label(target_finish)}")
+
+    purchase_row = conn.execute(
+        """
+        SELECT purchase_value
+        FROM purchases
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (normalized_set, normalized_number, source_finish),
+    ).fetchone()
+    purchase_value = float(purchase_row[0]) if purchase_row else None
+
+    conn.execute(
+        """
+        UPDATE card_instances
+        SET finish = ?
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (target_finish, normalized_set, normalized_number, source_finish),
+    )
+
+    conn.execute(
+        """
+        DELETE FROM purchases
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (normalized_set, normalized_number, source_finish),
+    )
+
+    cursor = conn.cursor()
+    if purchase_value is None:
+        purchase_value = lookup_unit_market(
+            cursor,
+            normalized_set,
+            normalized_number,
+            target_finish,
+        )
+    if purchase_value is None:
+        purchase_value = 0.0
+    upsert_purchase_value(
+        cursor,
+        normalized_set,
+        normalized_number,
+        target_finish,
+        float(purchase_value),
+        overwrite_zero_only=False,
+    )
+
+    bump_cache_epoch()
+    return {
+        "setCode": normalized_set,
+        "collectorNumber": normalized_number,
+        "fromFinish": source_finish,
+        "toFinish": target_finish,
+        **get_copy_state(conn, normalized_set, normalized_number, target_finish),
+    }
 
 
 def bulk_set_ownership(
@@ -379,6 +544,7 @@ def adjust_copy_count(
 ) -> dict:
     if delta not in (-1, 1):
         raise ManagerError("Copy adjustment must be -1 or 1")
+    ensure_app_tables(conn)
     _validate_set_code(set_code)
     normalized_set, normalized_number, normalized_finish = _normalized_print(
         set_code,
@@ -567,6 +733,33 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
     }
 
 
+def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
+    normalized = set_code.strip().upper()
+    _validate_set_code(normalized)
+
+    tracked_csv = purchase_csv_path(normalized).exists()
+    deck_codes = {code.upper() for code in list_deck_sync_set_codes()}
+    card_count = conn.execute(
+        "SELECT COUNT(*) FROM cards WHERE set_code = ?",
+        (normalized,),
+    ).fetchone()[0]
+    if not tracked_csv and normalized not in deck_codes and card_count == 0:
+        raise ManagerError(f"Set {normalized} is not tracked", status_code=404)
+
+    try:
+        catalog_count = import_set_catalog_from_scryfall(conn, normalized)
+    except ValueError as exc:
+        raise ManagerError(str(exc), status_code=404) from exc
+
+    bump_cache_epoch()
+    set_names = get_set_display_names(refresh=True)
+    return {
+        "setCode": normalized,
+        "label": format_set_option_label(normalized, set_names),
+        "catalogCount": catalog_count,
+    }
+
+
 def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
     normalized = set_code.strip().upper()
     _validate_set_code(normalized)
@@ -643,7 +836,7 @@ def get_card_ownership(
     set_code: str,
     collector_number: str,
 ) -> dict:
-    cards = load_manager_cards_for_set(conn, set_code)
+    cards = _cached_manager_cards_for_set(conn, set_code)
     card = next(
         (item for item in cards if str(item["collector_number"]) == str(collector_number)),
         None,

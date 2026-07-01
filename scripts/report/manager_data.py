@@ -1,17 +1,55 @@
 import sqlite3
 
-import pandas as pd
-
 from lib.config import DB_PATH
 from report.report_data import get_all_set_codes
 from util.db_migrate import ensure_card_columns
 
-from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_metadata_snake
 from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finish_available
+from util.app_tables import ensure_app_tables
 
-MANAGER_CARDS_QUERY = """
+MANAGER_CARDS_FROM = """
+FROM cards c
+LEFT JOIN purchases p0
+    ON p0.set_code = c.set_code
+    AND p0.collector_number = c.collector_number
+    AND p0.finish = 0
+LEFT JOIN purchases p1
+    ON p1.set_code = c.set_code
+    AND p1.collector_number = c.collector_number
+    AND p1.finish = 1
+LEFT JOIN purchases p2
+    ON p2.set_code = c.set_code
+    AND p2.collector_number = c.collector_number
+    AND p2.finish = 2
+LEFT JOIN (
+    SELECT set_code, collector_number, COUNT(*) AS instance_count
+    FROM card_instances
+    WHERE finish = 0
+    GROUP BY set_code, collector_number
+) i0
+    ON i0.set_code = c.set_code
+    AND i0.collector_number = c.collector_number
+LEFT JOIN (
+    SELECT set_code, collector_number, COUNT(*) AS instance_count
+    FROM card_instances
+    WHERE finish = 1
+    GROUP BY set_code, collector_number
+) i1
+    ON i1.set_code = c.set_code
+    AND i1.collector_number = c.collector_number
+LEFT JOIN (
+    SELECT set_code, collector_number, COUNT(*) AS instance_count
+    FROM card_instances
+    WHERE finish = 2
+    GROUP BY set_code, collector_number
+) i2
+    ON i2.set_code = c.set_code
+    AND i2.collector_number = c.collector_number
+"""
+
+MANAGER_CARDS_SELECT = """
 SELECT
     c.set_code,
     c.collector_number,
@@ -29,26 +67,19 @@ SELECT
     c.has_etched,
     p0.purchase_value AS purchase_value_nonfoil,
     p1.purchase_value AS purchase_value_foil,
-    p2.purchase_value AS purchase_value_etched
-FROM cards c
-LEFT JOIN purchases p0
-    ON p0.set_code = c.set_code
-    AND p0.collector_number = c.collector_number
-    AND p0.finish = 0
-LEFT JOIN purchases p1
-    ON p1.set_code = c.set_code
-    AND p1.collector_number = c.collector_number
-    AND p1.finish = 1
-LEFT JOIN purchases p2
-    ON p2.set_code = c.set_code
-    AND p2.collector_number = c.collector_number
-    AND p2.finish = 2
-WHERE c.set_code = ?
+    p2.purchase_value AS purchase_value_etched,
+    i0.instance_count AS instance_count_nonfoil,
+    i1.instance_count AS instance_count_foil,
+    i2.instance_count AS instance_count_etched
 """
 
+MANAGER_CARDS_ORDER = (
+    "ORDER BY CAST(c.collector_number AS INTEGER), c.collector_number COLLATE NOCASE"
+)
 
-def _float_or_none(value):
-    if value is None or pd.isna(value):
+
+def _float_or_none(value) -> float | None:
+    if value is None:
         return None
     return float(value)
 
@@ -57,47 +88,177 @@ def _finish_available(row, finish: int, owned: bool) -> bool:
     return finish_available(row, finish, owned=owned)
 
 
+def _mapping_row(row) -> dict:
+    if isinstance(row, dict):
+        return row
+    return {key: row[key] for key in row.keys()}
+
+
 def _serialize_manager_card(row) -> dict:
-    owned_nonfoil = row["purchase_value_nonfoil"] is not None and not pd.isna(row["purchase_value_nonfoil"])
-    owned_foil = row["purchase_value_foil"] is not None and not pd.isna(row["purchase_value_foil"])
-    owned_etched = row["purchase_value_etched"] is not None and not pd.isna(row["purchase_value_etched"])
-    has_nonfoil = _finish_available(row, FINISH_NONFOIL, owned_nonfoil)
-    has_foil = _finish_available(row, FINISH_FOIL, owned_foil)
-    has_etched = _finish_available(row, FINISH_ETCHED, owned_etched)
+    data = _mapping_row(row)
+    owned_nonfoil = (
+        data["purchase_value_nonfoil"] is not None
+        or int(data.get("instance_count_nonfoil") or 0) > 0
+    )
+    owned_foil = (
+        data["purchase_value_foil"] is not None
+        or int(data.get("instance_count_foil") or 0) > 0
+    )
+    owned_etched = (
+        data["purchase_value_etched"] is not None
+        or int(data.get("instance_count_etched") or 0) > 0
+    )
+    has_nonfoil = _finish_available(data, FINISH_NONFOIL, owned_nonfoil)
+    has_foil = _finish_available(data, FINISH_FOIL, owned_foil)
+    has_etched = _finish_available(data, FINISH_ETCHED, owned_etched)
 
     return {
-        "set_code": row["set_code"],
-        "collector_number": str(row["collector_number"]),
-        "name": deck_card_display_name(row),
-        "art_style": str_or_empty(row["art_style"]),
-        "image_uri": str_or_empty(row["image_uri"]),
-        **card_metadata_snake(row),
-        "market_value": _float_or_none(row["market_value"]),
-        "market_value_foil": _float_or_none(row["market_value_foil"]),
-        "market_value_etched": _float_or_none(row["market_value_etched"]),
+        "set_code": data["set_code"],
+        "collector_number": str(data["collector_number"]),
+        "name": deck_card_display_name(data),
+        "art_style": str_or_empty(data["art_style"]),
+        "image_uri": str_or_empty(data["image_uri"]),
+        **card_metadata_snake(data),
+        "market_value": _float_or_none(data["market_value"]),
+        "market_value_foil": _float_or_none(data["market_value_foil"]),
+        "market_value_etched": _float_or_none(data["market_value_etched"]),
         "has_nonfoil": has_nonfoil,
         "has_foil": has_foil,
         "has_etched": has_etched,
         "owned_nonfoil": owned_nonfoil,
         "owned_foil": owned_foil,
         "owned_etched": owned_etched,
-        "purchase_value_nonfoil": _float_or_none(row["purchase_value_nonfoil"]),
-        "purchase_value_foil": _float_or_none(row["purchase_value_foil"]),
-        "purchase_value_etched": _float_or_none(row["purchase_value_etched"]),
+        "purchase_value_nonfoil": _float_or_none(data["purchase_value_nonfoil"]),
+        "purchase_value_foil": _float_or_none(data["purchase_value_foil"]),
+        "purchase_value_etched": _float_or_none(data["purchase_value_etched"]),
     }
 
 
-def load_manager_cards_for_set(conn: sqlite3.Connection, set_code: str) -> list[dict]:
+def _manager_filter_clauses(
+    *,
+    art_style: str = "",
+    search: str = "",
+    finish_filter: str = "all",
+) -> tuple[str, list]:
+    clauses: list[str] = []
+    params: list = []
+
+    if finish_filter == "foil":
+        clauses.append("(c.has_foil = 1 OR p1.purchase_value IS NOT NULL)")
+    elif finish_filter == "nonfoil":
+        clauses.append("(c.has_nonfoil = 1 OR p0.purchase_value IS NOT NULL)")
+    elif finish_filter == "etched":
+        clauses.append("(c.has_etched = 1 OR p2.purchase_value IS NOT NULL)")
+
+    if art_style:
+        clauses.append("c.art_style = ?")
+        params.append(art_style)
+
+    term = search.strip().lower()
+    if term:
+        like = f"%{term}%"
+        clauses.append(
+            "("
+            "LOWER(c.collector_number) LIKE ? "
+            "OR LOWER(c.name) LIKE ? "
+            "OR LOWER(COALESCE(c.art_style, '')) LIKE ?"
+            ")"
+        )
+        params.extend([like, like, like])
+
+    if not clauses:
+        return "", params
+    return " AND " + " AND ".join(clauses), params
+
+
+def _execute_manager_query(
+    conn: sqlite3.Connection,
+    set_code: str,
+    *,
+    art_style: str = "",
+    search: str = "",
+    finish_filter: str = "all",
+    offset: int | None = None,
+    limit: int | None = None,
+) -> list[dict]:
     ensure_card_columns(conn)
-    cards_df = pd.read_sql_query(MANAGER_CARDS_QUERY, conn, params=(set_code,))
-    cards = [_serialize_manager_card(row) for _, row in cards_df.iterrows()]
-    return sorted(cards, key=lambda card: collector_sort_key(card["collector_number"]))
+    ensure_app_tables(conn)
+    filter_sql, filter_params = _manager_filter_clauses(
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+    )
+    sql = (
+        f"{MANAGER_CARDS_SELECT}\n"
+        f"{MANAGER_CARDS_FROM}\n"
+        f"WHERE c.set_code = ?{filter_sql}\n"
+        f"{MANAGER_CARDS_ORDER}"
+    )
+    params: list = [set_code.upper(), *filter_params]
+    if limit is not None:
+        sql += "\nLIMIT ? OFFSET ?"
+        params.extend([limit, max(0, offset or 0)])
+
+    if conn.row_factory is None:
+        conn.row_factory = sqlite3.Row
+    rows = conn.execute(sql, params).fetchall()
+    return [_serialize_manager_card(row) for row in rows]
+
+
+def count_manager_cards_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+    *,
+    art_style: str = "",
+    search: str = "",
+    finish_filter: str = "all",
+) -> int:
+    ensure_card_columns(conn)
+    ensure_app_tables(conn)
+    filter_sql, filter_params = _manager_filter_clauses(
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+    )
+    sql = (
+        f"SELECT COUNT(*)\n"
+        f"{MANAGER_CARDS_FROM}\n"
+        f"WHERE c.set_code = ?{filter_sql}"
+    )
+    row = conn.execute(sql, [set_code.upper(), *filter_params]).fetchone()
+    return int(row[0]) if row else 0
+
+
+def query_manager_cards_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+    *,
+    art_style: str = "",
+    search: str = "",
+    finish_filter: str = "all",
+    offset: int = 0,
+    limit: int | None = None,
+) -> list[dict]:
+    return _execute_manager_query(
+        conn,
+        set_code,
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+        offset=offset,
+        limit=limit,
+    )
+
+
+def load_manager_cards_for_set(conn: sqlite3.Connection, set_code: str) -> list[dict]:
+    return _execute_manager_query(conn, set_code)
 
 
 # Build the client payload for collection manager pages.
 def load_manager_client_payload() -> dict:
     sets = get_all_set_codes()
     with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
         ensure_card_columns(conn)
         conn.commit()
         cards_by_set = {

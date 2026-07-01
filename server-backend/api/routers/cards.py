@@ -32,7 +32,7 @@ def get_card_detail(
 
     conn: sqlite3.Connection = Depends(get_db),
 
-    finish: int | None = Query(default=None, ge=0, le=1),
+    finish: int | None = Query(default=None, ge=0, le=2),
 ):
 
     params = {

@@ -168,6 +168,7 @@ export async function apiRequest(path, options = {}) {
       method,
       headers,
       signal: controller.signal,
+      cache: options.cache ?? "no-store",
     });
 
     noteServerEpoch(response.headers.get("X-Cache-Epoch"));
@@ -304,6 +305,14 @@ export const api = {
 
     }),
 
+  reloadManagerSetCatalog: (setCode) =>
+
+    apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/catalog/reload`, {
+
+      method: "POST",
+
+    }),
+
   pruneOrphanCatalogs: () =>
 
     apiRequest("/manager/catalogs/prune-orphans", {
@@ -317,6 +326,20 @@ export const api = {
     apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/favorite`, {
 
       method: "POST",
+
+    }),
+
+  getManagerArtStyleRules: (setCode) =>
+
+    apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/art-style-rules`),
+
+  saveManagerArtStyleRules: (setCode, rules) =>
+
+    apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/art-style-rules`, {
+
+      method: "PUT",
+
+      body: JSON.stringify({ rules }),
 
     }),
 
@@ -343,6 +366,16 @@ export const api = {
   updateOwnership: (body) =>
 
     apiRequest("/manager/ownership", {
+
+      method: "PATCH",
+
+      body: JSON.stringify(body),
+
+    }),
+
+  changeOwnershipFinish: (body) =>
+
+    apiRequest("/manager/ownership/finish", {
 
       method: "PATCH",
 

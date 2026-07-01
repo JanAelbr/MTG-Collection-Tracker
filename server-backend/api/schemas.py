@@ -48,6 +48,28 @@ class OwnershipUpdate(BaseModel):
         return values
 
 
+class OwnershipFinishChange(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    fromFinish: int | None = Field(default=None, ge=0, le=2)
+    toFinish: int | None = Field(default=None, ge=0, le=2)
+    fromFoil: int | None = Field(default=None, ge=0, le=2)
+    toFoil: int | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finishes(cls, values):
+        if not isinstance(values, dict):
+            return values
+        if values.get("fromFinish") is None and values.get("fromFoil") is not None:
+            values["fromFinish"] = values["fromFoil"]
+        if values.get("toFinish") is None and values.get("toFoil") is not None:
+            values["toFinish"] = values["toFoil"]
+        if values.get("fromFinish") is None or values.get("toFinish") is None:
+            raise ValueError("fromFinish and toFinish are required")
+        return values
+
+
 class OwnershipBulkItem(BaseModel):
     collectorNumber: str = Field(min_length=1, max_length=32)
     finish: int | None = Field(default=None, ge=0, le=2)
@@ -109,3 +131,16 @@ class CopyStorageUpdate(BaseModel):
 
 class ManagerSetCreate(BaseModel):
     setCode: str = Field(min_length=1, max_length=16)
+
+
+class ArtStyleRule(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    all: bool | None = None
+    firstNumber: int | None = None
+    lastNumber: int | None = None
+    prefix: str | None = Field(default=None, max_length=16)
+    suffix: str | None = Field(default=None, max_length=16)
+
+
+class ArtStyleRulesUpdate(BaseModel):
+    rules: list[ArtStyleRule] = Field(min_length=1)

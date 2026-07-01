@@ -17,8 +17,9 @@ const props = defineProps({
     default: "dropdown",
     validator: (value) => value === "dropdown" || value === "banner",
   },
-  showFavorites: { type: Boolean, default: false },
+  showFavorites: { type: Boolean, default: true },
   manageSets: { type: Boolean, default: true },
+  showReloadCatalog: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["update:modelValue", "toggleFavorite", "sets-changed"]);
@@ -26,7 +27,9 @@ const emit = defineEmits(["update:modelValue", "toggleFavorite", "sets-changed"]
 const { settings } = usePricingSettings();
 
 const useBrowser = computed(() => settings.value?.setPickerMode === "browser");
+const showFavoriteStars = computed(() => useBrowser.value && props.showFavorites);
 const deletingSetCode = ref("");
+const reloadingSetCode = ref("");
 const addSetEditor = reactive({
   open: false,
   setCode: "",
@@ -47,8 +50,23 @@ function onSelect(setCode) {
   emit("update:modelValue", setCode);
 }
 
-function onToggleFavorite(set) {
-  emit("toggleFavorite", set);
+function onFavoriteClick(set) {
+  toggleFavorite(set);
+}
+
+async function toggleFavorite(set) {
+  if (!set?.setCode || set.setCode === "All") {
+    return;
+  }
+  try {
+    const result = await api.toggleManagerSetFavorite(set.setCode);
+    const sets = result.sets || (await api.listManagerSets()).sets || [];
+    clearClientCache();
+    emit("sets-changed", { ...result, sets });
+    emit("toggleFavorite", set);
+  } catch (error) {
+    window.alert(error.message || "Could not update favourite set.");
+  }
 }
 
 function openAddSetEditor() {
@@ -120,6 +138,25 @@ async function removeSet(set) {
     deletingSetCode.value = "";
   }
 }
+
+async function reloadCatalog(set) {
+  if (!set?.setCode || set.setCode === "All" || reloadingSetCode.value) {
+    return;
+  }
+  if (!window.confirm(`Reload the ${set.setCode} catalog from Scryfall? This may take a few seconds.`)) {
+    return;
+  }
+  reloadingSetCode.value = set.setCode;
+  try {
+    const result = await api.reloadManagerSetCatalog(set.setCode);
+    clearClientCache();
+    emit("sets-changed", { ...result, catalogReloaded: true });
+  } catch (error) {
+    window.alert(error.message || "Could not reload catalog.");
+  } finally {
+    reloadingSetCode.value = "";
+  }
+}
 </script>
 
 <template>
@@ -130,13 +167,16 @@ async function removeSet(set) {
     <SetGallery
       :sets="sets"
       :active-set-code="modelValue"
-      :show-favorites="showFavorites"
+      :show-favorites="showFavoriteStars"
       :manage-sets="manageSets"
+      :show-reload-catalog="showReloadCatalog"
       :deleting-set-code="deletingSetCode"
+      :reloading-set-code="reloadingSetCode"
       @select="onSelect"
-      @toggle-favorite="onToggleFavorite"
+      @toggle-favorite="onFavoriteClick"
       @add-set="openAddSetEditor"
       @remove-set="removeSet"
+      @reload-catalog="reloadCatalog"
     />
   </div>
 

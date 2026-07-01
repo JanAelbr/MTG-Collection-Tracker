@@ -116,6 +116,9 @@ async function onSetsChanged(event) {
   } else {
     await loadStats();
   }
+  if (event?.catalogReloaded) {
+    await loadStats();
+  }
 }
 
 watch(setCode, () => {

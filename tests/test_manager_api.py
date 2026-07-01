@@ -194,6 +194,89 @@ class ManagerApiServiceTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual([row[0] for row in rows], [0, 1])
 
+    def test_update_purchase_price_preserves_copy_count(self):
+        for _ in range(3):
+            manager_service.adjust_copy_count(
+                self.conn,
+                set_code="LTR",
+                collector_number="1",
+                finish=0,
+                delta=1,
+                location_slug="storage:general",
+            )
+        updated = manager_service.set_ownership(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            owned=True,
+            purchase_value=4.5,
+        )
+        self.assertTrue(updated["ownedNonfoil"])
+        self.assertAlmostEqual(updated["purchaseValueNonfoil"], 4.5)
+        count = self.conn.execute(
+            """
+            SELECT COUNT(*) FROM card_instances
+            WHERE set_code = 'LTR' AND collector_number = '1' AND finish = 0
+            """
+        ).fetchone()[0]
+        self.assertEqual(count, 3)
+
+    def test_change_ownership_finish_moves_purchase_and_instances(self):
+        manager_service.set_ownership(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            owned=True,
+            purchase_value=1.5,
+        )
+        result = manager_service.change_ownership_finish(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            from_finish=0,
+            to_finish=1,
+        )
+        self.assertEqual(result["fromFinish"], 0)
+        self.assertEqual(result["toFinish"], 1)
+        self.assertEqual(result["ownedCount"], 1)
+
+        ownership = manager_service.get_card_ownership(self.conn, "LTR", "1")
+        self.assertFalse(ownership["ownedNonfoil"])
+        self.assertTrue(ownership["ownedFoil"])
+        self.assertAlmostEqual(ownership["purchaseValueFoil"], 1.5)
+
+        instance = self.conn.execute(
+            """
+            SELECT finish FROM card_instances
+            WHERE set_code = 'LTR' AND collector_number = '1'
+            """
+        ).fetchone()
+        self.assertEqual(instance[0], 1)
+
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=42)
+    def test_reload_set_catalog(self, mock_import):
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES ('LTR', '99', 'Old Card', '01. Main set', 1.0, 2.0, NULL, 1, 1, 0, NULL, NULL, NULL)
+            """
+        )
+        self.conn.commit()
+
+        result = manager_service.reload_set_catalog(self.conn, "LTR")
+
+        self.assertEqual(result["setCode"], "LTR")
+        self.assertEqual(result["catalogCount"], 42)
+        mock_import.assert_called_once_with(self.conn, "LTR")
+
+    def test_reload_set_catalog_rejects_unknown_set(self):
+        with self.assertRaises(manager_service.ManagerError):
+            manager_service.reload_set_catalog(self.conn, "ZZZZ")
+
     def test_bulk_assign_storage(self):
         manager_service.set_ownership(
             self.conn,
@@ -355,6 +438,42 @@ class ManagerApiServiceTests(unittest.TestCase):
             "SELECT COUNT(*) FROM cards WHERE set_code = 'ORPH'"
         ).fetchone()
         self.assertEqual(row[0], 0)
+
+    def test_save_art_style_rules_for_set_updates_cards(self):
+        art_styles_dir = Path(self.temp_dir.name) / "art_styles"
+        art_styles_dir.mkdir()
+        with (
+            patch("lib.art_styles.ART_STYLES_DIR", art_styles_dir),
+            patch("lib.config.ART_STYLES_DIR", art_styles_dir),
+        ):
+            self.conn.execute("DELETE FROM cards WHERE set_code = 'LTR'")
+            self.conn.executemany(
+                """
+                INSERT INTO cards (
+                    set_code, collector_number, name, art_style,
+                    market_value, market_value_foil, market_value_etched,
+                    has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+                ) VALUES (?, ?, ?, ?, 1.0, NULL, NULL, 1, 0, 0, NULL, NULL, NULL)
+                """,
+                [
+                    ("LTR", "1", "Card One", ""),
+                    ("LTR", "100", "Card Two", ""),
+                ],
+            )
+            self.conn.commit()
+
+            result = manager_service.save_art_style_rules_for_set(
+                self.conn,
+                "LTR",
+                [{"name": "Main", "firstNumber": 1, "lastNumber": 99}],
+            )
+
+            self.assertEqual(result["updatedCards"], 2)
+            self.assertEqual(result["artStyles"][0]["artStyle"], "Main")
+            row = self.conn.execute(
+                "SELECT art_style FROM cards WHERE set_code = 'LTR' AND collector_number = '1'"
+            ).fetchone()
+            self.assertEqual(row[0], "Main")
 
 
 if __name__ == "__main__":

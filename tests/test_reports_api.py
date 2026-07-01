@@ -207,6 +207,33 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["collectorNumber"], "1")
 
+    def test_apply_filters_by_color(self):
+        cards = [
+            {
+                "setCode": "LTR",
+                "collectorNumber": "1",
+                "cardType": "creature",
+                "colors": ["U"],
+            },
+            {
+                "setCode": "LTR",
+                "collectorNumber": "2",
+                "cardType": "creature",
+                "colors": ["R"],
+            },
+        ]
+        filtered = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="all",
+            foil_filter="all",
+            type_filter="all",
+            color_filters=["U"],
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["collectorNumber"], "1")
+
     @patch("api.services.reports_service.load_ranked_cards_data")
     def test_instance_only_card_is_marked_owned(self, load_ranked):
         import pandas as pd

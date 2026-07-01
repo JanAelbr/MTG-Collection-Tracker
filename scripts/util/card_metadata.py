@@ -108,6 +108,8 @@ def encode_card_colors(colors: list[str]) -> str:
 def parse_card_colors(raw) -> list[str]:
     if raw is None:
         return []
+    if isinstance(raw, (list, tuple)):
+        return normalize_card_colors(raw)
     text = str(raw).strip()
     if not text:
         return []

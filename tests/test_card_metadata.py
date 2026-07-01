@@ -56,6 +56,17 @@ class CardMetadataTests(unittest.TestCase):
     def test_parse_card_colors_from_json(self):
         self.assertEqual(parse_card_colors('["W","U"]'), ["W", "U"])
 
+    def test_parse_card_colors_from_list(self):
+        self.assertEqual(parse_card_colors(["U", "R"]), ["U", "R"])
+
+    def test_card_metadata_api_accepts_parsed_colors(self):
+        row = {
+            "colors": ["G", "U"],
+            "type_line": "Instant",
+            "card_type": "instant",
+        }
+        self.assertEqual(card_metadata_api(row)["colors"], ["U", "G"])
+
     def test_card_types_from_type_line(self):
         self.assertEqual(
             card_types_from_type_line("Legendary Artifact Creature — Golem"),

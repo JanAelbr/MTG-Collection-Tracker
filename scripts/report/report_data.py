@@ -8,6 +8,7 @@ from report.ranked_cards_data import load_ranked_cards_data
 from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query, TOP_OWNED_CARDS_QUERY
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
+from util.set_catalog import load_set_icon_uris
 from util.price_history import default_compare_date, enrich_with_compare_date, enrich_with_previous_prices, get_price_snapshot_dates
 
 
@@ -51,6 +52,7 @@ def build_set_option(
     *,
     owned_count: int | None = None,
     catalog_count: int | None = None,
+    icon_uri: str | None = None,
 ) -> dict:
     favorite_upper = {code.upper() for code in (favorite_sets or [])}
     normalized = set_code.upper() if set_code != "All" else set_code
@@ -59,7 +61,7 @@ def build_set_option(
         "setCode": set_code,
         "label": label,
         "favorite": normalized != "All" and normalized in favorite_upper,
-        "iconUri": scryfall_set_icon_uri(set_code),
+        "iconUri": icon_uri or scryfall_set_icon_uri(set_code),
     }
     if owned_count is not None:
         option["ownedCount"] = owned_count
@@ -75,11 +77,11 @@ def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     if has_instances:
         rows = conn.execute(
             """
-            SELECT set_code, COUNT(*) AS owned_count
+            SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
             FROM (
-                SELECT set_code, collector_number, finish FROM purchases
+                SELECT set_code, collector_number FROM purchases
                 UNION
-                SELECT set_code, collector_number, finish FROM card_instances
+                SELECT set_code, collector_number FROM card_instances
             ) owned_prints
             GROUP BY set_code
             """
@@ -87,7 +89,7 @@ def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     else:
         rows = conn.execute(
             """
-            SELECT set_code, COUNT(*) AS owned_count
+            SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
             FROM purchases
             GROUP BY set_code
             """
@@ -98,7 +100,7 @@ def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
 def load_catalog_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
         """
-        SELECT set_code, COUNT(*) AS catalog_count
+        SELECT set_code, COUNT(DISTINCT collector_number) AS catalog_count
         FROM cards
         GROUP BY set_code
         """
@@ -117,6 +119,7 @@ def build_sorted_set_options(
     set_names = get_set_display_names()
     owned_counts = load_owned_count_by_set(conn)
     catalog_counts = load_catalog_count_by_set(conn)
+    icon_uris = load_set_icon_uris(conn)
     sorted_codes = sort_set_codes(
         get_all_set_codes(),
         favorites,
@@ -144,6 +147,7 @@ def build_sorted_set_options(
                 favorites,
                 owned_count=owned_counts.get(code_upper, 0),
                 catalog_count=catalog_counts.get(code_upper, 0),
+                icon_uri=icon_uris.get(code_upper),
             )
         )
     return options

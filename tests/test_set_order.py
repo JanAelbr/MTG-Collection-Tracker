@@ -75,6 +75,12 @@ class SetOrderTests(unittest.TestCase):
         option = build_set_option("LTR", set_names, [])
         self.assertEqual(option["iconUri"], "https://svgs.scryfall.io/sets/ltr.svg")
 
+    def test_build_set_option_prefers_stored_icon_uri(self):
+        set_names = {"HOB": "The Hobbit"}
+        icon_uri = "https://svgs.scryfall.io/sets/hob.svg?1782705600"
+        option = build_set_option("HOB", set_names, [], icon_uri=icon_uri)
+        self.assertEqual(option["iconUri"], icon_uri)
+
     def test_normalize_set_picker_mode(self):
         self.assertEqual(normalize_set_picker_mode("browser"), SET_PICKER_BROWSER)
         self.assertEqual(normalize_set_picker_mode("invalid"), "dropdown")

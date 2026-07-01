@@ -8,10 +8,12 @@ const props = defineProps({
   activeSetCode: { type: String, default: "" },
   showFavorites: { type: Boolean, default: false },
   manageSets: { type: Boolean, default: false },
+  showReloadCatalog: { type: Boolean, default: true },
   deletingSetCode: { type: String, default: "" },
+  reloadingSetCode: { type: String, default: "" },
 });
 
-const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set"]);
+const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set", "reload-catalog"]);
 
 const galleryRef = ref(null);
 
@@ -30,6 +32,14 @@ function canDelete(set) {
     return false;
   }
   return (set.ownedCount ?? 0) === 0;
+}
+
+function canReload(set) {
+  return props.showReloadCatalog && props.manageSets && set?.setCode && set.setCode !== "All";
+}
+
+function isReloading(set) {
+  return props.reloadingSetCode && props.reloadingSetCode === set.setCode;
 }
 
 function isDeleting(set) {
@@ -71,6 +81,14 @@ function onRemove(event, set) {
   emit("remove-set", set);
 }
 
+function onReload(event, set) {
+  event.stopPropagation();
+  if (isReloading(set)) {
+    return;
+  }
+  emit("reload-catalog", set);
+}
+
 watch(() => props.activeSetCode, () => scrollActiveIntoView());
 watch(
   () => visibleSets.value.length,
@@ -86,7 +104,10 @@ onMounted(() => scrollActiveIntoView("auto"));
       v-for="set in visibleSets"
       :key="set.setCode"
       class="set-gallery-card"
-      :class="{ active: set.setCode === activeSetCode }"
+      :class="{
+        active: set.setCode === activeSetCode,
+        'has-delete-action': canDelete(set),
+      }"
       role="button"
       tabindex="0"
       :aria-label="`Select ${setShortName(set)}`"
@@ -104,6 +125,19 @@ onMounted(() => scrollActiveIntoView("auto"));
         @click.stop="onToggleFavorite($event, set)"
       >
         {{ set.favorite ? "★" : "☆" }}
+      </button>
+
+      <button
+        v-if="canReload(set)"
+        type="button"
+        class="set-gallery-reload"
+        :disabled="isReloading(set)"
+        :aria-label="`Reload ${set.setCode} catalog from Scryfall`"
+        title="Reload catalog from Scryfall"
+        @click.stop="onReload($event, set)"
+      >
+        <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
+        <span v-else aria-hidden="true">↻</span>
       </button>
 
       <button

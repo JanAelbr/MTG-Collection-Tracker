@@ -19,7 +19,11 @@ from api.schemas import (
 
     ManagerSetCreate,
 
+    ArtStyleRulesUpdate,
+
     OwnershipBulkUpdate,
+
+    OwnershipFinishChange,
 
     OwnershipUpdate,
 
@@ -84,6 +88,26 @@ def create_set(body: ManagerSetCreate, conn: sqlite3.Connection = Depends(get_db
     try:
 
         result = manager_service.add_set(conn, body.setCode)
+
+        conn.commit()
+
+        return result
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.post("/sets/{set_code}/catalog/reload")
+
+def reload_set_catalog(set_code: str, conn: sqlite3.Connection = Depends(get_db)):
+
+    try:
+
+        result = manager_service.reload_set_catalog(conn, set_code)
 
         conn.commit()
 
@@ -164,6 +188,82 @@ def list_art_styles(
             loader=lambda: {"artStyles": manager_service.list_art_styles(conn, set_code)},
 
         )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.get("/sets/{set_code}/art-style-rules")
+
+def get_art_style_rules(
+
+    set_code: str,
+
+    request: Request,
+
+):
+
+    try:
+
+        return serve_cached_json(
+
+            request,
+
+            namespace="manager.art_style_rules",
+
+            params={"setCode": set_code},
+
+            ttl=45,
+
+            loader=lambda: {
+
+                "setCode": set_code.strip().upper(),
+
+                "rules": manager_service.get_art_style_rules(set_code),
+
+            },
+
+        )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.put("/sets/{set_code}/art-style-rules")
+
+def save_art_style_rules(
+
+    set_code: str,
+
+    body: ArtStyleRulesUpdate,
+
+    conn: sqlite3.Connection = Depends(get_db),
+
+):
+
+    try:
+
+        result = manager_service.save_art_style_rules_for_set(
+
+            conn,
+
+            set_code,
+
+            [rule.model_dump(exclude_none=True) for rule in body.rules],
+
+        )
+
+        conn.commit()
+
+        return result
 
     except ManagerError as exc:
 
@@ -294,6 +394,34 @@ def update_ownership(body: OwnershipUpdate, conn: sqlite3.Connection = Depends(g
             owned=body.owned,
 
             purchase_value=body.purchaseValue,
+
+        )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.patch("/ownership/finish")
+
+def change_ownership_finish(body: OwnershipFinishChange, conn: sqlite3.Connection = Depends(get_db)):
+
+    try:
+
+        return manager_service.change_ownership_finish(
+
+            conn,
+
+            set_code=body.setCode,
+
+            collector_number=body.collectorNumber,
+
+            from_finish=body.fromFinish,
+
+            to_finish=body.toFinish,
 
         )
 

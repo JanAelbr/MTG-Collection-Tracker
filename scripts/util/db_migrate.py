@@ -15,20 +15,20 @@ CARD_COLUMNS = {
 }
 
 
-def _backfill_card_types(conn: sqlite3.Connection) -> None:
+def backfill_card_types(conn: sqlite3.Connection) -> int:
     from util.card_metadata import primary_card_type
 
     rows = conn.execute(
         """
         SELECT set_code, collector_number, type_line
         FROM cards
-        WHERE (card_type IS NULL OR TRIM(card_type) = '')
+        WHERE (card_type IS NULL OR card_type = '')
           AND type_line IS NOT NULL
-          AND TRIM(type_line) != ''
+          AND type_line != ''
         """
     ).fetchall()
     if not rows:
-        return
+        return 0
     conn.executemany(
         """
         UPDATE cards
@@ -40,6 +40,7 @@ def _backfill_card_types(conn: sqlite3.Connection) -> None:
             for set_code, collector_number, type_line in rows
         ],
     )
+    return len(rows)
 
 
 # Add missing card columns without recreating the database.
@@ -51,7 +52,15 @@ def ensure_card_columns(conn: sqlite3.Connection) -> None:
         if column_name in existing:
             continue
         cursor.execute(f"ALTER TABLE cards ADD COLUMN {column_name} {column_type}")
-    _backfill_card_types(conn)
+
+
+def ensure_card_indexes(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_set_code ON cards(set_code)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_set_art_style ON cards(set_code, art_style)"
+    )
 
 
 # Remove duplicate purchase rows, keeping the earliest insert per card finish.

@@ -79,10 +79,11 @@ def load_card_detail(
     finishes: dict[str, dict] = {}
     requested_finish = finish
     for finish_id in (FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED):
-        if not _finish_available(row, finish_id, purchases):
+        if not _finish_available(row, finish_id, purchases, locations):
             continue
         finish_key = card_price_key(normalized_set, normalized_number, finish_id)
         purchase_value = purchases.get(finish_id)
+        finish_locations = locations.get(finish_id, [])
         current_value = price_from_strategy(
             row["cardmarket_url"],
             finish_id,
@@ -101,13 +102,13 @@ def load_card_detail(
         finishes[str(finish_id)] = {
             "finish": finish_id,
             "foil": finish_id,
-            "owned": purchase_value is not None,
+            "owned": purchase_value is not None or bool(finish_locations),
             "purchaseValue": purchase_value,
             "currentValue": current_value,
             "profitLoss": profit_loss,
             "previousValue": previous_value,
             "priceChange": price_change,
-            "locations": locations.get(finish_id, []),
+            "locations": finish_locations,
             "guidePrices": guide_prices.get(GUIDE_PRICE_GROUPS[finish_id], {}),
         }
 
@@ -177,8 +178,17 @@ def _guide_price_matrix(guide_prices: dict) -> dict:
     }
 
 
-def _finish_available(row: sqlite3.Row, finish: int, purchases: dict[int, float]) -> bool:
-    return finish_available(row, finish, owned=finish in purchases)
+def _finish_available(
+    row: sqlite3.Row,
+    finish: int,
+    purchases: dict[int, float],
+    locations: dict[int, list[dict]],
+) -> bool:
+    return finish_available(
+        row,
+        finish,
+        owned=finish in purchases or bool(locations.get(finish)),
+    )
 
 
 def _default_finish(finishes: dict[str, dict]) -> int:

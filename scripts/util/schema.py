@@ -1,11 +1,17 @@
 import sqlite3
 import threading
 
+from lib.config import HTTP_USER_AGENT
 from util.app_tables import ensure_app_tables
 from util.card_prices import ensure_card_prices_table
-from util.db_migrate import ensure_card_columns, ensure_purchase_unique_index
+from util.db_migrate import (
+    backfill_card_types,
+    ensure_card_columns,
+    ensure_card_indexes,
+    ensure_purchase_unique_index,
+)
 from util.deck_tables import ensure_deck_tables
-from util.set_catalog import ensure_sets_table
+from util.set_catalog import backfill_missing_set_icon_uris, ensure_sets_columns, ensure_sets_table
 
 CORE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS cards (
@@ -41,6 +47,7 @@ CREATE TABLE IF NOT EXISTS sets (
     name TEXT NOT NULL,
     released_at TEXT,
     scryfall_uri TEXT,
+    icon_svg_uri TEXT,
     updated_at TEXT NOT NULL
 );
 """
@@ -66,8 +73,12 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(CORE_TABLES_SQL)
         ensure_deck_tables(conn)
         ensure_sets_table(conn)
+        ensure_sets_columns(conn)
+        backfill_missing_set_icon_uris(conn, {"User-Agent": HTTP_USER_AGENT})
         ensure_card_prices_table(conn)
         ensure_card_columns(conn)
+        backfill_card_types(conn)
+        ensure_card_indexes(conn)
         ensure_purchase_unique_index(conn)
         ensure_app_tables(conn)
         if db_path:

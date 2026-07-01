@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api } from "../api";
+import { api, clearClientCache } from "../api";
 import CardPreview from "../components/CardPreview.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SetPicker from "../components/SetPicker.vue";
@@ -10,6 +10,7 @@ import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, hasFinish } from "../utils/finishes";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
+import ArtStyleRulesPanel from "../components/ArtStyleRulesPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -28,6 +29,9 @@ const storageLocations = ref([]);
 const assignLocationSlug = ref("");
 const { pageSize, setPickerMode } = usePricingSettings();
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
+const catalogReloading = ref(false);
+const catalogMessage = ref("");
+const artStyleRulesOpen = ref(false);
 
 const visibleCards = computed(() => cardsPayload.value?.cards || []);
 const totalPages = computed(() => cardsPayload.value?.totalPages || 1);
@@ -94,6 +98,9 @@ async function onSetsChanged(event) {
   if (selectedSetCode.value) {
     await loadCards();
   }
+  if (event?.catalogReloaded && event.setCode === selectedSetCode.value) {
+    catalogMessage.value = `Updated ${event.catalogCount} prints.`;
+  }
 }
 
 async function loadSets(preferredSet = "") {
@@ -107,6 +114,28 @@ async function loadSets(preferredSet = "") {
 async function toggleFavorite(set) {
   const payload = await api.toggleManagerSetFavorite(set.setCode);
   sets.value = payload.sets || [];
+}
+
+async function reloadCatalog() {
+  if (!selectedSetCode.value || catalogReloading.value) {
+    return;
+  }
+  const code = selectedSetCode.value;
+  if (!window.confirm(`Reload the ${code} catalog from Scryfall? This may take a few seconds.`)) {
+    return;
+  }
+  catalogReloading.value = true;
+  catalogMessage.value = "";
+  try {
+    const result = await api.reloadManagerSetCatalog(code);
+    clearClientCache();
+    catalogMessage.value = `Updated ${result.catalogCount} prints.`;
+    await loadCards();
+  } catch (error) {
+    catalogMessage.value = error.message || "Could not reload catalog.";
+  } finally {
+    catalogReloading.value = false;
+  }
 }
 
 async function loadCards() {
@@ -194,9 +223,22 @@ function goToPage(nextPage) {
   page.value = Math.min(Math.max(1, nextPage), totalPages.value);
 }
 
+async function onArtStyleRulesSaved(result) {
+  clearClientCache();
+  if (result?.artStyles) {
+    cardsPayload.value = {
+      ...(cardsPayload.value || {}),
+      artStyles: result.artStyles,
+    };
+  }
+  artStyle.value = "";
+  await loadCards();
+}
+
 watch(selectedSetCode, (setCode) => {
   page.value = 1;
   artStyle.value = "";
+  artStyleRulesOpen.value = false;
   search.value = "";
   router.replace({ query: setCode ? { set: setCode } : {} });
   loadCards();
@@ -245,8 +287,6 @@ onMounted(async () => {
       v-model="selectedSetCode"
       layout="banner"
       :sets="sets"
-      show-favorites
-      @toggle-favorite="toggleFavorite"
       @sets-changed="onSetsChanged"
     />
 
@@ -267,6 +307,24 @@ onMounted(async () => {
               @click="toggleFavorite(activeSet)"
             >
               {{ activeSetFavorite ? "★ Favourited" : "☆ Favourite set" }}
+            </button>
+            <button
+              v-if="selectedSetCode && activeSet"
+              type="button"
+              class="btn btn-secondary btn-small"
+              :class="{ active: artStyleRulesOpen }"
+              @click="artStyleRulesOpen = !artStyleRulesOpen"
+            >
+              {{ artStyleRulesOpen ? "Hide art styles" : "Edit art styles" }}
+            </button>
+            <button
+              v-if="selectedSetCode && activeSet"
+              type="button"
+              class="btn btn-secondary btn-small"
+              :disabled="catalogReloading"
+              @click="reloadCatalog"
+            >
+              {{ catalogReloading ? "Reloading catalog…" : "Reload catalog" }}
             </button>
             <input
               v-model="searchInput"
@@ -316,6 +374,13 @@ onMounted(async () => {
               </div>
             </div>
             <LoadingIndicator v-if="loadingCards" compact label="Loading cards…" />
+            <p
+              v-if="catalogMessage"
+              class="collection-sync-message"
+              :class="{ error: catalogMessage.startsWith('Could') }"
+            >
+              {{ catalogMessage }}
+            </p>
           </div>
 
           <div class="manager-toolbar-actions">
@@ -341,6 +406,13 @@ onMounted(async () => {
             </button>
           </div>
         </div>
+
+        <ArtStyleRulesPanel
+          v-if="selectedSetCode"
+          v-model:open="artStyleRulesOpen"
+          :set-code="selectedSetCode"
+          @saved="onArtStyleRulesSaved"
+        />
 
         <p v-if="selectedSetCode" class="manager-stats">
           {{ cardsPayload?.total ?? 0 }} cards

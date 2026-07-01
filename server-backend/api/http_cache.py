@@ -13,7 +13,7 @@ DEFAULT_TTL_SECONDS = 120
 def cache_headers(*, etag: str, ttl: int, epoch: int) -> dict[str, str]:
     return {
         "ETag": etag,
-        "Cache-Control": f"private, max-age={ttl}",
+        "Cache-Control": "private, no-store",
         "X-Cache-Epoch": str(epoch),
     }
 
