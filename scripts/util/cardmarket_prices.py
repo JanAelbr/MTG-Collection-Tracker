@@ -25,6 +25,7 @@ from util.card_finishes import (
     guide_uses_foil_keys,
     normalize_finish,
 )
+from util.db_migrate import ensure_card_columns
 from util.http_client import http_get
 
 log = get_logger(__name__)
@@ -471,12 +472,13 @@ def list_cards_for_price_sync(
             market_value_foil,
             market_value_etched,
             cardmarket_url,
+            cardmarket_url_foil,
             has_nonfoil,
             has_foil,
             has_etched
         FROM cards
-        WHERE cardmarket_url IS NOT NULL
-            AND TRIM(cardmarket_url) != ''
+        WHERE (cardmarket_url IS NOT NULL AND TRIM(cardmarket_url) != '')
+           OR (cardmarket_url_foil IS NOT NULL AND TRIM(cardmarket_url_foil) != '')
     """
     params: list[str] = []
     if set_codes:
@@ -655,10 +657,17 @@ def sync_prices_from_guide(
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     log_file = LOGS_DIR / f"cardmarket_prices_{today}.csv"
     guide = load_price_guide_index(force_download=force_download, logger=log)
+    from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
 
     with sqlite3.connect(DB_PATH) as conn, log_file.open("w", newline="", encoding="utf-8") as handle:
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.row_factory = sqlite3.Row
+        ensure_card_columns(conn)
+        backfilled_urls = backfill_cardmarket_urls(conn, guide)
+        if backfilled_urls and log:
+            log.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
+        elif backfilled_urls:
+            print(f"Backfilled Cardmarket URLs for {backfilled_urls} cards")
         context = load_price_sync_context(conn, set_codes)
         cleared_unowned = clear_unowned_prices_for_non_qualifying_sets(
             conn, context, set_codes,
@@ -746,8 +755,6 @@ def sync_prices_from_guide(
                 {"queried": 0, "updated": 0, "still_missing": 0, "unchanged": 0},
             )
             stats["queried"] += 1
-            product_id = parse_id_product(row["cardmarket_url"])
-            guide_entry = guide.get(product_id) if product_id is not None else None
 
             for finish_id, current_value in finish_rows:
                 finish_name = FINISH_LABELS[finish_id].lower().replace("-", "")
@@ -760,6 +767,26 @@ def sync_prices_from_guide(
                 if missing_only and current_value is not None:
                     continue
 
+                finish_url = cardmarket_url_for_finish(row, finish_id, guide)
+                if not finish_url:
+                    if not missing_only and current_value is not None:
+                        clears_by_finish[finish_id].append((card_set, collector_number))
+                        log_rows.append([
+                            card_set,
+                            collector_number,
+                            finish_name,
+                            "cleared",
+                            "",
+                        ])
+                        stats["updated"] += 1
+                        totals["updated_fields"] += 1
+                        totals["cleared_fields"] += 1
+                        continue
+                    stats["still_missing"] += 1
+                    totals["still_missing_fields"] += 1
+                    continue
+                product_id = parse_id_product(finish_url)
+                guide_entry = guide.get(product_id) if product_id is not None else None
                 price = lookup_guide_price(guide_entry, finish_id)
                 if price is None:
                     if not missing_only and current_value is not None:

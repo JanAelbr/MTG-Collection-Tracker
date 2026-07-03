@@ -14,6 +14,7 @@ from util.card_finishes import (  # noqa: E402
     FINISH_NONFOIL,
     card_finish_flags,
     finish_available,
+    finish_has_pricing,
     infer_finish_for_print,
     normalize_finish,
     parse_finish_from_row,
@@ -63,8 +64,22 @@ class CardFinishesTests(unittest.TestCase):
             "market_value_foil": 7.0,
             "market_value_etched": None,
         }
-        self.assertFalse(finish_available(row, FINISH_NONFOIL))
+        self.assertTrue(finish_available(row, FINISH_NONFOIL))
         self.assertTrue(finish_available(row, FINISH_FOIL))
+        self.assertFalse(finish_available(row, FINISH_ETCHED))
+
+    def test_finish_available_requires_price_not_catalog_flag(self):
+        row = {
+            "has_foil": 1,
+            "market_value_foil": None,
+        }
+        self.assertFalse(finish_available(row, FINISH_FOIL))
+
+    def test_finish_has_pricing_uses_guide_prices(self):
+        row = {"market_value": None, "market_value_foil": None}
+        guide = {"foil": {"trend": 4.5}}
+        self.assertTrue(finish_has_pricing(row, FINISH_FOIL, guide))
+        self.assertFalse(finish_has_pricing(row, FINISH_NONFOIL, guide))
 
     def test_price_from_guide_entry_uses_nonfoil_keys_for_etched(self):
         entry = {"trend": 2.42, "trend-foil": 5.54}

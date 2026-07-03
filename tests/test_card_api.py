@@ -109,7 +109,7 @@ class CardApiServiceTests(unittest.TestCase):
         self.conn.close()
         self.temp_dir.cleanup()
 
-    @patch("api.services.card_service.all_guide_prices_for_url")
+    @patch("api.services.card_service.all_guide_prices_for_card")
     def test_load_card_detail_includes_guide_matrix_and_neighbors(self, guide_prices):
         guide_prices.return_value = {
             "nonfoil": {

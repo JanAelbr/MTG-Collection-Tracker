@@ -110,24 +110,30 @@ def has_finish_flag(row, finish: int) -> bool:
         return False
 
 
-def finish_available(row, finish: int, *, owned: bool = False) -> bool:
-    if owned:
-        return True
-    finish_id = normalize_finish(finish)
-    column = HAS_FINISH_COLUMNS[finish_id]
-    raw = row[column] if isinstance(row, dict) else row[column]
-    if raw is not None and raw != "":
-        try:
-            return bool(int(raw))
-        except (TypeError, ValueError):
-            return False
-    value = market_value_for_finish(row, finish_id)
+def _positive_price(value) -> bool:
     if value is None or value == "":
         return False
     try:
-        return not (isinstance(value, float) and value != value)
-    except TypeError:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def finish_has_pricing(row, finish: int, guide_prices: dict | None = None) -> bool:
+    finish_id = normalize_finish(finish)
+    if _positive_price(market_value_for_finish(row, finish_id)):
         return True
+    if guide_prices:
+        group = GUIDE_PRICE_GROUPS[finish_id]
+        prices = guide_prices.get(group) or {}
+        return any(_positive_price(price) for price in prices.values())
+    return False
+
+
+def finish_available(row, finish: int, *, owned: bool = False, guide_prices: dict | None = None) -> bool:
+    """A finish is shown only when we have explicit pricing for it."""
+    del owned
+    return finish_has_pricing(row, finish, guide_prices)
 
 
 def market_value_for_finish(row, finish: int):

@@ -21,6 +21,7 @@ CREATE TABLE cards (
     has_etched INTEGER,
     image_uri TEXT,
     cardmarket_url TEXT,
+    cardmarket_url_foil TEXT,
     colors TEXT,
     type_line TEXT,
     card_type TEXT

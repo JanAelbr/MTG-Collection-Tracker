@@ -6,7 +6,13 @@ from util.db_migrate import ensure_card_columns
 
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_metadata_snake
-from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finish_available
+from util.card_finishes import (
+    FINISH_ETCHED,
+    FINISH_FOIL,
+    FINISH_NONFOIL,
+    MARKET_VALUE_COLUMNS,
+    finish_has_pricing,
+)
 from util.app_tables import ensure_app_tables
 
 MANAGER_CARDS_FROM = """
@@ -84,8 +90,8 @@ def _float_or_none(value) -> float | None:
     return float(value)
 
 
-def _finish_available(row, finish: int, owned: bool) -> bool:
-    return finish_available(row, finish, owned=owned)
+def _finish_available(row, finish: int) -> bool:
+    return finish_has_pricing(row, finish)
 
 
 def _mapping_row(row) -> dict:
@@ -108,9 +114,9 @@ def _serialize_manager_card(row) -> dict:
         data["purchase_value_etched"] is not None
         or int(data.get("instance_count_etched") or 0) > 0
     )
-    has_nonfoil = _finish_available(data, FINISH_NONFOIL, owned_nonfoil)
-    has_foil = _finish_available(data, FINISH_FOIL, owned_foil)
-    has_etched = _finish_available(data, FINISH_ETCHED, owned_etched)
+    has_nonfoil = _finish_available(data, FINISH_NONFOIL)
+    has_foil = _finish_available(data, FINISH_FOIL)
+    has_etched = _finish_available(data, FINISH_ETCHED)
 
     return {
         "set_code": data["set_code"],

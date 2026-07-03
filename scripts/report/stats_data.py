@@ -218,6 +218,8 @@ def compute_stats_page(
     catalog_art_lookup: dict[tuple[str, str], int],
     conn: sqlite3.Connection,
     snapshot_cache: PriceSnapshotCache,
+    *,
+    include_client_drilldowns: bool = True,
 ) -> dict:
     owned, catalog = stats_scope(page, owned_df, catalog_df)
     catalog_count = int(catalog["catalog_cards"].sum()) if not catalog.empty else 0
@@ -225,22 +227,23 @@ def compute_stats_page(
     stats["artStyles"] = _compute_art_style_stats(owned, page)
     if page == "All":
         stats["setBreakdown"] = _compute_set_stats(owned, catalog_df)
-    stats["byArtStyle"] = _build_by_art_style(
-        page,
-        owned,
-        catalog_art_lookup,
-        conn,
-        snapshot_cache,
-    )
-    stats["byFoil"] = _build_by_foil(
-        page,
-        owned,
-        catalog_count,
-        catalog_df,
-        catalog_art_lookup,
-        conn,
-        snapshot_cache,
-    )
+    if include_client_drilldowns:
+        stats["byArtStyle"] = _build_by_art_style(
+            page,
+            owned,
+            catalog_art_lookup,
+            conn,
+            snapshot_cache,
+        )
+        stats["byFoil"] = _build_by_foil(
+            page,
+            owned,
+            catalog_count,
+            catalog_df,
+            catalog_art_lookup,
+            conn,
+            snapshot_cache,
+        )
     return stats
 
 

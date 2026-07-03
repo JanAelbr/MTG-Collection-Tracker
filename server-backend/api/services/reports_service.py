@@ -6,6 +6,7 @@ from report.ranked_cards_data import DEFAULT_PAGE_SIZE, load_ranked_cards_data, 
 from report.report_data import build_art_style_options, build_sorted_set_options
 from api.services.pricing_service import price_from_strategy
 from api.services import settings_service
+from util.cardmarket_urls import cardmarket_url_for_finish
 from util.card_metadata import (
     COLLECTION_FILTER_TYPES,
     card_matches_collection_color_filter,
@@ -179,6 +180,10 @@ def _load_enriched_report_cards(
         )
         for card in base_cards
     ]
+    enriched = [
+        card for card in enriched
+        if card.get("currentValue") is not None and float(card["currentValue"]) > 0
+    ]
     payload = (enriched, selected_compare)
     memory_cache.set(cache_key, payload, _ENRICHED_REPORTS_TTL)
     return payload
@@ -216,6 +221,7 @@ def _enrich_card(
         card.get("cardmarket_url") or None,
         finish,
         strategy,
+        cardmarket_url_foil=card.get("cardmarket_url_foil") or None,
         market_value=card.get("market_value"),
         market_value_foil=card.get("market_value_foil"),
         market_value_etched=card.get("market_value_etched"),
@@ -246,7 +252,7 @@ def _enrich_card(
         "priceChange": price_change,
         "previousDate": compare_date,
         "imageUri": card.get("image_uri") or "",
-        "cardmarketUrl": card.get("cardmarket_url") or "",
+        "cardmarketUrl": cardmarket_url_for_finish(card, finish) or "",
         **card_metadata_api(card),
         "owned": purchase_value is not None or key in owned_keys or bool(locations),
         "locations": locations,

@@ -5,6 +5,7 @@ import pandas as pd
 from lib.config import DB_PATH
 from report.report_queries import ALL_CARDS_QUERY, ORPHAN_PURCHASES_QUERY
 from report.serialize_helpers import str_or_empty
+from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, MARKET_VALUE_COLUMNS
 from util.card_metadata import card_metadata_snake
 from util.db_migrate import ensure_card_columns
 from util.price_history import load_price_snapshot_payload
@@ -38,6 +39,12 @@ def _finish_frame(source: pd.DataFrame, *, finish: int, current_value) -> pd.Dat
     return frame
 
 
+def _priced_unowned_rows(unowned: pd.DataFrame, finish: int) -> pd.DataFrame:
+    column = MARKET_VALUE_COLUMNS[finish]
+    values = unowned[column]
+    return unowned[values.notna() & (values.astype(float) > 0)]
+
+
 # Expand catalog rows into finish rows, including cards without prices.
 def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
     if cards_df.empty:
@@ -50,23 +57,20 @@ def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
         parts.append(owned)
 
     if not unowned.empty:
-        nonfoil = unowned[unowned["has_nonfoil"].fillna(0).astype(int) == 1]
+        nonfoil = _priced_unowned_rows(unowned, FINISH_NONFOIL)
         if not nonfoil.empty:
             parts.append(_finish_frame(nonfoil, finish=0, current_value=nonfoil["market_value"]))
 
-        foil_rows = unowned[unowned["has_foil"].fillna(0).astype(int) == 1]
+        foil_rows = _priced_unowned_rows(unowned, FINISH_FOIL)
         if not foil_rows.empty:
             parts.append(_finish_frame(foil_rows, finish=1, current_value=foil_rows["market_value_foil"]))
 
-        etched_rows = unowned[unowned["has_etched"].fillna(0).astype(int) == 1]
+        etched_rows = _priced_unowned_rows(unowned, FINISH_ETCHED)
         if not etched_rows.empty:
             parts.append(_finish_frame(etched_rows, finish=2, current_value=etched_rows["market_value_etched"]))
 
         neither = unowned[
-            (unowned["has_nonfoil"].fillna(0).astype(int) != 1)
-            & (unowned["has_foil"].fillna(0).astype(int) != 1)
-            & (unowned["has_etched"].fillna(0).astype(int) != 1)
-            & unowned["market_value"].isna()
+            unowned["market_value"].isna()
             & unowned["market_value_foil"].isna()
             & unowned["market_value_etched"].isna()
         ]

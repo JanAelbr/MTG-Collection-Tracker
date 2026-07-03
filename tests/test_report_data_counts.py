@@ -8,7 +8,11 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from report.report_data import load_catalog_count_by_set, load_owned_count_by_set  # noqa: E402
+from report.report_data import (  # noqa: E402
+    build_art_style_options_for_set,
+    load_catalog_count_by_set,
+    load_owned_count_by_set,
+)
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
@@ -84,6 +88,47 @@ class ReportDataCountTests(unittest.TestCase):
         counts = load_catalog_count_by_set(self.conn)
 
         self.assertEqual(counts["LTR"], 2)
+
+    def test_art_style_owned_count_uses_unique_collector_numbers(self):
+        self.conn.executemany(
+            "INSERT INTO cards (set_code, collector_number, name, art_style) VALUES (?, ?, ?, ?)",
+            [
+                ("LTR", "1", "Card A", "Main"),
+                ("LTR", "2", "Card B", "Borderless"),
+            ],
+        )
+        self.conn.executemany(
+            "INSERT INTO purchases (set_code, collector_number, purchase_value, finish) VALUES (?, ?, 1.0, ?)",
+            [
+                ("LTR", "1", 0),
+                ("LTR", "1", 1),
+                ("LTR", "2", 0),
+            ],
+        )
+        self.conn.commit()
+
+        options = build_art_style_options_for_set(self.conn, "LTR")
+        by_style = {option["artStyle"]: option for option in options}
+
+        self.assertEqual(by_style["Main"]["ownedCount"], 1)
+        self.assertEqual(by_style["Main"]["catalogCount"], 1)
+        self.assertEqual(by_style["Borderless"]["ownedCount"], 1)
+        self.assertLessEqual(by_style["Main"]["ownedCount"], by_style["Main"]["catalogCount"])
+
+    def test_art_style_catalog_count_uses_unique_collector_numbers(self):
+        self.conn.executemany(
+            "INSERT INTO cards (set_code, collector_number, name, art_style) VALUES (?, ?, ?, ?)",
+            [
+                ("LTR", "1", "Card A", "Main"),
+                ("LTR", "1", "Card A duplicate", "Main"),
+                ("LTR", "2", "Card B", "Main"),
+            ],
+        )
+        self.conn.commit()
+
+        options = build_art_style_options_for_set(self.conn, "LTR")
+
+        self.assertEqual(options[0]["catalogCount"], 2)
 
 
 if __name__ == "__main__":

@@ -70,30 +70,34 @@ def build_set_option(
     return option
 
 
-def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
-    has_instances = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+def _table_has_card_instances(conn: sqlite3.Connection) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
+        ).fetchone()
+        is not None
+    )
+
+
+def _owned_prints_sql(has_instances: bool) -> str:
     if has_instances:
-        rows = conn.execute(
-            """
-            SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
-            FROM (
-                SELECT set_code, collector_number FROM purchases
-                UNION
-                SELECT set_code, collector_number FROM card_instances
-            ) owned_prints
-            GROUP BY set_code
-            """
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
-            FROM purchases
-            GROUP BY set_code
-            """
-        ).fetchall()
+        return """
+            SELECT set_code, collector_number FROM purchases
+            UNION
+            SELECT set_code, collector_number FROM card_instances
+        """
+    return "SELECT set_code, collector_number FROM purchases"
+
+
+def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
+    owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
+    rows = conn.execute(
+        f"""
+        SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
+        FROM ({owned_prints}) owned_prints
+        GROUP BY set_code
+        """
+    ).fetchall()
     return {str(set_code).upper(): int(count) for set_code, count in rows}
 
 
@@ -168,60 +172,54 @@ def build_art_style_option(
 
 
 def _load_art_style_owned_counts(conn: sqlite3.Connection, *, set_code: str | None = None) -> dict[str, int]:
+    owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
+    distinct_key = (
+        "owned.collector_number"
+        if set_code is not None
+        else "owned.set_code || '|' || owned.collector_number"
+    )
+    where_parts = ["c.art_style IS NOT NULL", "TRIM(c.art_style) != ''"]
+    params: tuple[str, ...] = ()
     if set_code is not None:
-        rows = conn.execute(
-            """
-            SELECT c.art_style, COUNT(*) AS owned_count
-            FROM purchases p
-            JOIN cards c
-              ON c.set_code = p.set_code
-             AND c.collector_number = p.collector_number
-            WHERE p.set_code = ?
-              AND c.art_style IS NOT NULL
-              AND TRIM(c.art_style) != ''
-            GROUP BY c.art_style
-            """,
-            (set_code.upper(),),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT c.art_style, COUNT(*) AS owned_count
-            FROM purchases p
-            JOIN cards c
-              ON c.set_code = p.set_code
-             AND c.collector_number = p.collector_number
-            WHERE c.art_style IS NOT NULL
-              AND TRIM(c.art_style) != ''
-            GROUP BY c.art_style
-            """
-        ).fetchall()
+        where_parts.insert(0, "owned.set_code = ?")
+        params = (set_code.upper(),)
+    where_clause = "WHERE " + " AND ".join(where_parts)
+    rows = conn.execute(
+        f"""
+        SELECT c.art_style, COUNT(DISTINCT {distinct_key}) AS owned_count
+        FROM ({owned_prints}) owned
+        JOIN cards c
+          ON c.set_code = owned.set_code
+         AND c.collector_number = owned.collector_number
+        {where_clause}
+        GROUP BY c.art_style
+        """,
+        params,
+    ).fetchall()
     return {str(art_style): int(count) for art_style, count in rows}
 
 
 def _load_art_style_catalog_counts(conn: sqlite3.Connection, *, set_code: str | None = None) -> dict[str, int]:
+    distinct_key = (
+        "collector_number"
+        if set_code is not None
+        else "set_code || '|' || collector_number"
+    )
+    where_parts = ["art_style IS NOT NULL", "TRIM(art_style) != ''"]
+    params: tuple[str, ...] = ()
     if set_code is not None:
-        rows = conn.execute(
-            """
-            SELECT art_style, COUNT(*) AS catalog_count
-            FROM cards
-            WHERE set_code = ?
-              AND art_style IS NOT NULL
-              AND TRIM(art_style) != ''
-            GROUP BY art_style
-            """,
-            (set_code.upper(),),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT art_style, COUNT(*) AS catalog_count
-            FROM cards
-            WHERE art_style IS NOT NULL
-              AND TRIM(art_style) != ''
-            GROUP BY art_style
-            """
-        ).fetchall()
+        where_parts.insert(0, "set_code = ?")
+        params = (set_code.upper(),)
+    where_clause = "WHERE " + " AND ".join(where_parts)
+    rows = conn.execute(
+        f"""
+        SELECT art_style, COUNT(DISTINCT {distinct_key}) AS catalog_count
+        FROM cards
+        {where_clause}
+        GROUP BY art_style
+        """,
+        params,
+    ).fetchall()
     return {str(art_style): int(count) for art_style, count in rows}
 
 

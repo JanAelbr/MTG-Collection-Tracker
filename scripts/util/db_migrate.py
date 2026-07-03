@@ -5,6 +5,7 @@ from util.card_prices import ensure_card_prices_table
 CARD_COLUMNS = {
     "image_uri": "TEXT",
     "cardmarket_url": "TEXT",
+    "cardmarket_url_foil": "TEXT",
     "has_nonfoil": "INTEGER",
     "has_foil": "INTEGER",
     "has_etched": "INTEGER",

@@ -1,9 +1,10 @@
 import sqlite3
 
-from report.report_data import build_sorted_set_options, get_all_set_codes, load_collection_data
-from report.report_pages import build_pages, select_owned_cards
+from report.report_data import build_sorted_set_options, load_collection_data
+from report.report_pages import select_owned_cards
 from report.report_stats import load_catalog_counts
-from report.stats_data import load_stats_client_payload
+from report.stats_data import compute_stats_page
+from util.price_history import load_price_snapshot_cache
 from api.services import settings_service
 from api.services.pricing_helpers import apply_strategy_to_owned_df
 
@@ -29,11 +30,16 @@ def load_collection_stats(
 
     catalog_df = load_catalog_counts(conn)
     favorite_sets = settings_service.get_favorite_sets(conn)
-    page_codes = get_all_set_codes()
     normalized_set_code = "All" if str(set_code).lower() == "all" else set_code
-    payload = load_stats_client_payload(owned_df, catalog_df, build_pages(page_codes), conn=conn)
-    pages = payload.get("pages", {})
-    page_stats = pages.get(normalized_set_code, pages.get("All", {}))
+    page_stats = compute_stats_page(
+        normalized_set_code,
+        owned_df,
+        catalog_df,
+        {},
+        conn,
+        load_price_snapshot_cache(conn),
+        include_client_drilldowns=False,
+    )
 
     return {
         "setCode": normalized_set_code,

@@ -47,9 +47,16 @@ const hasAnyLocations = computed(() =>
   finishRows.value.some((row) => row.data?.locations?.length),
 );
 
+const showNonfoilGuidePrices = computed(() =>
+  card.value?.guidePriceMatrix?.rows?.some((row) => row.nonfoil != null),
+);
+
+const showFoilGuidePrices = computed(() =>
+  card.value?.guidePriceMatrix?.rows?.some((row) => row.foil != null),
+);
+
 const showEtchedGuidePrices = computed(() =>
-  availableFinishes.value.includes(FINISH_ETCHED)
-    || card.value?.guidePriceMatrix?.rows?.some((row) => row.etched != null),
+  card.value?.guidePriceMatrix?.rows?.some((row) => row.etched != null),
 );
 
 const showNeighborGallery = computed(
@@ -467,28 +474,30 @@ onMounted(loadCard);
       <div class="card-detail-side">
         <div class="card-detail-guide-panel">
           <h2>Cardmarket prices (EUR)</h2>
-          <table class="card-detail-guide-table">
-            <thead>
-              <tr>
-                <th>Strategy</th>
-                <th>Non-foil</th>
-                <th>Foil</th>
-                <th v-if="showEtchedGuidePrices">Etched</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in card.guidePriceMatrix.rows"
-                :key="row.strategyId"
-                :class="{ 'is-active-strategy': row.strategyId === priceStrategy }"
-              >
-                <td>{{ row.label }}</td>
-                <td>{{ formatEuro(row.nonfoil) }}</td>
-                <td>{{ formatEuro(row.foil) }}</td>
-                <td v-if="showEtchedGuidePrices">{{ formatEuro(row.etched) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="card-detail-guide-table-wrap">
+            <table class="card-detail-guide-table">
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th v-if="showNonfoilGuidePrices">Non-foil</th>
+                  <th v-if="showFoilGuidePrices">Foil</th>
+                  <th v-if="showEtchedGuidePrices">Etched</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in card.guidePriceMatrix.rows"
+                  :key="row.strategyId"
+                  :class="{ 'is-active-strategy': row.strategyId === priceStrategy }"
+                >
+                  <td>{{ row.label }}</td>
+                  <td v-if="showNonfoilGuidePrices">{{ formatEuro(row.nonfoil) }}</td>
+                  <td v-if="showFoilGuidePrices">{{ formatEuro(row.foil) }}</td>
+                  <td v-if="showEtchedGuidePrices">{{ formatEuro(row.etched) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>

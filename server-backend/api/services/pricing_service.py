@@ -3,6 +3,7 @@ from util.cardmarket_prices import (
     load_price_guide_index,
     parse_id_product,
 )
+from util.cardmarket_urls import cardmarket_url_for_finish
 
 PRICE_STRATEGIES: list[dict[str, str]] = [
     {"id": "trend", "label": "Trend"},
@@ -48,6 +49,16 @@ def refresh_guide_cache() -> None:
     _guide_index = None
 
 
+def _cardmarket_row(
+    cardmarket_url: str | None,
+    cardmarket_url_foil: str | None = None,
+) -> dict[str, str | None]:
+    return {
+        "cardmarket_url": cardmarket_url,
+        "cardmarket_url_foil": cardmarket_url_foil,
+    }
+
+
 def guide_prices_for_url(cardmarket_url: str | None) -> dict[str, float | None]:
     if not cardmarket_url:
         return {}
@@ -64,28 +75,52 @@ def guide_prices_for_url(cardmarket_url: str | None) -> dict[str, float | None]:
     return result
 
 
+def all_guide_prices_for_card(
+    cardmarket_url: str | None,
+    cardmarket_url_foil: str | None = None,
+) -> dict[str, dict]:
+    nonfoil_prices = guide_prices_for_url(cardmarket_url)
+    foil_prices = guide_prices_for_url(cardmarket_url_foil)
+    grouped = {"nonfoil": {}, "foil": {}, "etched": {}}
+    for strategy in STRATEGY_KEY_MAP:
+        grouped["nonfoil"][strategy] = nonfoil_prices.get(f"{strategy}_nonfoil")
+        grouped["foil"][strategy] = foil_prices.get(f"{strategy}_foil")
+    return grouped
+
+
+def all_guide_prices_for_url(cardmarket_url: str | None) -> dict[str, dict]:
+    return all_guide_prices_for_card(cardmarket_url)
+
+
 def price_from_strategy(
     cardmarket_url: str | None,
     finish: int,
     strategy: str,
     *,
+    cardmarket_url_foil: str | None = None,
     market_value: float | None = None,
     market_value_foil: float | None = None,
     market_value_etched: float | None = None,
 ) -> float | None:
     normalized = normalize_strategy(strategy)
-    if cardmarket_url:
-        product_id = parse_id_product(cardmarket_url)
+    guide = _load_guide()
+    url = cardmarket_url_for_finish(
+        _cardmarket_row(cardmarket_url, cardmarket_url_foil),
+        finish,
+        guide,
+    )
+    if int(finish) == 2:
+        return market_value_etched
+    if url:
+        product_id = parse_id_product(url)
         if product_id is not None:
-            entry = _load_guide().get(product_id)
+            entry = guide.get(product_id)
             if entry:
                 nonfoil_key, foil_key = STRATEGY_KEY_MAP[normalized]
                 key = foil_key if int(finish) == 1 else nonfoil_key
                 value = _value_from_entry(entry, key, foil=bool(int(finish) == 1))
                 if value is not None:
                     return value
-    if int(finish) == 2:
-        return market_value_etched
     return market_value_foil if int(finish) == 1 else market_value
 
 
@@ -96,13 +131,3 @@ def _value_from_entry(entry: dict, key: str, *, foil: bool) -> float | None:
     if key in ("low", "low-foil") and not foil and not _nonfoil_low_is_reliable(entry, float(value)):
         return None
     return float(value)
-
-
-def all_guide_prices_for_url(cardmarket_url: str | None) -> dict[str, dict]:
-    prices = guide_prices_for_url(cardmarket_url)
-    grouped = {"nonfoil": {}, "foil": {}, "etched": {}}
-    for strategy in STRATEGY_KEY_MAP:
-        grouped["nonfoil"][strategy] = prices.get(f"{strategy}_nonfoil")
-        grouped["foil"][strategy] = prices.get(f"{strategy}_foil")
-        grouped["etched"][strategy] = prices.get(f"{strategy}_nonfoil")
-    return grouped

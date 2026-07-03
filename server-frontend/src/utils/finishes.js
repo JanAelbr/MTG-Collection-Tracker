@@ -75,13 +75,33 @@ export function marketValueForFinish(card, finish) {
   return card?.currentValueNonfoil ?? card?.marketValue ?? card?.market_value;
 }
 
-export function hasFinish(card, finish) {
+export function finishHasPricing(card, finish) {
+  if (!card) {
+    return false;
+  }
   const normalized = normalizeFinish(finish);
-  if (normalized === FINISH_FOIL) {
-    return Boolean(card?.hasFoil ?? card?.has_foil);
+  const stored = marketValueForFinish(card, finish);
+  if (stored != null && Number(stored) > 0) {
+    return true;
   }
-  if (normalized === FINISH_ETCHED) {
-    return Boolean(card?.hasEtched ?? card?.has_etched);
+  const finishData = card.finishes?.[String(normalized)];
+  const guide = finishData?.guidePrices;
+  if (guide && Object.values(guide).some((value) => value != null && Number(value) > 0)) {
+    return true;
   }
-  return Boolean(card?.hasNonfoil ?? card?.has_nonfoil);
+  if (normalizeFinish(card.finish ?? card.foil) === normalized) {
+    const current = card.currentValue ?? card.current_value;
+    if (current != null && Number(current) > 0) {
+      return true;
+    }
+  }
+  const finishValues = card.finishValues;
+  if (finishValues?.[normalized] != null && Number(finishValues[normalized]) > 0) {
+    return true;
+  }
+  return false;
+}
+
+export function hasFinish(card, finish) {
+  return finishHasPricing(card, finish);
 }

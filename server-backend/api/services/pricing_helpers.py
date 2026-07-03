@@ -1,6 +1,7 @@
 import pandas as pd
 
 from api.services.pricing_service import price_from_strategy
+from util.cardmarket_urls import coerce_cardmarket_url
 
 
 def apply_strategy_to_owned_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
@@ -11,9 +12,10 @@ def apply_strategy_to_owned_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
     for idx, row in updated.iterrows():
         finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
         current = price_from_strategy(
-            row.get("cardmarket_url") or None,
+            coerce_cardmarket_url(row.get("cardmarket_url")),
             finish,
             strategy,
+            cardmarket_url_foil=coerce_cardmarket_url(row.get("cardmarket_url_foil")),
             market_value=_nullable_float(row.get("market_value")),
             market_value_foil=_nullable_float(row.get("market_value_foil")),
             market_value_etched=_nullable_float(row.get("market_value_etched")),
@@ -39,9 +41,10 @@ def apply_strategy_to_deck_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
         row = updated.loc[idx]
         finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
         unit = price_from_strategy(
-            row.get("cardmarket_url") or None,
+            coerce_cardmarket_url(row.get("cardmarket_url")),
             finish,
             strategy,
+            cardmarket_url_foil=coerce_cardmarket_url(row.get("cardmarket_url_foil")),
             market_value=_nullable_float(row.get("market_value")),
             market_value_foil=_nullable_float(row.get("market_value_foil")),
             market_value_etched=_nullable_float(row.get("market_value_etched")),

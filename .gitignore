@@ -33,6 +33,7 @@ logs/*
 # Downloaded / cached market data
 data/cardmarket_price_guide.json
 data/cardmarket_price_guide.pkl
+data/cardmarket_products_singles_*.json
 data/scryfall_cache/
 
 # Personal purchase and deck data (copy data/example.csv to data/{set}.csv locally)

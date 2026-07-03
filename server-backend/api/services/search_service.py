@@ -109,20 +109,27 @@ def _catalog_variants(
         if key not in by_print:
             current = card.get("currentValue")
             finish = int(card["finish"])
+            if current is None or float(current) <= 0:
+                continue
             by_print[key] = {
                 **card,
                 "availableFinishes": [finish],
-                "finishValues": {finish: current} if current is not None else {},
+                "finishValues": {finish: current},
             }
             continue
         finishes = by_print[key]["availableFinishes"]
         finish = int(card["finish"])
-        if finish not in finishes:
+        current = card.get("currentValue")
+        if finish not in finishes and current is not None and float(current) > 0:
             finishes.append(finish)
         values = by_print[key].setdefault("finishValues", {})
-        current = card.get("currentValue")
-        if current is not None:
-            values[int(card["finish"])] = current
+        if current is not None and float(current) > 0:
+            values[finish] = current
+    for item in by_print.values():
+        item["availableFinishes"] = [
+            finish for finish in item["availableFinishes"]
+            if finish in item.get("finishValues", {})
+        ]
     return sorted(
         by_print.values(),
         key=lambda item: _newest_first_key(item, release_dates),

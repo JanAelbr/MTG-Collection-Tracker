@@ -5,10 +5,11 @@ from report.report_data import format_set_option_label, get_set_display_names
 from report.serialize_helpers import deck_card_display_name
 from api.services import settings_service
 from api.services.pricing_service import (
-    all_guide_prices_for_url,
+    all_guide_prices_for_card,
     list_price_strategies,
     price_from_strategy,
 )
+from util.cardmarket_urls import cardmarket_url_for_finish
 from util.price_history import (
     card_price_key,
     load_snapshot_prices,
@@ -19,6 +20,7 @@ from util.card_finishes import (
     FINISH_NONFOIL,
     GUIDE_PRICE_GROUPS,
     finish_available,
+    finish_has_pricing,
 )
 from util.card_metadata import card_metadata_api
 from util.db_migrate import ensure_card_columns
@@ -32,6 +34,7 @@ SELECT
     art_style,
     image_uri,
     cardmarket_url,
+    cardmarket_url_foil,
     market_value,
     market_value_foil,
     market_value_etched,
@@ -74,12 +77,15 @@ def load_card_detail(
 
     purchases = _load_print_purchases(conn, normalized_set, normalized_number)
     locations = _load_print_locations(conn, normalized_set, normalized_number)
-    guide_prices = all_guide_prices_for_url(row["cardmarket_url"])
+    guide_prices = all_guide_prices_for_card(
+        row["cardmarket_url"],
+        row["cardmarket_url_foil"],
+    )
 
     finishes: dict[str, dict] = {}
     requested_finish = finish
     for finish_id in (FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED):
-        if not _finish_available(row, finish_id, purchases, locations):
+        if not finish_available(row, finish_id, guide_prices=guide_prices):
             continue
         finish_key = card_price_key(normalized_set, normalized_number, finish_id)
         purchase_value = purchases.get(finish_id)
@@ -88,6 +94,7 @@ def load_card_detail(
             row["cardmarket_url"],
             finish_id,
             strategy,
+            cardmarket_url_foil=row["cardmarket_url_foil"],
             market_value=_float_or_none(row["market_value"]),
             market_value_foil=_float_or_none(row["market_value_foil"]),
             market_value_etched=_float_or_none(row["market_value_etched"]),
@@ -134,7 +141,7 @@ def load_card_detail(
         }),
         "artStyle": row["art_style"] or "",
         "imageUri": row["image_uri"] or "",
-        "cardmarketUrl": row["cardmarket_url"] or "",
+        "cardmarketUrl": cardmarket_url_for_finish(row, selected_finish) or "",
         **card_metadata_api(row),
         "setLabel": format_set_option_label(normalized_set, set_names),
         "setReleasedAt": set_info.get("released_at"),
@@ -142,7 +149,13 @@ def load_card_detail(
         "compareDate": selected_compare,
         "selectedFinish": selected_finish,
         "finishes": finishes,
-        "guidePriceMatrix": _guide_price_matrix(guide_prices),
+        "guidePriceMatrix": _guide_price_matrix(
+            guide_prices,
+            stored_etched=_float_or_none(row["market_value_etched"])
+            if finish_has_pricing(row, FINISH_ETCHED, guide_prices)
+            else None,
+            price_strategy=strategy,
+        ),
         "variantGallery": _load_variant_gallery(
             conn,
             row["name"],
@@ -161,34 +174,27 @@ def load_card_detail(
     }
 
 
-def _guide_price_matrix(guide_prices: dict) -> dict:
+def _guide_price_matrix(
+    guide_prices: dict,
+    *,
+    stored_etched: float | None = None,
+    price_strategy: str = "trend",
+) -> dict:
     rows = []
     for strategy in list_price_strategies():
         strategy_id = strategy["id"]
+        etched = stored_etched if stored_etched is not None and strategy_id == price_strategy else None
         rows.append({
             "strategyId": strategy_id,
             "label": strategy["label"],
             "nonfoil": guide_prices.get("nonfoil", {}).get(strategy_id),
             "foil": guide_prices.get("foil", {}).get(strategy_id),
-            "etched": guide_prices.get("etched", {}).get(strategy_id),
+            "etched": etched,
         })
     return {
         "strategies": list_price_strategies(),
         "rows": rows,
     }
-
-
-def _finish_available(
-    row: sqlite3.Row,
-    finish: int,
-    purchases: dict[int, float],
-    locations: dict[int, list[dict]],
-) -> bool:
-    return finish_available(
-        row,
-        finish,
-        owned=finish in purchases or bool(locations.get(finish)),
-    )
 
 
 def _default_finish(finishes: dict[str, dict]) -> int:
@@ -281,6 +287,7 @@ def _load_set_gallery(
             art_style,
             image_uri,
             cardmarket_url,
+            cardmarket_url_foil,
             market_value,
             market_value_foil,
             market_value_etched,
@@ -321,6 +328,7 @@ def _load_variant_gallery(
             art_style,
             image_uri,
             cardmarket_url,
+            cardmarket_url_foil,
             market_value,
             market_value_foil,
             market_value_etched,
@@ -357,6 +365,7 @@ def _serialize_gallery_card(
         row["cardmarket_url"],
         0,
         strategy,
+        cardmarket_url_foil=row["cardmarket_url_foil"],
         market_value=_float_or_none(row["market_value"]),
         market_value_foil=_float_or_none(row["market_value_foil"]),
         market_value_etched=_float_or_none(row["market_value_etched"]),
@@ -365,6 +374,16 @@ def _serialize_gallery_card(
         row["cardmarket_url"],
         1,
         strategy,
+        cardmarket_url_foil=row["cardmarket_url_foil"],
+        market_value=_float_or_none(row["market_value"]),
+        market_value_foil=_float_or_none(row["market_value_foil"]),
+        market_value_etched=_float_or_none(row["market_value_etched"]),
+    )
+    etched_value = price_from_strategy(
+        row["cardmarket_url"],
+        2,
+        strategy,
+        cardmarket_url_foil=row["cardmarket_url_foil"],
         market_value=_float_or_none(row["market_value"]),
         market_value_foil=_float_or_none(row["market_value_foil"]),
         market_value_etched=_float_or_none(row["market_value_etched"]),
@@ -384,6 +403,7 @@ def _serialize_gallery_card(
         "setLabel": format_set_option_label(row["set_code"], set_names),
         "currentValueNonfoil": nonfoil_value,
         "currentValueFoil": foil_value,
+        "currentValueEtched": etched_value,
         "isCurrent": is_current,
     }
 

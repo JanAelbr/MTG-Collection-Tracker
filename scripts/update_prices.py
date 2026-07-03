@@ -13,6 +13,7 @@ from util.card_prices import (
     load_existing_card_prices,
     restore_market_values_from_history,
 )
+from util.cardmarket_urls import load_existing_cardmarket_urls, merge_cardmarket_urls
 from util.card_finishes import card_finish_flags
 from util.db_migrate import ensure_card_columns, ensure_card_prices_table
 from util.set_catalog import (
@@ -28,7 +29,6 @@ from util.scryfall_card import (
     card_image_uri,
     card_primary_type,
     card_type_line,
-    cardmarket_url,
 )
 
 HEADERS = {"User-Agent": HTTP_USER_AGENT}
@@ -36,8 +36,8 @@ INSERT_CARD_SQL = """
 INSERT OR REPLACE INTO cards (
     id, set_code, collector_number, name, art_style,
     market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
-    image_uri, cardmarket_url, colors, type_line, card_type
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    image_uri, cardmarket_url, cardmarket_url_foil, colors, type_line, card_type
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 LOG_HEADERS = [
     "card_id", "collector_number", "name", "art_style",
@@ -144,11 +144,18 @@ def upsert_card(
     market_value, market_value_foil, market_value_etched = load_existing_card_prices(
         cursor, set_code, collector_number,
     )
+    existing_nonfoil_url, existing_foil_url = load_existing_cardmarket_urls(
+        cursor, set_code, collector_number,
+    )
     has_nonfoil, has_foil, has_etched = card_finish_flags(card)
     art_style = get_art_style(set_code, collector_number)
     name = card.get("name", "")
     image_uri = card_image_uri(card)
-    cardmarket_link = cardmarket_url(card)
+    nonfoil_url, foil_url = merge_cardmarket_urls(
+        existing_nonfoil_url,
+        existing_foil_url,
+        card,
+    )
     colors = card_colors_json(card)
     type_line = card_type_line(card)
     card_type = card_primary_type(card)
@@ -167,7 +174,8 @@ def upsert_card(
             has_foil,
             has_etched,
             image_uri,
-            cardmarket_link,
+            nonfoil_url,
+            foil_url,
             colors,
             type_line,
             card_type,
@@ -175,6 +183,7 @@ def upsert_card(
     )
     if owned_set_codes is None or set_code.upper() in owned_set_codes:
         upsert_set_from_card(cursor, card, price_date)
+    cardmarket_link = nonfoil_url or foil_url
     return card_log_row(
         set_code,
         collector_number,

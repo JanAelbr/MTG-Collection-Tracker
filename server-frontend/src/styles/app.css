@@ -2881,7 +2881,7 @@ body {
 
 .card-detail-main {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 400px);
   gap: 20px;
   background: #fff;
   border: 1px solid #e8eaed;
@@ -3061,6 +3061,7 @@ body {
 
 .card-detail-guide-panel {
   margin: 0;
+  min-width: 0;
 }
 
 .card-detail-guide-panel h2 {
@@ -3068,10 +3069,18 @@ body {
   font-size: 16px;
 }
 
+.card-detail-guide-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
 .card-detail-guide-table {
   width: 100%;
+  min-width: 340px;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 
 .card-detail-guide-table th,
@@ -3079,6 +3088,19 @@ body {
   padding: 8px 10px;
   border-bottom: 1px solid #eef0f2;
   text-align: left;
+  vertical-align: top;
+}
+
+.card-detail-guide-table th:not(:first-child),
+.card-detail-guide-table td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.card-detail-guide-table th:first-child,
+.card-detail-guide-table td:first-child {
+  min-width: 88px;
+  white-space: normal;
 }
 
 .card-detail-guide-table tr.is-active-strategy {

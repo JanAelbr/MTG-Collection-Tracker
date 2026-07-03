@@ -306,6 +306,7 @@ class SyncPricesFromGuideTests(unittest.TestCase):
             "market_value_foil": 588.79,
             "market_value_etched": None,
             "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=738253",
+            "cardmarket_url_foil": None,
             "has_nonfoil": 1,
             "has_foil": 1,
             "has_etched": 0,
@@ -330,6 +331,9 @@ class SyncPricesFromGuideTests(unittest.TestCase):
         ), unittest.mock.patch(
             "util.cardmarket_prices.load_price_guide_index",
             return_value=guide,
+        ), unittest.mock.patch(
+            "util.cardmarket_urls.backfill_cardmarket_urls",
+            return_value=0,
         ):
             stats = sync_prices_from_guide(
                 "2026-06-16",
@@ -524,6 +528,104 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         self.assertEqual(stats["updated_fields"], 0)
         self.assertEqual(history_count, 0)
         snapshot_mock.assert_called_once()
+
+
+class SyncPairedCardmarketUrlTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir._ignore_cleanup_errors = True
+        self.db_path = Path(self.temp_dir.name) / "test.db"
+        self.conn = sqlite3.connect(self.db_path)
+        self.conn.executescript(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                market_value REAL,
+                market_value_foil REAL,
+                market_value_etched REAL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            );
+            CREATE TABLE purchases (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                finish INTEGER NOT NULL CHECK (finish IN (0, 1, 2))
+            );
+            """
+        )
+        self.conn.executescript(CARD_PRICES_TABLE_SQL)
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, market_value, market_value_foil,
+                cardmarket_url, cardmarket_url_foil, has_nonfoil, has_foil, has_etched
+            ) VALUES (
+                'LTR', '723', NULL, 73.42,
+                'https://www.cardmarket.com/en/Magic/Products?idProduct=738285', NULL,
+                1, 1, 0
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish) VALUES ('LTR', '723', 0)"
+        )
+        self.conn.commit()
+        self.context = PriceSyncContext(
+            owned_finishes=frozenset({("LTR", "723", 0)}),
+            qualifying_sets=frozenset({"LTR"}),
+            set_owned_counts={"LTR": 1},
+            set_catalog_sizes={"LTR": 1},
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        self.temp_dir.cleanup()
+
+    def test_sync_uses_paired_nonfoil_product_for_silver_foil_split(self):
+        row = {
+            "set_code": "LTR",
+            "collector_number": "723",
+            "market_value": None,
+            "market_value_foil": 73.42,
+            "market_value_etched": None,
+            "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=738284",
+            "cardmarket_url_foil": "https://www.cardmarket.com/en/Magic/Products?idProduct=738285",
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
+        }
+        guide = {
+            738284: {"trend": 44.23, "trend-foil": 0},
+            738285: {"trend": 0, "trend-foil": 73.42},
+        }
+        self.conn.close()
+        with unittest.mock.patch("util.cardmarket_prices.DB_PATH", self.db_path), unittest.mock.patch(
+            "util.cardmarket_prices.LOGS_DIR", Path(self.temp_dir.name)
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.load_price_sync_context", return_value=self.context
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.clear_unowned_prices_for_non_qualifying_sets", return_value=0
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.list_cards_for_price_sync", return_value=[row]
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.load_price_guide_index", return_value=guide
+        ), unittest.mock.patch(
+            "util.cardmarket_urls.backfill_cardmarket_urls", return_value=0
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.snapshot_owned_cardmarket_prices",
+        ):
+            sync_prices_from_guide("2026-06-16", set_codes={"LTR"})
+
+        verify_conn = sqlite3.connect(self.db_path)
+        market_value = verify_conn.execute(
+            "SELECT market_value FROM cards WHERE collector_number = '723'"
+        ).fetchone()[0]
+        verify_conn.close()
+        self.assertEqual(market_value, 44.23)
 
 
 if __name__ == "__main__":
