@@ -13,7 +13,6 @@ The application:
 - stores card **colors**, **type line**, and **primary card type** (creature, land, instant, …) for filtering in the UI
 - calculates current market value and profit/loss per card, art style, and deck
 - serves an interactive **Vue + FastAPI** web app (Collection, stats, storage, decks, card detail)
-- optionally generates static HTML reports with navigation, statistics, deck views, and Cardmarket price backfill
 
 Example set codes in use: **LTR**, **LTC**, **CLB**, **NCC**, **C13**, **C17**, **40K**, **PIP**, and others referenced in `data/` or `data/decks/`.
 
@@ -40,16 +39,13 @@ lotr/
 ├── logs/                          # generated price logs (not in git)
 ├── server-frontend/               # Vue 3 interactive app (Vite)
 ├── server-backend/                  # FastAPI app (api/ + run_api.py)
-├── reports/                       # legacy generated HTML (optional)
 ├── scripts/                       # batch workflows and shared Python libraries
-│   ├── reset_and_build.py             # full pipeline (DB + collection + prices + reports)
+│   ├── reset_and_build.py             # full pipeline (DB + collection + prices)
 │   ├── sync_collection.py             # import deck lists + purchases from CSV
 │   ├── purchase_import.py             # import purchases + deck ownership only
 │   ├── deck_import.py                 # import deck lists only
 │   ├── deck_sync.py                   # import one deck list
 │   ├── update_prices.py               # Scryfall catalog gaps + Cardmarket prices
-│   ├── update_prices_report.py        # prices + reports (no CSV import)
-│   ├── generate_report.py             # HTML reports from database only
 │   ├── build_catalog_decks.py         # build precon CSVs from wiki + Scryfall
 │   ├── build_deck_csv.py              # build LOTR / precon CSVs from definitions
 │   ├── generate_precon_decklists.py   # regenerate deck definition module
@@ -60,10 +56,9 @@ lotr/
 │   ├── register_daily_task.ps1        # register scheduled task (Windows)
 │   ├── db/create_db.py
 │   ├── lib/                           # config, import, deck CSV, Scryfall helpers
-│   ├── report/                        # report generation modules
+│   ├── report/                        # shared report/data modules for the API
 │   └── util/                          # Cardmarket, card metadata, migrations, formatting
 ├── tests/
-└── templates/                       # report HTML/CSS/JS sources
 ```
 
 See **[docs/decks.md](docs/decks.md)** for deck CSV format, ownership, and precon build scripts.
@@ -95,10 +90,10 @@ The repo tracks **source code** and deck definitions, not local purchase data or
 
 | Tracked in git | Not tracked in git |
 |----------------|-------------------|
-| `scripts/`, `server-backend/`, `server-frontend/`, `templates/`, `tests/`, `docs/` | `.venv/` |
+| `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
 | `data/art_styles/*.json`, `data/example.csv` | `data/*.csv` (purchase files in `data/`) |
 | `data/decks/` (manifest + deck CSVs) | `collection.db` |
-| `readme.md`, `requirements.txt` | `reports/`, `logs/`, Cardmarket cache |
+| `readme.md`, `requirements.txt` | `logs/`, Cardmarket cache |
 
 After cloning:
 
@@ -118,17 +113,17 @@ python scripts\reset_and_build.py
 
 ## Workflow
 
-### Full reset (database + import + prices + reports)
+### Full reset (database + import + prices)
 
 ```bash
 python scripts/reset_and_build.py
 ```
 
-Creates the database, imports purchases (set CSVs + decks), syncs prices, and generates reports. Does not open the browser.
+Creates the database, imports purchases (set CSVs + decks), and syncs prices. Does not open the browser.
 
 ### Step by step
 
-The pipeline has three independent stages: **collection** (CSV → DB), **prices** (API → DB), **reports** (DB → HTML).
+The pipeline has three independent stages: **collection** (CSV → DB), **prices** (API → DB), and the **web app** (DB → UI).
 
 **1. Create database**
 
@@ -154,40 +149,19 @@ python scripts/update_prices.py
 
 Downloads the Cardmarket price guide once and updates EUR values for owned cards, plus unowned catalog cards only in sets where you own enough cards to qualify. Scryfall is called only once per set, the first time that set is needed and not yet stored in the local catalog. Sets missing color/type metadata are re-synced automatically. See [Cardmarket prices](#cardmarket-prices) for flags.
 
-**4. Generate reports (HTML from database only)**
-
-```bash
-python scripts/generate_report.py
-```
-
-Options:
-
-| Flag | Effect |
-|------|--------|
-| `--no-browser` | Do not open `reports/index.html` |
-| `--reports top,decks` | Build only selected reports (default: all) |
-| `--force-assets` | Recopy shared JS/CSS from templates |
-
 **Typical refresh after CSV changes:**
 
 ```bash
 python scripts/sync_collection.py
 python scripts/update_prices.py
-python scripts/generate_report.py --no-browser
 ```
 
 ### Daily update
 
-Prices only (updates the database used by the interactive web app; does **not** rebuild legacy HTML unless requested):
+Prices only (updates the database used by the interactive web app):
 
 ```bash
-python scripts/update_prices_report.py
-```
-
-Legacy HTML in `reports/` (stats, decks, etc.) when still needed:
-
-```bash
-python scripts/update_prices_report.py --static-reports
+python scripts/update_prices.py
 ```
 
 On Windows:
@@ -204,7 +178,7 @@ Scheduled task (daily at 08:00):
 
 ### Interactive web app
 
-The **Vue + FastAPI** app is the primary way to browse and manage the collection. It replaces the old per-page HTML reports for day-to-day use.
+The **Vue + FastAPI** app is the primary way to browse and manage the collection.
 
 **Development** (hot reload — API on `:8000`, Vite on `:5173`):
 
@@ -224,8 +198,6 @@ Open http://localhost:5173
 Open http://localhost:8000
 
 **API docs (Swagger UI):** browse and try endpoints at http://localhost:8000/docs (or http://localhost:5173/docs during dev). ReDoc is at `/redoc`; the OpenAPI schema is at `/openapi.json`.
-
-If legacy static reports exist, they are also served at http://localhost:8000/legacy/index.html
 
 The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` (Windows), or `~/MtgCollectionTracker/collection.db` elsewhere.
 
@@ -266,22 +238,20 @@ In **Set Manager**, star a set to favourite it. Favourited sets sort first in al
 
 **Primary UI:** use the interactive web app (`scripts/run_app.ps1` or `scripts/dev_app.ps1`).
 
-Legacy static HTML in `reports/` is optional. The daily price job no longer rebuilds most pages; use `update_prices_report.py --static-reports` when you still need the legacy index or archived HTML copies.
-
 **App routes:**
 
-| View | Route | Legacy file |
-|------|-------|-------------|
-| **Collection — top owned** | `/` or `/collection/top` | `collection_top.html` |
-| **Collection — risers** | `/collection/risers` | `collection_risers.html` |
-| **Collection — fallers** | `/collection/fallers` | `collection_fallers.html` |
-| **Collection stats** | `/stats` | `collection_stats.html` |
-| **Storage** | `/storage` | `collection_storage.html` |
-| **Set Manager** | `/manager` | `collection_manager.html` |
-| **Decks — browse** | `/decks` or `/decks/browse` | `collection_decks.html` |
-| **Decks — stats** | `/decks/stats` | `collection_deck_stats.html` |
-| **Card detail** | `/card/:setCode/:collectorNumber` | `card.html?set=…&number=…` |
-| **Settings** | `/settings` | — |
+| View | Route |
+|------|-------|
+| **Collection — top owned** | `/` or `/collection/top` |
+| **Collection — risers** | `/collection/risers` |
+| **Collection — fallers** | `/collection/fallers` |
+| **Collection stats** | `/stats` |
+| **Storage** | `/storage` |
+| **Set Manager** | `/manager` |
+| **Decks — browse** | `/decks` or `/decks/browse` |
+| **Decks — stats** | `/decks/stats` |
+| **Card detail** | `/card/:setCode/:collectorNumber` |
+| **Settings** | `/settings` |
 
 Default landing page in the app: **`/collection/top`**. Old `/reports/*` URLs redirect to `/collection/*`.
 
@@ -369,8 +339,6 @@ python scripts/update_prices.py --force-cardmarket
 Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
 
 Logs: `logs/cardmarket_prices_{date}.csv` (prices) and `logs/prices_{set}_{date}.csv` (catalog fetch audit only; not imported as prices).
-
-Use `python scripts/update_prices_report.py` for price update + report generation in one step.
 
 ---
 

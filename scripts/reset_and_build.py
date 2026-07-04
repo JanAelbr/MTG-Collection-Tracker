@@ -1,4 +1,4 @@
-"""Reset the database, import purchases from CSV, fetch the latest prices and generate the report.
+"""Reset the database, import purchases from CSV, and fetch the latest prices.
 
 Usage:
     python scripts/reset_and_build.py
@@ -10,7 +10,6 @@ import sys
 from lib.config import (
     CREATE_DB_SCRIPT,
     DB_PATH,
-    GENERATE_REPORT_SCRIPT,
     REPO_ROOT,
     SYNC_COLLECTION_SCRIPT,
     UPDATE_PRICES_SCRIPT,
@@ -50,7 +49,6 @@ def main() -> None:
 
     timer = BuildTimer(log)
     script_args = ["--verbose"] if args.verbose else []
-    report_args = ["--no-browser", *script_args]
 
     log.info("Starting full reset and build")
     with timer.step("Remove database"):
@@ -65,12 +63,6 @@ def main() -> None:
         )
     with timer.step("Update prices"):
         run_script(UPDATE_PRICES_SCRIPT, "Fetching prices (update_prices.py)", extra_args=script_args)
-    with timer.step("Generate reports"):
-        run_script(
-            GENERATE_REPORT_SCRIPT,
-            "Generating reports (generate_report.py)",
-            extra_args=report_args,
-        )
     timer.log_summary("Reset and build timing")
     log.info("Reset and build complete")
 

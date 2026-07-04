@@ -3,7 +3,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH, REPORTS_DATA_DIR
+from lib.config import APP_CACHE_DIR, DB_PATH
 from lib.run_log import get_logger
 from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, sanitize_json_payload, str_or_empty
@@ -11,7 +11,7 @@ from util.card_metadata import card_metadata_snake
 
 log = get_logger(__name__)
 
-STORAGE_LOCATIONS_DATA_DIR = REPORTS_DATA_DIR / "storage_locations"
+STORAGE_LOCATIONS_DATA_DIR = APP_CACHE_DIR / "storage_locations"
 
 ALL_LOCATION_CARDS_QUERY = """
 SELECT

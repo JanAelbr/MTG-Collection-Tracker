@@ -3,11 +3,13 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
-import UnknownCardsTooltip from "../components/UnknownCardsTooltip.vue";
+import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings } from "../composables/pricingSettings";
-import { formatCompletion, formatEuro, formatProfit, formatRoi, formatSetDropdownLabel } from "../utils/format";
+import { formatCompletion, formatEuro, formatProfit, formatRoi, setShortName } from "../utils/format";
+import { finishLabel } from "../utils/finishes";
+import { resolveSetIconUri } from "../utils/scryfall";
 import { collectionScopeToQuery, setScopeFromRoute, setScopeToQuery } from "../utils/setScope";
 
 const route = useRoute();
@@ -19,9 +21,25 @@ const { loading, run } = useAsyncLoad();
 const stats = computed(() => payload.value?.stats || null);
 const sets = computed(() => payload.value?.sets || []);
 
-function setLabel(code) {
+function setRowLabel(code) {
   const set = sets.value.find((item) => item.setCode === code);
-  return set ? formatSetDropdownLabel(set) : code;
+  if (!set) {
+    return code;
+  }
+  const name = setShortName(set);
+  return set.favorite ? `★ ${name}` : name;
+}
+
+function setIconForCode(code) {
+  const set = sets.value.find((item) => item.setCode === code);
+  return resolveSetIconUri(set || { setCode: code });
+}
+
+function profitClass(value) {
+  if (value == null || Number.isNaN(value)) {
+    return "";
+  }
+  return value >= 0 ? "reports-gain" : "reports-loss";
 }
 
 function sumNullable(left, right) {
@@ -60,11 +78,55 @@ const setBreakdownRows = computed(() => {
   if (!isAllSetsView.value || !stats.value) {
     return [];
   }
-  if (stats.value.setBreakdown?.length) {
-    return stats.value.setBreakdown;
-  }
-  return aggregateArtStylesBySet(stats.value.artStyles || []);
+  const rows = stats.value.setBreakdown?.length
+    ? stats.value.setBreakdown
+    : aggregateArtStylesBySet(stats.value.artStyles || []);
+  return [...rows].sort((a, b) => (b.current ?? 0) - (a.current ?? 0));
 });
+
+const maxSetValue = computed(() => {
+  let max = 0;
+  for (const row of setBreakdownRows.value) {
+    const value = row.current;
+    if (value != null && !Number.isNaN(value) && value > max) {
+      max = value;
+    }
+  }
+  return max;
+});
+
+function valueBarPercent(row) {
+  const current = row.current;
+  if (current == null || Number.isNaN(current) || maxSetValue.value <= 0) {
+    return 0;
+  }
+  return Math.max(6, (current / maxSetValue.value) * 100);
+}
+
+const unknownCards = computed(() => stats.value?.unknownCards || []);
+const hasUnknownCards = computed(() => (stats.value?.unknownCount ?? 0) > 0);
+
+function unknownCardSetCode(card) {
+  return card.setCode || card.set_code || "";
+}
+
+function unknownCardNumber(card) {
+  return String(card.collectorNumber ?? card.collector_number ?? "");
+}
+
+function unknownCardFinish(card) {
+  return card.finish ?? card.foil ?? 0;
+}
+
+function cardDetailLink(card) {
+  return {
+    name: "card",
+    params: {
+      setCode: unknownCardSetCode(card),
+      collectorNumber: unknownCardNumber(card),
+    },
+  };
+}
 
 function selectSet(code) {
   if (!code || String(code).toLowerCase() === "all") {
@@ -162,7 +224,6 @@ onMounted(() => {
         <RouterLink :to="collectionLink" class="btn btn-secondary btn-small">
           View collection
         </RouterLink>
-        <LoadingIndicator v-if="loading" compact label="Updating stats…" />
       </div>
     </div>
 
@@ -170,7 +231,12 @@ onMounted(() => {
       <LoadingIndicator label="Loading stats…" />
     </div>
 
-    <template v-else-if="stats">
+    <GalleryLoadingOverlay
+      v-else-if="stats"
+      class="stats-content-loading"
+      :loading="loading"
+      label="Updating stats…"
+    >
       <div class="stats-hero-grid">
         <div class="stats-card">
           <span>Current value</span>
@@ -182,7 +248,7 @@ onMounted(() => {
         </div>
         <div class="stats-card">
           <span>Profit / loss</span>
-          <strong>{{ formatProfit(stats.profit) }}</strong>
+          <strong :class="profitClass(stats.profit)">{{ formatProfit(stats.profit) }}</strong>
         </div>
         <div class="stats-card">
           <span>ROI</span>
@@ -192,11 +258,77 @@ onMounted(() => {
           <span>Owned</span>
           <strong>{{ formatCompletion(stats.ownedCount, stats.catalogCount) }}</strong>
         </div>
-        <UnknownCardsTooltip :cards="stats.unknownCards">
+        <div v-if="hasUnknownCards" class="stats-card stats-card-unknown">
           <span>Unknown value</span>
           <strong>{{ formatEuro(stats.unknownInvested) }}</strong>
-        </UnknownCardsTooltip>
+          <span class="stats-card-subtext">
+            {{ stats.unknownCount }} {{ stats.unknownCount === 1 ? "card" : "cards" }}
+          </span>
+        </div>
       </div>
+
+      <section
+        class="table-panel"
+        :class="hasUnknownCards ? 'stats-unknown-panel' : 'stats-healthy-panel'"
+        :aria-label="hasUnknownCards ? 'Unknown value' : 'Pricing status'"
+      >
+        <h2 v-if="hasUnknownCards">Unknown value</h2>
+        <template v-if="hasUnknownCards">
+          <p class="stats-unknown-intro">
+            These owned cards have no current market price.
+            Total invested: {{ formatEuro(stats.unknownInvested) }}.
+          </p>
+          <table class="reports-table">
+          <thead>
+            <tr>
+              <th>Set</th>
+              <th>#</th>
+              <th>Name</th>
+              <th>Art style</th>
+              <th>Finish</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(card, index) in unknownCards"
+              :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
+            >
+              <td>
+                <button
+                  type="button"
+                  class="stats-set-drill"
+                  @click="selectSet(unknownCardSetCode(card))"
+                >
+                  <img
+                    v-if="setIconForCode(unknownCardSetCode(card))"
+                    :src="setIconForCode(unknownCardSetCode(card))"
+                    alt=""
+                    class="stats-set-icon"
+                  >
+                  <span>{{ setRowLabel(unknownCardSetCode(card)) }}</span>
+                </button>
+              </td>
+              <td>{{ unknownCardNumber(card) }}</td>
+              <td>
+                <RouterLink :to="cardDetailLink(card)" class="stats-art-drill">
+                  {{ card.name || "Unknown" }}
+                </RouterLink>
+              </td>
+              <td>{{ card.artStyle || card.art_style || "—" }}</td>
+              <td>{{ finishLabel(unknownCardFinish(card)) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        </template>
+        <div v-else class="stats-healthy-state">
+          <span class="stats-health-check" aria-hidden="true">✓</span>
+          <p>
+            Every owned card
+            {{ isAllSetsView ? "in your collection" : "in this set" }}
+            has a current market price.
+          </p>
+        </div>
+      </section>
 
       <section v-if="isAllSetsView && setBreakdownRows.length" class="table-panel">
         <h2>By set</h2>
@@ -218,13 +350,28 @@ onMounted(() => {
                   class="stats-set-drill"
                   @click="selectSet(row.setCode)"
                 >
-                  {{ setLabel(row.setCode) }}
+                  <img
+                    v-if="setIconForCode(row.setCode)"
+                    :src="setIconForCode(row.setCode)"
+                    alt=""
+                    class="stats-set-icon"
+                  >
+                  <span>{{ setRowLabel(row.setCode) }}</span>
                 </button>
               </td>
               <td>{{ row.count }}</td>
-              <td>{{ formatEuro(row.current) }}</td>
+              <td class="stats-value-cell">
+                <div class="stats-value-bar-wrap">
+                  <div
+                    class="stats-value-bar"
+                    :style="{ width: `${valueBarPercent(row)}%` }"
+                    :title="`${((row.current ?? 0) / (stats.current || 1) * 100).toFixed(1)}% of portfolio`"
+                  />
+                  <span class="stats-value-label">{{ formatEuro(row.current) }}</span>
+                </div>
+              </td>
               <td>{{ formatEuro(row.invested) }}</td>
-              <td>{{ formatProfit(row.profit) }}</td>
+              <td :class="profitClass(row.profit)">{{ formatProfit(row.profit) }}</td>
             </tr>
           </tbody>
         </table>
@@ -255,11 +402,11 @@ onMounted(() => {
               <td>{{ row.count }}</td>
               <td>{{ formatEuro(row.current) }}</td>
               <td>{{ formatEuro(row.invested) }}</td>
-              <td>{{ formatProfit(row.profit) }}</td>
+              <td :class="profitClass(row.profit)">{{ formatProfit(row.profit) }}</td>
             </tr>
           </tbody>
         </table>
       </section>
-    </template>
+    </GalleryLoadingOverlay>
   </div>
 </template>

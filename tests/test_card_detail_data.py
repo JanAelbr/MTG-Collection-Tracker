@@ -94,14 +94,14 @@ class CardDetailDataTests(unittest.TestCase):
         self.temp_dir._ignore_cleanup_errors = True
         self.temp_dir.cleanup()
 
-    @patch("report.card_detail_data.REPORTS_DATA_DIR")
-    def test_index_payload_omits_history_and_snapshots(self, reports_dir):
-        reports_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
-        reports_dir.__truediv__ = self.reports_data.__truediv__
-        reports_dir.mkdir = self.reports_data.mkdir
+    @patch("report.card_detail_data.APP_CACHE_DIR")
+    def test_index_payload_omits_history_and_snapshots(self, cache_dir):
+        cache_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
+        cache_dir.__truediv__ = self.reports_data.__truediv__
+        cache_dir.mkdir = self.reports_data.mkdir
 
         with patch("report.card_detail_data.DB_PATH", self.db_path):
-            with patch("report.card_detail_data.REPORTS_DATA_DIR", self.reports_data):
+            with patch("report.card_detail_data.APP_CACHE_DIR", self.reports_data):
                 self.conn.close()
                 payload, histories = load_card_detail_assets()
 
@@ -116,11 +116,11 @@ class CardDetailDataTests(unittest.TestCase):
         self.assertIn("LTR", histories)
         self.assertIn("1|0", histories["LTR"])
 
-    @patch("report.card_detail_data.REPORTS_DATA_DIR")
-    def test_write_card_history_scripts(self, reports_dir):
-        reports_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
-        reports_dir.__truediv__ = self.reports_data.__truediv__
-        reports_dir.mkdir = self.reports_data.mkdir
+    @patch("report.card_detail_data.APP_CACHE_DIR")
+    def test_write_card_history_scripts(self, cache_dir):
+        cache_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
+        cache_dir.__truediv__ = self.reports_data.__truediv__
+        cache_dir.mkdir = self.reports_data.mkdir
 
         histories = {
             "LTR": {
@@ -131,7 +131,7 @@ class CardDetailDataTests(unittest.TestCase):
             },
         }
 
-        with patch("report.card_detail_data.REPORTS_DATA_DIR", self.reports_data):
+        with patch("report.card_detail_data.APP_CACHE_DIR", self.reports_data):
             written = write_card_history_scripts(histories)
 
         self.assertEqual(written, 1)

@@ -1,7 +1,6 @@
 import sqlite3
 
-from report.report_data import build_sorted_set_options, load_collection_data
-from report.report_pages import select_owned_cards
+from report.report_data import build_sorted_set_options, load_collection_data, select_owned_cards
 from report.report_stats import load_catalog_counts
 from report.stats_data import compute_stats_page
 from util.price_history import load_price_snapshot_cache

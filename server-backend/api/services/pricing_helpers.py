@@ -1,7 +1,20 @@
 import pandas as pd
 
 from api.services.pricing_service import price_from_strategy
+from util.card_finishes import resolve_valuation_finish
 from util.cardmarket_urls import coerce_cardmarket_url
+
+
+def _price_row_for_finish(row, finish: int, strategy: str) -> float | None:
+    return price_from_strategy(
+        coerce_cardmarket_url(row.get("cardmarket_url")),
+        finish,
+        strategy,
+        cardmarket_url_foil=coerce_cardmarket_url(row.get("cardmarket_url_foil")),
+        market_value=_nullable_float(row.get("market_value")),
+        market_value_foil=_nullable_float(row.get("market_value_foil")),
+        market_value_etched=_nullable_float(row.get("market_value_etched")),
+    )
 
 
 def apply_strategy_to_owned_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
@@ -10,16 +23,13 @@ def apply_strategy_to_owned_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
 
     updated = df.copy()
     for idx, row in updated.iterrows():
-        finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
-        current = price_from_strategy(
-            coerce_cardmarket_url(row.get("cardmarket_url")),
-            finish,
-            strategy,
-            cardmarket_url_foil=coerce_cardmarket_url(row.get("cardmarket_url_foil")),
-            market_value=_nullable_float(row.get("market_value")),
-            market_value_foil=_nullable_float(row.get("market_value_foil")),
-            market_value_etched=_nullable_float(row.get("market_value_etched")),
+        stored_finish = int(row["finish"]) if pd.notna(row.get("finish")) else 0
+        valuation_finish = resolve_valuation_finish(
+            row,
+            stored_finish,
+            price_lookup=lambda finish_id: _price_row_for_finish(row, finish_id, strategy),
         )
+        current = _price_row_for_finish(row, valuation_finish, strategy)
         updated.at[idx, "current_value"] = current
         purchase = row.get("purchase_value")
         if purchase is not None and not pd.isna(purchase) and current is not None:

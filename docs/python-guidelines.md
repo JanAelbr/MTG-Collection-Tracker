@@ -36,8 +36,6 @@ lotr/
 │   ├── deck_import.py
 │   ├── deck_sync.py
 │   ├── update_prices.py
-│   ├── update_prices_report.py
-│   ├── generate_report.py
 │   ├── build_catalog_decks.py
 │   ├── build_deck_csv.py
 │   ├── db/
@@ -62,7 +60,6 @@ lotr/
 │       ├── deck_tables.py
 │       ├── cardmarket_prices.py
 │       └── ...
-└── templates/             # report HTML/CSS/JS sources
 ```
 
 ### Rules
@@ -70,7 +67,7 @@ lotr/
 - Put **runnable workflows** in top-level `scripts/*.py` (and `scripts/db/create_db.py`).
 - Put **HTTP API routes and services** in `server-backend/api/`.
 - Put **shared configuration and import logic** in `scripts/lib/`.
-- Put **report generation modules** in `scripts/report/`.
+- Put **shared data/query modules used by the API** in `scripts/report/`.
 - Put **low-level helpers** in `scripts/util/`.
 - Avoid duplicating the same workflow in multiple scripts.
 
@@ -93,7 +90,7 @@ Deck paths and manifest: `DECKS_DIR`, `DECKS_MANIFEST_NAME` (`decks.csv`). See `
 Use `lib.config` for all repo paths:
 
 ```python
-from lib.config import DB_PATH, DATA_DIR, TEMPLATES_DIR
+from lib.config import DB_PATH, DATA_DIR, DECKS_DIR
 ```
 
 Prefer `pathlib.Path` over string paths. Build absolute paths from `config`, not from `cwd`.
@@ -220,7 +217,7 @@ with sqlite3.connect(DB_PATH) as conn:
 | `lib/deck_scryfall.py` | Resolve deck card names to Scryfall prints (precon builders) |
 | `util/deck_tables.py` | Create/migrate `decks` and `deck_cards` tables |
 
-Deck import does **not** write purchases. Use `sync_collection.py` (decks + purchases), or `deck_sync.py` / `deck_import.py` followed by `purchase_import.py`. `generate_report.py` only builds HTML from the database.
+Deck import does **not** write purchases. Use `sync_collection.py` (decks + purchases), or `deck_sync.py` / `deck_import.py` followed by `purchase_import.py`.
 
 ---
 
@@ -315,10 +312,7 @@ def main() -> None:
 Use type hints on public functions:
 
 ```python
-def generate_report(
-    output_file: Path | str = OUTPUT_FILE_OWNED,
-    owned_only: bool = True,
-) -> list[Path]:
+def load_collection_data(owned_only: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     ...
 ```
 

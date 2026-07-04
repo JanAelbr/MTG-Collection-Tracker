@@ -558,6 +558,59 @@ export const api = {
 
   getPriceSyncStatus: () => apiRequest("/prices/sync/status"),
 
+  exportCollectionBackup: async () => {
+    const response = await fetch("/api/backup/export");
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload?.detail || `Export failed (${response.status})`;
+      notifyError(message);
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const filename = `mtg-collection-${stamp}.mtgbackup.zip`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
+
+  previewCollectionBackup: async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch("/api/backup/preview", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await parseJson(response);
+    if (!response.ok) {
+      const message = payload?.detail || `Preview failed (${response.status})`;
+      notifyError(message);
+      throw new Error(message);
+    }
+    return payload;
+  },
+
+  importCollectionBackup: async (file, mode = "replace") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mode", mode);
+    const response = await fetch("/api/backup/import", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await parseJson(response);
+    if (!response.ok) {
+      const message = payload?.detail || `Import failed (${response.status})`;
+      notifyError(message);
+      throw new Error(message);
+    }
+    clearClientCache();
+    return payload;
+  },
+
 };
 
 

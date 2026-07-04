@@ -70,20 +70,17 @@ These are separate steps:
 
 `sync_collection.py` runs deck import, then purchase import. Purchase import first writes deck ownership into `data/{set_code}.csv` files (merging with any manual rows already in those files), then loads all purchase CSVs into `purchases`.
 
-`generate_report.py` reads the database only — it does not import CSVs or call Scryfall.
-
 A card's owned count in deck reports comes from the `owned` column in the deck CSV (defaults to `1`). Set `owned` to `0` for cards you do not have. Purchase import writes matching rows into `data/{set_code}.csv` and then into `purchases`; decks with a `purchase_price` in the manifest have that total allocated across cards during CSV generation.
 
 ---
 
 ## Typical workflow
 
-Three separate steps — collection, prices, reports:
+Collection and prices:
 
 ```bash
 python scripts/sync_collection.py
 python scripts/update_prices.py
-python scripts/generate_report.py --no-browser
 ```
 
 **After editing deck or purchase CSVs:**
@@ -91,13 +88,6 @@ python scripts/generate_report.py --no-browser
 ```bash
 python scripts/sync_collection.py
 python scripts/update_prices.py
-python scripts/generate_report.py --no-browser
-```
-
-**Reports only (database unchanged):**
-
-```bash
-python scripts/generate_report.py --no-browser
 ```
 
 **Single deck list change:**
@@ -105,7 +95,7 @@ python scripts/generate_report.py --no-browser
 ```bash
 python scripts/deck_sync.py sedris
 python scripts/purchase_import.py
-python scripts/generate_report.py --no-browser
+python scripts/update_prices.py
 ```
 
 ---
@@ -125,7 +115,6 @@ After rebuilding CSVs:
 ```bash
 python scripts/sync_collection.py
 python scripts/update_prices.py
-python scripts/generate_report.py --no-browser
 ```
 
 Wiki sources and deck specs live in `data/decks/sources/` and `scripts/build_catalog_decks.py`. Scryfall lookups are cached in memory during a single build run to limit API traffic.

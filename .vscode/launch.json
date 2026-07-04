@@ -24,15 +24,6 @@
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe"
-    },
-    {
-      "name": "Generate Report",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/scripts/generate_report.py",
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe"
     }
   ]
 }

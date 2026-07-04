@@ -18,6 +18,8 @@ from util.card_finishes import (  # noqa: E402
     infer_finish_for_print,
     normalize_finish,
     parse_finish_from_row,
+    resolve_purchase_finish,
+    resolve_valuation_finish,
 )
 from util.cardmarket_prices import price_from_guide_entry  # noqa: E402
 from util.db_migrate import ensure_card_columns  # noqa: E402
@@ -85,6 +87,56 @@ class CardFinishesTests(unittest.TestCase):
         entry = {"trend": 2.42, "trend-foil": 5.54}
         self.assertEqual(price_from_guide_entry(entry, FINISH_ETCHED), 2.42)
 
+    def test_resolve_valuation_finish_uses_foil_price_for_foil_only_print(self):
+        row = {
+            "has_nonfoil": 0,
+            "has_foil": 1,
+            "has_etched": 0,
+            "market_value": None,
+            "market_value_foil": 4.81,
+            "market_value_etched": None,
+        }
+        resolved = resolve_valuation_finish(
+            row,
+            FINISH_NONFOIL,
+            price_lookup=lambda finish_id: {
+                FINISH_NONFOIL: None,
+                FINISH_FOIL: 4.81,
+                FINISH_ETCHED: None,
+            }.get(finish_id),
+        )
+        self.assertEqual(resolved, FINISH_FOIL)
+
+    def test_resolve_valuation_finish_keeps_ambiguous_dual_finish_unknown(self):
+        row = {
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
+            "market_value": None,
+            "market_value_foil": 1.72,
+        }
+        resolved = resolve_valuation_finish(
+            row,
+            FINISH_NONFOIL,
+            price_lookup=lambda finish_id: {
+                FINISH_NONFOIL: None,
+                FINISH_FOIL: 1.72,
+                FINISH_ETCHED: None,
+            }.get(finish_id),
+        )
+        self.assertEqual(resolved, FINISH_NONFOIL)
+
+    def test_resolve_purchase_finish_aligns_foil_only_print(self):
+        self.assertEqual(
+            resolve_purchase_finish(
+                FINISH_NONFOIL,
+                has_nonfoil=0,
+                has_foil=1,
+                has_etched=0,
+            ),
+            FINISH_FOIL,
+        )
+
 
 class FinishMigrationTests(unittest.TestCase):
     def test_migrates_foil_column_to_finish(self):
@@ -116,7 +168,7 @@ class FinishMigrationTests(unittest.TestCase):
                     VALUES ('CMR', '518', 1, 3.5);
                     """
                 )
-                ensure_card_columns(conn)
+                ensure_finish_migration(conn)
                 conn.commit()
                 columns = {
                     row[1]

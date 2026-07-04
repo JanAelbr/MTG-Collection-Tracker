@@ -11,6 +11,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import stats_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
 
@@ -67,6 +68,7 @@ class StatsApiServiceTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (

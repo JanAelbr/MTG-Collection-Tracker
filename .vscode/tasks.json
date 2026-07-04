@@ -2,10 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Generate Report",
+      "label": "Update Prices",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/generate_report.py"],
+      "args": ["scripts/update_prices.py"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -21,25 +21,10 @@
       "problemMatcher": []
     },
     {
-      "label": "Update Prices",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/update_prices.py"],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "Update Prices (Daily)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/update_prices_report.py"],
+      "args": ["scripts/update_prices.py"],
       "options": {
         "cwd": "${workspaceFolder}"
       },

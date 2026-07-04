@@ -4,12 +4,10 @@ import pandas as pd
 
 from lib.config import DB_PATH, EXCLUDED_SET_CODES, list_set_csv_files
 from lib.deck_csv import list_deck_sync_set_codes
-from report.ranked_cards_data import load_ranked_cards_data
-from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query, TOP_OWNED_CARDS_QUERY
+from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
 from util.set_catalog import load_set_icon_uris
-from util.price_history import default_compare_date, enrich_with_compare_date, enrich_with_previous_prices, get_price_snapshot_dates
 
 
 _set_display_names_cache: dict[str, str] | None = None
@@ -291,27 +289,7 @@ def _load_collection_data(conn: sqlite3.Connection, owned_only: bool) -> tuple[p
     return cards_df, summary_df
 
 
-# Load ranked cards for top/risers/fallers reports, including owned cards without prices.
-def load_top_cards_data() -> pd.DataFrame:
-    cards_df = load_ranked_cards_data()
-    with sqlite3.connect(DB_PATH) as conn:
-        return enrich_with_previous_prices(conn, cards_df)
-
-
-# Load owned cards with the largest price increase since a snapshot date.
-def load_top_risers_data(compare_date: str | None = None) -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
-        cards_df = pd.read_sql_query(TOP_OWNED_CARDS_QUERY, conn)
-        dates = get_price_snapshot_dates(conn)
-        if compare_date is None:
-            compare_date = default_compare_date(dates)
-        if compare_date:
-            cards_df = enrich_with_compare_date(conn, cards_df, compare_date)
-        else:
-            cards_df = enrich_with_previous_prices(conn, cards_df)
-
-    risers = cards_df[cards_df["price_change"].notna() & (cards_df["price_change"] > 0)].copy()
-    return risers.sort_values(
-        ["price_change", "current_value"],
-        ascending=[False, False],
-    )
+def select_owned_cards(cards_df: pd.DataFrame, owned_only: bool) -> pd.DataFrame:
+    if owned_only:
+        return cards_df.copy()
+    return cards_df[cards_df["purchase_value"].notna()]

@@ -137,7 +137,7 @@ class CardApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["setGallery"]["currentIndex"], 0)
         self.assertEqual(len(payload["setGallery"]["cards"]), 2)
         self.assertEqual(payload["setGallery"]["cards"][1]["collectorNumber"], "2")
-        self.assertTrue(payload["finishes"]["0"]["history"])
+        self.assertEqual(payload["finishes"]["0"]["guidePrices"]["trend"], 2.0)
 
     def test_missing_card_raises(self):
         with self.assertRaises(card_service.CardError):

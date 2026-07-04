@@ -23,6 +23,7 @@ def default_app_data_dir() -> Path:
 
 
 APP_DATA_DIR = default_app_data_dir()
+APP_CACHE_DIR = APP_DATA_DIR / "cache"
 
 
 def resolve_db_path(app_data_dir: Path | None = None) -> Path:
@@ -36,63 +37,11 @@ DATA_DIR = REPO_ROOT / "data"
 ART_STYLES_DIR = DATA_DIR / "art_styles"
 DECKS_DIR = DATA_DIR / "decks"
 DECKS_MANIFEST_NAME = "decks.csv"
-TEMPLATES_DIR = REPO_ROOT / "templates"
-REPORTS_DIR = REPO_ROOT / "reports"
-REPORTS_ASSETS_DIR = REPORTS_DIR / "assets"
-REPORTS_DATA_DIR = REPORTS_DIR / "data"
 LOGS_DIR = REPO_ROOT / "logs"
 
 CREATE_DB_SCRIPT = SCRIPTS_DIR / "db" / "create_db.py"
 UPDATE_PRICES_SCRIPT = SCRIPTS_DIR / "update_prices.py"
 SYNC_COLLECTION_SCRIPT = SCRIPTS_DIR / "sync_collection.py"
-GENERATE_REPORT_SCRIPT = SCRIPTS_DIR / "generate_report.py"
-
-OUTPUT_FILE_OWNED = REPORTS_DIR / "collection_owned.html"
-OUTPUT_FILE_ALL = REPORTS_DIR / "collection_all.html"
-OUTPUT_FILE_TOP = REPORTS_DIR / "collection_top.html"
-OUTPUT_FILE_RISERS = REPORTS_DIR / "collection_risers.html"
-OUTPUT_FILE_FALLERS = REPORTS_DIR / "collection_fallers.html"
-OUTPUT_FILE_MANAGER = REPORTS_DIR / "collection_manager.html"
-OUTPUT_FILE_STORAGE = REPORTS_DIR / "collection_storage.html"
-OUTPUT_FILE_STATS = REPORTS_DIR / "collection_stats.html"
-OUTPUT_FILE_DECK_STATS = REPORTS_DIR / "collection_deck_stats.html"
-OUTPUT_FILE_DECKS = REPORTS_DIR / "collection_decks.html"
-OUTPUT_FILE_CARD = REPORTS_DIR / "card.html"
-OUTPUT_FILE_INDEX = REPORTS_DIR / "index.html"
-
-TEMPLATE_PATH = TEMPLATES_DIR / "report.html"
-TEMPLATE_TOP_PATH = TEMPLATES_DIR / "top_report.html"
-TEMPLATE_RISERS_PATH = TEMPLATES_DIR / "risers_report.html"
-TEMPLATE_FALLERS_PATH = TEMPLATES_DIR / "fallers_report.html"
-TEMPLATE_MANAGER_PATH = TEMPLATES_DIR / "manager_report.html"
-TEMPLATE_STORAGE_PATH = TEMPLATES_DIR / "storage_report.html"
-TEMPLATE_STATS_PATH = TEMPLATES_DIR / "stats_report.html"
-TEMPLATE_DECK_STATS_PATH = TEMPLATES_DIR / "deck_stats_report.html"
-TEMPLATE_DECKS_PATH = TEMPLATES_DIR / "decks_report.html"
-TEMPLATE_CARD_PATH = TEMPLATES_DIR / "card.html"
-TEMPLATE_INDEX_PATH = TEMPLATES_DIR / "index.html"
-TEMPLATE_CSS = TEMPLATES_DIR / "report.css"
-TEMPLATE_FORMAT_JS = TEMPLATES_DIR / "report_format.js"
-TEMPLATE_COLLECTION_JS = TEMPLATES_DIR / "collection.js"
-TEMPLATE_JS = TEMPLATES_DIR / "report.js"
-TEMPLATE_TOP_JS = TEMPLATES_DIR / "top_report.js"
-TEMPLATE_RISERS_JS = TEMPLATES_DIR / "risers_report.js"
-TEMPLATE_FALLERS_JS = TEMPLATES_DIR / "fallers_report.js"
-TEMPLATE_MANAGER_JS = TEMPLATES_DIR / "manager_report.js"
-TEMPLATE_STORAGE_JS = TEMPLATES_DIR / "storage_report.js"
-TEMPLATE_STATS_JS = TEMPLATES_DIR / "stats_report.js"
-TEMPLATE_DECK_STATS_JS = TEMPLATES_DIR / "deck_stats_report.js"
-TEMPLATE_DECKS_JS = TEMPLATES_DIR / "decks_report.js"
-TEMPLATE_CARD_JS = TEMPLATES_DIR / "card.js"
-TEMPLATE_CARD_TOOLTIP_JS = TEMPLATES_DIR / "card_tooltip.js"
-
-
-# Read shared report JavaScript, with optional page-specific script appended.
-def load_report_javascript(page_script: Path) -> str:
-    tooltip_js = TEMPLATE_CARD_TOOLTIP_JS.read_text(encoding="utf-8")
-    page_js = page_script.read_text(encoding="utf-8")
-    return f"{tooltip_js}\n{page_js}"
-
 
 EXCLUDED_PURCHASE_CSV_NAMES = frozenset({"purchases.csv", "example.csv"})
 EXCLUDED_SET_CODES = frozenset({"EXAMPLE"})

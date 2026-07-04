@@ -7,8 +7,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.db import connect
-from api.routers import cards, decks, health, manager, meta, prices, reports, settings, stats, storage
-from lib.config import FRONTEND_DIST, REPORTS_DIR
+from api.routers import backup, cards, decks, health, manager, meta, prices, reports, settings, stats, storage
+from lib.config import FRONTEND_DIST
 from util.schema import ensure_database_schema
 
 OPENAPI_PATH_PREFIXES = ("docs", "redoc", "openapi.json")
@@ -47,6 +47,7 @@ app = FastAPI(
         {"name": "manager", "description": "Set manager: ownership, art styles, favourites."},
         {"name": "storage", "description": "Physical storage locations and assignments."},
         {"name": "prices", "description": "Cardmarket price sync."},
+        {"name": "backup", "description": "Collection backup export and restore."},
     ],
 )
 
@@ -79,17 +80,7 @@ app.include_router(stats.router, prefix="/api")
 app.include_router(decks.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
-
-
-def _mount_legacy_reports() -> None:
-    legacy_index = REPORTS_DIR / "index.html"
-    if not legacy_index.is_file():
-        return
-    app.mount(
-        "/legacy",
-        StaticFiles(directory=REPORTS_DIR, html=True),
-        name="legacy-reports",
-    )
+app.include_router(backup.router, prefix="/api")
 
 
 def _mount_frontend() -> None:
@@ -102,7 +93,7 @@ def _mount_frontend() -> None:
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        if full_path.startswith("api/") or full_path.startswith("legacy/"):
+        if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
         root_segment = full_path.split("/", 1)[0] if full_path else ""
         if root_segment in OPENAPI_PATH_PREFIXES or full_path.startswith("docs/"):
@@ -119,5 +110,4 @@ def _mount_frontend() -> None:
         raise HTTPException(status_code=404, detail="Frontend build not found")
 
 
-_mount_legacy_reports()
 _mount_frontend()

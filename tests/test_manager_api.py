@@ -12,6 +12,8 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import manager_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.card_prices import ensure_card_prices_table  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 from util.set_catalog import ensure_sets_table  # noqa: E402
 
@@ -75,6 +77,8 @@ class ManagerApiServiceTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
+        ensure_card_prices_table(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -86,7 +90,7 @@ class ManagerApiServiceTests(unittest.TestCase):
         ensure_app_tables(self.conn)
         self.conn.commit()
 
-    @patch("api.services.manager_service.get_all_set_codes", return_value=["MB2", "LTR"])
+    @patch("report.report_data.get_all_set_codes", return_value=["MB2", "LTR"])
     def test_favorite_sets_appear_first_in_manager_list(self, _mock_codes):
         manager_service.toggle_favorite_set(self.conn, "LTR")
         sets = manager_service.list_sets(self.conn)

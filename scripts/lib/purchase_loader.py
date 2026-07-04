@@ -18,10 +18,49 @@ from lib.purchase_csv import (
     parse_finish,
     parse_purchase_value,
 )
-from util.card_finishes import parse_finish_from_row
+from util.card_finishes import parse_finish_from_row, resolve_purchase_finish
 from util.db_migrate import ensure_purchase_unique_index
 
 log = get_logger(__name__)
+
+
+def _catalog_finish_flags(
+    cursor: sqlite3.Cursor,
+    set_code: str,
+    collector_number: str,
+) -> tuple[int | None, int | None, int | None]:
+    row = cursor.execute(
+        """
+        SELECT has_nonfoil, has_foil, has_etched
+        FROM cards
+        WHERE set_code = ? AND collector_number = ?
+        """,
+        (set_code.upper(), str(collector_number).strip()),
+    ).fetchone()
+    if row is None:
+        return None, None, None
+    return row[0], row[1], row[2]
+
+
+def normalize_purchase_finish(
+    cursor: sqlite3.Cursor,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+) -> int:
+    has_nonfoil, has_foil, has_etched = _catalog_finish_flags(
+        cursor,
+        set_code,
+        collector_number,
+    )
+    if has_nonfoil is None:
+        return int(finish)
+    return resolve_purchase_finish(
+        finish,
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
+    )
 
 
 # Insert one purchase row into the database.
@@ -30,6 +69,7 @@ def insert_purchase(cursor, set_code: str, card_number: str, row: dict) -> None:
         row.get("purchase_value") or row.get("price") or row.get("purchase")
     )
     finish = parse_finish_from_row(row, default=parse_finish(row.get("finish")))
+    finish = normalize_purchase_finish(cursor, set_code, card_number, finish)
     cursor.execute(
         "INSERT INTO purchases (set_code, collector_number, purchase_value, finish) VALUES (?, ?, ?, ?)",
         (set_code.upper(), card_number, purchase_value, finish),
@@ -82,16 +122,28 @@ def purchase_print_from_deck_row(cursor: sqlite3.Cursor, row: dict) -> tuple[str
     finish = row.get("finish", row.get("foil", 0))
 
     if set_code and collector_number:
-        return str(set_code).upper(), str(collector_number).strip(), int(finish)
+        normalized_set = str(set_code).upper()
+        normalized_number = str(collector_number).strip()
+        finish = normalize_purchase_finish(
+            cursor,
+            normalized_set,
+            normalized_number,
+            int(finish),
+        )
+        return normalized_set, normalized_number, finish
 
     resolved = resolve_deck_row(cursor, row)
     if not resolved.get("set_code") or not resolved.get("collector_number"):
         return None
-    return (
-        str(resolved["set_code"]).upper(),
-        str(resolved["collector_number"]).strip(),
+    normalized_set = str(resolved["set_code"]).upper()
+    normalized_number = str(resolved["collector_number"]).strip()
+    finish = normalize_purchase_finish(
+        cursor,
+        normalized_set,
+        normalized_number,
         int(resolved["finish"]),
     )
+    return normalized_set, normalized_number, finish
 
 
 def _load_deck_purchase_price(cursor: sqlite3.Cursor, slug: str) -> float | None:

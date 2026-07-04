@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from api.main import app  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
@@ -71,6 +72,7 @@ def _seed_test_db(db_path: Path) -> None:
         );
         """
     )
+    ensure_card_columns(conn)
     conn.execute(
         """
         INSERT INTO cards (

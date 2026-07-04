@@ -31,9 +31,9 @@
     },
     {
         "name": "06z. Surge Foil Realms & Relics: serialized",
+        "suffix": "z",
         "firstNumber": 378,
-        "lastNumber": 407,
-        "suffix": "z"
+        "lastNumber": 407
     },
     {
         "name": "07. The Rings of Power",
@@ -42,9 +42,9 @@
     },
     {
         "name": "07z. The Rings of Power: Serialized",
+        "suffix": "z",
         "firstNumber": 408,
-        "lastNumber": 410,
-        "suffix": "z"
+        "lastNumber": 410
     },
     {
         "name": "08. Commander Showcase Scrolls",

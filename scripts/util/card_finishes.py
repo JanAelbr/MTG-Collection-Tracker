@@ -166,6 +166,48 @@ def infer_finish_for_print(
     return finish_id
 
 
+def resolve_valuation_finish(
+    row,
+    stored_finish: int,
+    *,
+    price_lookup,
+) -> int:
+    """Pick which finish to price when the owned finish has no market value."""
+    stored = normalize_finish(stored_finish)
+    if price_lookup(stored) is not None:
+        return stored
+
+    has_nonfoil = int(has_finish_flag(row, FINISH_NONFOIL))
+    has_foil = int(has_finish_flag(row, FINISH_FOIL))
+    has_etched = int(has_finish_flag(row, FINISH_ETCHED))
+    inferred = infer_finish_for_print(
+        stored,
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
+    )
+    if inferred != stored and price_lookup(inferred) is not None:
+        return inferred
+
+    return stored
+
+
+def resolve_purchase_finish(
+    stored_finish: int,
+    *,
+    has_nonfoil: int | None,
+    has_foil: int | None,
+    has_etched: int | None,
+) -> int:
+    """Align a purchase finish with the finishes that exist for the catalog print."""
+    return infer_finish_for_print(
+        stored_finish,
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
+    )
+
+
 def card_price_key(set_code: str, collector_number: str, finish) -> str:
     finish_id = normalize_finish(finish)
     return f"{set_code.upper()}|{collector_number}|{finish_id}"

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 
@@ -12,35 +12,16 @@ const catalogPruning = ref(false);
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
+const backupExporting = ref(false);
+const backupImporting = ref(false);
+const backupFile = ref(null);
+const backupPreview = ref(null);
+const backupMode = ref("replace");
+const backupConfirmReplace = ref(false);
+const backupMessage = ref("");
+const backupError = ref("");
+const importComplete = ref(null);
 let pollTimer = null;
-
-const sections = [
-  {
-    to: "/collection/all",
-    title: "Collection",
-    description: "Top owned cards and full collection browser with live Cardmarket pricing.",
-  },
-  {
-    to: "/stats",
-    title: "Collection stats",
-    description: "Portfolio value, ROI, and breakdown by set or art style.",
-  },
-  {
-    to: "/storage",
-    title: "Storage",
-    description: "Browse binders, decks, and custom storage. Move or remove copies.",
-  },
-  {
-    to: "/manager",
-    title: "Set Manager",
-    description: "Mark owned finishes, bulk-assign storage, and manage set CSVs.",
-  },
-  {
-    to: "/decks",
-    title: "Decks",
-    description: "Deck value, ownership, ROI, and card browse with filters.",
-  },
-];
 
 async function refreshMeta() {
   const next = await ignoreAborted(api.getAppMeta());
@@ -188,6 +169,70 @@ async function triggerPriceSync() {
   } catch (error) {
     syncMessage.value = error.message || "Could not start price sync.";
     syncRunning.value = false;
+  }
+}
+
+async function exportCollectionBackup() {
+  backupError.value = "";
+  backupMessage.value = "";
+  backupExporting.value = true;
+  try {
+    await api.exportCollectionBackup();
+    backupMessage.value = "Collection backup downloaded.";
+  } catch (error) {
+    backupError.value = error.message || "Could not export collection backup.";
+  } finally {
+    backupExporting.value = false;
+  }
+}
+
+async function onBackupFileSelected(event) {
+  const file = event.target.files?.[0];
+  backupFile.value = file || null;
+  backupPreview.value = null;
+  backupError.value = "";
+  backupMessage.value = "";
+  importComplete.value = null;
+  backupConfirmReplace.value = false;
+  if (!file) {
+    return;
+  }
+  try {
+    backupPreview.value = await api.previewCollectionBackup(file);
+  } catch (error) {
+    backupError.value = error.message || "Could not read backup file.";
+    backupFile.value = null;
+    event.target.value = "";
+  }
+}
+
+const canImportBackup = computed(() =>
+  Boolean(
+    backupFile.value
+    && backupPreview.value
+    && (backupMode.value === "merge" || backupConfirmReplace.value),
+  ),
+);
+
+async function importCollectionBackup() {
+  if (!backupFile.value || !canImportBackup.value) {
+    return;
+  }
+  backupImporting.value = true;
+  backupError.value = "";
+  backupMessage.value = "";
+  try {
+    const result = await api.importCollectionBackup(backupFile.value, backupMode.value);
+    importComplete.value = result;
+    backupMessage.value = result.message || "Collection restored.";
+    backupPreview.value = null;
+    backupFile.value = null;
+    backupConfirmReplace.value = false;
+    await Promise.all([refreshMeta(), loadPricingSettings(), loadStorageLocations()]);
+  } catch (error) {
+    backupError.value = error.message || "Could not import collection backup.";
+  } finally {
+    backupImporting.value = false;
   }
 }
 
@@ -349,6 +394,115 @@ onUnmounted(stopPolling);
     </section>
 
     <section class="home-panel">
+      <h2>Backup &amp; restore</h2>
+      <p class="home-intro">
+        Export owned cards, decks, storage assignments, and display settings.
+        Card catalog rows and prices are not included — sync those after restoring on a new machine.
+      </p>
+
+      <div class="home-sync-panel">
+        <div class="home-sync-copy">
+          <strong>Export collection</strong>
+          <p>Downloads a <code>.mtgbackup.zip</code> file you can restore later.</p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="backupExporting"
+          @click="exportCollectionBackup"
+        >
+          {{ backupExporting ? "Exporting…" : "Export collection" }}
+        </button>
+      </div>
+
+      <div class="home-backup-import">
+        <strong>Restore from backup</strong>
+        <label class="home-backup-file">
+          <span>Backup file</span>
+          <input type="file" accept=".zip,.mtgbackup.zip" @change="onBackupFileSelected" />
+        </label>
+
+        <div v-if="backupPreview" class="home-backup-preview">
+          <p v-if="backupPreview.exportedAt">
+            Exported <strong>{{ backupPreview.exportedAt }}</strong>
+          </p>
+          <ul>
+            <li>{{ backupPreview.summary.purchases }} owned print{{ backupPreview.summary.purchases === 1 ? "" : "s" }}</li>
+            <li>{{ backupPreview.summary.decks }} deck{{ backupPreview.summary.decks === 1 ? "" : "s" }} ({{ backupPreview.summary.deckCards }} slots)</li>
+            <li>{{ backupPreview.summary.cardInstances }} stored cop{{ backupPreview.summary.cardInstances === 1 ? "y" : "ies" }}</li>
+            <li>{{ backupPreview.summary.storageLocations }} storage location{{ backupPreview.summary.storageLocations === 1 ? "" : "s" }}</li>
+            <li v-if="backupPreview.summary.artStyleSets">
+              Art styles for {{ backupPreview.summary.artStyleSets }} set{{ backupPreview.summary.artStyleSets === 1 ? "" : "s" }}
+            </li>
+            <li v-if="backupPreview.summary.setsReferenced?.length">
+              Sets referenced: {{ backupPreview.summary.setsReferenced.join(", ") }}
+            </li>
+          </ul>
+        </div>
+
+        <div class="home-backup-mode">
+          <span class="home-backup-mode-label">Import mode</span>
+          <div class="home-backup-mode-options">
+            <label
+              class="home-backup-mode-option"
+              :class="{ 'is-selected': backupMode === 'replace' }"
+            >
+              <input v-model="backupMode" type="radio" value="replace" />
+              <span class="home-backup-mode-option-body">
+                <strong>Replace</strong>
+                <span>Overwrite purchases, decks, storage, and settings from the backup</span>
+              </span>
+            </label>
+            <label
+              class="home-backup-mode-option"
+              :class="{ 'is-selected': backupMode === 'merge' }"
+            >
+              <input v-model="backupMode" type="radio" value="merge" />
+              <span class="home-backup-mode-option-body">
+                <strong>Merge</strong>
+                <span>Combine backup data with what is already here — skips anything that already matches</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <label v-if="backupMode === 'replace'" class="home-backup-confirm">
+          <input v-model="backupConfirmReplace" type="checkbox" />
+          <span>I understand this will replace my current collection data</span>
+        </label>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="!canImportBackup || backupImporting"
+          @click="importCollectionBackup"
+        >
+          {{ backupImporting ? "Restoring…" : "Restore collection" }}
+        </button>
+      </div>
+
+      <div v-if="importComplete" class="home-backup-next-steps">
+        <strong>Restore complete</strong>
+        <p>{{ importComplete.message }}</p>
+        <p v-if="importComplete.setsNeedingCatalog?.length">
+          Catalog sync will fetch Scryfall data for:
+          {{ importComplete.setsNeedingCatalog.join(", ") }}.
+        </p>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="syncRunning"
+          @click="triggerPriceSync"
+        >
+          {{ syncRunning ? "Syncing prices…" : "Sync catalog & prices now" }}
+        </button>
+      </div>
+
+      <p v-if="backupMessage" class="home-sync-message">{{ backupMessage }}</p>
+      <p v-if="backupError" class="home-sync-message error">{{ backupError }}</p>
+    </section>
+
+    <section class="home-panel">
       <h2>Catalog maintenance</h2>
       <p class="home-intro">
         Removing a set from the browser only deletes its purchase CSV. Use this to clear leftover
@@ -369,28 +523,6 @@ onUnmounted(stopPolling);
           {{ catalogPruning ? "Clearing…" : "Clear orphan catalogs" }}
         </button>
       </div>
-    </section>
-
-    <section class="home-panel">
-      <h2>Quick links</h2>
-      <div class="home-links">
-        <RouterLink v-for="item in sections" :key="item.to" :to="item.to" class="home-link-card">
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.description }}</span>
-        </RouterLink>
-      </div>
-    </section>
-
-    <section v-if="meta?.legacyReportsAvailable" class="home-panel home-panel-muted">
-      <h2>Legacy index</h2>
-      <p>
-        A static HTML index is still available for bookmark compatibility.
-        Regenerate it with
-        <code>python scripts/update_prices_report.py --static-reports</code>.
-      </p>
-      <a :href="meta.legacyReportsPath" class="btn btn-secondary" target="_blank" rel="noopener">
-        Open legacy index
-      </a>
     </section>
   </div>
 </template>
