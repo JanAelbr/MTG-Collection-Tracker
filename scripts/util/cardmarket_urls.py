@@ -82,7 +82,11 @@ def find_paired_product_id(
     target_finish: int,
 ) -> int | None:
     want = "foil" if normalize_finish(target_finish) == FINISH_FOIL else "nonfoil"
-    for delta in (-1, 1):
+    # Cardmarket lists nonfoil immediately before foil for the same printing.
+    # Prefer +1 when resolving foil and -1 when resolving nonfoil so we do not
+    # grab the foil product for the previous printing (e.g. LTR scroll showcase).
+    deltas = (1, -1) if want == "foil" else (-1, 1)
+    for delta in deltas:
         neighbor_id = product_id + delta
         entry = guide.get(neighbor_id)
         if not entry:
@@ -108,6 +112,10 @@ def normalize_cardmarket_url_columns(
                 foil_url = nonfoil_url
                 paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
                 nonfoil_url = build_product_url(paired) if paired else None
+            elif bias == "nonfoil":
+                paired = find_paired_product_id(product_id, guide, FINISH_FOIL)
+                if paired is not None:
+                    foil_url = build_product_url(paired)
     elif foil_url and not nonfoil_url:
         product_id = parse_id_product(foil_url)
         if product_id is not None:
@@ -116,6 +124,10 @@ def normalize_cardmarket_url_columns(
                 nonfoil_url = foil_url
                 paired = find_paired_product_id(product_id, guide, FINISH_FOIL)
                 foil_url = build_product_url(paired) if paired else None
+            elif bias == "foil":
+                paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
+                if paired is not None:
+                    nonfoil_url = build_product_url(paired)
 
     return nonfoil_url, foil_url
 

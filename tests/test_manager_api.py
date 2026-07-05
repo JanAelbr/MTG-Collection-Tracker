@@ -311,6 +311,42 @@ class ManagerApiServiceTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row[0], "storage:general")
 
+    def test_set_copy_allocations_splits_across_storages(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description
+            ) VALUES ('storage:deckbox', 'Deck box', 'storage', 2, '')
+            """
+        )
+        self.conn.commit()
+
+        state = manager_service.set_copy_allocations(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            allocations=[
+                {"locationSlug": "storage:general", "count": 2},
+                {"locationSlug": "storage:deckbox", "count": 3},
+            ],
+        )
+        self.assertEqual(state["ownedCount"], 5)
+        self.assertEqual(
+            sorted((item["slug"], item["count"]) for item in state["locations"]),
+            [("storage:deckbox", 3), ("storage:general", 2)],
+        )
+
+        cleared = manager_service.set_copy_allocations(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            allocations=[],
+        )
+        self.assertEqual(cleared["ownedCount"], 0)
+        self.assertEqual(cleared["locations"], [])
+
     def test_copy_limits_and_per_copy_storage(self):
         state = manager_service.adjust_copy_count(
             self.conn,
@@ -345,18 +381,18 @@ class ManagerApiServiceTests(unittest.TestCase):
         state = manager_service.get_copy_state(self.conn, "LTR", "1", 0)
         self.assertEqual(third["ownedCount"], 3)
         self.assertEqual(state["ownedCount"], 3)
-        self.assertEqual(state["maxCopies"], 3)
+        self.assertEqual(state["maxCopies"], 99)
         self.assertEqual(len(state["copies"]), 3)
 
-        with self.assertRaises(manager_service.ManagerError):
-            manager_service.adjust_copy_count(
-                self.conn,
-                set_code="LTR",
-                collector_number="1",
-                finish=0,
-                delta=1,
-                location_slug="storage:general",
-            )
+        fourth = manager_service.adjust_copy_count(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            delta=1,
+            location_slug="storage:general",
+        )
+        self.assertEqual(fourth["ownedCount"], 4)
 
         deck_row = self.conn.execute(
             "SELECT location_slug FROM storage_locations WHERE location_slug != 'storage:general' LIMIT 1"

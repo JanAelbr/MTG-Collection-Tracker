@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { useDeckRename } from "../composables/useDeckRename";
 import {
   deckCardImageUri,
   getGalleryCommanders,
@@ -13,14 +14,35 @@ const props = defineProps({
   pages: { type: Object, default: () => ({}) },
   activeDeckId: { type: String, default: "" },
   sortBy: { type: String, default: "year" },
+  onRenamed: { type: Function, default: null },
 });
 
-const emit = defineEmits(["select"]);
+const emit = defineEmits(["select", "create"]);
 
 const galleryRef = ref(null);
 
 const sortedDecks = computed(() =>
   sortDecksForGallery(props.decks, props.pages, props.sortBy),
+);
+
+const activeDeck = computed(
+  () => props.decks.find((deck) => String(deck.id) === String(props.activeDeckId)) || null,
+);
+
+const {
+  renaming,
+  draft,
+  error: renameError,
+  saving: renameSaving,
+  inputRef: renameInputRef,
+  startRename,
+  cancelRename,
+  onRenameBlur,
+  saveRename,
+} = useDeckRename(
+  () => props.activeDeckId,
+  () => activeDeck.value?.name || "",
+  (updatedDeck) => props.onRenamed?.(updatedDeck),
 );
 
 function deckStats(deck) {
@@ -48,6 +70,10 @@ function commandersFor(deck) {
   return getGalleryCommanders(deckCards(deck));
 }
 
+function isActiveDeck(deck) {
+  return String(deck.id) === String(props.activeDeckId);
+}
+
 function selectDeck(deckId) {
   emit("select", String(deckId));
 }
@@ -66,11 +92,24 @@ function scrollActiveIntoView(behavior = "smooth") {
       return;
     }
     const active = root.querySelector(".deck-gallery-card.active");
-    active?.scrollIntoView({ block: "nearest", inline: "center", behavior });
+    if (!active) {
+      return;
+    }
+    const rootRect = root.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    const activeCenter = activeRect.left - rootRect.left + root.scrollLeft + activeRect.width / 2;
+    const targetScroll = activeCenter - root.clientWidth / 2;
+    root.scrollTo({
+      left: Math.max(0, targetScroll),
+      behavior: behavior === "auto" ? "auto" : behavior,
+    });
   });
 }
 
-watch(() => props.activeDeckId, () => scrollActiveIntoView());
+watch(() => props.activeDeckId, () => {
+  cancelRename();
+  scrollActiveIntoView();
+});
 watch(
   () => [props.sortBy, sortedDecks.value.length],
   () => scrollActiveIntoView("auto"),
@@ -85,7 +124,7 @@ onMounted(() => scrollActiveIntoView("auto"));
       v-for="deck in sortedDecks"
       :key="deck.id"
       class="deck-gallery-card"
-      :class="{ active: String(deck.id) === String(activeDeckId) }"
+      :class="{ active: isActiveDeck(deck) }"
       role="button"
       tabindex="0"
       @click="selectDeck(deck.id)"
@@ -112,7 +151,45 @@ onMounted(() => scrollActiveIntoView("auto"));
       </div>
 
       <div class="deck-gallery-meta">
-        <h3 class="deck-gallery-name">{{ deck.label }}</h3>
+        <div
+          v-if="isActiveDeck(deck)"
+          class="deck-rename-wrap deck-gallery-name-wrap"
+          @click.stop
+        >
+          <div class="deck-rename-title-row">
+            <h3 v-if="!renaming" class="deck-gallery-name">{{ deck.label }}</h3>
+            <input
+              v-else
+              ref="renameInputRef"
+              v-model="draft"
+              class="deck-gallery-name deck-rename-input"
+              type="text"
+              maxlength="120"
+              :disabled="renameSaving"
+              @keydown.enter.prevent="saveRename"
+              @keydown.esc.prevent="cancelRename"
+              @blur="onRenameBlur"
+              @click.stop
+            />
+            <button
+              v-if="!renaming"
+              type="button"
+              class="deck-rename-edit-button"
+              aria-label="Rename deck"
+              title="Rename deck"
+              @click.stop="startRename"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
+          <p v-if="renameError" class="deck-rename-error">{{ renameError }}</p>
+        </div>
+        <h3 v-else class="deck-gallery-name">{{ deck.label }}</h3>
         <div class="deck-gallery-stats">
           <span v-if="deck.releaseYear" class="deck-gallery-year">{{ deck.releaseYear }}</span>
           <span class="deck-gallery-value">{{ deckValueLabel(deck) }}</span>
@@ -120,5 +197,19 @@ onMounted(() => scrollActiveIntoView("auto"));
         </div>
       </div>
     </div>
+
+    <button
+      type="button"
+      class="deck-gallery-card deck-gallery-card--add"
+      aria-label="Create deck"
+      @click="emit('create')"
+    >
+      <div class="deck-gallery-visual">
+        <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
+      </div>
+      <div class="deck-gallery-meta">
+        <h3 class="deck-gallery-name">New deck</h3>
+      </div>
+    </button>
   </div>
 </template>

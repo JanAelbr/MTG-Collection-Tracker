@@ -152,7 +152,7 @@ def compute_deck_stats_page(
 
 def load_deck_stats_client_payload() -> dict:
     with sqlite3.connect(DB_PATH) as conn:
-        deck_df = enrich_deck_cards_df(load_deck_cards_df(conn))
+        deck_df = enrich_deck_cards_df(load_deck_cards_df(conn), conn)
         decks = load_deck_list(conn)
         deck_filter = build_deck_filter_payload(deck_df, decks)
         snapshot_cache = load_price_snapshot_cache(conn)

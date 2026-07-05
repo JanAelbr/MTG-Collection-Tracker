@@ -50,6 +50,7 @@ SELECT
     d.name,
     d.slug,
     d.purchase_price,
+    d.format,
     CAST(strftime('%Y', MAX(s.released_at)) AS INTEGER) AS release_year
 FROM decks d
 LEFT JOIN deck_cards dc
@@ -96,15 +97,42 @@ def load_deck_list(conn: sqlite3.Connection | None = None) -> list[dict]:
             "name": name,
             "label": format_deck_label(name, release_year),
             "slug": slug,
+            "format": deck_format or "commander",
             "releaseYear": int(release_year) if release_year is not None else None,
             "purchasePrice": float(purchase_price) if purchase_price is not None else None,
         }
-        for deck_id, name, slug, purchase_price, release_year in rows
+        for deck_id, name, slug, purchase_price, deck_format, release_year in rows
     ]
 
 
+# Load owned copy counts per print from card_instances and purchases.
+def load_owned_count_by_print(conn: sqlite3.Connection) -> dict[tuple[str, str, int], int]:
+    counts: dict[tuple[str, str, int], int] = {}
+    instance_rows = conn.execute(
+        """
+        SELECT set_code, collector_number, finish, COUNT(*) AS owned_count
+        FROM card_instances
+        GROUP BY set_code, collector_number, finish
+        """
+    ).fetchall()
+    for set_code, collector_number, finish, owned_count in instance_rows:
+        key = (str(set_code).upper(), str(collector_number).strip(), int(finish))
+        counts[key] = int(owned_count)
+
+    purchase_rows = conn.execute(
+        "SELECT set_code, collector_number, finish FROM purchases"
+    ).fetchall()
+    for set_code, collector_number, finish in purchase_rows:
+        key = (str(set_code).upper(), str(collector_number).strip(), int(finish))
+        counts.setdefault(key, 1)
+    return counts
+
+
 # Add derived pricing columns used by deck statistics.
-def enrich_deck_cards_df(deck_df: pd.DataFrame) -> pd.DataFrame:
+def enrich_deck_cards_df(
+    deck_df: pd.DataFrame,
+    conn: sqlite3.Connection | None = None,
+) -> pd.DataFrame:
     if deck_df.empty:
         return deck_df.copy()
 
@@ -139,7 +167,27 @@ def enrich_deck_cards_df(deck_df: pd.DataFrame) -> pd.DataFrame:
     csv_owned_qty = pd.to_numeric(enriched["owned_qty"], errors="coerce").fillna(0).astype(int)
     csv_owned_qty = csv_owned_qty.clip(lower=0)
     csv_owned_qty = pd.concat([csv_owned_qty, enriched["qty"].astype(int)], axis=1).min(axis=1)
-    enriched["owned_qty"] = csv_owned_qty.astype(int)
+
+    if conn is not None:
+        collection_counts = load_owned_count_by_print(conn)
+
+        def collection_owned_for_row(row) -> int:
+            if pd.isna(row["set_code"]) or pd.isna(row["collector_number"]):
+                return 0
+            key = (
+                str(row["set_code"]).upper(),
+                str(row["collector_number"]).strip(),
+                int(row["finish"] if pd.notna(row["finish"]) else 0),
+            )
+            return collection_counts.get(key, 0)
+
+        collection_owned_qty = enriched.apply(collection_owned_for_row, axis=1).astype(int)
+        merged_owned_qty = pd.concat([csv_owned_qty, collection_owned_qty], axis=1).max(axis=1)
+        merged_owned_qty = pd.concat([merged_owned_qty, enriched["qty"].astype(int)], axis=1).min(axis=1)
+        enriched["owned_qty"] = merged_owned_qty.astype(int)
+    else:
+        enriched["owned_qty"] = csv_owned_qty.astype(int)
+
     owned_mask = enriched["owned_qty"] > 0
     current_value = unit_value.astype("float64") * enriched["qty"].astype("float64")
     enriched["current_value"] = current_value.where(unit_value.notna(), None)
@@ -197,7 +245,7 @@ def build_deck_filter_payload(
 
 # Load deck filter payload from the database.
 def load_deck_filter_payload(conn: sqlite3.Connection) -> dict:
-    deck_df = enrich_deck_cards_df(load_deck_cards_df(conn))
+    deck_df = enrich_deck_cards_df(load_deck_cards_df(conn), conn)
     decks = load_deck_list(conn)
     return {
         "decks": decks,

@@ -113,7 +113,8 @@ def list_report_cards(
         type_filter=normalized_type,
         color_filters=parsed_colors,
     )
-    ranked = _rank_cards(filtered, normalized_report)
+    scoped = _cards_for_report(filtered, normalized_report)
+    ranked = _rank_cards(scoped, normalized_report)
     if normalized_report == "all":
         limited = ranked
     else:
@@ -179,10 +180,6 @@ def _load_enriched_report_cards(
             compare_date=selected_compare,
         )
         for card in base_cards
-    ]
-    enriched = [
-        card for card in enriched
-        if card.get("currentValue") is not None and float(card["currentValue"]) > 0
     ]
     payload = (enriched, selected_compare)
     memory_cache.set(cache_key, payload, _ENRICHED_REPORTS_TTL)
@@ -293,6 +290,17 @@ def _load_card_locations(conn: sqlite3.Connection) -> dict[str, list[dict]]:
             "count": int(copy_count),
         })
     return locations
+
+
+def _has_positive_price(card: dict) -> bool:
+    value = card.get("currentValue")
+    return value is not None and float(value) > 0
+
+
+def _cards_for_report(cards: list[dict], report: str) -> list[dict]:
+    if report == "all":
+        return cards
+    return [card for card in cards if _has_positive_price(card)]
 
 
 def _apply_filters(

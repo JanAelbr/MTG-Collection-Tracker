@@ -18,6 +18,8 @@ const props = defineProps({
   variants: { type: Array, default: () => [] },
   selectedIndex: { type: Number, default: 0 },
   setLabelFor: { type: Function, default: null },
+  showRandom: { type: Boolean, default: true },
+  compact: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:selectedIndex", "random", "close"]);
@@ -124,6 +126,7 @@ watch(
     v-if="name && variants.length"
     ref="panelRef"
     class="table-panel collection-search-art-panel"
+    :class="{ 'collection-search-art-panel--compact': compact }"
   >
     <div class="collection-search-art-header">
       <div>
@@ -133,7 +136,12 @@ watch(
         </p>
       </div>
       <div class="collection-search-art-actions">
-        <button type="button" class="btn btn-secondary btn-small" @click="emit('random')">
+        <button
+          v-if="showRandom"
+          type="button"
+          class="btn btn-secondary btn-small"
+          @click="emit('random')"
+        >
           Another random
         </button>
         <button type="button" class="btn btn-secondary btn-small" @click="emit('close')">
@@ -144,8 +152,15 @@ watch(
 
     <div v-if="selectedVariant" class="collection-search-art-selected">
       <div class="collection-search-art-preview-image-wrap">
+        <img
+          v-if="compact && selectedVariant.imageUri"
+          :src="selectedVariant.imageUri"
+          :alt="name"
+          loading="lazy"
+          class="collection-search-art-preview-image"
+        />
         <CardInteractiveImage
-          v-if="selectedVariant.imageUri"
+          v-else-if="selectedVariant.imageUri"
           :src="selectedVariant.imageUri"
           :alt="name"
           :card="selectedVariant"

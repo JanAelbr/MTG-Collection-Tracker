@@ -25,12 +25,14 @@ const options = computed(() => [
 </script>
 
 <template>
-  <BrowseSelect
-    :model-value="modelValue"
-    :options="options"
-    :disabled="disabled"
-    filterable
-    aria-label="Art style"
-    @update:model-value="emit('update:modelValue', $event)"
-  />
+  <div class="art-style-picker">
+    <BrowseSelect
+      :model-value="modelValue"
+      :options="options"
+      :disabled="disabled"
+      filterable
+      aria-label="Art style"
+      @update:model-value="emit('update:modelValue', $event)"
+    />
+  </div>
 </template>

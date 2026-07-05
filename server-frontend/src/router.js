@@ -11,6 +11,15 @@ import HomeView from "./views/HomeView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition;
+    }
+    if (to.path === from.path && to.name === from.name) {
+      return false;
+    }
+    return { top: 0 };
+  },
   routes: [
     { path: "/", redirect: "/collection/all" },
     { path: "/collection", redirect: "/collection/all" },

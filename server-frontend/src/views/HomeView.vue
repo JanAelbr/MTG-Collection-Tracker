@@ -5,7 +5,6 @@ import { fetchPricingSettings, savePricingSettings, usePricingSettings } from ".
 
 const meta = ref(null);
 const { settings: pricingSettings } = usePricingSettings();
-const storageLocations = ref([]);
 const settingsMessage = ref("");
 const catalogMessage = ref("");
 const catalogPruning = ref(false);
@@ -33,11 +32,6 @@ async function refreshMeta() {
 
 async function loadPricingSettings() {
   await fetchPricingSettings(true);
-}
-
-async function loadStorageLocations() {
-  const payload = await api.listStorageLocations();
-  storageLocations.value = payload.locations || [];
 }
 
 async function updatePriceStrategy(event) {
@@ -98,16 +92,6 @@ async function updateSetPickerMode(event) {
   settingsMessage.value = "";
   try {
     await savePricingSettings({ setPickerMode: event.target.value });
-    settingsMessage.value = "Display settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save display settings.";
-  }
-}
-
-async function updateDefaultStorageLocation(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ defaultStorageLocation: event.target.value });
     settingsMessage.value = "Display settings saved.";
   } catch (error) {
     settingsMessage.value = error.message || "Could not save display settings.";
@@ -228,7 +212,7 @@ async function importCollectionBackup() {
     backupPreview.value = null;
     backupFile.value = null;
     backupConfirmReplace.value = false;
-    await Promise.all([refreshMeta(), loadPricingSettings(), loadStorageLocations()]);
+    await Promise.all([refreshMeta(), loadPricingSettings()]);
   } catch (error) {
     backupError.value = error.message || "Could not import collection backup.";
   } finally {
@@ -261,7 +245,7 @@ async function pruneOrphanCatalogs() {
 }
 
 onMounted(async () => {
-  await Promise.all([refreshMeta(), loadPricingSettings(), loadStorageLocations(), refreshSyncStatus()]);
+  await Promise.all([refreshMeta(), loadPricingSettings(), refreshSyncStatus()]);
   if (syncStatus.value?.status === "running") {
     startPolling();
   }
@@ -371,21 +355,6 @@ onUnmounted(stopPolling);
               :value="mode"
             >
               {{ setSortModeLabel(mode) }}
-            </option>
-          </select>
-        </label>
-        <label v-if="storageLocations.length" class="manager-filter">
-          <span>Default storage</span>
-          <select
-            :value="pricingSettings.defaultStorageLocation ?? 'storage:general'"
-            @change="updateDefaultStorageLocation"
-          >
-            <option
-              v-for="location in storageLocations"
-              :key="location.slug"
-              :value="location.slug"
-            >
-              {{ location.label }}
             </option>
           </select>
         </label>

@@ -419,6 +419,16 @@ export const api = {
 
     }),
 
+  setCardCopyAllocations: (body) =>
+
+    apiRequest("/manager/copies/allocations", {
+
+      method: "PUT",
+
+      body: JSON.stringify(body),
+
+    }),
+
   updateCardCopyStorage: (instanceId, body) =>
 
     apiRequest(`/manager/copies/${instanceId}/storage`, {
@@ -547,6 +557,36 @@ export const api = {
     apiRequest(`/decks/${encodeURIComponent(deckId)}/browse`),
 
   getDeckBrowseIndex: () => apiRequest("/decks/browse-index"),
+
+  addCardToDeck: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  removeCardFromDeck: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards`, {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
+  adjustDeckCardQty: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/qty`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  renameDeck: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  createDeck: (body) =>
+    apiRequest("/decks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   triggerPriceSync: () =>
 

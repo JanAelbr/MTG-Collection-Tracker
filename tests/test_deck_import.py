@@ -12,6 +12,7 @@ if str(SCRIPTS) not in sys.path:
 
 from lib.deck_csv import DeckEntry, list_deck_sync_set_codes  # noqa: E402
 from lib.deck_loader import import_deck_file, resolve_deck_row  # noqa: E402
+from report.deck_queries import enrich_deck_cards_df  # noqa: E402
 from report.deck_stats_data import compute_deck_stats_page, load_deck_stats_client_payload  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 
@@ -46,6 +47,13 @@ class DeckImportTests(unittest.TestCase):
                 purchase_value REAL NOT NULL DEFAULT 0,
                 finish INTEGER NOT NULL CHECK (finish IN (0, 1, 2)),
                 UNIQUE (set_code, collector_number, finish)
+            );
+            CREATE TABLE card_instances (
+                instance_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                finish INTEGER NOT NULL,
+                location_slug TEXT NOT NULL DEFAULT 'storage:general'
             );
             """
         )
@@ -169,6 +177,52 @@ class DeckImportTests(unittest.TestCase):
         )
         with patch("lib.deck_csv.load_deck_entries", return_value=[deck_entry]):
             self.assertEqual(list_deck_sync_set_codes(), ["ECC", "EOC"])
+
+    def test_enrich_deck_cards_uses_collection_owned_counts(self):
+        import pandas as pd
+
+        self.conn.executemany(
+            """
+            INSERT INTO card_instances (set_code, collector_number, finish, location_slug)
+            VALUES (?, ?, ?, ?)
+            """,
+            [("LTC", "284", 0, "storage:general")] * 4,
+        )
+        self.conn.commit()
+
+        deck_df = pd.DataFrame(
+            [
+                {
+                    "deck_id": 1,
+                    "deck_name": "Sample",
+                    "deck_slug": "sample",
+                    "deck_purchase_price": None,
+                    "card_name": "Sol Ring",
+                    "set_code": "LTC",
+                    "collector_number": "284",
+                    "finish": 0,
+                    "qty": 4,
+                    "owned_qty": 0,
+                    "section": "main",
+                    "in_catalog": 1,
+                    "sort_order": 0,
+                    "catalog_name": "Sol Ring",
+                    "art_style": "Main",
+                    "market_value": 2.0,
+                    "market_value_foil": 3.0,
+                    "market_value_etched": None,
+                    "image_uri": None,
+                    "cardmarket_url": None,
+                    "colors": "[]",
+                    "type_line": "Artifact",
+                    "card_type": "artifact",
+                    "purchase_value": None,
+                }
+            ]
+        )
+
+        enriched = enrich_deck_cards_df(deck_df, self.conn)
+        self.assertEqual(int(enriched.iloc[0]["owned_qty"]), 4)
 
 
 if __name__ == "__main__":

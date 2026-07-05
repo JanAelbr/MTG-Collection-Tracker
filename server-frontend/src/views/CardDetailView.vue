@@ -3,12 +3,15 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";
 import CardVariantGallery from "../components/CardVariantGallery.vue";
-import CardInteractiveImage from "../components/CardInteractiveImage.vue";
+import CardOwnedQtyControl from "../components/CardOwnedQtyControl.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { getOwnershipPatch, isFinishDataOwned } from "../composables/cardContextMenu";
+import { isFinishDataOwned } from "../composables/cardContextMenu";
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
 import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, hasFinish, normalizeFinish } from "../utils/finishes";
+import { collectionScopeToQuery } from "../utils/setScope";
+import DeckAddControl from "../components/DeckAddControl.vue";
+import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -83,6 +86,64 @@ const showVariantGallery = computed(
 const hasAnyOwned = computed(() =>
   finishRows.value.some((row) => isFinishDataOwned(row.data)),
 );
+
+const collectionSetLink = computed(() => {
+  if (!card.value?.setCode) {
+    return null;
+  }
+  return {
+    path: "/collection/all",
+    query: collectionScopeToQuery(card.value.setCode, card.value.artStyle || ""),
+  };
+});
+
+const defaultDeckId = computed(() =>
+  typeof route.query.deck === "string" ? route.query.deck : "",
+);
+const activeDeckLabel = ref("");
+const deckCardSlot = ref(null);
+
+watch(
+  defaultDeckId,
+  async (deckId) => {
+    if (!deckId) {
+      activeDeckLabel.value = "";
+      return;
+    }
+    try {
+      const payload = await api.listDecks();
+      const deck = (payload.decks || []).find((item) => String(item.id) === String(deckId));
+      activeDeckLabel.value = deck?.label || deck?.name || "";
+    } catch {
+      activeDeckLabel.value = "";
+    }
+  },
+  { immediate: true },
+);
+
+async function onDeckCardRemoved() {
+  clearClientCache();
+  deckCardSlot.value = null;
+  await loadCard();
+}
+
+async function onDeckCardChanged() {
+  clearClientCache();
+  await loadCard();
+}
+
+function findDeckCardSlot(cards, setCode, collectorNumber, finish) {
+  const matches = (cards || []).filter(
+    (row) =>
+      row.setCode === setCode &&
+      String(row.collectorNumber) === String(collectorNumber) &&
+      normalizeFinish(row.finish ?? row.foil ?? 0) === finish,
+  );
+  if (!matches.length) {
+    return null;
+  }
+  return matches.find((row) => row.section === "main") || matches[0];
+}
 
 function isFinishOwnedElsewhere(finish) {
   return finishRows.value.some(
@@ -246,6 +307,22 @@ async function loadCard(options = {}) {
     card.value = nextCard;
     selectedFinish.value = normalizeFinish(card.value.selectedFinish ?? FINISH_NONFOIL);
     priceStrategy.value = card.value.priceStrategy || "trend";
+    deckCardSlot.value = null;
+    if (defaultDeckId.value) {
+      try {
+        const browse = await api.getDeckBrowse(defaultDeckId.value);
+        if (isCurrent()) {
+          deckCardSlot.value = findDeckCardSlot(
+            browse.cards,
+            card.value.setCode,
+            card.value.collectorNumber,
+            selectedFinish.value,
+          );
+        }
+      } catch {
+        deckCardSlot.value = null;
+      }
+    }
     if (!options.preserveDrafts) {
       syncPurchaseDrafts();
     }
@@ -279,35 +356,7 @@ async function onOwnershipChanged() {
   if (purchaseSaving.value != null || !card.value) {
     return;
   }
-  const finish = selectedFinish.value;
-  const patch = getOwnershipPatch({ ...card.value, finish });
-  if (!patch) {
-    return;
-  }
-  const finishKey = String(finish);
-  const existing = card.value.finishes?.[finishKey];
-  if (!existing) {
-    return;
-  }
-  const owned = patch.owned;
-  const purchaseValue = owned ? (existing.purchaseValue ?? 0) : null;
-  const currentValue = existing.currentValue;
-  const profitLoss = purchaseValue != null && currentValue != null
-    ? currentValue - purchaseValue
-    : null;
-  card.value = {
-    ...card.value,
-    finishes: {
-      ...card.value.finishes,
-      [finishKey]: {
-        ...existing,
-        owned,
-        purchaseValue,
-        profitLoss,
-      },
-    },
-  };
-  syncPurchaseDrafts();
+  await loadCard({ preserveDrafts: true });
 }
 
 onMounted(loadCard);
@@ -321,23 +370,55 @@ onMounted(loadCard);
 
     <section class="card-detail-panel card-detail-main">
       <div class="card-detail-image-wrap">
-        <CardInteractiveImage
+        <img
           v-if="card.imageUri"
           :src="card.imageUri"
           :alt="card.name"
-          :card="menuCard"
-          img-class="card-detail-image"
-          @finish-changed="onCardFinishChanged"
-          @ownership-changed="onOwnershipChanged"
-        />
+          class="card-detail-image"
+        >
         <div v-else class="card-detail-image card-detail-image-empty">No image</div>
       </div>
 
       <div class="card-detail-meta">
         <h1>{{ card.name }}</h1>
-        <p class="card-detail-set">{{ card.setLabel }}</p>
+        <p class="card-detail-set">
+          <RouterLink
+            v-if="collectionSetLink"
+            :to="collectionSetLink"
+            class="card-detail-set-link"
+          >
+            {{ card.setLabel }}
+          </RouterLink>
+          <span v-else>{{ card.setLabel }}</span>
+        </p>
         <p class="card-detail-subtitle">#{{ String(card.collectorNumber).padStart(3, "0") }}</p>
         <p v-if="card.artStyle" class="card-detail-art-style">{{ card.artStyle }}</p>
+
+        <DeckCardQtyControl
+          v-if="menuCard && defaultDeckId && deckCardSlot"
+          :card="{ ...menuCard, ...deckCardSlot }"
+          :deck-id="defaultDeckId"
+          :deck-name="activeDeckLabel"
+          @changed="onDeckCardChanged"
+          @removed="onDeckCardRemoved"
+        />
+
+        <DeckAddControl
+          v-else-if="menuCard && defaultDeckId"
+          :card="menuCard"
+          :default-deck-id="defaultDeckId"
+        />
+
+        <DeckAddControl
+          v-else-if="menuCard"
+          :card="menuCard"
+        />
+
+        <CardOwnedQtyControl
+          v-if="menuCard"
+          :card="menuCard"
+          @ownership-changed="onOwnershipChanged"
+        />
 
         <div v-if="hasAnyLocations" class="card-detail-locations">
           <span class="card-detail-locations-label">Stored in</span>

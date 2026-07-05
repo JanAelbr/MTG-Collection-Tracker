@@ -129,6 +129,26 @@ class CopyStorageUpdate(BaseModel):
     locationSlug: str = Field(min_length=1, max_length=120)
 
 
+class CopyAllocationItem(BaseModel):
+    locationSlug: str = Field(min_length=1, max_length=120)
+    count: int = Field(ge=0, le=99)
+
+
+class SetCopyAllocations(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    allocations: list[CopyAllocationItem] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
 class ManagerSetCreate(BaseModel):
     setCode: str = Field(min_length=1, max_length=16)
 
@@ -144,3 +164,84 @@ class ArtStyleRule(BaseModel):
 
 class ArtStyleRulesUpdate(BaseModel):
     rules: list[ArtStyleRule] = Field(min_length=1)
+
+
+class DeckCardAdd(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    section: str = Field(default="main", min_length=1, max_length=16)
+    qty: int = Field(default=1, ge=1, le=99)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckCardRemove(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    section: str = Field(default="main", min_length=1, max_length=16)
+    qty: int = Field(default=1, ge=1, le=99)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckCardQtyAdjust(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    section: str = Field(default="main", min_length=1, max_length=16)
+    delta: int = Field(ge=-1, le=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckRename(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class DeckCreateCard(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckCreate(BaseModel):
+    format: str = Field(default="commander", min_length=1, max_length=32)
+    name: str | None = Field(default=None, max_length=120)
+    commanders: list[DeckCreateCard] = Field(default_factory=list, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_create(self):
+        deck_format = self.format.strip().lower()
+        if deck_format not in {"commander"}:
+            raise ValueError("Unsupported deck format")
+        if deck_format == "commander" and len(self.commanders) < 1:
+            raise ValueError("At least one commander is required")
+        return self

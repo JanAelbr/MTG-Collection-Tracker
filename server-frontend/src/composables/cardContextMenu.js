@@ -328,6 +328,21 @@ export async function adjustCardCopyCount(card, delta, storageSlug) {
   return state;
 }
 
+export async function setCardCopyAllocations(card, allocations) {
+  const target = normalizeCardMenuTarget(card);
+  if (!target) {
+    throw new Error("Invalid card.");
+  }
+  const state = await api.setCardCopyAllocations({
+    setCode: target.setCode,
+    collectorNumber: target.collectorNumber,
+    finish: target.finish,
+    allocations,
+  });
+  publishOwnershipChange(target, state, card);
+  return state;
+}
+
 export async function changeCardOwnershipFinish(card, toFinish) {
   const target = normalizeCardMenuTarget(card);
   if (!target) {

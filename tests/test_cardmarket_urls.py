@@ -49,6 +49,29 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertEqual(find_paired_product_id(738285, guide, FINISH_NONFOIL), 738284)
         self.assertEqual(find_paired_product_id(738284, guide, FINISH_FOIL), 738285)
 
+    def test_find_paired_product_id_skips_previous_printing(self):
+        guide = {
+            737837: {"trend": 49.03, "trend-foil": 0},
+            737838: {"trend": 0, "trend-foil": 87.46},
+            737839: {"trend": 0.2, "trend-foil": 0},
+            737840: {"trend": 0, "trend-foil": 0.32},
+        }
+        self.assertEqual(find_paired_product_id(737839, guide, FINISH_FOIL), 737840)
+        self.assertEqual(find_paired_product_id(737840, guide, FINISH_NONFOIL), 737839)
+
+    def test_normalize_backfills_missing_foil_url_from_nonfoil(self):
+        guide = {
+            737839: {"trend": 0.2, "trend-foil": 0},
+            737840: {"trend": 0, "trend-foil": 0.32},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=737839",
+            None,
+            guide,
+        )
+        self.assertIn("737839", nonfoil or "")
+        self.assertIn("737840", foil or "")
+
     def test_normalize_moves_foil_only_url_to_foil_column(self):
         guide = {
             738285: {"trend": 0, "trend-foil": 73.42},

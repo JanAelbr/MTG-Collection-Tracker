@@ -8,6 +8,7 @@ import { api } from "../api";
 
 import CardPreview from "../components/CardPreview.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 
 import { formatEuro } from "../utils/format";
@@ -17,7 +18,7 @@ import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../uti
 
 const route = useRoute();
 
-
+const { settings: pricingSettings, fetchPricingSettings: loadPricingSettings } = usePricingSettings();
 
 const locations = ref([]);
 
@@ -25,7 +26,13 @@ const selectedSlug = ref("");
 
 const cardsPayload = ref(null);
 
+const settingsMessage = ref("");
+
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
+
+const storagePickerLocations = computed(() =>
+  locations.value.filter((location) => location.locationType === "storage"),
+);
 
 
 
@@ -124,6 +131,18 @@ async function loadLocations(preferredSlug = "") {
 
   selectedSlug.value = nextSlug;
 
+}
+
+
+
+async function updateDefaultStorageLocation(event) {
+  settingsMessage.value = "";
+  try {
+    await savePricingSettings({ defaultStorageLocation: event.target.value });
+    settingsMessage.value = "Default storage saved.";
+  } catch (error) {
+    settingsMessage.value = error.message || "Could not save default storage.";
+  }
 }
 
 
@@ -281,7 +300,7 @@ watch(selectedSlug, () => {
 onMounted(async () => {
   const preferredLocation =
     typeof route.query.location === "string" ? route.query.location : "";
-  await loadLocations(preferredLocation);
+  await Promise.all([loadLocations(preferredLocation), loadPricingSettings(true)]);
 });
 
 </script>
@@ -293,10 +312,27 @@ onMounted(async () => {
   <div class="storage-page">
 
     <div class="storage-toolbar">
+      <label v-if="storagePickerLocations.length" class="storage-default-setting">
+        <span>Default storage</span>
+        <select
+          :value="pricingSettings?.defaultStorageLocation ?? 'storage:general'"
+          @change="updateDefaultStorageLocation"
+        >
+          <option
+            v-for="location in storagePickerLocations"
+            :key="location.slug"
+            :value="location.slug"
+          >
+            {{ location.label }}
+          </option>
+        </select>
+      </label>
       <button type="button" class="btn btn-primary" @click="openCreateEditor">
         New storage
       </button>
     </div>
+
+    <p v-if="settingsMessage" class="storage-settings-message">{{ settingsMessage }}</p>
 
 
 

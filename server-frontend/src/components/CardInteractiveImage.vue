@@ -24,7 +24,7 @@ import {
   normalizeFinish,
 } from "../utils/finishes";
 
-const MAX_COPIES = 3;
+const MAX_COPIES = 99;
 
 const props = defineProps({
   src: { type: String, default: "" },

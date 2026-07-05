@@ -98,6 +98,19 @@ export function filterDeckCards(cards, { typeFilter = "all", colorFilters = [] }
   );
 }
 
+export function splitCommanderCards(cards) {
+  const commanders = [];
+  const deckCards = [];
+  for (const card of cards || []) {
+    if (card.section === "commander") {
+      commanders.push(card);
+    } else {
+      deckCards.push(card);
+    }
+  }
+  return { commanders, deckCards };
+}
+
 export function buildDeckCardGroups(cards, sortBy = "name") {
   const bySection = new Map();
   for (const card of cards || []) {

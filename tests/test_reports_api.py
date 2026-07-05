@@ -267,6 +267,86 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(len(payload["cards"][0]["locations"]), 1)
 
     @patch("api.services.reports_service.load_ranked_cards_data")
+    def test_all_report_includes_unpriced_unowned_catalog_cards(self, load_ranked):
+        import pandas as pd
+
+        load_ranked.return_value = pd.DataFrame([
+            {
+                "set_code": "HOB",
+                "collector_number": "33",
+                "name": "Bilbo, Thief in the Night",
+                "art_style": "Main Set",
+                "finish": 0,
+                "purchase_value": None,
+                "current_value": None,
+                "profit_loss": None,
+                "market_value": None,
+                "market_value_foil": None,
+                "market_value_etched": None,
+                "image_uri": "https://example.com/bilbo.jpg",
+                "cardmarket_url": "",
+            },
+            {
+                "set_code": "LTR",
+                "collector_number": "1",
+                "name": "Priced Card",
+                "art_style": "01. Main set",
+                "finish": 0,
+                "purchase_value": None,
+                "current_value": 2.0,
+                "profit_loss": None,
+                "market_value": 2.0,
+                "market_value_foil": 4.0,
+                "market_value_etched": None,
+                "image_uri": "",
+                "cardmarket_url": "",
+            },
+        ])
+        payload = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="HOB",
+            owned_filter="all",
+            page_size=25,
+        )
+        self.assertEqual(payload["totalMatches"], 1)
+        card = payload["cards"][0]
+        self.assertEqual(card["collectorNumber"], "33")
+        self.assertIsNone(card["currentValue"])
+        self.assertFalse(card["owned"])
+
+    @patch("api.services.reports_service.load_ranked_cards_data")
+    def test_top_report_still_excludes_unpriced_cards(self, load_ranked):
+        import pandas as pd
+
+        load_ranked.return_value = pd.DataFrame([
+            {
+                "set_code": "HOB",
+                "collector_number": "33",
+                "name": "Bilbo, Thief in the Night",
+                "art_style": "Main Set",
+                "finish": 0,
+                "purchase_value": None,
+                "current_value": None,
+                "profit_loss": None,
+                "market_value": None,
+                "market_value_foil": None,
+                "market_value_etched": None,
+                "image_uri": "",
+                "cardmarket_url": "",
+            },
+        ])
+        payload = reports_service.list_report_cards(
+            self.conn,
+            report="top",
+            set_code="HOB",
+            owned_filter="all",
+            page_size=25,
+        )
+        self.assertEqual(payload["totalMatches"], 0)
+        self.assertEqual(payload["cards"], [])
+
+    @patch("api.services.reports_service.load_ranked_cards_data")
     def test_filter_changes_reuse_enriched_cache(self, load_ranked):
         import pandas as pd
 

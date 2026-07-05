@@ -16,6 +16,7 @@ from api.schemas import (
 
     CopyAdjust,
     CopyStorageUpdate,
+    SetCopyAllocations,
 
     ManagerSetCreate,
 
@@ -508,6 +509,34 @@ def adjust_copy_count(body: CopyAdjust, conn: sqlite3.Connection = Depends(get_d
             delta=body.delta,
 
             location_slug=body.locationSlug,
+
+        )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.put("/copies/allocations")
+
+def set_copy_allocations(body: SetCopyAllocations, conn: sqlite3.Connection = Depends(get_db)):
+
+    try:
+
+        return manager_service.set_copy_allocations(
+
+            conn,
+
+            set_code=body.setCode,
+
+            collector_number=body.collectorNumber,
+
+            finish=body.finish if body.finish is not None else body.foil or 0,
+
+            allocations=[item.model_dump() for item in body.allocations],
 
         )
 

@@ -31,7 +31,7 @@ from util.app_tables import ensure_app_tables
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
 
 MANAGER_CARDS_PAGE_SIZE = 100
-MAX_OWNED_COPIES = 3
+MAX_OWNED_COPIES = 99
 _MANAGER_SET_CACHE_TTL = 300
 
 
@@ -604,6 +604,96 @@ def adjust_copy_count(
                 finish=normalized_finish,
                 location_slug=destination,
             )
+
+    bump_cache_epoch()
+    return get_copy_state(conn, normalized_set, normalized_number, normalized_finish)
+
+
+def set_copy_allocations(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+    allocations: list[dict],
+) -> dict:
+    ensure_app_tables(conn)
+    _validate_set_code(set_code)
+    normalized_set, normalized_number, normalized_finish = _normalized_print(
+        set_code,
+        collector_number,
+        finish,
+    )
+
+    validated: list[tuple[str, int]] = []
+    seen_slugs: set[str] = set()
+    total = 0
+    for item in allocations:
+        slug = str(item.get("locationSlug") or "").strip()
+        count = int(item.get("count") or 0)
+        if count < 0:
+            raise ManagerError("Count must be zero or greater", status_code=400)
+        if count == 0:
+            continue
+        if not slug:
+            raise ManagerError("Storage location is required", status_code=400)
+        if slug in seen_slugs:
+            raise ManagerError("Each storage location can only appear once", status_code=400)
+        try:
+            get_location(conn, slug)
+        except StorageError as exc:
+            raise ManagerError(exc.message, exc.status_code) from exc
+        seen_slugs.add(slug)
+        validated.append((slug, count))
+        total += count
+
+    if total > MAX_OWNED_COPIES:
+        raise ManagerError(f"At most {MAX_OWNED_COPIES} copies are allowed", status_code=400)
+
+    purchase_row = conn.execute(
+        """
+        SELECT purchase_value
+        FROM purchases
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (normalized_set, normalized_number, normalized_finish),
+    ).fetchone()
+
+    conn.execute(
+        """
+        DELETE FROM card_instances
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (normalized_set, normalized_number, normalized_finish),
+    )
+
+    if total > 0:
+        purchase_value = float(purchase_row[0]) if purchase_row else None
+        _apply_ownership(
+            conn,
+            set_code=normalized_set,
+            collector_number=normalized_number,
+            finish=normalized_finish,
+            owned=True,
+            purchase_value=purchase_value,
+        )
+        for slug, count in validated:
+            for _ in range(count):
+                _insert_copy_instance(
+                    conn,
+                    set_code=normalized_set,
+                    collector_number=normalized_number,
+                    finish=normalized_finish,
+                    location_slug=slug,
+                )
+    else:
+        _apply_ownership(
+            conn,
+            set_code=normalized_set,
+            collector_number=normalized_number,
+            finish=normalized_finish,
+            owned=False,
+        )
 
     bump_cache_epoch()
     return get_copy_state(conn, normalized_set, normalized_number, normalized_finish)

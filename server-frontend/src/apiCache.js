@@ -89,6 +89,7 @@ const MUTATION_PREFIXES = {
   "/settings": ["/settings", "/stats/", "/reports/", "/decks/", "/cards/", "/storage/"],
   "/storage/": ["/storage/", "/reports/", "/stats/"],
   "/manager/": ["/manager/", "/stats/", "/reports/", "/decks/", "/storage/"],
+  "/decks/": ["/decks/", "/stats/"],
   "/prices/sync": () => clearClientCache(),
 };
 

@@ -321,10 +321,16 @@ body {
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 20px;
   z-index: 1000;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-backdrop:not(.deck-add-card-modal-backdrop):not(.deck-create-modal-backdrop) {
+  align-items: center;
 }
 
 .modal-card {
@@ -362,6 +368,302 @@ body {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+
+.modal-backdrop.deck-add-card-modal-backdrop {
+  overflow: hidden;
+  align-items: center;
+}
+
+.deck-add-card-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  height: min(calc(100dvh - 40px), 980px);
+  max-height: min(calc(100dvh - 40px), 980px);
+  overflow: hidden;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.deck-add-card-modal-head,
+.deck-add-card-modal > .collection-search-form,
+.deck-add-card-modal > .deck-add-card-modal-filters {
+  flex-shrink: 0;
+}
+
+.deck-add-card-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.deck-add-card-modal-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.deck-add-card-modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.deck-add-card-modal .table-panel {
+  overflow: visible;
+}
+
+.deck-add-card-modal-filters {
+  margin: 0;
+}
+
+.deck-add-card-type-filter select {
+  min-width: 140px;
+}
+
+.deck-add-card-modal-results {
+  margin: 0;
+}
+
+.deck-add-card-modal .collection-search-art-panel {
+  padding: 12px 14px;
+}
+
+.deck-add-card-modal .collection-search-art-selected {
+  grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.deck-add-card-modal .collection-search-art-preview-image-wrap {
+  max-width: 168px;
+  min-width: 0;
+}
+
+.deck-add-card-modal .collection-search-art-preview-image-wrap .card-interactive,
+.deck-add-card-modal .collection-search-art-preview-image-wrap .card-interactive-image,
+.deck-add-card-modal .collection-search-art-preview-image {
+  display: block;
+  width: 100%;
+  max-width: 168px;
+  height: auto;
+}
+
+.deck-add-card-modal .collection-search-art-preview-empty {
+  min-height: 220px;
+  max-width: 168px;
+}
+
+.deck-add-card-modal .collection-card-grid {
+  --collection-card-scale: 0.85;
+}
+
+.deck-add-card-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.deck-create-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(calc(100vh - 40px), 900px);
+  overflow: hidden;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.deck-create-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.deck-create-modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.deck-create-modal > .modal-actions {
+  flex-shrink: 0;
+  margin-top: 0;
+}
+
+.deck-create-modal-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.deck-create-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.deck-create-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.deck-create-section-help {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.deck-create-format-group {
+  flex-wrap: wrap;
+}
+
+.deck-create-commander-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.deck-create-commander-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 88px;
+  margin: 0;
+}
+
+.deck-create-commander-chip img {
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.deck-create-commander-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.deck-create-commander-remove {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #78909c;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.deck-create-commander-remove:hover {
+  color: #c62828;
+}
+
+.deck-create-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #555;
+}
+
+.deck-create-name-field input {
+  padding: 8px 10px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.deck-create-loading {
+  padding: 12px 0;
+}
+
+.deck-create-add-commander-row {
+  margin-top: 8px;
+}
+
+.deck-create-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #c62828;
+}
+
+.deck-create-modal .collection-card-grid {
+  --collection-card-scale: 0.78;
+}
+
+.collection-search-art-panel--compact .collection-search-art-selected {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.collection-search-art-panel--compact .collection-search-art-preview-image-wrap {
+  flex: 0 0 96px;
+  width: 96px;
+  max-width: 96px;
+  min-width: 0;
+}
+
+.collection-search-art-panel--compact .collection-search-art-preview-image {
+  width: 96px;
+  max-width: 96px;
+  height: auto;
+}
+
+.collection-search-art-panel--compact .collection-search-art-preview-empty {
+  width: 96px;
+  max-width: 96px;
+  min-height: 134px;
+}
+
+.collection-search-art-panel--compact .collection-search-art-title {
+  font-size: 16px;
+}
+
+.collection-search-art-panel--compact {
+  padding: 12px 14px;
+}
+
+.collection-search-art-panel--compact .search-art-thumb {
+  flex-basis: 72px;
+}
+
+.collection-search-art-panel--compact .search-art-thumb-image {
+  height: 100px;
+}
+
+.deck-add-card-modal-status {
+  margin: 0;
+  font-size: 13px;
+  color: #33691e;
+}
+
+.deck-add-card-modal-status.error {
+  color: #c62828;
 }
 
 .gallery-loading-wrap {
@@ -1485,6 +1787,31 @@ body {
   box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.18), 0 8px 22px rgba(46, 125, 50, 0.12);
 }
 
+.decks-page .deck-gallery-card--add {
+  border-style: dashed;
+  border-color: #cfd8dc;
+  background: #fafafa;
+  color: #666;
+  cursor: pointer;
+}
+
+.decks-page .deck-gallery-card--add:hover {
+  border-color: #2e7d32;
+  background: #f4faf4;
+  color: #1b5e20;
+}
+
+.decks-page .deck-gallery-add-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 120px;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1;
+}
+
 .decks-page .deck-gallery-visual {
   display: flex;
   flex-direction: column;
@@ -1546,6 +1873,16 @@ body {
   font-weight: 600;
   color: #222;
   line-height: 1.3;
+}
+
+.decks-page .deck-gallery-name-wrap {
+  margin-bottom: 0;
+}
+
+.decks-page .deck-gallery-name.deck-rename-input {
+  display: block;
+  width: 100%;
+  color: #222;
 }
 
 .decks-page .deck-gallery-stats {
@@ -1990,6 +2327,21 @@ body {
   min-width: 220px;
 }
 
+.art-style-picker {
+  flex: 0 0 260px;
+  width: 260px;
+  max-width: 260px;
+}
+
+.art-style-picker .browse-select {
+  width: 100%;
+  max-width: 100%;
+}
+
+.art-style-picker .browse-select-main {
+  min-width: 0;
+}
+
 .card-interactive {
   position: relative;
   display: block;
@@ -2199,18 +2551,444 @@ body {
   margin-bottom: 14px;
 }
 
-.decks-page .deck-hero-deck-name {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-  color: #1b5e20;
-}
-
 .decks-page .deck-hero-deck-value {
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 18px;
   font-weight: 700;
   color: #1b5e20;
+}
+
+.decks-page .deck-hero-completion {
+  margin-top: 14px;
+}
+
+.decks-page .deck-hero-completion-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: #eef2f0;
+  overflow: hidden;
+}
+
+.decks-page .deck-hero-completion-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #81c784 0%, #43a047 100%);
+  transition: width 0.25s ease;
+}
+
+.decks-page .deck-hero-completion-fill.is-complete {
+  background: linear-gradient(90deg, #66bb6a 0%, #2e7d32 100%);
+}
+
+.decks-page .deck-hero-completion-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.decks-page .deck-hero-completion-meta strong {
+  font-size: 15px;
+  color: #1b5e20;
+}
+
+.decks-page .deck-detail {
+  scroll-margin-top: 12px;
+}
+
+.decks-page .deck-secondary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.decks-page .deck-secondary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 100px;
+}
+
+.decks-page .deck-secondary-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #777;
+}
+
+.decks-page .deck-secondary-stat strong {
+  font-size: 15px;
+  color: #222;
+}
+
+.decks-page .deck-unknown-panel {
+  margin-bottom: 16px;
+}
+
+.decks-page .deck-unknown-intro {
+  margin: 0 0 12px;
+  color: #666;
+  font-size: 13px;
+}
+
+.decks-page .deck-cards-panel.table-panel {
+  overflow: visible;
+}
+
+.decks-page .deck-cards-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: -16px -20px 16px;
+  padding: 14px 20px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #eef0f2;
+}
+
+.decks-page .deck-cards-sticky-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.decks-page .deck-cards-sticky-head--actions-only {
+  justify-content: flex-end;
+}
+
+.decks-page .deck-cards-sticky-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.deck-add-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deck-add-control-inline {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #e8eaed;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.deck-add-control-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.deck-add-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.deck-add-control-select,
+.deck-add-control-section {
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.deck-add-control-select {
+  flex: 1 1 160px;
+}
+
+.deck-add-control-section {
+  flex: 0 1 120px;
+}
+
+.deck-add-control-submit,
+.deck-add-control-quick {
+  padding: 6px 10px;
+  border: 1px solid #1b5e20;
+  border-radius: 8px;
+  background: #1b5e20;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.deck-add-control-submit:hover:not(:disabled),
+.deck-add-control-quick:hover:not(:disabled) {
+  background: #2e7d32;
+}
+
+.deck-add-control-submit:disabled,
+.deck-add-control-quick:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deck-add-control-compact .deck-add-control-quick {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.deck-add-control-hint,
+.deck-add-control-status {
+  margin: 0;
+  font-size: 11px;
+  color: #666;
+}
+
+.deck-add-control-status.error {
+  color: #c62828;
+}
+
+.card-interactive-overlay .deck-add-control-compact {
+  width: 100%;
+}
+
+.deck-remove-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deck-remove-control-inline {
+  margin: 10px 0 14px;
+}
+
+.deck-remove-control-submit {
+  padding: 6px 10px;
+  border: 1px solid #c62828;
+  border-radius: 8px;
+  background: #fff;
+  color: #c62828;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.deck-remove-control-submit:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.deck-remove-control-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deck-remove-control-compact .deck-remove-control-submit {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.deck-remove-control-status {
+  margin: 0;
+  font-size: 11px;
+  color: #666;
+}
+
+.deck-remove-control-status.error {
+  color: #c62828;
+}
+
+.card-interactive-overlay .deck-remove-control-compact {
+  width: 100%;
+}
+
+.storage-default-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #444;
+}
+
+.storage-default-setting select {
+  min-width: 180px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.storage-settings-message {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #33691e;
+}
+
+.decks-page .deck-cards-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.decks-page .deck-cards-layout.has-commander {
+  grid-template-columns: minmax(132px, 168px) minmax(0, 1fr);
+}
+
+.decks-page .deck-cards-commander-pane {
+  position: sticky;
+  top: 132px;
+  align-self: start;
+  padding-right: 4px;
+  border-right: 1px solid #eef0f2;
+}
+
+.decks-page .deck-cards-commander-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.decks-page .deck-cards-commander-items {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.decks-page .deck-cards-commander-items .deck-card-grid-item {
+  width: 100%;
+}
+
+.decks-page .deck-card-grid-item-compact .deck-card-grid-caption {
+  font-size: 10px;
+}
+
+.decks-page .deck-cards-main-pane {
+  min-width: 0;
+}
+
+.decks-page .deck-cards-filter-empty {
+  margin: 0;
+}
+
+.decks-page .deck-rename-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.decks-page .deck-rename-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.decks-page .deck-rename-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: #78909c;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.decks-page .deck-rename-title-row:hover .deck-rename-edit-button,
+.decks-page .deck-rename-title-row:focus-within .deck-rename-edit-button,
+.decks-page .deck-rename-edit-button:focus-visible {
+  opacity: 0.72;
+}
+
+.decks-page .deck-rename-edit-button:hover,
+.decks-page .deck-rename-edit-button:focus-visible {
+  opacity: 1;
+  color: #1b5e20;
+}
+
+.decks-page .deck-rename-edit-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.decks-page .deck-rename-input {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  line-height: inherit;
+  min-width: 8ch;
+  width: auto;
+  max-width: min(420px, 100%);
+  outline: none;
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid transparent;
+}
+
+.decks-page .deck-rename-input:focus {
+  border-bottom-color: rgba(27, 94, 32, 0.35);
+}
+
+.decks-page .deck-rename-input:disabled {
+  opacity: 0.7;
+}
+
+.decks-page .deck-rename-error {
+  margin: 0;
+  font-size: 12px;
+  color: #c62828;
+}
+
+.decks-page .deck-cards-toolbar-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.decks-page .deck-cards-filter-group-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.decks-page .deck-cards-filter-group-compact .deck-cards-filter-label {
+  min-width: auto;
+  font-size: 12px;
 }
 
 .decks-page .deck-hero-panels {
@@ -2354,6 +3132,255 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   gap: 14px;
+  align-items: start;
+}
+
+.decks-page .deck-card-grid-add-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 165px;
+  padding: 0;
+  border: 2px dashed #c8e6c9;
+  border-radius: 10px;
+  background: #f9fbf9;
+  color: #1b5e20;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.decks-page .deck-card-grid-add-slot:hover {
+  background: #f1f8e9;
+  border-color: #1b5e20;
+}
+
+.deck-card-qty-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e8eaed;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.deck-card-qty-tile-compact {
+  margin-top: 6px;
+  padding: 6px 8px;
+}
+
+.deck-card-qty-tile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.deck-card-qty-tile-stepper {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.deck-card-qty-tile-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #78909c;
+  cursor: pointer;
+}
+
+.deck-card-qty-tile-remove svg {
+  width: 16px;
+  height: 16px;
+}
+
+.deck-card-qty-tile-remove:hover:not(:disabled) {
+  border-color: #ef9a9a;
+  background: #ffebee;
+  color: #c62828;
+}
+
+.deck-card-qty-tile-remove:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deck-card-qty-tile-status {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.deck-card-qty-tile-status.error {
+  color: #c62828;
+}
+
+.card-owned-qty-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #e8eaed;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.card-owned-qty-tile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-owned-qty-tile-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 0 0 auto;
+}
+
+.card-owned-qty-tile-storage {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+
+.card-owned-qty-tile-row-head {
+  margin-bottom: 2px;
+}
+
+.card-owned-qty-tile-total {
+  font-size: 15px;
+  font-weight: 700;
+  color: #222;
+}
+
+.card-owned-qty-tile-allocations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-owned-qty-tile-allocation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.card-owned-qty-tile-stepper {
+  flex-shrink: 0;
+}
+
+.card-owned-qty-tile-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #78909c;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card-owned-qty-tile-remove:hover:not(:disabled) {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.card-owned-qty-tile-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.card-owned-qty-tile-add {
+  align-self: flex-start;
+}
+
+.card-owned-qty-tile-copies {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-owned-qty-tile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #555;
+}
+
+.card-owned-qty-tile-copy select {
+  padding: 6px 8px;
+  border: 1px solid #cfd8dc;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.card-owned-qty-tile-status {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.card-owned-qty-tile-status.error {
+  color: #c62828;
+}
+
+.decks-page .deck-card-grid-image {
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+}
+
+.deck-card-interactive-overlay .deck-card-qty-control .card-interactive-label {
+  text-transform: none;
+}
+
+.deck-card-delete-button {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid #c62828;
+  border-radius: 8px;
+  background: #fff;
+  color: #c62828;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.deck-card-delete-button:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.deck-card-delete-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .decks-page .deck-card-grid-item {
@@ -2361,8 +3388,81 @@ body {
   margin: 0;
 }
 
-.decks-page .deck-card-grid-item.is-unowned {
-  opacity: 0.58;
+.decks-page .deck-card-grid-item.is-owned {
+  opacity: 1;
+}
+
+.decks-page .deck-card-grid-item.is-partial .deck-card-grid-image-wrap {
+  box-shadow: 0 0 0 2px rgba(245, 127, 23, 0.55);
+  border-radius: 9px;
+}
+
+.decks-page .deck-card-grid-item.is-missing {
+  opacity: 0.72;
+}
+
+.decks-page .deck-card-grid-item.is-missing .deck-card-grid-image-wrap {
+  box-shadow: none;
+  outline: 2px dashed rgba(198, 40, 40, 0.45);
+  outline-offset: -2px;
+  border-radius: 9px;
+}
+
+.decks-page .deck-card-grid-owned-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.decks-page .deck-card-grid-owned-badge.is-partial {
+  background: rgba(245, 127, 23, 0.92);
+  color: #fff;
+}
+
+.decks-page .deck-card-grid-owned-badge.is-missing {
+  background: rgba(198, 40, 40, 0.9);
+  color: #fff;
+}
+
+.decks-page .deck-card-grid-item.is-partial .deck-card-grid-meta span:last-child,
+.decks-page .deck-card-grid-item.is-missing .deck-card-grid-meta span:last-child {
+  font-weight: 600;
+}
+
+.decks-page .deck-card-grid-item.is-partial .deck-card-grid-meta span:last-child {
+  color: #e65100;
+}
+
+.decks-page .deck-card-grid-item.is-missing .deck-card-grid-meta span:last-child {
+  color: #c62828;
+}
+
+.decks-page .deck-cards-row.is-partial td {
+  background: rgba(255, 243, 224, 0.45);
+}
+
+.decks-page .deck-cards-row.is-missing td {
+  background: rgba(255, 235, 238, 0.35);
+}
+
+.decks-page .deck-cards-row.is-partial td:nth-child(6),
+.decks-page .deck-cards-row.is-missing td:nth-child(6) {
+  font-weight: 600;
+}
+
+.decks-page .deck-cards-row.is-partial td:nth-child(6) {
+  color: #e65100;
+}
+
+.decks-page .deck-cards-row.is-missing td:nth-child(6) {
+  color: #c62828;
 }
 
 .decks-page .deck-card-grid-link {
@@ -3088,6 +4188,16 @@ body {
   font-size: 13px;
 }
 
+.card-detail-set-link {
+  color: #1b5e20;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card-detail-set-link:hover {
+  text-decoration: underline;
+}
+
 .card-detail-locations {
   margin: 10px 0;
   font-size: 13px;
@@ -3548,6 +4658,28 @@ body {
 
   .decks-page .deck-hero-panels {
     grid-template-columns: 1fr;
+  }
+
+  .decks-page .deck-cards-layout.has-commander {
+    grid-template-columns: 1fr;
+  }
+
+  .decks-page .deck-cards-commander-pane {
+    position: static;
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid #eef0f2;
+  }
+
+  .decks-page .deck-cards-commander-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .decks-page .deck-cards-commander-items .deck-card-grid-item {
+    width: min(140px, 100%);
   }
 
   .home-sync-panel {

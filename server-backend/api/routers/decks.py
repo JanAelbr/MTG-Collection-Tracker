@@ -10,6 +10,8 @@ from api.deps import get_db
 
 from api.http_cache import serve_cached_json
 
+from api.schemas import DeckCardAdd, DeckCardQtyAdjust, DeckCardRemove, DeckCreate, DeckRename
+
 from api.services import decks_service
 
 from api.services.decks_service import DeckError
@@ -47,6 +49,29 @@ def list_decks(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         loader=lambda: decks_service.list_decks(conn),
 
     )
+
+
+@router.post("")
+def create_deck(
+    body: DeckCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.create_deck(
+            conn,
+            deck_format=body.format,
+            name=body.name,
+            commanders=[
+                {
+                    "set_code": commander.setCode,
+                    "collector_number": commander.collectorNumber,
+                    "finish": commander.finish,
+                }
+                for commander in body.commanders
+            ],
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
 
 
 
@@ -142,4 +167,95 @@ def deck_browse(
 
         raise _deck_error(exc) from exc
 
+
+
+
+
+@router.post("/{deck_id}/cards")
+
+def add_deck_card(
+
+    deck_id: str,
+
+    body: DeckCardAdd,
+
+    conn: sqlite3.Connection = Depends(get_db),
+
+):
+
+    try:
+
+        return decks_service.add_card_to_deck(
+
+            conn,
+
+            deck_id=deck_id,
+
+            set_code=body.setCode,
+
+            collector_number=body.collectorNumber,
+
+            finish=body.finish,
+
+            section=body.section,
+
+            qty=body.qty,
+
+        )
+
+    except DeckError as exc:
+
+        raise _deck_error(exc) from exc
+
+
+@router.delete("/{deck_id}/cards")
+def remove_deck_card(
+    deck_id: str,
+    body: DeckCardRemove,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.remove_card_from_deck(
+            conn,
+            deck_id=deck_id,
+            set_code=body.setCode,
+            collector_number=body.collectorNumber,
+            finish=body.finish,
+            section=body.section,
+            qty=body.qty,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/cards/qty")
+def adjust_deck_card_qty(
+    deck_id: str,
+    body: DeckCardQtyAdjust,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.adjust_deck_card_qty(
+            conn,
+            deck_id=deck_id,
+            set_code=body.setCode,
+            collector_number=body.collectorNumber,
+            finish=body.finish,
+            section=body.section,
+            delta=body.delta,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.patch("/{deck_id}")
+def rename_deck(
+    deck_id: str,
+    body: DeckRename,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.rename_deck(conn, deck_id=deck_id, name=body.name)
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
 

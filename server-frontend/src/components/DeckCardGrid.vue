@@ -1,56 +1,47 @@
 <script setup>
-import { computed } from "vue";
-import ManaSymbols from "./ManaSymbols.vue";
-import CardInteractiveImage from "./CardInteractiveImage.vue";
-import {
-  effectiveDeckOwnedQty,
-  isDeckCardFullyOwned,
-  ownershipRevision,
-} from "../composables/cardContextMenu";
-import { formatEuro, formatSection } from "../utils/format";
-import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
+import { ref } from "vue";
+import DeckAddCardModal from "./DeckAddCardModal.vue";
+import DeckCardTile from "./DeckCardTile.vue";
+import { formatSection } from "../utils/format";
 
-defineProps({
+const props = defineProps({
   groups: { type: Array, default: () => [] },
+  defaultDeckId: { type: String, default: "" },
+  showDeckRemove: { type: Boolean, default: false },
+  deckName: { type: String, default: "" },
 });
 
-const ownershipTick = computed(() => ownershipRevision.value);
+const emit = defineEmits(["deck-added", "deck-removed", "deck-changed"]);
 
-function cardRoute(card) {
-  if (!card.setCode || !card.collectorNumber) {
-    return null;
-  }
-  return {
-    name: "card",
-    params: { setCode: card.setCode, collectorNumber: card.collectorNumber },
-    query: cardRouteQuery(cardFinish(card)),
-  };
-}
-
-function cardKey(card) {
-  ownershipTick.value;
-  return `${card.section}-${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`;
-}
-
-function isFullyOwned(card) {
-  ownershipTick.value;
-  return isDeckCardFullyOwned(card);
-}
-
-function ownedLabel(card) {
-  ownershipTick.value;
-  const ownedQty = effectiveDeckOwnedQty(card);
-  if (ownedQty > 0) {
-    return `${ownedQty}/${card.qty} owned`;
-  }
-  return "Not owned";
-}
+const addModal = ref({
+  open: false,
+  section: "main",
+  cardType: "",
+  typeLabel: "",
+});
 
 function sectionHeading(group) {
   if (group.kind === "section" && group.cards?.length) {
     return formatSection(group.section);
   }
   return group.label;
+}
+
+function openAddModal(group) {
+  addModal.value = {
+    open: true,
+    section: group.section || "main",
+    cardType: group.type || "",
+    typeLabel: group.label || "",
+  };
+}
+
+function closeAddModal() {
+  addModal.value = { ...addModal.value, open: false };
+}
+
+function onModalAdded(result) {
+  emit("deck-added", result);
 }
 </script>
 
@@ -67,7 +58,6 @@ function sectionHeading(group) {
       <section
         v-else-if="group.cards?.length"
         class="deck-card-grid-section"
-        :class="{ 'deck-card-grid-section-commander': group.section === 'commander' }"
       >
         <h3
           class="deck-card-grid-heading"
@@ -80,45 +70,39 @@ function sectionHeading(group) {
         </h3>
 
         <div class="deck-card-grid-items">
-          <figure
+          <DeckCardTile
             v-for="card in group.cards"
-            :key="cardKey(card)"
-            class="deck-card-grid-item"
-            :class="{ 'is-unowned': !isFullyOwned(card) }"
+            :key="`${group.key}-${card.section}-${card.setCode}-${card.collectorNumber}`"
+            :card="card"
+            :default-deck-id="props.defaultDeckId"
+            :show-deck-remove="props.showDeckRemove"
+            :deck-name="props.deckName"
+            @deck-removed="$emit('deck-removed', $event)"
+            @deck-changed="$emit('deck-changed', $event)"
+          />
+          <button
+            v-if="group.kind === 'type' && props.defaultDeckId"
+            type="button"
+            class="deck-card-grid-add-slot"
+            :title="`Add ${group.label.toLowerCase()} to deck`"
+            @click="openAddModal(group)"
           >
-            <span v-if="card.qty > 1" class="deck-card-grid-qty">×{{ card.qty }}</span>
-
-            <div class="deck-card-grid-image-wrap">
-              <CardInteractiveImage
-                v-if="card.imageUri"
-                :src="card.imageUri"
-                :alt="card.cardName"
-                :card="card"
-                :show-details="false"
-              />
-              <div v-else class="deck-card-grid-placeholder">{{ card.cardName }}</div>
-            </div>
-
-            <figcaption class="deck-card-grid-caption">
-              <span class="deck-card-grid-name-row">
-                <ManaSymbols :colors="card.colors" :size="16" />
-                <RouterLink
-                  v-if="cardRoute(card)"
-                  :to="cardRoute(card)"
-                  class="deck-card-grid-name deck-card-grid-name-link"
-                >
-                  {{ cardDisplayName(card) }}
-                </RouterLink>
-                <span v-else class="deck-card-grid-name">{{ cardDisplayName(card) }}</span>
-              </span>
-              <span class="deck-card-grid-meta">
-                <span v-if="card.currentValue != null">{{ formatEuro(card.currentValue) }}</span>
-                <span>{{ ownedLabel(card) }}</span>
-              </span>
-            </figcaption>
-          </figure>
+            +
+          </button>
         </div>
       </section>
     </template>
+
+    <DeckAddCardModal
+      v-if="props.defaultDeckId"
+      :open="addModal.open"
+      :deck-id="props.defaultDeckId"
+      :deck-name="props.deckName"
+      :section="addModal.section"
+      :card-type="addModal.cardType"
+      :type-label="addModal.typeLabel"
+      @close="closeAddModal"
+      @added="onModalAdded"
+    />
   </div>
 </template>
