@@ -11,7 +11,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from lib.deck_csv import DeckEntry, list_deck_sync_set_codes  # noqa: E402
-from lib.deck_loader import import_deck_file, resolve_deck_row  # noqa: E402
+from lib.deck_loader import import_deck_file, reconcile_deck_card_finishes, resolve_deck_row  # noqa: E402
 from report.deck_queries import enrich_deck_cards_df  # noqa: E402
 from report.deck_stats_data import compute_deck_stats_page, load_deck_stats_client_payload  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
@@ -160,6 +160,112 @@ class DeckImportTests(unittest.TestCase):
         self.assertEqual(resolved["collector_number"], "WTH-53")
         self.assertEqual(resolved["in_catalog"], 0)
         self.assertEqual(resolved["card_name"], "PLST #WTH-53")
+
+    def test_resolve_deck_row_uses_foil_for_foil_only_precon_commander(self):
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, image_uri, cardmarket_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "C18-37",
+                "C18",
+                "37",
+                "Aminatou, the Fateshifter",
+                "",
+                None,
+                2.61,
+                None,
+                0,
+                1,
+                0,
+                None,
+                None,
+            ),
+        )
+        self.conn.commit()
+
+        resolved = resolve_deck_row(
+            self.cursor,
+            {
+                "set_code": "C18",
+                "collector_number": "37",
+                "finish": 0,
+                "qty": 1,
+                "section": "commander",
+                "sort_order": 0,
+            },
+        )
+        self.assertEqual(resolved["finish"], 1)
+
+    def test_reconcile_deck_card_finishes_fixes_stored_nonfoil_for_foil_only_print(self):
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, image_uri, cardmarket_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "C18-37",
+                "C18",
+                "37",
+                "Aminatou, the Fateshifter",
+                "",
+                None,
+                2.61,
+                None,
+                0,
+                1,
+                0,
+                None,
+                None,
+            ),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO decks (name, slug, created_at, updated_at)
+            VALUES ('Aminatou', 'aminatou', '2026-01-01', '2026-01-01')
+            """,
+        )
+        deck_id = self.cursor.execute(
+            "SELECT deck_id FROM decks WHERE slug = 'aminatou'",
+        ).fetchone()[0]
+        self.cursor.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish, qty, owned_qty,
+                section, sort_order, in_catalog
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                deck_id,
+                "Aminatou, the Fateshifter",
+                "C18",
+                "37",
+                0,
+                1,
+                1,
+                "commander",
+                0,
+                1,
+            ),
+        )
+        self.conn.commit()
+
+        updated = reconcile_deck_card_finishes(self.cursor)
+        self.conn.commit()
+
+        self.assertEqual(updated, 1)
+        finish = self.cursor.execute(
+            "SELECT finish FROM deck_cards WHERE deck_id = ?",
+            (deck_id,),
+        ).fetchone()[0]
+        self.assertEqual(finish, 1)
 
     def test_list_deck_sync_set_codes_reads_explicit_prints(self):
         deck_file = Path(self.temp_dir.name) / "sync_sets.csv"

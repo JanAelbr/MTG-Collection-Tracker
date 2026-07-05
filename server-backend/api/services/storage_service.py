@@ -91,21 +91,29 @@ def create_location(
     *,
     label: str,
     description: str | None = None,
+    location_type: str = "storage",
 ) -> dict:
     cleaned_label = label.strip()
     if not cleaned_label:
         raise StorageError("Label is required")
+    if location_type not in {"storage", "binder"}:
+        raise StorageError("locationType must be storage or binder")
 
-    slug = f"custom:{uuid.uuid4().hex[:12]}"
-    sort_order = _next_custom_sort_order(conn)
+    if location_type == "binder":
+        slug = f"binder:custom:{uuid.uuid4().hex[:12]}"
+        sort_order = _next_binder_sort_order(conn)
+    else:
+        slug = f"custom:{uuid.uuid4().hex[:12]}"
+        sort_order = _next_custom_sort_order(conn)
+
     conn.execute(
         """
         INSERT INTO storage_locations (
             location_slug, label, location_type, sort_order,
             set_code, description, deck_id, is_system
-        ) VALUES (?, ?, 'storage', ?, NULL, ?, NULL, 0)
+        ) VALUES (?, ?, ?, ?, NULL, ?, NULL, 0)
         """,
-        (slug, cleaned_label, sort_order, (description or "").strip() or None),
+        (slug, cleaned_label, location_type, sort_order, (description or "").strip() or None),
     )
     bump_cache_epoch()
     return get_location(conn, slug)
@@ -245,6 +253,17 @@ def _next_custom_sort_order(conn: sqlite3.Connection) -> int:
     return int(row[0]) + 1
 
 
+def _next_binder_sort_order(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        """
+        SELECT COALESCE(MAX(sort_order), 0)
+        FROM storage_locations
+        WHERE location_type = 'binder'
+        """
+    ).fetchone()
+    return int(row[0]) + 10
+
+
 def _serialize_location(row: sqlite3.Row) -> dict:
     slug = row["location_slug"]
     card_count = int(row["card_count"])
@@ -259,7 +278,7 @@ def _serialize_location(row: sqlite3.Row) -> dict:
         "cardCount": card_count,
         "uniquePrints": int(row["unique_prints"]),
         "canDelete": not is_system and card_count == 0,
-        "isCustom": slug.startswith("custom:"),
+        "isCustom": slug.startswith("custom:") or slug.startswith("binder:custom:"),
     }
 
 

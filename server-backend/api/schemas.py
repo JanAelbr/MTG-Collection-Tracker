@@ -15,6 +15,7 @@ class SettingsUpdate(BaseModel):
 class StorageLocationCreate(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=500)
+    locationType: str = Field(default="storage", pattern="^(storage|binder)$")
 
 
 class StorageLocationUpdate(BaseModel):

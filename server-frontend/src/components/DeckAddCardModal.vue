@@ -5,7 +5,8 @@ import CollectionCardGrid from "./CollectionCardGrid.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import SearchArtBrowser from "./SearchArtBrowser.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { cardTypeGroup, DECK_TYPE_LABELS, DECK_TYPE_ORDER } from "../utils/deckCards";
+import { cardTypeGroup } from "../utils/deckCards";
+import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { cardFinish } from "../utils/finishes";
 import { formatSetDropdownLabel } from "../utils/format";
 
@@ -62,7 +63,7 @@ const activeTypeLabel = computed(() => {
   if (typeFilter.value === "all") {
     return props.typeLabel || "card";
   }
-  return DECK_TYPE_LABELS[typeFilter.value] || typeFilter.value;
+  return COLLECTION_TYPE_LABELS[typeFilter.value] || typeFilter.value;
 });
 
 const filteredCards = computed(() => {
@@ -430,15 +431,18 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <label class="manager-filter deck-add-card-type-filter">
-            <span>Type</span>
-            <select :value="typeFilter" @change="setTypeFilter($event.target.value)">
+          <div class="deck-add-card-type-filter">
+            <select
+              :value="typeFilter"
+              aria-label="Card type"
+              @change="setTypeFilter($event.target.value)"
+            >
               <option value="all">All types</option>
-              <option v-for="type in DECK_TYPE_ORDER" :key="type" :value="type">
-                {{ DECK_TYPE_LABELS[type] }}
+              <option v-for="type in COLLECTION_TYPE_ORDER" :key="type" :value="type">
+                {{ COLLECTION_TYPE_LABELS[type] }}
               </option>
             </select>
-          </label>
+          </div>
         </div>
       </div>
 

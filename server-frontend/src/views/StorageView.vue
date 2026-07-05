@@ -8,7 +8,8 @@ import { api } from "../api";
 
 import CardPreview from "../components/CardPreview.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
-import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import StorageLocationIcon from "../components/StorageLocationIcon.vue";
+import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 
 import { formatEuro } from "../utils/format";
@@ -26,51 +27,107 @@ const selectedSlug = ref("");
 
 const cardsPayload = ref(null);
 
-const settingsMessage = ref("");
+const defaultStorageSaving = ref(false);
 
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
-
-const storagePickerLocations = computed(() =>
-  locations.value.filter((location) => location.locationType === "storage"),
-);
 
 
 
 const editor = reactive({
-
   open: false,
-
-  mode: "create",
-
-  slug: "",
-
+  locationType: "storage",
   label: "",
-
   description: "",
-
 });
 
-
+const inlineLabel = ref("");
+const inlineDescription = ref("");
+const inlineSaving = ref(false);
+const inlineError = ref("");
+const inlineLabelRef = ref(null);
+const inlineDescRef = ref(null);
 
 const selectedLocation = computed(() =>
-
   locations.value.find((item) => item.slug === selectedSlug.value),
-
 );
 
-
+const canInlineEdit = computed(() => {
+  const type = selectedLocation.value?.locationType;
+  return type === "storage" || type === "binder";
+});
 
 const visibleLocations = computed(() =>
-
   locations.value.filter(
-
     (location) => location.cardCount > 0 || location.isCustom || location.isSystem,
-
   ),
-
 );
 
+const LOCATION_TYPE_SECTIONS = [
+  { type: "storage", label: "Storage", canCreate: true },
+  { type: "binder", label: "Binders", canCreate: true },
+  { type: "deck", label: "Decks", collapsible: true, defaultCollapsed: true },
+];
 
+const sectionExpanded = reactive(
+  Object.fromEntries(
+    LOCATION_TYPE_SECTIONS.filter((section) => section.collapsible).map((section) => [
+      section.type,
+      !section.defaultCollapsed,
+    ]),
+  ),
+);
+
+function isSectionExpanded(section) {
+  if (!section.collapsible) {
+    return true;
+  }
+  return sectionExpanded[section.type] ?? true;
+}
+
+function toggleSection(section) {
+  if (!section.collapsible) {
+    return;
+  }
+  sectionExpanded[section.type] = !sectionExpanded[section.type];
+}
+
+const groupedVisibleLocations = computed(() =>
+  LOCATION_TYPE_SECTIONS.map((section) => ({
+    ...section,
+    locations: visibleLocations.value.filter(
+      (location) => location.locationType === section.type,
+    ),
+  })).filter((section) => section.locations.length > 0 || section.canCreate),
+);
+
+function createLocationLabel(sectionType) {
+  return sectionType === "binder" ? "New binder" : "New storage";
+}
+
+function isDefaultStorage(location) {
+  if (!location || location.locationType !== "storage") {
+    return false;
+  }
+  const current = pricingSettings.value?.defaultStorageLocation ?? "storage:general";
+  return location.slug === current;
+}
+
+async function toggleDefaultStorage(location) {
+  if (!location || location.locationType !== "storage" || defaultStorageSaving.value) {
+    return;
+  }
+  if (isDefaultStorage(location)) {
+    return;
+  }
+  defaultStorageSaving.value = true;
+  try {
+    await savePricingSettings({ defaultStorageLocation: location.slug });
+  } catch (error) {
+    window.alert(error.message || "Could not set default storage.");
+  } finally {
+    defaultStorageSaving.value = false;
+  }
+}
 
 function lineTotal(card) {
 
@@ -135,18 +192,6 @@ async function loadLocations(preferredSlug = "") {
 
 
 
-async function updateDefaultStorageLocation(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ defaultStorageLocation: event.target.value });
-    settingsMessage.value = "Default storage saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save default storage.";
-  }
-}
-
-
-
 async function loadCards() {
   if (!selectedSlug.value) {
     cardsPayload.value = null;
@@ -159,86 +204,106 @@ async function loadCards() {
 
 
 
-function openCreateEditor() {
-
+function openCreateEditor(locationType = "storage") {
   editor.open = true;
-
-  editor.mode = "create";
-
-  editor.slug = "";
-
+  editor.locationType = locationType;
   editor.label = "";
-
   editor.description = "";
-
 }
-
-
-
-function openEditEditor(location) {
-
-  editor.open = true;
-
-  editor.mode = "edit";
-
-  editor.slug = location.slug;
-
-  editor.label = location.label;
-
-  editor.description = location.description || "";
-
-}
-
-
 
 function closeEditor() {
-
   editor.open = false;
-
 }
 
-
-
 async function saveEditor() {
-
   const label = editor.label.trim();
-
   if (!label) {
-
     return;
-
   }
-
-  if (editor.mode === "create") {
-
-    const created = await api.createStorageLocation({
-
-      label,
-
-      description: editor.description.trim(),
-
-    });
-
-    closeEditor();
-
-    await loadLocations(created.slug);
-
-    return;
-
-  }
-
-  await api.updateStorageLocation(editor.slug, {
-
+  const created = await api.createStorageLocation({
     label,
-
     description: editor.description.trim(),
-
+    locationType: editor.locationType,
   });
-
   closeEditor();
+  await loadLocations(created.slug);
+}
 
-  await loadLocations(editor.slug);
+function syncInlineFields(location) {
+  if (!location) {
+    inlineLabel.value = "";
+    inlineDescription.value = "";
+    return;
+  }
+  inlineLabel.value = location.label;
+  inlineDescription.value = location.description || "";
+  inlineError.value = "";
+}
 
+async function saveInlineLabel() {
+  const location = selectedLocation.value;
+  if (!location || !canInlineEdit.value || inlineSaving.value) {
+    return;
+  }
+  const label = inlineLabel.value.trim();
+  if (!label) {
+    inlineLabel.value = location.label;
+    inlineError.value = "Name is required.";
+    return;
+  }
+  if (label === location.label) {
+    return;
+  }
+  await saveInlineFields({ label });
+}
+
+async function saveInlineDescription() {
+  const location = selectedLocation.value;
+  if (!location || !canInlineEdit.value || inlineSaving.value) {
+    return;
+  }
+  const description = inlineDescription.value.trim();
+  if (description === (location.description || "")) {
+    return;
+  }
+  await saveInlineFields({ description });
+}
+
+async function saveInlineFields(body) {
+  const location = selectedLocation.value;
+  if (!location) {
+    return;
+  }
+  inlineSaving.value = true;
+  inlineError.value = "";
+  try {
+    await api.updateStorageLocation(location.slug, body);
+    await loadLocations(location.slug);
+    syncInlineFields(selectedLocation.value);
+  } catch (error) {
+    inlineError.value = error.message || "Could not save.";
+    syncInlineFields(location);
+  } finally {
+    inlineSaving.value = false;
+  }
+}
+
+function onInlineLabelKeydown(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    inlineLabelRef.value?.blur();
+  }
+  if (event.key === "Escape") {
+    inlineLabel.value = selectedLocation.value?.label || "";
+    inlineLabelRef.value?.blur();
+  }
+}
+
+function onInlineDescKeydown(event) {
+  if (event.key === "Escape") {
+    inlineDescription.value = selectedLocation.value?.description || "";
+    inlineDescRef.value?.blur();
+  }
 }
 
 
@@ -290,9 +355,14 @@ async function removeOneCopy(card) {
 
 
 watch(selectedSlug, () => {
-
   loadCards();
+});
 
+watch(selectedLocation, (location) => {
+  syncInlineFields(location);
+  if (location?.locationType === "deck") {
+    sectionExpanded.deck = true;
+  }
 });
 
 
@@ -310,58 +380,74 @@ onMounted(async () => {
 <template>
 
   <div class="storage-page">
-
-    <div class="storage-toolbar">
-      <label v-if="storagePickerLocations.length" class="storage-default-setting">
-        <span>Default storage</span>
-        <select
-          :value="pricingSettings?.defaultStorageLocation ?? 'storage:general'"
-          @change="updateDefaultStorageLocation"
-        >
-          <option
-            v-for="location in storagePickerLocations"
-            :key="location.slug"
-            :value="location.slug"
-          >
-            {{ location.label }}
-          </option>
-        </select>
-      </label>
-      <button type="button" class="btn btn-primary" @click="openCreateEditor">
-        New storage
-      </button>
-    </div>
-
-    <p v-if="settingsMessage" class="storage-settings-message">{{ settingsMessage }}</p>
-
-
-
     <div class="storage-layout">
 
       <nav class="storage-location-nav" aria-label="Storage locations">
-
-        <button
-
-          v-for="location in visibleLocations"
-
-          :key="location.slug"
-
-          type="button"
-
-          class="storage-location-link"
-
-          :class="{ active: location.slug === selectedSlug }"
-
-          @click="selectedSlug = location.slug"
-
+        <section
+          v-for="section in groupedVisibleLocations"
+          :key="section.type"
+          class="storage-location-section"
+          :class="{ 'storage-location-section--collapsed': !isSectionExpanded(section) }"
         >
-
-          <span>{{ location.label }}</span>
-
-          <span class="storage-location-count">{{ location.cardCount }}</span>
-
-        </button>
-
+          <button
+            v-if="section.collapsible"
+            type="button"
+            class="storage-location-section-heading storage-location-section-toggle"
+            :aria-expanded="isSectionExpanded(section) ? 'true' : 'false'"
+            @click="toggleSection(section)"
+          >
+            <StorageLocationIcon :type="section.type" />
+            <span class="storage-location-section-title">{{ section.label }}</span>
+            <span class="storage-location-section-count">{{ section.locations.length }}</span>
+            <span class="storage-location-section-chevron" aria-hidden="true">▾</span>
+          </button>
+          <h3 v-else class="storage-location-section-heading">
+            <StorageLocationIcon :type="section.type" />
+            <span class="storage-location-section-title">{{ section.label }}</span>
+            <button
+              v-if="section.canCreate"
+              type="button"
+              class="storage-location-section-add"
+              :aria-label="createLocationLabel(section.type)"
+              :title="createLocationLabel(section.type)"
+              @click="openCreateEditor(section.type)"
+            >
+              +
+            </button>
+          </h3>
+          <div
+            v-for="location in section.locations"
+            v-show="isSectionExpanded(section)"
+            :key="location.slug"
+            class="storage-location-link"
+            :class="{ active: location.slug === selectedSlug }"
+          >
+            <button
+              type="button"
+              class="storage-location-select"
+              @click="selectedSlug = location.slug"
+            >
+              <span class="storage-location-link-main">
+                <StorageLocationIcon :type="location.locationType" />
+                <span class="storage-location-label">{{ location.label }}</span>
+              </span>
+            </button>
+            <button
+              v-if="location.locationType === 'storage'"
+              type="button"
+              class="storage-location-default"
+              :class="{ 'is-default': isDefaultStorage(location) }"
+              :disabled="defaultStorageSaving"
+              :aria-pressed="isDefaultStorage(location) ? 'true' : 'false'"
+              :aria-label="isDefaultStorage(location) ? `${location.label} is default storage` : `Set ${location.label} as default storage`"
+              :title="isDefaultStorage(location) ? 'Default storage' : 'Set as default storage'"
+              @click="toggleDefaultStorage(location)"
+            >
+              {{ isDefaultStorage(location) ? "★" : "☆" }}
+            </button>
+            <span class="storage-location-count">{{ location.cardCount }}</span>
+          </div>
+        </section>
       </nav>
 
 
@@ -371,50 +457,72 @@ onMounted(async () => {
         <div v-if="selectedLocation" class="storage-detail-header">
 
           <div class="storage-detail-title-row">
-
-            <h2>{{ selectedLocation.label }}</h2>
-
-            <div class="storage-detail-actions">
-
-              <button
-
-                type="button"
-
-                class="btn btn-secondary"
-
-                @click="openEditEditor(selectedLocation)"
-
-              >
-
-                Edit
-
-              </button>
-
-              <button
-
-                v-if="selectedLocation.canDelete"
-
-                type="button"
-
-                class="btn btn-danger"
-
-                @click="deleteLocation(selectedLocation)"
-
-              >
-
-                Delete
-
-              </button>
-
+            <div class="storage-detail-title-main">
+              <StorageLocationIcon
+                :type="selectedLocation.locationType"
+                class="storage-detail-type-icon"
+              />
+              <input
+              v-if="canInlineEdit"
+              ref="inlineLabelRef"
+              v-model="inlineLabel"
+              class="storage-inline-title"
+              type="text"
+              maxlength="120"
+              :disabled="inlineSaving"
+              aria-label="Storage name"
+              @blur="saveInlineLabel"
+              @keydown="onInlineLabelKeydown"
+              />
+              <h2 v-else>{{ selectedLocation.label }}</h2>
             </div>
 
+            <div class="storage-detail-actions">
+              <button
+                v-if="selectedLocation.locationType === 'storage'"
+                type="button"
+                class="storage-location-default storage-location-default--detail"
+                :class="{ 'is-default': isDefaultStorage(selectedLocation) }"
+                :disabled="defaultStorageSaving"
+                :aria-pressed="isDefaultStorage(selectedLocation) ? 'true' : 'false'"
+                :aria-label="isDefaultStorage(selectedLocation) ? 'Default storage' : 'Set as default storage'"
+                :title="isDefaultStorage(selectedLocation) ? 'Default storage' : 'Set as default storage'"
+                @click="toggleDefaultStorage(selectedLocation)"
+              >
+                {{ isDefaultStorage(selectedLocation) ? "★ Default" : "☆ Set default" }}
+              </button>
+              <button
+                v-if="selectedLocation.canDelete"
+                type="button"
+                class="btn btn-danger"
+                @click="deleteLocation(selectedLocation)"
+              >
+                Delete
+              </button>
+            </div>
           </div>
 
-          <p v-if="selectedLocation.description" class="storage-location-description">
-
+          <textarea
+            v-if="canInlineEdit"
+            ref="inlineDescRef"
+            v-model="inlineDescription"
+            class="storage-inline-description"
+            rows="2"
+            maxlength="500"
+            placeholder="Add a description…"
+            :disabled="inlineSaving"
+            aria-label="Storage description"
+            @blur="saveInlineDescription"
+            @keydown="onInlineDescKeydown"
+          />
+          <p
+            v-else-if="selectedLocation.description"
+            class="storage-location-description"
+          >
             {{ selectedLocation.description }}
-
           </p>
+
+          <p v-if="inlineError" class="storage-inline-error">{{ inlineError }}</p>
 
           <p class="storage-location-stats">
 
@@ -564,7 +672,15 @@ onMounted(async () => {
 
       <form class="modal-card" @submit.prevent="saveEditor">
 
-        <h3>{{ editor.mode === "create" ? "New storage" : "Edit storage" }}</h3>
+        <h3>{{ editor.locationType === "binder" ? "New binder" : "New storage" }}</h3>
+
+        <label>
+          <span>Type</span>
+          <select v-model="editor.locationType">
+            <option value="storage">Storage</option>
+            <option value="binder">Binder</option>
+          </select>
+        </label>
 
         <label>
 
@@ -590,11 +706,7 @@ onMounted(async () => {
 
           </button>
 
-          <button type="submit" class="btn btn-primary">
-
-            {{ editor.mode === "create" ? "Create" : "Save" }}
-
-          </button>
+          <button type="submit" class="btn btn-primary">Create</button>
 
         </div>
 

@@ -56,7 +56,7 @@ function onModalAdded(result) {
       </section>
 
       <section
-        v-else-if="group.cards?.length"
+        v-else-if="group.kind === 'type' || group.cards?.length"
         class="deck-card-grid-section"
       >
         <h3

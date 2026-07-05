@@ -5,6 +5,7 @@ import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
 import DeckHero from "../components/DeckHero.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
+import DeckAddCardModal from "../components/DeckAddCardModal.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
@@ -25,10 +26,11 @@ import {
 } from "../utils/deckBrowse";
 import {
   buildDeckCardGroups,
+  buildEmptyDeckCardGroups,
   cardTypeGroup,
+  collectDeckCardTypes,
+  deckTypeLabel,
   DECK_COLOR_ORDER,
-  DECK_TYPE_LABELS,
-  DECK_TYPE_ORDER,
   filterDeckCards,
   sortDeckCards,
   splitCommanderCards,
@@ -53,6 +55,7 @@ const deckColorFilters = ref([]);
 const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
+const emptyDeckAddOpen = ref(false);
 
 const { loading: loadingBrowse, run: runBrowseLoad } = useAsyncLoad();
 
@@ -71,17 +74,40 @@ const commanderCards = computed(() => {
   return sortDeckCards(commanders, "name");
 });
 
-const filteredDeckCards = computed(() => {
+const mainDeckCards = computed(() => {
   const { deckCards } = splitCommanderCards(browseStats.value?.cards || []);
-  return filterDeckCards(deckCards, {
-    typeFilter: deckTypeFilter.value,
-    colorFilters: deckColorFilters.value,
-  });
+  return deckCards;
 });
 
-const groupedBrowseCards = computed(() =>
-  buildDeckCardGroups(filteredDeckCards.value, deckCardSort.value),
+const isDeckEmpty = computed(() => mainDeckCards.value.length === 0);
+
+const isFilterEmpty = computed(
+  () => !isDeckEmpty.value && filteredDeckCards.value.length === 0,
 );
+
+const filteredDeckCards = computed(() =>
+  filterDeckCards(mainDeckCards.value, {
+    typeFilter: deckTypeFilter.value,
+    colorFilters: deckColorFilters.value,
+  }),
+);
+
+const groupedBrowseCards = computed(() => {
+  if (isDeckEmpty.value) {
+    return buildEmptyDeckCardGroups();
+  }
+  return buildDeckCardGroups(filteredDeckCards.value, deckCardSort.value);
+});
+
+const deckTypeFilterOptions = computed(() => collectDeckCardTypes(mainDeckCards.value));
+
+function openEmptyDeckAdd() {
+  emptyDeckAddOpen.value = true;
+}
+
+function closeEmptyDeckAdd() {
+  emptyDeckAddOpen.value = false;
+}
 
 function profitClass(value) {
   if (value == null || Number.isNaN(value)) {
@@ -195,6 +221,7 @@ async function refreshDeckPage(deckKey = deckId.value) {
 }
 
 async function onDeckCardAdded() {
+  emptyDeckAddOpen.value = false;
   await refreshDeckPage();
 }
 
@@ -369,6 +396,12 @@ function deckCardOwnedLabel(card) {
   return "—";
 }
 
+watch(deckTypeFilterOptions, (options) => {
+  if (deckTypeFilter.value !== "all" && !options.includes(deckTypeFilter.value)) {
+    deckTypeFilter.value = "all";
+  }
+});
+
 watch(deckId, () => {
   syncDeckRoute();
 });
@@ -447,7 +480,7 @@ onMounted(async () => {
         ref="deckDetailRef"
         class="deck-detail"
       >
-        <DeckHero :deck="activeBrowseDeck" :stats="browseStats" />
+        <DeckHero :deck="activeBrowseDeck" :stats="browseStats" :deck-id="deckId" />
 
         <div class="deck-secondary-stats">
           <div class="deck-secondary-stat">
@@ -553,29 +586,19 @@ onMounted(async () => {
             </div>
 
             <div class="deck-cards-toolbar-compact">
-              <div class="deck-cards-filter-group-compact">
+              <label class="manager-filter deck-cards-type-filter">
                 <span class="deck-cards-filter-label">Type</span>
-                <div class="button-group deck-cards-filter-group">
-                  <button
-                    type="button"
-                    class="filter-button"
-                    :class="{ active: deckTypeFilter === 'all' }"
-                    @click="deckTypeFilter = 'all'"
-                  >
-                    All
-                  </button>
-                  <button
-                    v-for="type in DECK_TYPE_ORDER"
+                <select :value="deckTypeFilter" @change="deckTypeFilter = $event.target.value">
+                  <option value="all">All types</option>
+                  <option
+                    v-for="type in deckTypeFilterOptions"
                     :key="type"
-                    type="button"
-                    class="filter-button"
-                    :class="{ active: deckTypeFilter === type }"
-                    @click="deckTypeFilter = type"
+                    :value="type"
                   >
-                    {{ DECK_TYPE_LABELS[type] }}
-                  </button>
-                </div>
-              </div>
+                    {{ deckTypeLabel(type) }}
+                  </option>
+                </select>
+              </label>
 
               <div class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Color</span>
@@ -656,7 +679,7 @@ onMounted(async () => {
               />
 
               <div class="deck-cards-main-pane">
-                <p v-if="!filteredDeckCards.length" class="storage-empty deck-cards-filter-empty">
+                <p v-if="isFilterEmpty" class="storage-empty deck-cards-filter-empty">
                   No other cards match the current filters.
                 </p>
 
@@ -683,7 +706,21 @@ onMounted(async () => {
                       <th>Gain / loss</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody v-if="isDeckEmpty">
+                    <tr class="deck-cards-empty-row">
+                      <td colspan="7">
+                        <p class="storage-empty deck-cards-empty-message">This deck is empty.</p>
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-small"
+                          @click="openEmptyDeckAdd"
+                        >
+                          Add cards
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tbody v-else>
                     <template v-for="group in groupedBrowseCards" :key="group.key">
                       <tr
                         v-if="group.kind === 'section' && !group.cards?.length"
@@ -713,7 +750,7 @@ onMounted(async () => {
                             </RouterLink>
                             <span v-else>{{ card.cardName }}</span>
                           </td>
-                          <td>{{ DECK_TYPE_LABELS[cardTypeGroup(card)] }}</td>
+                          <td>{{ deckTypeLabel(cardTypeGroup(card)) }}</td>
                           <td>{{ formatEuro(card.currentValue) }}</td>
                           <td>{{ deckCardOwnedLabel(card) }}</td>
                           <td>{{ formatProfit(card.profitLoss) }}</td>
@@ -727,6 +764,16 @@ onMounted(async () => {
         </section>
       </div>
     </template>
+
+    <DeckAddCardModal
+      v-if="deckId"
+      :open="emptyDeckAddOpen"
+      :deck-id="deckId"
+      :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+      section="main"
+      @close="closeEmptyDeckAdd"
+      @added="onDeckCardAdded"
+    />
 
     <CreateDeckModal
       :open="createDeckOpen"

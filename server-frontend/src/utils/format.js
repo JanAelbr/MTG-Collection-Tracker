@@ -15,6 +15,18 @@ export function formatProfit(value) {
   return value >= 0 ? `+${formatted}` : `−${formatted}`;
 }
 
+export function formatProfitBracket(value) {
+  if (value == null || Number.isNaN(value)) {
+    return null;
+  }
+  if (value === 0) {
+    return "(0)";
+  }
+  const formatted = formatEuro(Math.abs(value));
+  const prefix = value >= 0 ? "+" : "−";
+  return `(${prefix}${formatted})`;
+}
+
 export function formatRoi(profit, invested) {
   if (profit == null || invested == null || Number.isNaN(profit) || Number.isNaN(invested) || invested === 0) {
     return "Unknown";

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";
 import CardVariantGallery from "../components/CardVariantGallery.vue";
@@ -10,7 +10,6 @@ import { isFinishDataOwned } from "../composables/cardContextMenu";
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
 import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, hasFinish, normalizeFinish } from "../utils/finishes";
 import { collectionScopeToQuery } from "../utils/setScope";
-import DeckAddControl from "../components/DeckAddControl.vue";
 import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 
 const route = useRoute();
@@ -40,14 +39,6 @@ const finishRows = computed(() =>
     label: finishLabel(finish),
     data: card.value?.finishes?.[String(finish)] || null,
   })),
-);
-
-const pricingGridStyle = computed(() => ({
-  "--finish-columns": String(Math.max(availableFinishes.value.length, 1)),
-}));
-
-const hasAnyLocations = computed(() =>
-  finishRows.value.some((row) => row.data?.locations?.length),
 );
 
 const showNonfoilGuidePrices = computed(() =>
@@ -87,6 +78,12 @@ const hasAnyOwned = computed(() =>
   finishRows.value.some((row) => isFinishDataOwned(row.data)),
 );
 
+const activeFinishRow = computed(() => ({
+  finish: selectedFinish.value,
+  label: finishLabel(selectedFinish.value),
+  data: card.value?.finishes?.[String(selectedFinish.value)] || null,
+}));
+
 const collectionSetLink = computed(() => {
   if (!card.value?.setCode) {
     return null;
@@ -102,6 +99,7 @@ const defaultDeckId = computed(() =>
 );
 const activeDeckLabel = ref("");
 const deckCardSlot = ref(null);
+const imageZoomOpen = ref(false);
 
 watch(
   defaultDeckId,
@@ -197,6 +195,26 @@ function formatGainLoss(value) {
   return formatProfit(value);
 }
 
+function closeImageZoom() {
+  imageZoomOpen.value = false;
+}
+
+function onImageZoomKeydown(event) {
+  if (event.key === "Escape") {
+    closeImageZoom();
+  }
+}
+
+watch(imageZoomOpen, (open) => {
+  if (open) {
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onImageZoomKeydown);
+    return;
+  }
+  document.body.style.overflow = "";
+  window.removeEventListener("keydown", onImageZoomKeydown);
+});
+
 function syncPurchaseDrafts() {
   const next = {};
   for (const finish of availableFinishes.value) {
@@ -287,10 +305,6 @@ async function savePurchasePrice(finish) {
   }
 }
 
-function storageRoute(slug) {
-  return { path: "/storage", query: { location: slug } };
-}
-
 async function loadCard(options = {}) {
   await run(async (isCurrent) => {
     const finishQuery = route.query.finish == null
@@ -360,6 +374,11 @@ async function onOwnershipChanged() {
 }
 
 onMounted(loadCard);
+
+onUnmounted(() => {
+  document.body.style.overflow = "";
+  window.removeEventListener("keydown", onImageZoomKeydown);
+});
 </script>
 
 <template>
@@ -370,12 +389,19 @@ onMounted(loadCard);
 
     <section class="card-detail-panel card-detail-main">
       <div class="card-detail-image-wrap">
-        <img
+        <button
           v-if="card.imageUri"
-          :src="card.imageUri"
-          :alt="card.name"
-          class="card-detail-image"
+          type="button"
+          class="card-detail-image-button"
+          aria-label="View larger image"
+          @click="imageZoomOpen = true"
         >
+          <img
+            :src="card.imageUri"
+            :alt="card.name"
+            class="card-detail-image"
+          >
+        </button>
         <div v-else class="card-detail-image card-detail-image-empty">No image</div>
       </div>
 
@@ -394,160 +420,113 @@ onMounted(loadCard);
         <p class="card-detail-subtitle">#{{ String(card.collectorNumber).padStart(3, "0") }}</p>
         <p v-if="card.artStyle" class="card-detail-art-style">{{ card.artStyle }}</p>
 
-        <DeckCardQtyControl
-          v-if="menuCard && defaultDeckId && deckCardSlot"
-          :card="{ ...menuCard, ...deckCardSlot }"
-          :deck-id="defaultDeckId"
-          :deck-name="activeDeckLabel"
-          @changed="onDeckCardChanged"
-          @removed="onDeckCardRemoved"
-        />
+        <div class="card-detail-actions">
+          <DeckCardQtyControl
+            v-if="menuCard && defaultDeckId && deckCardSlot"
+            :card="{ ...menuCard, ...deckCardSlot }"
+            :deck-id="defaultDeckId"
+            :deck-name="activeDeckLabel"
+            @changed="onDeckCardChanged"
+            @removed="onDeckCardRemoved"
+          />
 
-        <DeckAddControl
-          v-else-if="menuCard && defaultDeckId"
-          :card="menuCard"
-          :default-deck-id="defaultDeckId"
-        />
+          <CardOwnedQtyControl
+            v-if="menuCard"
+            :card="menuCard"
+            @ownership-changed="onOwnershipChanged"
+          />
 
-        <DeckAddControl
-          v-else-if="menuCard"
-          :card="menuCard"
-        />
+          <div class="card-detail-pricing-tile card-owned-qty-tile">
+            <div class="card-owned-qty-tile-row card-owned-qty-tile-row-head">
+              <span class="card-owned-qty-tile-label">Pricing</span>
+              <span class="card-detail-pricing-finish">{{ activeFinishRow.label }}</span>
+            </div>
 
-        <CardOwnedQtyControl
-          v-if="menuCard"
-          :card="menuCard"
-          @ownership-changed="onOwnershipChanged"
-        />
-
-        <div v-if="hasAnyLocations" class="card-detail-locations">
-          <span class="card-detail-locations-label">Stored in</span>
-          <div
-            v-for="row in finishRows"
-            :key="`locations-${row.finish}`"
-            class="card-detail-location-group"
-          >
-            <template v-if="row.data?.locations?.length">
-              <span class="card-detail-location-finish">{{ row.label }}</span>
-              <RouterLink
-                v-for="location in row.data.locations"
-                :key="`${row.finish}-${location.slug}`"
-                :to="storageRoute(location.slug)"
-                class="card-detail-location-link"
-              >
-                {{ location.label }}<span v-if="location.count > 1"> ×{{ location.count }}</span>
-              </RouterLink>
-            </template>
-          </div>
-        </div>
-
-        <div class="card-detail-pricing-grid" :style="pricingGridStyle">
-          <div class="card-detail-pricing-row card-detail-pricing-header">
-            <span class="card-detail-pricing-label"></span>
-            <span
-              v-for="row in finishRows"
-              :key="`header-${row.finish}`"
-              class="card-detail-pricing-value"
+            <div
+              v-if="hasAnyOwned && isFinishDataOwned(activeFinishRow.data)"
+              class="card-detail-pricing-stat"
             >
-              {{ row.label }}
-            </span>
-          </div>
-          <div v-if="hasAnyOwned" class="card-detail-pricing-row">
-            <span class="card-detail-pricing-label">Owned as</span>
-            <span
-              v-for="row in finishRows"
-              :key="`owned-finish-${row.finish}`"
-              class="card-detail-pricing-value"
-            >
-              <select
-                v-if="isFinishDataOwned(row.data) && finishChangeOptions(row.finish).length > 1"
-                class="card-detail-finish-select"
-                :value="row.finish"
-                :disabled="finishSaving === row.finish || loading"
-                @change="changeOwnedFinish(row.finish, $event)"
-              >
-                <option
-                  v-for="option in finishChangeOptions(row.finish)"
-                  :key="`${row.finish}-${option.value}`"
-                  :value="option.value"
+              <span class="card-detail-pricing-stat-label">Owned as</span>
+              <span class="card-detail-pricing-stat-value">
+                <select
+                  v-if="finishChangeOptions(activeFinishRow.finish).length > 1"
+                  class="card-detail-finish-select"
+                  :value="activeFinishRow.finish"
+                  :disabled="finishSaving === activeFinishRow.finish || loading"
+                  @change="changeOwnedFinish(activeFinishRow.finish, $event)"
                 >
-                  {{ option.label }}
-                </option>
-              </select>
-              <span v-else-if="isFinishDataOwned(row.data)">{{ row.label }}</span>
-              <span v-else class="card-detail-pricing-empty">—</span>
-            </span>
-          </div>
-          <div class="card-detail-pricing-row">
-            <span class="card-detail-pricing-label">Current value</span>
-            <span
-              v-for="row in finishRows"
-              :key="`value-${row.finish}`"
-              class="card-detail-pricing-value"
-            >
-              <a
-                v-if="card.cardmarketUrl"
-                :href="card.cardmarketUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="reports-market-link"
+                  <option
+                    v-for="option in finishChangeOptions(activeFinishRow.finish)"
+                    :key="`${activeFinishRow.finish}-${option.value}`"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+                <span v-else>{{ activeFinishRow.label }}</span>
+              </span>
+            </div>
+
+            <div class="card-detail-pricing-stat">
+              <span class="card-detail-pricing-stat-label">Current value</span>
+              <span class="card-detail-pricing-stat-value">
+                <a
+                  v-if="card.cardmarketUrl"
+                  :href="card.cardmarketUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="reports-market-link"
+                >
+                  {{ formatEuro(activeFinishRow.data?.currentValue) }}
+                </a>
+                <template v-else>{{ formatEuro(activeFinishRow.data?.currentValue) }}</template>
+              </span>
+            </div>
+
+            <div class="card-detail-pricing-stat">
+              <span class="card-detail-pricing-stat-label">Change</span>
+              <span class="card-detail-pricing-stat-value">
+                {{ formatPriceChange(activeFinishRow.data?.priceChange, activeFinishRow.data?.previousValue) }}
+              </span>
+            </div>
+
+            <div class="card-detail-pricing-stat">
+              <span class="card-detail-pricing-stat-label">Purchase</span>
+              <span class="card-detail-pricing-stat-value">
+                <label
+                  v-if="isFinishDataOwned(activeFinishRow.data)"
+                  class="card-detail-purchase-field"
+                >
+                  <span class="card-detail-purchase-currency">€</span>
+                  <input
+                    v-model="purchaseDrafts[activeFinishRow.finish]"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputmode="decimal"
+                    class="card-detail-purchase-input"
+                    :disabled="purchaseSaving === activeFinishRow.finish || loading"
+                    placeholder="0.00"
+                    @blur="savePurchasePrice(activeFinishRow.finish)"
+                    @keydown.enter="$event.target.blur()"
+                  />
+                </label>
+                <span v-else class="card-detail-pricing-empty">—</span>
+              </span>
+            </div>
+
+            <div class="card-detail-pricing-stat">
+              <span class="card-detail-pricing-stat-label">Gain / loss</span>
+              <span
+                class="card-detail-pricing-stat-value"
+                :class="{
+                  'reports-gain': activeFinishRow.data?.profitLoss != null && activeFinishRow.data.profitLoss >= 0,
+                  'reports-loss': activeFinishRow.data?.profitLoss != null && activeFinishRow.data.profitLoss < 0,
+                }"
               >
-                {{ formatEuro(row.data?.currentValue) }}
-              </a>
-              <template v-else>{{ formatEuro(row.data?.currentValue) }}</template>
-            </span>
-          </div>
-          <div class="card-detail-pricing-row">
-            <span class="card-detail-pricing-label">Change</span>
-            <span
-              v-for="row in finishRows"
-              :key="`change-${row.finish}`"
-              class="card-detail-pricing-value"
-            >
-              {{ formatPriceChange(row.data?.priceChange, row.data?.previousValue) }}
-            </span>
-          </div>
-          <div class="card-detail-pricing-row">
-            <span class="card-detail-pricing-label">Purchase</span>
-            <span
-              v-for="row in finishRows"
-              :key="`purchase-${row.finish}`"
-              class="card-detail-pricing-value"
-            >
-              <label
-                v-if="isFinishDataOwned(row.data)"
-                class="card-detail-purchase-field"
-              >
-                <span class="card-detail-purchase-currency">€</span>
-                <input
-                  v-model="purchaseDrafts[row.finish]"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputmode="decimal"
-                  class="card-detail-purchase-input"
-                  :disabled="purchaseSaving === row.finish || loading"
-                  placeholder="0.00"
-                  @blur="savePurchasePrice(row.finish)"
-                  @keydown.enter="$event.target.blur()"
-                />
-              </label>
-              <span v-else class="card-detail-pricing-empty">—</span>
-            </span>
-          </div>
-          <div class="card-detail-pricing-row">
-            <span class="card-detail-pricing-label">Gain / loss</span>
-            <span
-              v-for="row in finishRows"
-              :key="`gain-${row.finish}`"
-              class="card-detail-pricing-value"
-              :class="{
-                'reports-gain': row.data?.profitLoss != null && row.data.profitLoss >= 0,
-                'reports-loss': row.data?.profitLoss != null && row.data.profitLoss < 0,
-              }"
-            >
-              {{ formatGainLoss(row.data?.profitLoss) }}
-            </span>
+                {{ formatGainLoss(activeFinishRow.data?.profitLoss) }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -601,6 +580,31 @@ onMounted(loadCard);
       show-name
       show-arrows
     />
+
+    <Teleport to="body">
+      <div
+        v-if="imageZoomOpen && card.imageUri"
+        class="card-image-zoom-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Card image preview"
+        @click.self="closeImageZoom"
+      >
+        <button
+          type="button"
+          class="card-image-zoom-close"
+          aria-label="Close image preview"
+          @click="closeImageZoom"
+        >
+          ×
+        </button>
+        <img
+          :src="card.imageUri"
+          :alt="card.name"
+          class="card-image-zoom-image"
+        >
+      </div>
+    </Teleport>
   </div>
 
   <div v-else class="card-detail-page">

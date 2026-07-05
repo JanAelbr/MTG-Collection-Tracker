@@ -5,7 +5,7 @@ from pathlib import Path
 
 from lib.config import DECKS_DIR, DECKS_MANIFEST_NAME
 from lib.purchase_csv import detect_delimiter, parse_finish, parse_purchase_value
-from util.card_finishes import parse_finish_from_row
+from util.card_finishes import FINISH_FOIL, parse_finish_from_row
 from lib.deck_purchase import explicit_purchase_from_row
 
 DEFAULT_SECTION = "main"
@@ -161,7 +161,7 @@ def build_deck_rows_from_names(
         built.append({
             "set_code": set_code,
             "collector_number": collector_number,
-            "finish": 0,
+            "finish": FINISH_FOIL,
             "qty": qty,
             "owned_qty": min(qty, 1),
             "section": section,

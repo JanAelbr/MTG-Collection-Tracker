@@ -1,13 +1,4 @@
-export const DECK_TYPE_ORDER = ["creature", "artifact", "sorcery", "instant", "others", "land"];
-
-export const DECK_TYPE_LABELS = {
-  creature: "Creatures",
-  artifact: "Artifacts",
-  sorcery: "Sorceries",
-  instant: "Instants",
-  others: "Other",
-  land: "Lands",
-};
+import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "./collectionTypes";
 
 export const DECK_COLOR_ORDER = ["W", "U", "B", "R", "G", "C"];
 
@@ -22,12 +13,39 @@ export const DECK_COLOR_LABELS = {
 
 const SECTION_ORDER = { commander: 0, main: 1, sideboard: 2 };
 
-export function cardTypeGroup(card) {
-  const type = String(card?.cardType || "").toLowerCase();
-  if (DECK_TYPE_ORDER.includes(type)) {
-    return type;
+export function deckTypeLabel(type) {
+  if (!type) {
+    return "Unknown";
   }
-  return "others";
+  const normalized = String(type).toLowerCase();
+  return COLLECTION_TYPE_LABELS[normalized]
+    || normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+export function cardTypeGroup(card) {
+  return String(card?.cardType || "").toLowerCase();
+}
+
+function deckTypeSortIndex(type) {
+  const index = COLLECTION_TYPE_ORDER.indexOf(type);
+  return index === -1 ? 999 : index;
+}
+
+export function collectDeckCardTypes(cards) {
+  const types = new Set();
+  for (const card of cards || []) {
+    const type = cardTypeGroup(card);
+    if (type) {
+      types.add(type);
+    }
+  }
+  return [...types].sort((left, right) => {
+    const sortDiff = deckTypeSortIndex(left) - deckTypeSortIndex(right);
+    if (sortDiff !== 0) {
+      return sortDiff;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 export function cardMatchesColorFilter(card, selectedColors) {
@@ -53,7 +71,7 @@ function compareNames(left, right) {
 }
 
 function typeSortIndex(card) {
-  return DECK_TYPE_ORDER.indexOf(cardTypeGroup(card));
+  return deckTypeSortIndex(cardTypeGroup(card));
 }
 
 function colorSortKey(card) {
@@ -111,6 +129,27 @@ export function splitCommanderCards(cards) {
   return { commanders, deckCards };
 }
 
+export function buildEmptyDeckCardGroups(section = "main") {
+  const sectionLabel = section === "sideboard" ? "Sideboard" : "Main deck";
+  return [
+    {
+      key: `section-${section}`,
+      kind: "section",
+      section,
+      label: sectionLabel,
+      cards: [],
+    },
+    {
+      key: `${section}-any`,
+      kind: "type",
+      section,
+      type: "",
+      label: "Cards",
+      cards: [],
+    },
+  ];
+}
+
 export function buildDeckCardGroups(cards, sortBy = "name") {
   const bySection = new Map();
   for (const card of cards || []) {
@@ -150,7 +189,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
       cards: [],
     });
 
-    for (const type of DECK_TYPE_ORDER) {
+    for (const type of collectDeckCardTypes(sectionCards)) {
       const typeCards = sectionCards.filter((card) => cardTypeGroup(card) === type);
       if (!typeCards.length) {
         continue;
@@ -160,7 +199,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
         kind: "type",
         section,
         type,
-        label: DECK_TYPE_LABELS[type],
+        label: deckTypeLabel(type),
         cards: sortDeckCards(typeCards, sortBy),
       });
     }

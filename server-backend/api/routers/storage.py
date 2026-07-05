@@ -68,6 +68,8 @@ def create_location(body: StorageLocationCreate, conn: sqlite3.Connection = Depe
 
             description=body.description,
 
+            location_type=body.locationType,
+
         )
 
     except StorageError as exc:

@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
-import { formatEuro, formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfit } from "../utils/format";
+import { formatEuro, formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 
 const props = defineProps({
@@ -44,11 +44,18 @@ function cardIsOwned(card) {
   return isEffectivelyOwned(card);
 }
 
-function gainLabel(card) {
+function gainBracket(card) {
   if (!cardIsOwned(card) || card.purchaseValue == null || card.purchaseValue === 0) {
     return null;
   }
-  return formatProfit(card.profitLoss);
+  return formatProfitBracket(card.profitLoss);
+}
+
+function gainClass(card) {
+  if (card.profitLoss == null) {
+    return "";
+  }
+  return card.profitLoss >= 0 ? "reports-gain" : "reports-loss";
 }
 
 function priceChangeBracket(card) {
@@ -145,21 +152,17 @@ function isCardSelected(card) {
           {{ finishLabel(cardFinish(card)) }}
         </span>
         <span class="collection-card-grid-value">
-          {{ formatEuro(card.currentValue) }}<span
+          <span>{{ formatEuro(card.currentValue) }}</span>
+          <span
+            v-if="gainBracket(card)"
+            class="collection-card-grid-gain"
+            :class="gainClass(card)"
+          >{{ gainBracket(card) }}</span>
+          <span
             v-if="priceChangeBracket(card)"
             class="collection-card-grid-change"
             :class="priceChangeClass(card)"
-          > {{ priceChangeBracket(card) }}</span>
-        </span>
-        <span
-          v-if="gainLabel(card)"
-          class="collection-card-grid-gain"
-          :class="{
-            'reports-gain': card.profitLoss != null && card.profitLoss >= 0,
-            'reports-loss': card.profitLoss != null && card.profitLoss < 0,
-          }"
-        >
-          {{ gainLabel(card) }}
+          >{{ priceChangeBracket(card) }}</span>
         </span>
         <span v-if="showUnownedBadge && !cardIsOwned(card)" class="reports-unowned-badge">
           Not owned

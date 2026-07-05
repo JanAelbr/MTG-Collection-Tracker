@@ -4,6 +4,7 @@ import time
 from lib.config import HTTP_USER_AGENT
 from lib.deck_csv import CARD_NAME_ALIASES
 from lib.run_log import get_logger
+from util.card_finishes import FINISH_FOIL
 from util.scryfall_client import scryfall_get
 
 log = get_logger(__name__)
@@ -214,7 +215,7 @@ def build_deck_rows_from_scryfall(
         built.append({
             "set_code": set_code,
             "collector_number": collector_number,
-            "finish": 0,
+            "finish": FINISH_FOIL,
             "qty": qty,
             "owned_qty": min(qty, 1),
             "section": section,

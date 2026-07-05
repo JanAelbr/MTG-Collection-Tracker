@@ -51,6 +51,7 @@ class StorageApiServiceTests(unittest.TestCase):
             description="Cards for trades",
         )
         self.assertTrue(created["slug"].startswith("custom:"))
+        self.assertEqual(created["locationType"], "storage")
         self.assertFalse(created["isSystem"])
         self.assertTrue(created["canDelete"])
 
@@ -65,6 +66,18 @@ class StorageApiServiceTests(unittest.TestCase):
         locations = storage_service.list_locations(self.conn)
         slugs = [item["slug"] for item in locations]
         self.assertNotIn(created["slug"], slugs)
+
+    def test_create_custom_binder(self):
+        created = storage_service.create_location(
+            self.conn,
+            label="Modern trades",
+            description="Cards for trade nights",
+            location_type="binder",
+        )
+        self.assertTrue(created["slug"].startswith("binder:custom:"))
+        self.assertEqual(created["locationType"], "binder")
+        self.assertTrue(created["isCustom"])
+        self.assertTrue(created["canDelete"])
 
     def test_delete_instance_updates_location(self):
         general = storage_service.get_location(self.conn, "storage:general")

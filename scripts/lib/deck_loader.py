@@ -131,6 +131,36 @@ def resolve_deck_row(cursor: sqlite3.Cursor, row: dict) -> dict:
     }
 
 
+def reconcile_deck_card_finishes(cursor: sqlite3.Cursor) -> int:
+    """Align deck_cards.finish with the finishes available for each catalog print."""
+    rows = cursor.execute(
+        """
+        SELECT dc.deck_card_id, dc.finish, c.has_nonfoil, c.has_foil, c.has_etched
+        FROM deck_cards dc
+        JOIN cards c
+          ON c.set_code = dc.set_code
+         AND c.collector_number = dc.collector_number
+        WHERE dc.set_code IS NOT NULL
+          AND dc.collector_number IS NOT NULL
+        """,
+    ).fetchall()
+    updated = 0
+    for deck_card_id, finish, has_nonfoil, has_foil, has_etched in rows:
+        inferred = infer_finish_for_print(
+            finish,
+            has_nonfoil=has_nonfoil,
+            has_foil=has_foil,
+            has_etched=has_etched,
+        )
+        if inferred != finish:
+            cursor.execute(
+                "UPDATE deck_cards SET finish = ? WHERE deck_card_id = ?",
+                (inferred, deck_card_id),
+            )
+            updated += 1
+    return updated
+
+
 # Insert or replace one deck and its cards from a manifest entry.
 def import_deck_file(cursor: sqlite3.Cursor, deck_entry) -> tuple[int, int, int]:
     deck_name = deck_entry.name
@@ -184,6 +214,14 @@ def import_deck_file(cursor: sqlite3.Cursor, deck_entry) -> tuple[int, int, int]
                 resolved["sort_order"],
                 resolved["in_catalog"],
             ),
+        )
+
+    reconciled = reconcile_deck_card_finishes(cursor)
+    if reconciled:
+        log.info(
+            "Reconciled finish on %s deck card(s) in '%s'",
+            reconciled,
+            deck_entry.slug,
         )
 
     return deck_id, len(rows), tracked
