@@ -10,8 +10,7 @@ from util.card_finishes import (
     FINISH_ETCHED,
     FINISH_FOIL,
     FINISH_NONFOIL,
-    MARKET_VALUE_COLUMNS,
-    finish_has_pricing,
+    has_finish_flag,
 )
 from util.app_tables import ensure_app_tables
 
@@ -90,10 +89,6 @@ def _float_or_none(value) -> float | None:
     return float(value)
 
 
-def _finish_available(row, finish: int) -> bool:
-    return finish_has_pricing(row, finish)
-
-
 def _mapping_row(row) -> dict:
     if isinstance(row, dict):
         return row
@@ -114,9 +109,9 @@ def _serialize_manager_card(row) -> dict:
         data["purchase_value_etched"] is not None
         or int(data.get("instance_count_etched") or 0) > 0
     )
-    has_nonfoil = _finish_available(data, FINISH_NONFOIL)
-    has_foil = _finish_available(data, FINISH_FOIL)
-    has_etched = _finish_available(data, FINISH_ETCHED)
+    has_nonfoil = has_finish_flag(data, FINISH_NONFOIL)
+    has_foil = has_finish_flag(data, FINISH_FOIL)
+    has_etched = has_finish_flag(data, FINISH_ETCHED)
 
     return {
         "set_code": data["set_code"],

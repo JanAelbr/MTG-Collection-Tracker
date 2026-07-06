@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { formatSetCountLabel, setShortName } from "../utils/format";
+import { formatSetCountLabel, setCompletionRarity, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 
 const props = defineProps({
@@ -25,6 +25,11 @@ function setIconUri(set) {
 
 function countLabel(set) {
   return formatSetCountLabel(set);
+}
+
+function completionRarityClass(set) {
+  const rarity = setCompletionRarity(set);
+  return rarity ? `set-gallery-rarity--${rarity}` : "";
 }
 
 function canDelete(set) {
@@ -153,7 +158,7 @@ onMounted(() => scrollActiveIntoView("auto"));
         <span v-else aria-hidden="true">×</span>
       </button>
 
-      <div class="set-gallery-icon-wrap">
+      <div class="set-gallery-icon-wrap" :class="completionRarityClass(set)">
         <img
           v-if="setIconUri(set)"
           :src="setIconUri(set)"
@@ -167,7 +172,9 @@ onMounted(() => scrollActiveIntoView("auto"));
       </div>
 
       <div class="set-gallery-meta">
-        <span class="set-gallery-code">{{ set.setCode === "All" ? "All" : set.setCode }}</span>
+        <span class="set-gallery-code" :class="completionRarityClass(set)">
+          {{ set.setCode === "All" ? "All" : set.setCode }}
+        </span>
         <span class="set-gallery-name">{{ setShortName(set) }}</span>
         <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
       </div>

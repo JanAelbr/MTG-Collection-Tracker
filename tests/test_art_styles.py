@@ -84,6 +84,19 @@ class ArtStyleTests(unittest.TestCase):
         errors = validate_art_style_rules([{"firstNumber": 1, "lastNumber": 2}])
         self.assertTrue(errors)
 
+    def test_mh3_main_and_booster_fun_sections(self):
+        self.assertEqual(get_art_style("mh3", "100"), "01. Main set")
+        self.assertEqual(get_art_style("mh3", "280"), "02. Bonus sheet")
+        self.assertEqual(get_art_style("mh3", "305"), "03. Full-art Eldrazi basics")
+        self.assertEqual(get_art_style("mh3", "330"), "05. Frame break")
+        self.assertEqual(get_art_style("mh3", "400"), "09. Retro frame")
+        self.assertEqual(get_art_style("mh3", "450"), "11. Extended art")
+        self.assertEqual(get_art_style("mh3", "510"), "16. Ripple foil")
+
+    def test_mh3_serialized_eldrazi_titans(self):
+        self.assertEqual(get_art_style("mh3", "382"), "08. Borderless concept Eldrazi")
+        self.assertEqual(get_art_style("mh3", "382z"), "08z. Borderless concept Eldrazi: serialized")
+
 
 if __name__ == "__main__":
     unittest.main()

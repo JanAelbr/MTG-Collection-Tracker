@@ -26,12 +26,23 @@ DEFAULT_SET_PICKER_MODE = "dropdown"
 SET_PICKER_MODE_OPTIONS = ("dropdown", "browser")
 DEFAULT_STORAGE_LOCATION_KEY = "default_storage_location"
 DEFAULT_STORAGE_LOCATION = "storage:general"
+PRICE_STRATEGY_KEY = "price_strategy"
 
 
 class SettingsError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+def get_price_strategy(conn: sqlite3.Connection) -> str:
+    row = conn.execute(
+        "SELECT value FROM user_settings WHERE key = ?",
+        (PRICE_STRATEGY_KEY,),
+    ).fetchone()
+    if row is None or row["value"] is None:
+        return normalize_strategy(None)
+    return normalize_strategy(row["value"])
 
 
 def get_favorite_sets(conn: sqlite3.Connection) -> list[str]:
@@ -224,7 +235,6 @@ def update_settings(
             """,
             (normalized,),
         )
-        bump_cache_epoch()
     if favorite_sets is not None:
         save_favorite_sets(conn, favorite_sets)
     if set_compare_date:

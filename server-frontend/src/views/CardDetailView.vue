@@ -8,7 +8,8 @@ import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { isFinishDataOwned } from "../composables/cardContextMenu";
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
-import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, hasFinish, normalizeFinish } from "../utils/finishes";
+import { priceStrategyDescription } from "../utils/priceStrategies";
+import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, normalizeFinish } from "../utils/finishes";
 import { collectionScopeToQuery } from "../utils/setScope";
 import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 
@@ -550,7 +551,14 @@ onUnmounted(() => {
                   :key="row.strategyId"
                   :class="{ 'is-active-strategy': row.strategyId === priceStrategy }"
                 >
-                  <td>{{ row.label }}</td>
+                  <td>
+                    <span
+                      class="card-detail-strategy-label"
+                      :title="priceStrategyDescription(row.strategyId)"
+                    >
+                      {{ row.label }}
+                    </span>
+                  </td>
                   <td v-if="showNonfoilGuidePrices">{{ formatEuro(row.nonfoil) }}</td>
                   <td v-if="showFoilGuidePrices">{{ formatEuro(row.foil) }}</td>
                   <td v-if="showEtchedGuidePrices">{{ formatEuro(row.etched) }}</td>

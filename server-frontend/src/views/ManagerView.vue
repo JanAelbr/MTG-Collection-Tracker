@@ -8,7 +8,7 @@ import SetPicker from "../components/SetPicker.vue";
 import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
-import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, hasFinish } from "../utils/finishes";
+import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, canManageFinish } from "../utils/finishes";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import ArtStyleRulesPanel from "../components/ArtStyleRulesPanel.vue";
 
@@ -178,21 +178,21 @@ function ownedItemsForSelectedRows() {
     if (!selectedRows.value.has(card.collectorNumber)) {
       continue;
     }
-    if (hasFinish(card, FINISH_NONFOIL) && card.ownedNonfoil) {
+    if (card.ownedNonfoil) {
       items.push({
         setCode: card.setCode,
         collectorNumber: card.collectorNumber,
         finish: FINISH_NONFOIL,
       });
     }
-    if (hasFinish(card, FINISH_FOIL) && card.ownedFoil) {
+    if (card.ownedFoil) {
       items.push({
         setCode: card.setCode,
         collectorNumber: card.collectorNumber,
         finish: FINISH_FOIL,
       });
     }
-    if (hasFinish(card, FINISH_ETCHED) && card.ownedEtched) {
+    if (card.ownedEtched) {
       items.push({
         setCode: card.setCode,
         collectorNumber: card.collectorNumber,
@@ -468,7 +468,7 @@ onMounted(async () => {
                 <td>{{ card.artStyle || "—" }}</td>
                 <td class="manager-checkbox-cell">
                   <input
-                    v-if="hasFinish(card, FINISH_NONFOIL)"
+                    v-if="canManageFinish(card, FINISH_NONFOIL)"
                     type="checkbox"
                     :checked="card.ownedNonfoil"
                     @change="toggleOwnership(card, FINISH_NONFOIL, $event.target.checked)"
@@ -477,7 +477,7 @@ onMounted(async () => {
                 </td>
                 <td class="manager-checkbox-cell">
                   <input
-                    v-if="hasFinish(card, FINISH_FOIL)"
+                    v-if="canManageFinish(card, FINISH_FOIL)"
                     type="checkbox"
                     :checked="card.ownedFoil"
                     @change="toggleOwnership(card, FINISH_FOIL, $event.target.checked)"
@@ -486,7 +486,7 @@ onMounted(async () => {
                 </td>
                 <td class="manager-checkbox-cell">
                   <input
-                    v-if="hasFinish(card, FINISH_ETCHED)"
+                    v-if="canManageFinish(card, FINISH_ETCHED)"
                     type="checkbox"
                     :checked="card.ownedEtched"
                     @change="toggleOwnership(card, FINISH_ETCHED, $event.target.checked)"

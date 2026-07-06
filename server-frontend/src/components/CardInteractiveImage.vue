@@ -14,13 +14,13 @@ import {
   updateCardCopyStorage,
 } from "../composables/cardContextMenu";
 import {
+  canManageFinish,
   cardFinish,
   cardRouteQuery,
   FINISH_ETCHED,
   FINISH_FOIL,
   FINISH_NONFOIL,
   finishLabel,
-  hasFinish,
   normalizeFinish,
 } from "../utils/finishes";
 
@@ -63,7 +63,7 @@ const effectivelyOwned = computed(() => {
   return isEffectivelyOwned(props.card);
 });
 const availableFinishes = computed(() =>
-  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => hasFinish(props.card, finish)),
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => canManageFinish(props.card, finish)),
 );
 const currentFinish = computed(() => cardFinish(props.card));
 const showFinishSelector = computed(

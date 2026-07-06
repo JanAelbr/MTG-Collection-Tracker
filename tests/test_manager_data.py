@@ -109,6 +109,46 @@ class ManagerDataPerformanceTests(unittest.TestCase):
         self.assertLessEqual(len(payload["cards"]), 10)
         self.assertTrue(all("2" in card["collectorNumber"] for card in payload["cards"]))
 
+    def test_manager_card_exposes_catalog_finish_without_pricing(self):
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style, image_uri,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "LTC",
+                "81",
+                "Commander Face",
+                "02. Borderless Face Commander",
+                None,
+                None,
+                None,
+                None,
+                0,
+                0,
+                1,
+                None,
+                "Legendary Creature",
+                "creature",
+            ),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES ('LTC', '81', 0.0, 2)
+            """
+        )
+        self.conn.commit()
+
+        card = manager_data.query_manager_cards_for_set(self.conn, "LTC", search="81")[0]
+
+        self.assertTrue(card["has_etched"])
+        self.assertFalse(card["has_foil"])
+        self.assertTrue(card["owned_etched"])
+
     def test_ensure_card_columns_does_not_backfill(self):
         with patch("util.db_migrate.backfill_card_types") as mock_backfill:
             ensure_card_columns(self.conn)

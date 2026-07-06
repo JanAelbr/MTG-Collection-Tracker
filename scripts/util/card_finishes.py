@@ -131,8 +131,9 @@ def finish_has_pricing(row, finish: int, guide_prices: dict | None = None) -> bo
 
 
 def finish_available(row, finish: int, *, owned: bool = False, guide_prices: dict | None = None) -> bool:
-    """A finish is shown only when we have explicit pricing for it."""
-    del owned
+    """A finish is available for adding when priced, or always when already owned."""
+    if owned:
+        return True
     return finish_has_pricing(row, finish, guide_prices)
 
 

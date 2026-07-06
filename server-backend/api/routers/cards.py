@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.services.card_service import CardError, load_card_detail
 
@@ -35,15 +35,14 @@ def get_card_detail(
     finish: int | None = Query(default=None, ge=0, le=2),
 ):
 
-    params = {
-
-        "setCode": set_code,
-
-        "collectorNumber": collector_number,
-
-        "finish": finish,
-
-    }
+    params = with_price_strategy(
+        conn,
+        {
+            "setCode": set_code,
+            "collectorNumber": collector_number,
+            "finish": finish,
+        },
+    )
 
     try:
 

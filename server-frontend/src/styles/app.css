@@ -2386,6 +2386,53 @@ body {
   justify-content: center;
   width: 56px;
   height: 56px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: #f8f9fa;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.set-gallery-rarity--common.set-gallery-icon-wrap {
+  border-color: #3d3d3d;
+  background: #e8e8e8;
+  box-shadow: none;
+}
+
+.set-gallery-rarity--uncommon.set-gallery-icon-wrap {
+  border-color: #90a4ae;
+  background: linear-gradient(160deg, #f5f7f8 0%, #cfd8dc 45%, #b0bec5 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 0 0 1px rgba(144, 164, 174, 0.35),
+    0 2px 8px rgba(96, 125, 139, 0.22);
+}
+
+.set-gallery-rarity--rare.set-gallery-icon-wrap {
+  border-color: #c9a227;
+  background: linear-gradient(145deg, rgba(201, 162, 39, 0.2), rgba(201, 162, 39, 0.06));
+  box-shadow: 0 0 8px rgba(201, 162, 39, 0.22);
+}
+
+.set-gallery-rarity--mythic.set-gallery-icon-wrap {
+  border-color: #e85d04;
+  background: linear-gradient(145deg, rgba(232, 93, 4, 0.22), rgba(232, 93, 4, 0.08));
+  box-shadow: 0 0 10px rgba(232, 93, 4, 0.28);
+}
+
+.set-gallery-code.set-gallery-rarity--common {
+  color: #3d3d3d;
+}
+
+.set-gallery-code.set-gallery-rarity--uncommon {
+  color: #546e7a;
+}
+
+.set-gallery-code.set-gallery-rarity--rare {
+  color: #a67c00;
+}
+
+.set-gallery-code.set-gallery-rarity--mythic {
+  color: #d84315;
 }
 
 .set-gallery-icon {
@@ -4746,6 +4793,11 @@ body {
 .card-detail-guide-table tr.is-active-strategy {
   background: #f1f8e9;
   font-weight: 600;
+}
+
+.card-detail-strategy-label {
+  cursor: help;
+  border-bottom: 1px dotted #9e9e9e;
 }
 
 .card-detail-price-panel {

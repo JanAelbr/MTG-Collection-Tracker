@@ -85,11 +85,12 @@ def load_card_detail(
     finishes: dict[str, dict] = {}
     requested_finish = finish
     for finish_id in (FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED):
-        if not finish_available(row, finish_id, guide_prices=guide_prices):
-            continue
-        finish_key = card_price_key(normalized_set, normalized_number, finish_id)
         purchase_value = purchases.get(finish_id)
         finish_locations = locations.get(finish_id, [])
+        is_owned = purchase_value is not None or bool(finish_locations)
+        if not is_owned and not finish_available(row, finish_id, guide_prices=guide_prices):
+            continue
+        finish_key = card_price_key(normalized_set, normalized_number, finish_id)
         current_value = price_from_strategy(
             row["cardmarket_url"],
             finish_id,

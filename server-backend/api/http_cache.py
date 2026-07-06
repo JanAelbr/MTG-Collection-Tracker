@@ -10,6 +10,14 @@ from api.cache import build_etag, get_cache_epoch, memory_cache
 DEFAULT_TTL_SECONDS = 120
 
 
+def with_price_strategy(conn, params: dict | None = None) -> dict:
+    from api.services import settings_service
+
+    merged = dict(params or {})
+    merged["priceStrategy"] = settings_service.get_price_strategy(conn)
+    return merged
+
+
 def cache_headers(*, etag: str, ttl: int, epoch: int) -> dict[str, str]:
     return {
         "ETag": etag,

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.schemas import DeckCardAdd, DeckCardQtyAdjust, DeckCardRemove, DeckCreate, DeckRename
 
@@ -82,17 +82,11 @@ def create_deck(
 def deck_browse_index(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
     return serve_cached_json(
-
         request,
-
         namespace="decks.browse_index",
-
-        params={},
-
+        params=with_price_strategy(conn),
         ttl=120,
-
         loader=lambda: decks_service.load_deck_browse_index(conn),
-
     )
 
 
@@ -114,17 +108,11 @@ def deck_stats(
     try:
 
         return serve_cached_json(
-
             request,
-
             namespace="decks.stats",
-
-            params={"deckId": deckId},
-
+            params=with_price_strategy(conn, {"deckId": deckId}),
             ttl=120,
-
             loader=lambda: decks_service.load_deck_stats(conn, deck_id=deckId),
-
         )
 
     except DeckError as exc:
@@ -150,17 +138,11 @@ def deck_browse(
     try:
 
         return serve_cached_json(
-
             request,
-
             namespace="decks.browse",
-
-            params={"deckId": deck_id},
-
+            params=with_price_strategy(conn, {"deckId": deck_id}),
             ttl=120,
-
             loader=lambda: decks_service.load_deck_browse(conn, deck_id=deck_id),
-
         )
 
     except DeckError as exc:

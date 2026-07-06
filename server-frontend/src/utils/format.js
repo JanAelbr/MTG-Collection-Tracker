@@ -162,6 +162,35 @@ export function formatSetCountLabel(set) {
   return `(${set.ownedCount}/${set.catalogCount})`;
 }
 
+export function setCompletionPercent(set) {
+  if (!set?.setCode || set.setCode === "All") {
+    return null;
+  }
+  const catalogCount = set.catalogCount ?? 0;
+  if (catalogCount <= 0) {
+    return null;
+  }
+  const ownedCount = set.ownedCount ?? 0;
+  return (ownedCount / catalogCount) * 100;
+}
+
+export function setCompletionRarity(set) {
+  const percent = setCompletionPercent(set);
+  if (percent == null) {
+    return null;
+  }
+  if (percent >= 95) {
+    return "mythic";
+  }
+  if (percent >= 50) {
+    return "rare";
+  }
+  if (percent >= 25) {
+    return "uncommon";
+  }
+  return "common";
+}
+
 export function artStyleOptionValue(style) {
   if (typeof style === "string") {
     return style;

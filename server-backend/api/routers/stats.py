@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.services import stats_service
 
@@ -41,7 +41,10 @@ def collection_stats(
 
         namespace="stats.collection",
 
-        params={"setCode": setCode, "finishFilter": finishFilter, "foilFilter": foilFilter},
+        params=with_price_strategy(
+            conn,
+            {"setCode": setCode, "finishFilter": finishFilter, "foilFilter": foilFilter},
+        ),
 
         ttl=120,
 

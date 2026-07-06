@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.services.reports_service import ReportsError, load_reports_meta, list_report_cards
 from api.services.search_service import list_name_variants, random_name_explore, search_cards
@@ -34,17 +34,11 @@ def _reports_error(exc: ReportsError) -> HTTPException:
 def reports_meta(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
     return serve_cached_json(
-
         request,
-
         namespace="reports.meta",
-
-        params={},
-
+        params=with_price_strategy(conn),
         ttl=120,
-
         loader=lambda: load_reports_meta(conn),
-
     )
 
 
@@ -79,27 +73,20 @@ def report_cards(
 
 ):
 
-    params = {
-
-        "report": report,
-
-        "setCode": setCode,
-
-        "artStyle": artStyle,
-
-        "ownedFilter": ownedFilter,
-
-        "foilFilter": foilFilter,
-
-        "typeFilter": typeFilter,
-
-        "colors": colors,
-
-        "compareDate": compareDate,
-
-        "pageSize": pageSize,
-
-    }
+    params = with_price_strategy(
+        conn,
+        {
+            "report": report,
+            "setCode": setCode,
+            "artStyle": artStyle,
+            "ownedFilter": ownedFilter,
+            "foilFilter": foilFilter,
+            "typeFilter": typeFilter,
+            "colors": colors,
+            "compareDate": compareDate,
+            "pageSize": pageSize,
+        },
+    )
 
     try:
 
@@ -166,21 +153,17 @@ def report_search(
 
 ):
 
-    params = {
-
-        "q": q,
-
-        "setCode": setCode,
-
-        "ownedFilter": ownedFilter,
-
-        "foilFilter": foilFilter,
-
-        "page": page,
-
-        "pageSize": pageSize,
-
-    }
+    params = with_price_strategy(
+        conn,
+        {
+            "q": q,
+            "setCode": setCode,
+            "ownedFilter": ownedFilter,
+            "foilFilter": foilFilter,
+            "page": page,
+            "pageSize": pageSize,
+        },
+    )
 
     try:
 
@@ -239,19 +222,16 @@ def report_search_variants(
 
 ):
 
-    params = {
-
-        "name": name,
-
-        "q": q,
-
-        "setCode": setCode,
-
-        "ownedFilter": ownedFilter,
-
-        "foilFilter": foilFilter,
-
-    }
+    params = with_price_strategy(
+        conn,
+        {
+            "name": name,
+            "q": q,
+            "setCode": setCode,
+            "ownedFilter": ownedFilter,
+            "foilFilter": foilFilter,
+        },
+    )
 
     try:
 

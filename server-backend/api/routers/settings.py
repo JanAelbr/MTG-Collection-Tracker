@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.schemas import SettingsUpdate
 
@@ -28,17 +28,11 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 def read_settings(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
     return serve_cached_json(
-
         request,
-
         namespace="settings",
-
-        params={},
-
+        params=with_price_strategy(conn),
         ttl=60,
-
         loader=lambda: settings_service.get_settings(conn),
-
     )
 
 

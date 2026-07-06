@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 
-from api.http_cache import serve_cached_json
+from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.schemas import StorageLocationCreate, StorageLocationUpdate
 
@@ -37,17 +37,11 @@ def _handle_storage_error(exc: StorageError) -> HTTPException:
 def list_locations(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
     return serve_cached_json(
-
         request,
-
         namespace="storage.locations",
-
-        params={},
-
+        params=with_price_strategy(conn),
         ttl=45,
-
         loader=lambda: _locations_payload(conn),
-
     )
 
 
@@ -149,25 +143,15 @@ def location_cards(
     try:
 
         return serve_cached_json(
-
             request,
-
             namespace="storage.location_cards",
-
-            params={"slug": slug},
-
+            params=with_price_strategy(conn, {"slug": slug}),
             ttl=45,
-
             loader=lambda: storage_service.list_location_cards(
-
                 conn,
-
                 slug,
-
                 price_strategy=settings_service.get_settings(conn)["priceStrategy"],
-
             ),
-
         )
 
     except StorageError as exc:

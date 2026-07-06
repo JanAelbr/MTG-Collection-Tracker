@@ -139,6 +139,46 @@ class CardApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["setGallery"]["cards"][1]["collectorNumber"], "2")
         self.assertEqual(payload["finishes"]["0"]["guidePrices"]["trend"], 2.0)
 
+    @patch("api.services.card_service.all_guide_prices_for_card")
+    def test_load_card_detail_includes_owned_unpriced_finish(self, guide_prices):
+        guide_prices.return_value = {}
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, has_nonfoil, has_foil,
+                image_uri, cardmarket_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "LTR-3",
+                "LTR",
+                "3",
+                "Etched Only Owned",
+                "Main",
+                None,
+                None,
+                0,
+                0,
+                None,
+                None,
+            ),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES ('LTR', '3', 2.5, 2)
+            """
+        )
+        self.conn.commit()
+
+        payload = card_service.load_card_detail(self.conn, "LTR", "3", finish=2)
+
+        self.assertIn("2", payload["finishes"])
+        self.assertTrue(payload["finishes"]["2"]["owned"])
+        self.assertEqual(payload["finishes"]["2"]["purchaseValue"], 2.5)
+        self.assertIsNone(payload["finishes"]["2"]["currentValue"])
+
     def test_missing_card_raises(self):
         with self.assertRaises(card_service.CardError):
             card_service.load_card_detail(self.conn, "LTR", "999")

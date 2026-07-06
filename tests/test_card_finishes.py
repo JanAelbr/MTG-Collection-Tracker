@@ -77,6 +77,14 @@ class CardFinishesTests(unittest.TestCase):
         }
         self.assertFalse(finish_available(row, FINISH_FOIL))
 
+    def test_finish_available_includes_owned_without_pricing(self):
+        row = {
+            "has_etched": 0,
+            "market_value_etched": None,
+        }
+        self.assertTrue(finish_available(row, FINISH_ETCHED, owned=True))
+        self.assertFalse(finish_available(row, FINISH_ETCHED))
+
     def test_finish_has_pricing_uses_guide_prices(self):
         row = {"market_value": None, "market_value_foil": None}
         guide = {"foil": {"trend": 4.5}}

@@ -105,3 +105,69 @@ export function finishHasPricing(card, finish) {
 export function hasFinish(card, finish) {
   return finishHasPricing(card, finish);
 }
+
+export function cardHasCatalogFinish(card, finish) {
+  if (!card) {
+    return false;
+  }
+  const normalized = normalizeFinish(finish);
+  if (normalized === FINISH_NONFOIL) {
+    return Boolean(card.hasNonfoil ?? card.has_nonfoil);
+  }
+  if (normalized === FINISH_FOIL) {
+    return Boolean(card.hasFoil ?? card.has_foil);
+  }
+  if (normalized === FINISH_ETCHED) {
+    return Boolean(card.hasEtched ?? card.has_etched);
+  }
+  return false;
+}
+
+export function isFinishOwnedOnCard(card, finish) {
+  if (!card) {
+    return false;
+  }
+  const normalized = normalizeFinish(finish);
+  const finishInfo = card.finishes?.[String(normalized)] ?? card.finishes?.[normalized];
+  if (finishInfo) {
+    if (Array.isArray(finishInfo.locations) && finishInfo.locations.length > 0) {
+      return true;
+    }
+    if (finishInfo.owned) {
+      return true;
+    }
+    if (finishInfo.purchaseValue != null) {
+      return true;
+    }
+  }
+  if (normalized === FINISH_NONFOIL && card.ownedNonfoil) {
+    return true;
+  }
+  if (normalized === FINISH_FOIL && card.ownedFoil) {
+    return true;
+  }
+  if (normalized === FINISH_ETCHED && card.ownedEtched) {
+    return true;
+  }
+  if (normalized === FINISH_NONFOIL && card.purchaseValueNonfoil != null) {
+    return true;
+  }
+  if (normalized === FINISH_FOIL && card.purchaseValueFoil != null) {
+    return true;
+  }
+  if (normalized === FINISH_ETCHED && card.purchaseValueEtched != null) {
+    return true;
+  }
+  if (normalizeFinish(card.finish ?? card.foil) === normalized && card.owned) {
+    return true;
+  }
+  return false;
+}
+
+export function canManageFinish(card, finish) {
+  return (
+    hasFinish(card, finish)
+    || isFinishOwnedOnCard(card, finish)
+    || cardHasCatalogFinish(card, finish)
+  );
+}
