@@ -8,10 +8,20 @@ from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.price_history import PriceSnapshotCache, load_price_snapshot_cache
 
 
+from util.set_completion import count_completion_keys
+
+
 def _float_or_none(value):
     if value is None or pd.isna(value):
         return None
     return float(value)
+
+
+def _owned_completion_count(owned: pd.DataFrame, *, set_code: str | None = None) -> int:
+    if owned.empty:
+        return 0
+    rows = [(row["set_code"], row["collector_number"]) for _, row in owned.iterrows()]
+    return count_completion_keys(rows, set_code=set_code)
 
 
 def _collector_sort_key(collector_number: str) -> tuple:
@@ -94,7 +104,7 @@ def _compute_stats_from_owned(
         "current": _float_or_none(current),
         "invested": _float_or_none(invested),
         "profit": _float_or_none(profit),
-        "ownedCount": len(owned),
+        "ownedCount": _owned_completion_count(owned),
         "catalogCount": catalog_count,
         "average": _float_or_none(average),
         "unknownInvested": _float_or_none(unknown["purchase_value"].sum(min_count=1)),
@@ -117,7 +127,7 @@ def _compute_art_style_stats(owned: pd.DataFrame, page: str) -> list[dict]:
         rows.append({
             "set_code": set_code,
             "art_style": art_style,
-            "count": len(group),
+            "count": _owned_completion_count(group, set_code=set_code),
             "current": _float_or_none(group["current_value"].sum(min_count=1)),
             "invested": _float_or_none(group["purchase_value"].sum(min_count=1)),
             "profit": _float_or_none(group["profit_loss"].sum(min_count=1)),
@@ -140,7 +150,7 @@ def _compute_set_stats(owned: pd.DataFrame, catalog_df: pd.DataFrame) -> list[di
         set_key = str(set_code)
         rows.append({
             "set_code": set_key,
-            "count": len(group),
+            "count": _owned_completion_count(group, set_code=set_key),
             "catalog_count": catalog_by_set.get(set_key, 0),
             "current": _float_or_none(group["current_value"].sum(min_count=1)),
             "invested": _float_or_none(group["purchase_value"].sum(min_count=1)),

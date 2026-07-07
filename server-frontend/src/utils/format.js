@@ -132,16 +132,30 @@ export function formatPriceChange(value, previousValue) {
   return `${prefix}${formatted}${suffix}`;
 }
 
-export function formatSetDropdownLabel(set) {
-  if (!set?.label) {
+export function setDisplayName(set) {
+  if (!set) {
     return "";
   }
-  let label = set.favorite ? `★ ${set.label}` : set.label;
+  if (set.setCode === "All") {
+    return set.label || "All sets";
+  }
+  return set.label || set.setCode || "";
+}
+
+export function formatSetFilterLabel(set) {
+  if (!set?.label && !set?.setCode) {
+    return "";
+  }
+  let label = set.favorite ? `★ ${setDisplayName(set)}` : setDisplayName(set);
   const counts = formatSetCountLabel(set);
   if (counts) {
     label = `${label} ${counts}`;
   }
   return label;
+}
+
+export function formatSetDropdownLabel(set) {
+  return formatSetFilterLabel(set);
 }
 
 export function setShortName(set) {

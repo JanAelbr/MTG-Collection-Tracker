@@ -439,6 +439,24 @@ export const api = {
 
     }),
 
+  updateCardInstance: (instanceId, body) =>
+
+    apiRequest(`/manager/copies/${instanceId}`, {
+
+      method: "PATCH",
+
+      body: JSON.stringify(body),
+
+    }),
+
+  deleteCardInstance: (instanceId) =>
+
+    apiRequest(`/manager/copies/${instanceId}`, {
+
+      method: "DELETE",
+
+    }),
+
   getReportsMeta: () => apiRequest("/reports/meta"),
 
   getReportCards: (params = {}) => {

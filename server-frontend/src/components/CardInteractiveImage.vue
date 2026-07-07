@@ -13,6 +13,7 @@ import {
   storageLocations,
   updateCardCopyStorage,
 } from "../composables/cardContextMenu";
+import StorageLocationSelect from "./StorageLocationSelect.vue";
 import {
   canManageFinish,
   cardFinish,
@@ -239,8 +240,7 @@ async function onAdjust(delta) {
   }
 }
 
-async function onCopyStorageChange(copy, event) {
-  const slug = event.target.value;
+async function onCopyStorageSelect(copy, slug) {
   if (!slug || panelLoading.value || typeof copy.instanceId !== "number") {
     return;
   }
@@ -412,21 +412,14 @@ function onViewDetails(event) {
           @mousedown.stop
         >
           <span class="card-interactive-label">Copy {{ index + 1 }}</span>
-          <select
-            :value="copy.locationSlug"
+          <StorageLocationSelect
+            :model-value="copy.locationSlug"
+            :locations="storageLocations"
             :disabled="panelLoading || !storageLocations.length || typeof copy.instanceId !== 'number'"
-            @change="onCopyStorageChange(copy, $event)"
-            @click.stop
-            @mousedown.stop
-          >
-            <option
-              v-for="location in storageLocations"
-              :key="location.slug"
-              :value="location.slug"
-            >
-              {{ location.label }}
-            </option>
-          </select>
+            compact
+            :aria-label="`Storage for copy ${index + 1}`"
+            @update:model-value="(slug) => onCopyStorageSelect(copy, slug)"
+          />
         </label>
       </div>
 

@@ -4,6 +4,7 @@ from report.card_detail_data import collector_sort_key
 from report.report_data import format_set_option_label, get_set_display_names
 from report.serialize_helpers import deck_card_display_name
 from api.services import settings_service
+from api.services import manager_service
 from api.services.pricing_service import (
     all_guide_prices_for_card,
     list_price_strategies,
@@ -130,6 +131,12 @@ def load_card_detail(
     set_names = get_set_display_names()
     sets_catalog = load_sets_catalog(conn)
     set_info = sets_catalog.get(normalized_set, {})
+    ownership_payload = manager_service.load_owned_instances_for_print(
+        conn,
+        normalized_set,
+        normalized_number,
+        strategy=strategy,
+    )
 
     return {
         "setCode": normalized_set,
@@ -142,6 +149,9 @@ def load_card_detail(
         }),
         "artStyle": row["art_style"] or "",
         "imageUri": row["image_uri"] or "",
+        "hasNonfoil": bool(row["has_nonfoil"]),
+        "hasFoil": bool(row["has_foil"]),
+        "hasEtched": bool(row["has_etched"]),
         "cardmarketUrl": cardmarket_url_for_finish(row, selected_finish) or "",
         **card_metadata_api(row),
         "setLabel": format_set_option_label(normalized_set, set_names),
@@ -172,6 +182,7 @@ def load_card_detail(
             strategy=strategy,
             set_names=set_names,
         ),
+        **ownership_payload,
     }
 
 

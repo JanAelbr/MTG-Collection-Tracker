@@ -2,7 +2,7 @@ import csv
 import sqlite3
 from pathlib import Path
 
-from lib.config import DB_PATH, list_set_csv_files
+from lib.config import DB_PATH, canonical_set_code_lower, list_set_csv_files, normalize_set_code
 from lib.deck_csv import load_deck_entries, read_deck_card_rows
 from lib.deck_loader import resolve_deck_row
 from lib.deck_purchase import (
@@ -97,7 +97,7 @@ def insert_purchase_if_missing(
 
 # Import all purchase rows from one per-set CSV file.
 def import_purchase_file(cursor, purchase_file: Path) -> int:
-    set_code = purchase_file.stem.lower()
+    set_code = canonical_set_code_lower(purchase_file.stem)
     log.info("Importing purchases from %s for set %s", purchase_file.name, set_code.upper())
     delimiter = detect_delimiter(purchase_file)
     rows = 0
@@ -122,7 +122,7 @@ def purchase_print_from_deck_row(cursor: sqlite3.Cursor, row: dict) -> tuple[str
     finish = row.get("finish", row.get("foil", 0))
 
     if set_code and collector_number:
-        normalized_set = str(set_code).upper()
+        normalized_set = normalize_set_code(set_code)
         normalized_number = str(collector_number).strip()
         finish = normalize_purchase_finish(
             cursor,

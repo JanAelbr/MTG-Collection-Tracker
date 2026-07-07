@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from lib.config import DECKS_DIR, DECKS_MANIFEST_NAME
+from lib.config import DECKS_DIR, DECKS_MANIFEST_NAME, normalize_set_code
 from lib.purchase_csv import detect_delimiter, parse_finish, parse_purchase_value
 from util.card_finishes import FINISH_FOIL, parse_finish_from_row
 from lib.deck_purchase import explicit_purchase_from_row
@@ -289,7 +289,7 @@ def list_deck_sync_set_codes() -> list[str]:
         for row in read_deck_card_rows(entry.path):
             set_code = row.get("set_code")
             if set_code:
-                codes.add(str(set_code).upper())
+                codes.add(normalize_set_code(str(set_code)))
     return sorted(codes)
 
 

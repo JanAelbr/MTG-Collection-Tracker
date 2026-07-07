@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { formatSetCountLabel, setCompletionRarity, setShortName } from "../utils/format";
-import { resolveSetIconUri } from "../utils/scryfall";
+import { formatSetCountLabel, setCompletionRarity, setDisplayName } from "../utils/format";
+import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
 
 const props = defineProps({
   sets: { type: Array, default: () => [] },
@@ -20,7 +20,11 @@ const galleryRef = ref(null);
 const visibleSets = computed(() => props.sets.filter((set) => set?.setCode));
 
 function setIconUri(set) {
-  return resolveSetIconUri(set);
+  return resolveSetGalleryIconUri(set);
+}
+
+function onSetIconError(event, set) {
+  applySetGalleryIconFallback(event.target, set);
 }
 
 function countLabel(set) {
@@ -51,14 +55,22 @@ function isDeleting(set) {
   return props.deletingSetCode && props.deletingSetCode === set.setCode;
 }
 
-function scrollActiveIntoView(behavior = "smooth") {
+function positionActiveSet() {
   nextTick(() => {
     const root = galleryRef.value;
     if (!root || !props.activeSetCode) {
       return;
     }
     const active = root.querySelector(".set-gallery-card.active");
-    active?.scrollIntoView({ block: "nearest", inline: "center", behavior });
+    if (!active) {
+      return;
+    }
+    const rootWidth = root.clientWidth;
+    if (!rootWidth) {
+      return;
+    }
+    const targetScroll = active.offsetLeft - (rootWidth - active.offsetWidth) / 2;
+    root.scrollLeft = Math.max(0, Math.min(targetScroll, root.scrollWidth - rootWidth));
   });
 }
 
@@ -94,13 +106,13 @@ function onReload(event, set) {
   emit("reload-catalog", set);
 }
 
-watch(() => props.activeSetCode, () => scrollActiveIntoView());
+watch(() => props.activeSetCode, positionActiveSet);
 watch(
-  () => visibleSets.value.length,
-  () => scrollActiveIntoView("auto"),
+  () => visibleSets.value.map((set) => set.setCode).join("|"),
+  positionActiveSet,
 );
 
-onMounted(() => scrollActiveIntoView("auto"));
+onMounted(positionActiveSet);
 </script>
 
 <template>
@@ -115,7 +127,7 @@ onMounted(() => scrollActiveIntoView("auto"));
       }"
       role="button"
       tabindex="0"
-      :aria-label="`Select ${setShortName(set)}`"
+      :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
       @click="onSelect(set.setCode)"
       @keydown="onCardKeydown($event, set.setCode)"
     >
@@ -125,7 +137,7 @@ onMounted(() => scrollActiveIntoView("auto"));
         class="set-gallery-favorite set-gallery-favorite--left"
         :class="{ 'is-favorite': set.favorite }"
         :aria-pressed="set.favorite ? 'true' : 'false'"
-        :aria-label="set.favorite ? `Unfavourite ${setShortName(set)}` : `Favourite ${setShortName(set)}`"
+        :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
         :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
         @click.stop="onToggleFavorite($event, set)"
       >
@@ -158,13 +170,14 @@ onMounted(() => scrollActiveIntoView("auto"));
         <span v-else aria-hidden="true">×</span>
       </button>
 
-      <div class="set-gallery-icon-wrap" :class="completionRarityClass(set)">
+      <div class="set-gallery-icon-wrap">
         <img
           v-if="setIconUri(set)"
           :src="setIconUri(set)"
           :alt="`${set.setCode} set icon`"
           class="set-gallery-icon"
           loading="lazy"
+          @error="onSetIconError($event, set)"
         >
         <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
           All
@@ -175,7 +188,6 @@ onMounted(() => scrollActiveIntoView("auto"));
         <span class="set-gallery-code" :class="completionRarityClass(set)">
           {{ set.setCode === "All" ? "All" : set.setCode }}
         </span>
-        <span class="set-gallery-name">{{ setShortName(set) }}</span>
         <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
       </div>
     </div>

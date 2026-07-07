@@ -1,9 +1,10 @@
+from util.card_finishes import FINISH_FOIL
 from util.cardmarket_prices import (
     _nonfoil_low_is_reliable,
     load_price_guide_index,
     parse_id_product,
 )
-from util.cardmarket_urls import cardmarket_url_for_finish
+from util.cardmarket_urls import cardmarket_url_for_finish, coerce_cardmarket_url
 
 PRICE_STRATEGIES: list[dict[str, str]] = [
     {"id": "trend", "label": "Trend"},
@@ -80,11 +81,21 @@ def all_guide_prices_for_card(
     cardmarket_url_foil: str | None = None,
 ) -> dict[str, dict]:
     nonfoil_prices = guide_prices_for_url(cardmarket_url)
-    foil_prices = guide_prices_for_url(cardmarket_url_foil)
+    foil_lookup_url = coerce_cardmarket_url(cardmarket_url_foil)
+    if not foil_lookup_url and cardmarket_url:
+        foil_lookup_url = cardmarket_url_for_finish(
+            _cardmarket_row(cardmarket_url, cardmarket_url_foil),
+            FINISH_FOIL,
+            _load_guide(),
+        )
+    foil_prices = guide_prices_for_url(foil_lookup_url)
     grouped = {"nonfoil": {}, "foil": {}, "etched": {}}
     for strategy in STRATEGY_KEY_MAP:
         grouped["nonfoil"][strategy] = nonfoil_prices.get(f"{strategy}_nonfoil")
-        grouped["foil"][strategy] = foil_prices.get(f"{strategy}_foil")
+        foil_value = foil_prices.get(f"{strategy}_foil")
+        if foil_value is None:
+            foil_value = nonfoil_prices.get(f"{strategy}_foil")
+        grouped["foil"][strategy] = foil_value
     return grouped
 
 

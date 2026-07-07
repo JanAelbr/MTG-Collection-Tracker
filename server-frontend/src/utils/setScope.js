@@ -179,3 +179,19 @@ export function setScopeQueryFromRoute(route) {
   const { setCode, artStyle } = collectionScopeFromRoute(route);
   return collectionScopeToQuery(setCode, artStyle);
 }
+
+export function managerArtStylesEditorRoute(setCode) {
+  const code = String(setCode || "").trim();
+  if (!code || code.toLowerCase() === "all") {
+    return { path: "/manager" };
+  }
+  return {
+    path: "/manager",
+    query: { set: code, editArtStyles: "1" },
+  };
+}
+
+export function shouldOpenManagerArtStyleEditor(route) {
+  const value = route.query?.editArtStyles;
+  return value === "1" || value === "true" || value === "";
+}

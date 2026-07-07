@@ -5,7 +5,7 @@ import LoadingIndicator from "./LoadingIndicator.vue";
 import SetGallery from "./SetGallery.vue";
 import { api, clearClientCache } from "../api";
 import { usePricingSettings } from "../composables/pricingSettings";
-import { formatSetDropdownLabel, setShortName } from "../utils/format";
+import { formatSetFilterLabel, formatSetCountLabel, setDisplayName, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 
 const props = defineProps({
@@ -40,11 +40,24 @@ const addSetEditor = reactive({
 const browseOptions = computed(() =>
   props.sets.map((set) => ({
     value: set.setCode,
-    label: formatSetDropdownLabel(set) || set.setCode,
+    label: formatSetFilterLabel(set) || set.setCode,
     iconSrc: resolveSetIconUri(set),
-    searchText: [set.setCode, set.label, setShortName(set)].filter(Boolean).join(" "),
+    searchText: [set.setCode, set.label, setDisplayName(set)].filter(Boolean).join(" "),
   })),
 );
+
+const activeSet = computed(() =>
+  props.sets.find((set) => set.setCode === props.modelValue) || null,
+);
+
+const activeSetTitle = computed(() => {
+  if (!activeSet.value) {
+    return "";
+  }
+  const name = setDisplayName(activeSet.value);
+  const counts = formatSetCountLabel(activeSet.value);
+  return counts ? `${name} ${counts}` : name;
+});
 
 function onSelect(setCode) {
   emit("update:modelValue", setCode);
@@ -178,6 +191,24 @@ async function reloadCatalog(set) {
       @remove-set="removeSet"
       @reload-catalog="reloadCatalog"
     />
+  </div>
+
+  <div
+    v-else-if="layout === 'dropdown' && useBrowser"
+    class="filter-sidebar-active-set"
+  >
+    <p
+      v-if="activeSet"
+      class="filter-sidebar-active-set-title"
+      :title="activeSetTitle"
+    >
+      <span v-if="activeSet.favorite" class="filter-sidebar-active-set-favorite" aria-hidden="true">★</span>
+      <span v-if="activeSet.setCode !== 'All'" class="filter-sidebar-active-set-code">{{ activeSet.setCode }}</span>
+      <span class="filter-sidebar-active-set-name">{{ setShortName(activeSet) }}</span>
+      <span v-if="formatSetCountLabel(activeSet)" class="filter-sidebar-active-set-count">
+        {{ formatSetCountLabel(activeSet) }}
+      </span>
+    </p>
   </div>
 
   <label

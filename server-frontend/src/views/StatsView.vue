@@ -5,6 +5,7 @@ import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
+import FilterSidebar from "../components/FilterSidebar.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { formatCompletion, formatEuro, formatProfit, formatRoi, setShortName } from "../utils/format";
@@ -158,11 +159,6 @@ function collectionLinkForArtStyle(row) {
   };
 }
 
-const collectionLink = computed(() => ({
-  path: "/collection/top",
-  query: collectionScopeToQuery(setCode.value),
-}));
-
 async function loadStats() {
   await run(async () => {
     payload.value = await api.getCollectionStats({
@@ -214,19 +210,19 @@ onMounted(() => {
       @sets-changed="onSetsChanged"
     />
 
-    <div class="reports-toolbar">
-      <div class="reports-toolbar-filters">
-        <SetPicker
-          v-model="setCode"
-          layout="dropdown"
-          :sets="sets"
-        />
-        <RouterLink :to="collectionLink" class="btn btn-secondary btn-small">
-          View collection
-        </RouterLink>
-      </div>
-    </div>
+    <div class="page-with-sidebar">
+      <FilterSidebar>
+        <div class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Set</p>
+          <SetPicker
+            v-model="setCode"
+            layout="dropdown"
+            :sets="sets"
+          />
+        </div>
+      </FilterSidebar>
 
+      <div class="page-with-sidebar-main">
     <div v-if="loading && !stats" class="storage-empty">
       <LoadingIndicator label="Loading stats…" />
     </div>
@@ -408,5 +404,7 @@ onMounted(() => {
         </table>
       </section>
     </GalleryLoadingOverlay>
+      </div>
+    </div>
   </div>
 </template>

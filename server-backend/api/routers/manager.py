@@ -15,6 +15,7 @@ from api.schemas import (
     BulkAssignStorage,
 
     CopyAdjust,
+    CopyInstanceUpdate,
     CopyStorageUpdate,
     SetCopyAllocations,
 
@@ -537,6 +538,77 @@ def set_copy_allocations(body: SetCopyAllocations, conn: sqlite3.Connection = De
             finish=body.finish if body.finish is not None else body.foil or 0,
 
             allocations=[item.model_dump() for item in body.allocations],
+
+        )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.patch("/copies/{instance_id}")
+
+def update_copy_instance(
+
+    instance_id: int,
+
+    body: CopyInstanceUpdate,
+
+    conn: sqlite3.Connection = Depends(get_db),
+
+):
+
+    if (
+        body.purchaseValue is None
+        and body.finish is None
+        and body.locationSlug is None
+    ):
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    try:
+
+        return manager_service.update_copy_instance(
+
+            conn,
+
+            instance_id=instance_id,
+
+            purchase_value=body.purchaseValue,
+
+            finish=body.finish,
+
+            location_slug=body.locationSlug,
+
+        )
+
+    except ManagerError as exc:
+
+        raise _manager_error(exc) from exc
+
+
+
+
+
+@router.delete("/copies/{instance_id}")
+
+def delete_copy_instance(
+
+    instance_id: int,
+
+    conn: sqlite3.Connection = Depends(get_db),
+
+):
+
+    try:
+
+        return manager_service.delete_copy_instance(
+
+            conn,
+
+            instance_id=instance_id,
 
         )
 

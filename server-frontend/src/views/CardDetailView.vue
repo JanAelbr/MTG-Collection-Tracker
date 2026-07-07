@@ -3,13 +3,19 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";
 import CardVariantGallery from "../components/CardVariantGallery.vue";
-import CardOwnedQtyControl from "../components/CardOwnedQtyControl.vue";
+import CardDetailOwnershipPanel from "../components/CardDetailOwnershipPanel.vue";
+import CardmarketIcon from "../components/CardmarketIcon.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { isFinishDataOwned } from "../composables/cardContextMenu";
-import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
+import { formatEuro } from "../utils/format";
 import { priceStrategyDescription } from "../utils/priceStrategies";
-import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, finishLabel, normalizeFinish } from "../utils/finishes";
+import {
+  FINISH_ETCHED,
+  FINISH_FOIL,
+  FINISH_NONFOIL,
+  canManageFinish,
+  normalizeFinish,
+} from "../utils/finishes";
 import { collectionScopeToQuery } from "../utils/setScope";
 import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 
@@ -19,9 +25,6 @@ const router = useRouter();
 const card = ref(null);
 const selectedFinish = ref(FINISH_NONFOIL);
 const priceStrategy = ref("trend");
-const purchaseDrafts = ref({});
-const purchaseSaving = ref(null);
-const finishSaving = ref(null);
 const { loading, run } = useAsyncLoad();
 
 const availableFinishes = computed(() =>
@@ -34,12 +37,10 @@ const availableFinishes = computed(() =>
   ).sort((left, right) => left - right),
 );
 
-const finishRows = computed(() =>
-  availableFinishes.value.map((finish) => ({
-    finish,
-    label: finishLabel(finish),
-    data: card.value?.finishes?.[String(finish)] || null,
-  })),
+const manageableFinishes = computed(() =>
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter(
+    (finish) => canManageFinish(card.value, finish) || availableFinishes.value.includes(finish),
+  ),
 );
 
 const showNonfoilGuidePrices = computed(() =>
@@ -53,6 +54,11 @@ const showFoilGuidePrices = computed(() =>
 const showEtchedGuidePrices = computed(() =>
   card.value?.guidePriceMatrix?.rows?.some((row) => row.etched != null),
 );
+
+const cardmarketLinkUrl = computed(() => {
+  const url = card.value?.cardmarketUrl;
+  return url && String(url).trim() ? String(url).trim() : "";
+});
 
 const showNeighborGallery = computed(
   () => (card.value?.setGallery?.cards?.length || 0) > 1,
@@ -74,16 +80,6 @@ const menuCard = computed(() => {
 const showVariantGallery = computed(
   () => (card.value?.variantGallery?.cards?.length || 0) > 1,
 );
-
-const hasAnyOwned = computed(() =>
-  finishRows.value.some((row) => isFinishDataOwned(row.data)),
-);
-
-const activeFinishRow = computed(() => ({
-  finish: selectedFinish.value,
-  label: finishLabel(selectedFinish.value),
-  data: card.value?.finishes?.[String(selectedFinish.value)] || null,
-}));
 
 const collectionSetLink = computed(() => {
   if (!card.value?.setCode) {
@@ -144,58 +140,6 @@ function findDeckCardSlot(cards, setCode, collectorNumber, finish) {
   return matches.find((row) => row.section === "main") || matches[0];
 }
 
-function isFinishOwnedElsewhere(finish) {
-  return finishRows.value.some(
-    (row) => row.finish !== finish && isFinishDataOwned(row.data),
-  );
-}
-
-function finishChangeOptions(fromFinish) {
-  return availableFinishes.value
-    .filter((finish) => finish === fromFinish || !isFinishOwnedElsewhere(finish))
-    .map((finish) => ({
-      value: finish,
-      label: finishLabel(finish),
-    }));
-}
-
-async function changeOwnedFinish(fromFinish, event) {
-  const toFinish = normalizeFinish(event.target.value);
-  if (!card.value || fromFinish === toFinish) {
-    return;
-  }
-
-  finishSaving.value = fromFinish;
-  try {
-    await api.changeOwnershipFinish({
-      setCode: card.value.setCode,
-      collectorNumber: card.value.collectorNumber,
-      fromFinish,
-      toFinish,
-    });
-    clearClientCache();
-    if (selectedFinish.value === fromFinish) {
-      selectedFinish.value = toFinish;
-      await router.replace({
-        params: {
-          setCode: route.params.setCode,
-          collectorNumber: route.params.collectorNumber,
-        },
-        query: toFinish === FINISH_NONFOIL ? {} : { finish: String(toFinish) },
-      });
-    }
-    await loadCard();
-  } catch {
-    event.target.value = String(fromFinish);
-  } finally {
-    finishSaving.value = null;
-  }
-}
-
-function formatGainLoss(value) {
-  return formatProfit(value);
-}
-
 function closeImageZoom() {
   imageZoomOpen.value = false;
 }
@@ -216,97 +160,7 @@ watch(imageZoomOpen, (open) => {
   window.removeEventListener("keydown", onImageZoomKeydown);
 });
 
-function syncPurchaseDrafts() {
-  const next = {};
-  for (const finish of availableFinishes.value) {
-    const purchaseValue = card.value?.finishes?.[String(finish)]?.purchaseValue;
-    next[finish] = purchaseValue != null ? String(purchaseValue) : "";
-  }
-  purchaseDrafts.value = next;
-}
-
-function applySavedPurchasePrice(finish, purchaseValue) {
-  const finishKey = String(finish);
-  const finishData = card.value?.finishes?.[finishKey];
-  if (!finishData || !card.value) {
-    return;
-  }
-  const currentValue = finishData.currentValue;
-  const profitLoss = currentValue != null ? currentValue - purchaseValue : null;
-  card.value = {
-    ...card.value,
-    finishes: {
-      ...card.value.finishes,
-      [finishKey]: {
-        ...finishData,
-        purchaseValue,
-        profitLoss,
-      },
-    },
-  };
-  syncPurchaseDrafts();
-}
-
-async function cancelPendingCardLoad() {
-  await run(async () => {});
-}
-
-function parsePurchaseInput(raw) {
-  if (raw === "" || raw == null) {
-    return null;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    return undefined;
-  }
-  return value;
-}
-
-async function savePurchasePrice(finish) {
-  const finishData = card.value?.finishes?.[String(finish)];
-  if (!card.value || !isFinishDataOwned(finishData)) {
-    return;
-  }
-
-  const draft = purchaseDrafts.value[finish];
-  const parsed = parsePurchaseInput(draft);
-  if (parsed === undefined) {
-    syncPurchaseDrafts();
-    return;
-  }
-  if (parsed == null) {
-    syncPurchaseDrafts();
-    return;
-  }
-
-  const current = finishData?.purchaseValue;
-  if (current != null && Math.abs(parsed - current) < 0.0001) {
-    return;
-  }
-  if (current == null && parsed === 0) {
-    return;
-  }
-
-  purchaseSaving.value = finish;
-  try {
-    await cancelPendingCardLoad();
-    await api.updateOwnership({
-      setCode: card.value.setCode,
-      collectorNumber: card.value.collectorNumber,
-      finish,
-      owned: true,
-      purchaseValue: parsed,
-    });
-    clearClientCache();
-    applySavedPurchasePrice(finish, parsed);
-  } catch {
-    syncPurchaseDrafts();
-  } finally {
-    purchaseSaving.value = null;
-  }
-}
-
-async function loadCard(options = {}) {
+async function loadCard() {
   await run(async (isCurrent) => {
     const finishQuery = route.query.finish == null
       ? undefined
@@ -338,16 +192,19 @@ async function loadCard(options = {}) {
         deckCardSlot.value = null;
       }
     }
-    if (!options.preserveDrafts) {
-      syncPurchaseDrafts();
-    }
   });
 }
 
-async function onCardFinishChanged(toFinish) {
-  const normalized = normalizeFinish(toFinish);
+async function onOwnershipChanged() {
+  if (!card.value) {
+    return;
+  }
+  await loadCard();
+}
+
+async function onFinishSelected(finish) {
+  const normalized = normalizeFinish(finish);
   if (selectedFinish.value === normalized) {
-    await loadCard();
     return;
   }
   selectedFinish.value = normalized;
@@ -366,13 +223,6 @@ watch(
     loadCard();
   },
 );
-
-async function onOwnershipChanged() {
-  if (purchaseSaving.value != null || !card.value) {
-    return;
-  }
-  await loadCard({ preserveDrafts: true });
-}
 
 onMounted(loadCard);
 
@@ -431,104 +281,14 @@ onUnmounted(() => {
             @removed="onDeckCardRemoved"
           />
 
-          <CardOwnedQtyControl
+          <CardDetailOwnershipPanel
             v-if="menuCard"
             :card="menuCard"
+            :manageable-finishes="manageableFinishes"
+            :loading="loading"
             @ownership-changed="onOwnershipChanged"
+            @finish-selected="onFinishSelected"
           />
-
-          <div class="card-detail-pricing-tile card-owned-qty-tile">
-            <div class="card-owned-qty-tile-row card-owned-qty-tile-row-head">
-              <span class="card-owned-qty-tile-label">Pricing</span>
-              <span class="card-detail-pricing-finish">{{ activeFinishRow.label }}</span>
-            </div>
-
-            <div
-              v-if="hasAnyOwned && isFinishDataOwned(activeFinishRow.data)"
-              class="card-detail-pricing-stat"
-            >
-              <span class="card-detail-pricing-stat-label">Owned as</span>
-              <span class="card-detail-pricing-stat-value">
-                <select
-                  v-if="finishChangeOptions(activeFinishRow.finish).length > 1"
-                  class="card-detail-finish-select"
-                  :value="activeFinishRow.finish"
-                  :disabled="finishSaving === activeFinishRow.finish || loading"
-                  @change="changeOwnedFinish(activeFinishRow.finish, $event)"
-                >
-                  <option
-                    v-for="option in finishChangeOptions(activeFinishRow.finish)"
-                    :key="`${activeFinishRow.finish}-${option.value}`"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-                <span v-else>{{ activeFinishRow.label }}</span>
-              </span>
-            </div>
-
-            <div class="card-detail-pricing-stat">
-              <span class="card-detail-pricing-stat-label">Current value</span>
-              <span class="card-detail-pricing-stat-value">
-                <a
-                  v-if="card.cardmarketUrl"
-                  :href="card.cardmarketUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="reports-market-link"
-                >
-                  {{ formatEuro(activeFinishRow.data?.currentValue) }}
-                </a>
-                <template v-else>{{ formatEuro(activeFinishRow.data?.currentValue) }}</template>
-              </span>
-            </div>
-
-            <div class="card-detail-pricing-stat">
-              <span class="card-detail-pricing-stat-label">Change</span>
-              <span class="card-detail-pricing-stat-value">
-                {{ formatPriceChange(activeFinishRow.data?.priceChange, activeFinishRow.data?.previousValue) }}
-              </span>
-            </div>
-
-            <div class="card-detail-pricing-stat">
-              <span class="card-detail-pricing-stat-label">Purchase</span>
-              <span class="card-detail-pricing-stat-value">
-                <label
-                  v-if="isFinishDataOwned(activeFinishRow.data)"
-                  class="card-detail-purchase-field"
-                >
-                  <span class="card-detail-purchase-currency">€</span>
-                  <input
-                    v-model="purchaseDrafts[activeFinishRow.finish]"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputmode="decimal"
-                    class="card-detail-purchase-input"
-                    :disabled="purchaseSaving === activeFinishRow.finish || loading"
-                    placeholder="0.00"
-                    @blur="savePurchasePrice(activeFinishRow.finish)"
-                    @keydown.enter="$event.target.blur()"
-                  />
-                </label>
-                <span v-else class="card-detail-pricing-empty">—</span>
-              </span>
-            </div>
-
-            <div class="card-detail-pricing-stat">
-              <span class="card-detail-pricing-stat-label">Gain / loss</span>
-              <span
-                class="card-detail-pricing-stat-value"
-                :class="{
-                  'reports-gain': activeFinishRow.data?.profitLoss != null && activeFinishRow.data.profitLoss >= 0,
-                  'reports-loss': activeFinishRow.data?.profitLoss != null && activeFinishRow.data.profitLoss < 0,
-                }"
-              >
-                {{ formatGainLoss(activeFinishRow.data?.profitLoss) }}
-              </span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -566,6 +326,16 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
+          <a
+            v-if="cardmarketLinkUrl"
+            :href="cardmarketLinkUrl"
+            class="card-detail-cardmarket-link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <CardmarketIcon class="card-detail-cardmarket-icon" :size="16" />
+            <span>View on Cardmarket</span>
+          </a>
         </div>
       </div>
     </section>

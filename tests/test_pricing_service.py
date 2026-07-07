@@ -8,14 +8,38 @@ from api.services.pricing_service import all_guide_prices_for_card, price_from_s
 class PricingServiceEtchedTests(unittest.TestCase):
     @patch("api.services.pricing_service.guide_prices_for_url")
     def test_all_guide_prices_for_card_does_not_backfill_etched(self, guide_prices_for_url):
-        guide_prices_for_url.return_value = {
-            "trend_nonfoil": 2.42,
-            "trend_foil": 5.54,
-        }
+        guide_prices_for_url.side_effect = lambda url: {
+            "https://example.com/nonfoil": {
+                "trend_nonfoil": 2.42,
+                "trend_foil": 5.54,
+            },
+            "https://example.com/foil": {
+                "trend_foil": 5.54,
+            },
+        }.get(url, {})
         grouped = all_guide_prices_for_card("https://example.com/nonfoil", "https://example.com/foil")
         self.assertEqual(grouped["nonfoil"]["trend"], 2.42)
         self.assertEqual(grouped["foil"]["trend"], 5.54)
         self.assertEqual(grouped["etched"], {})
+
+    @patch("api.services.pricing_service.guide_prices_for_url")
+    @patch("api.services.pricing_service.cardmarket_url_for_finish")
+    def test_all_guide_prices_for_card_uses_foil_keys_from_primary_url(
+        self,
+        cardmarket_url_for_finish,
+        guide_prices_for_url,
+    ):
+        cardmarket_url_for_finish.return_value = None
+        guide_prices_for_url.return_value = {
+            "trend_nonfoil": 1.2,
+            "trend_foil": 3.4,
+            "avg_nonfoil": 1.1,
+            "avg_foil": 3.1,
+        }
+        grouped = all_guide_prices_for_card("https://example.com/card", None)
+        self.assertEqual(grouped["nonfoil"]["trend"], 1.2)
+        self.assertEqual(grouped["foil"]["trend"], 3.4)
+        self.assertEqual(grouped["foil"]["avg"], 3.1)
 
     @patch("api.services.pricing_service._load_guide")
     def test_price_from_strategy_etched_uses_stored_value_only(self, load_guide):

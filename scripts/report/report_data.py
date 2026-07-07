@@ -2,7 +2,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH, EXCLUDED_SET_CODES, list_set_csv_files
+from lib.config import DB_PATH, EXCLUDED_SET_CODES, list_set_csv_files, normalize_set_code
 from lib.deck_csv import list_deck_sync_set_codes
 from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
@@ -88,26 +88,28 @@ def _owned_prints_sql(has_instances: bool) -> str:
 
 
 def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
+    from util.set_completion import count_completion_keys_by_set
+
     owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
     rows = conn.execute(
         f"""
-        SELECT set_code, COUNT(DISTINCT collector_number) AS owned_count
+        SELECT set_code, collector_number
         FROM ({owned_prints}) owned_prints
-        GROUP BY set_code
         """
     ).fetchall()
-    return {str(set_code).upper(): int(count) for set_code, count in rows}
+    return count_completion_keys_by_set(rows)
 
 
 def load_catalog_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
+    from util.set_completion import count_completion_keys_by_set
+
     rows = conn.execute(
         """
-        SELECT set_code, COUNT(DISTINCT collector_number) AS catalog_count
+        SELECT set_code, collector_number
         FROM cards
-        GROUP BY set_code
         """
     ).fetchall()
-    return {str(set_code).upper(): int(count) for set_code, count in rows}
+    return count_completion_keys_by_set(rows)
 
 
 def build_sorted_set_options(
@@ -170,12 +172,9 @@ def build_art_style_option(
 
 
 def _load_art_style_owned_counts(conn: sqlite3.Connection, *, set_code: str | None = None) -> dict[str, int]:
+    from util.set_completion import count_completion_keys_by_art_style
+
     owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
-    distinct_key = (
-        "owned.collector_number"
-        if set_code is not None
-        else "owned.set_code || '|' || owned.collector_number"
-    )
     where_parts = ["c.art_style IS NOT NULL", "TRIM(c.art_style) != ''"]
     params: tuple[str, ...] = ()
     if set_code is not None:
@@ -184,25 +183,21 @@ def _load_art_style_owned_counts(conn: sqlite3.Connection, *, set_code: str | No
     where_clause = "WHERE " + " AND ".join(where_parts)
     rows = conn.execute(
         f"""
-        SELECT c.art_style, COUNT(DISTINCT {distinct_key}) AS owned_count
+        SELECT owned.set_code, owned.collector_number, c.art_style
         FROM ({owned_prints}) owned
         JOIN cards c
           ON c.set_code = owned.set_code
          AND c.collector_number = owned.collector_number
         {where_clause}
-        GROUP BY c.art_style
         """,
         params,
     ).fetchall()
-    return {str(art_style): int(count) for art_style, count in rows}
+    return count_completion_keys_by_art_style(rows, set_code=set_code)
 
 
 def _load_art_style_catalog_counts(conn: sqlite3.Connection, *, set_code: str | None = None) -> dict[str, int]:
-    distinct_key = (
-        "collector_number"
-        if set_code is not None
-        else "set_code || '|' || collector_number"
-    )
+    from util.set_completion import count_completion_keys_by_art_style
+
     where_parts = ["art_style IS NOT NULL", "TRIM(art_style) != ''"]
     params: tuple[str, ...] = ()
     if set_code is not None:
@@ -211,14 +206,13 @@ def _load_art_style_catalog_counts(conn: sqlite3.Connection, *, set_code: str | 
     where_clause = "WHERE " + " AND ".join(where_parts)
     rows = conn.execute(
         f"""
-        SELECT art_style, COUNT(DISTINCT {distinct_key}) AS catalog_count
+        SELECT set_code, collector_number, art_style
         FROM cards
         {where_clause}
-        GROUP BY art_style
         """,
         params,
     ).fetchall()
-    return {str(art_style): int(count) for art_style, count in rows}
+    return count_completion_keys_by_art_style(rows, set_code=set_code)
 
 
 def _build_art_style_options_from_counts(
@@ -263,8 +257,8 @@ def get_all_set_codes() -> list[str]:
         )["set_code"].tolist()
 
     return sorted(
-        code for code in (set(db_sets) | set(csv_sets) | set(deck_sets))
-        if code not in EXCLUDED_SET_CODES
+        code for code in {normalize_set_code(raw) for raw in (set(db_sets) | set(csv_sets) | set(deck_sets))}
+        if code and code not in EXCLUDED_SET_CODES
     )
 
 

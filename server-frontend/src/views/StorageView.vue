@@ -14,6 +14,7 @@ import { useAsyncLoad } from "../composables/useAsyncLoad";
 
 import { formatEuro } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 
 
 
@@ -62,11 +63,19 @@ const visibleLocations = computed(() =>
   ),
 );
 
-const LOCATION_TYPE_SECTIONS = [
-  { type: "storage", label: "Storage", canCreate: true },
-  { type: "binder", label: "Binders", canCreate: true },
-  { type: "deck", label: "Decks", collapsible: true, defaultCollapsed: true },
-];
+const LOCATION_TYPE_SECTIONS = STORAGE_LOCATION_SECTIONS.map((section) => {
+  if (section.type === "deck") {
+    return {
+      ...section,
+      collapsible: true,
+      defaultCollapsed: true,
+    };
+  }
+  return {
+    ...section,
+    canCreate: true,
+  };
+});
 
 const sectionExpanded = reactive(
   Object.fromEntries(

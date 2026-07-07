@@ -35,6 +35,7 @@ lotr/
 │       └── sources/               # wiki exports for precon builders
 ├── docs/
 │   ├── decks.md                   # deck CSV format and workflows
+│   ├── frontend.md                # Vue app, PWA, navigation, filters
 │   └── python-guidelines.md
 ├── logs/                          # generated price logs (not in git)
 ├── server-frontend/               # Vue 3 interactive app (Vite)
@@ -61,13 +62,15 @@ lotr/
 ├── tests/
 ```
 
-See **[docs/decks.md](docs/decks.md)** for deck CSV format, ownership, and precon build scripts.
+See **[docs/decks.md](docs/decks.md)** for deck CSV format, ownership, and precon build scripts.  
+See **[docs/frontend.md](docs/frontend.md)** for the Vue app, PWA, navigation, and UI filters.
 
 ---
 
 ## Requirements
 
 - Python 3.10+
+- **Node.js 22 LTS** (for building the frontend; see [docs/frontend.md](docs/frontend.md))
 - internet access for Scryfall and Cardmarket requests
 - per-set purchase files in `data/{set_code}.csv` (copy from `data/example.csv`)
 - optional: deck lists in `data/decks/` (manifest + per-deck CSVs)
@@ -197,28 +200,38 @@ Open http://localhost:5173
 
 Open http://localhost:8000
 
+**Frontend only** (after `npm install` in `server-frontend/`):
+
+```powershell
+.\scripts\build_frontend.ps1
+```
+
+The app is a **PWA** (installable; icons in `server-frontend/public/`). Regenerate icons with `npm run generate-pwa-icons` after changing `app-logo.svg`. See [docs/frontend.md](docs/frontend.md).
+
 **API docs (Swagger UI):** browse and try endpoints at http://localhost:8000/docs (or http://localhost:5173/docs during dev). ReDoc is at `/redoc`; the OpenAPI schema is at `/openapi.json`.
 
 The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` (Windows), or `~/MtgCollectionTracker/collection.db` elsewhere.
 
-#### Sidebar navigation
+#### Navigation
 
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
-| **Collection** | `/collection/top` | Top owned, Risers, Fallers (animated subnav) |
-| **Stats** | `/stats` | — |
+| **Collection** | `/collection/all` | All cards, Top owned, Search, Stats |
 | **Storage** | `/storage` | — |
 | **Set Manager** | `/manager` | — |
-| **Decks** | `/decks/browse` | Browse decks, Deck stats (animated subnav) |
+| **Decks** | `/decks` | — |
 | **Settings** | `/settings` | — |
 
-`/`, `/collection`, and `/decks` redirect to the defaults above. Old `/reports/*` URLs redirect to `/collection/*`.
+`/`, `/collection`, and old `/reports/*` URLs redirect to `/collection/all` or the matching collection view.
+
+The top bar and collection subnav stay fixed while scrolling.
 
 #### Settings (`/settings`)
 
+- **Set picker mode** — horizontal set browser or dropdown list
 - **Price sync** — apply Cardmarket prices only (fast; typically a few seconds). Does not re-run the full Scryfall catalog pipeline.
 - **Price strategy** — which EUR field to use (applies everywhere: Collection, Stats, Storage, Decks, card detail)
-- **Compare date** — global baseline for risers/fallers and card price change (replaces per-page compare controls)
+- **Compare date** — global baseline for price change columns and card detail charts
 
 When prices are older than today, Collection also shows a **Sync prices** banner until you sync or prices catch up.
 
@@ -242,43 +255,43 @@ In **Set Manager**, star a set to favourite it. Favourited sets sort first in al
 
 | View | Route |
 |------|-------|
-| **Collection — top owned** | `/` or `/collection/top` |
-| **Collection — risers** | `/collection/risers` |
-| **Collection — fallers** | `/collection/fallers` |
+| **Collection — all cards** | `/` or `/collection/all` |
+| **Collection — top owned** | `/collection/top` |
+| **Collection — search** | `/collection/search` |
 | **Collection stats** | `/stats` |
 | **Storage** | `/storage` |
 | **Set Manager** | `/manager` |
-| **Decks — browse** | `/decks` or `/decks/browse` |
-| **Decks — stats** | `/decks/stats` |
+| **Decks** | `/decks` |
 | **Card detail** | `/card/:setCode/:collectorNumber` |
 | **Settings** | `/settings` |
 
-Default landing page in the app: **`/collection/top`**. Old `/reports/*` URLs redirect to `/collection/*`.
+Default landing page: **`/collection/all`**. Old `/reports/*` and `/collection/risers|fallers` URLs redirect to `/collection/all`.
 
 ### Filters and behaviour
 
-- **Set filter** on Collection and Stats — URL query (`?set=LTR`); favourited sets sort first with ★ in the dropdown
-- **Risers / fallers** use the **compare date** from Settings (not a per-page control)
-- Change columns show euro and percentage (e.g. `+€12.00 (+4.2%)`)
+- **Filter sidebar** on Collection, Search, Manager, and Stats (collapsible; width toggle on wide screens)
+- **Set filter** — URL query (`?set=LTR`); full set name in sidebar when using set browser; favourited sets sort first with ★
+- **Art style** — per-set list filter; edit link (✎) on All cards opens Set Manager art-style rules
+- **All cards** — ownership, finish, type, colour, and sort filters; paginated gallery with zoom control
+- **Price change** sort columns use the **compare date** from Settings
 - Collection filter changes are cached in memory on the server for fast repeat loads (~50 ms after warm-up)
+
+### Set completion
+
+Owned/catalog counts per set use **distinct base collector numbers**. Serialized prints (collector number ending in `Z`) are excluded. `014` and `14` count as one slot. See `scripts/util/set_completion.py` and [docs/frontend.md](docs/frontend.md).
 
 ### Set Manager
 
-- One set at a time; checkboxes for non-foil / foil where the print exists
+- One set at a time; checkboxes for non-foil / foil / etched where the print exists
+- **Art style rules** — define collector-number groups for filters and stats
 - **Favourite** sets (★) to pin them to the top of set lists
 - Export purchases to `data/{set}.csv`, then run `python scripts/purchase_import.py`
 
-### Decks
-
-- **Browse decks** — deck list with Detail / Overview toggle; per-deck hero gallery and card list with **Images / Table** toggle
-- **Deck stats** — aggregate or single-deck metrics, portfolio history chart, card table
-- **Owned** on a deck card requires a matching `purchases` row (run `purchase_import.py`)
-- Deck purchase price from `decks.csv` is split across cards for invested / ROI figures
-
 ### Card detail
 
+- Per-copy ownership (quantity, finish, purchase price, storage location) when multiple copies exist
 - Variant gallery (alternate printings) and prev/next navigation within the set
-- Foil/non-foil prices, change vs compare date, purchase and profit/loss
+- Foil/non-foil/etched prices, change vs compare date, purchase and profit/loss
 - Price chart and history table per finish
 - Uses global **price strategy** and **compare date** from Settings
 
@@ -293,7 +306,14 @@ Each card in the API includes metadata from Scryfall (when the set has been sync
 | `cardType` | `creature` | Primary category for filters (land, instant, sorcery, …) |
 | `cardTypes` | `["artifact","creature"]` | All types when a card has multiple |
 
-Available on Collection, Set Manager, Storage, Decks, and card detail responses. UI filters by type/colour can be built on top of these fields.
+Available on Collection, Set Manager, Storage, Decks, and card detail responses.
+
+### Decks
+
+- **Browse decks** — deck list with Detail / Overview toggle; per-deck hero gallery and card list with **Images / Table** toggle
+- **Deck stats** — aggregate or single-deck metrics, portfolio history chart, card table
+- **Owned** on a deck card requires a matching `purchases` row (run `purchase_import.py`)
+- Deck purchase price from `decks.csv` is split across cards for invested / ROI figures
 
 ---
 
@@ -303,7 +323,7 @@ Available on Collection, Set Manager, Storage, Decks, and card detail responses.
 python -m unittest discover -s tests -v
 ```
 
-Covers purchase import, deck import, deck purchase allocation, Cardmarket backfill, price history, art styles, set catalog sync, card metadata, reports API, manager favourites, and set ordering.
+Covers purchase import, deck import, deck purchase allocation, Cardmarket backfill, price history, art styles, set catalog sync, card metadata, reports API, manager favourites, set ordering, set completion, set code aliases, and per-copy ownership APIs.
 
 ---
 
@@ -462,7 +482,9 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 ## Art style mapping
 
-Art-style labels come from `data/art_styles/{set_code}.json`. When a set has no rules file yet, one is created automatically with a single `"All"` group for every card. Custom files use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase).
+Art-style labels come from `data/art_styles/{set_code}.json`. When a set has no rules file yet, one is created automatically with a single `"All"` group for every card. Custom files use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter.
+
+Set code **PLIST** is treated as an alias for **PLST** (single canonical set in the database and file paths).
 
 ---
 
@@ -476,4 +498,5 @@ Art-style labels come from `data/art_styles/{set_code}.json`. When a set has no 
 
 ## Python conventions
 
-See **[docs/python-guidelines.md](docs/python-guidelines.md)** for layout, imports, database access, and review checklist.
+See **[docs/python-guidelines.md](docs/python-guidelines.md)** for layout, imports, database access, and review checklist.  
+See **[docs/frontend.md](docs/frontend.md)** for the Vue app and PWA.

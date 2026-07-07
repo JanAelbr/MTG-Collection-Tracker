@@ -24,7 +24,7 @@ They are based on the current codebase and the inconsistencies we want to remove
 lotr/
 ├── collection.db          # runtime database (not committed)
 ├── data/                  # per-set CSVs, artStyles JSON, decks/
-├── docs/                  # project documentation (decks.md, python-guidelines.md)
+├── docs/                  # project documentation (decks.md, frontend.md, python-guidelines.md)
 ├── logs/                  # price fetch logs
 ├── reports/               # generated HTML output
 ├── server-backend/        # FastAPI app (api/, run_api.py)

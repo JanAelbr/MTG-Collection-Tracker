@@ -4,11 +4,13 @@ import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import PageControls from "../components/PageControls.vue";
 import ReportTopCardsHero from "../components/ReportTopCardsHero.vue";
 import CardPreview from "../components/CardPreview.vue";
 import SetPicker from "../components/SetPicker.vue";
+import FilterSidebar from "../components/FilterSidebar.vue";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
@@ -27,6 +29,7 @@ import {
   allCardsRouteQuery,
   collectionScopeFromRoute,
   collectionScopeToQuery,
+  managerArtStylesEditorRoute,
 } from "../utils/setScope";
 import {
   applySetCountPatchesToSets,
@@ -80,6 +83,7 @@ const selectableSets = computed(() => {
   return patchedSets.value.filter((set) => !isAllSetsCode(set.setCode));
 });
 const artStyles = computed(() => cardsPayload.value?.artStyles || []);
+const managerArtStylesEditorLink = computed(() => managerArtStylesEditorRoute(setCode.value));
 const cards = computed(() => {
   if (isAllView.value) {
     ownershipRevision.value;
@@ -385,11 +389,6 @@ async function onSetsChanged(event) {
   }
 }
 
-const statsLink = computed(() => ({
-  path: "/stats",
-  query: collectionScopeToQuery(setCode.value),
-}));
-
 async function loadAppMeta() {
   const next = await ignoreAborted(api.getAppMeta());
   if (!next) {
@@ -616,21 +615,8 @@ function resetAllCardsPage() {
   allCardsPage.value = 1;
 }
 
-function collectionCardScaleLabel(scale) {
-  if (scale <= 75) {
-    return "Small";
-  }
-  if (scale >= 150) {
-    return "Extra large";
-  }
-  if (scale >= 125) {
-    return "Large";
-  }
-  return "Normal";
-}
-
-async function updateCollectionCardScale(event) {
-  await savePricingSettings({ collectionCardScale: Number(event.target.value) });
+async function setCollectionCardScale(scale) {
+  await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
 function updateAllCardsSort(event) {
@@ -955,85 +941,130 @@ onUnmounted(stopPolling);
       @sets-changed="onSetsChanged"
     />
 
-    <div class="reports-toolbar">
-      <div class="reports-toolbar-filters">
-        <SetPicker
-          v-model="setCode"
-          layout="dropdown"
-          :sets="selectableSets"
-        />
-
-        <ArtStylePicker
-          v-model="artStyle"
-          :art-styles="artStyles"
-          :disabled="isAllSetsView"
-        />
-
-        <div v-if="isAllView" class="button-group collection-ownership-group">
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: ownedFilter === 'owned' }"
-              @click="setOwnedFilter('owned')"
-            >
-              Owned
-            </button>
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: ownedFilter === 'all' }"
-              @click="setOwnedFilter('all')"
-            >
-              All
-            </button>
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: ownedFilter === 'unowned' }"
-              @click="setOwnedFilter('unowned')"
-            >
-            Not owned
-          </button>
+    <div class="page-with-sidebar">
+      <FilterSidebar>
+        <div class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Set</p>
+          <SetPicker
+            v-model="setCode"
+            layout="dropdown"
+            :sets="selectableSets"
+          />
         </div>
 
-        <div v-if="isAllView" class="button-group collection-finish-group">
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'all' }"
-            @click="setFoilFilter('all')"
-          >
-            All finishes
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'nonfoil' }"
-            @click="setFoilFilter('nonfoil')"
-          >
-            Non-foil
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'foil' }"
-            @click="setFoilFilter('foil')"
-          >
-            Foil
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'etched' }"
-            @click="setFoilFilter('etched')"
-          >
-            Etched
-          </button>
+        <div v-if="!isAllSetsView && artStyles.length" class="filter-sidebar-section">
+          <div class="filter-sidebar-label-row">
+            <p class="filter-sidebar-label">Art style</p>
+            <RouterLink
+              v-if="isAllView"
+              :to="managerArtStylesEditorLink"
+              class="filter-sidebar-edit-link"
+              title="Edit art styles"
+              aria-label="Edit art styles in Set Manager"
+            >
+              <svg
+                class="filter-sidebar-edit-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M4 20h4l10.5-10.5a1.8 1.8 0 0 0 0-2.5L16 4.5a1.8 1.8 0 0 0-2.5 0L3 15v5z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M13.5 6.5l4 4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </RouterLink>
+          </div>
+          <ArtStylePicker
+            v-model="artStyle"
+            layout="list"
+            :art-styles="artStyles"
+          />
         </div>
 
-        <div v-if="isAllView" class="collection-type-color-filters">
+        <div v-if="isAllView" class="filter-sidebar-section filter-sidebar-section--compact-filters">
+          <div class="filter-sidebar-compact-filter">
+            <p class="filter-sidebar-label">Ownership</p>
+            <div class="button-group collection-ownership-group">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'owned' }"
+                @click="setOwnedFilter('owned')"
+              >
+                Owned
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'all' }"
+                @click="setOwnedFilter('all')"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'unowned' }"
+                @click="setOwnedFilter('unowned')"
+              >
+                Unowned
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-sidebar-compact-filter">
+            <p class="filter-sidebar-label">Finish</p>
+            <div class="button-group collection-finish-group">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'all' }"
+                @click="setFoilFilter('all')"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'nonfoil' }"
+                @click="setFoilFilter('nonfoil')"
+              >
+                Non-foil
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'foil' }"
+                @click="setFoilFilter('foil')"
+              >
+                Foil
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'etched' }"
+                @click="setFoilFilter('etched')"
+              >
+                Etched
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isAllView" class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Type</p>
           <label class="manager-filter collection-type-filter">
-            <span>Type</span>
             <select :value="typeFilter" @change="onTypeFilterChange">
               <option value="all">All types</option>
               <option
@@ -1046,6 +1077,7 @@ onUnmounted(stopPolling);
             </select>
           </label>
 
+          <p class="filter-sidebar-label">Color</p>
           <div class="button-group collection-color-group">
             <button
               v-for="color in DECK_COLOR_ORDER"
@@ -1069,50 +1101,33 @@ onUnmounted(stopPolling);
           </div>
         </div>
 
-        <label v-if="isAllView" class="manager-filter">
-          <span>Image size</span>
-          <select :value="collectionCardScale" @change="updateCollectionCardScale">
-            <option
-              v-for="scale in (pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150])"
-              :key="scale"
-              :value="scale"
-            >
-              {{ collectionCardScaleLabel(scale) }} ({{ scale }}%)
-            </option>
-          </select>
-        </label>
+        <div v-if="isAllView" class="filter-sidebar-section">
+          <label class="manager-filter">
+            <span>Sort by</span>
+            <div class="collection-sort-row">
+              <select :value="allCardsSort" @change="updateAllCardsSort">
+                <option value="number">Collector number</option>
+                <option value="value">Value</option>
+                <option value="changePct">Price change (%)</option>
+                <option value="changeEuro">Price change (€)</option>
+              </select>
+              <button
+                type="button"
+                class="btn btn-secondary collection-sort-dir"
+                :title="allCardsSortDir === 'asc' ? 'Ascending' : 'Descending'"
+                :aria-label="`Sort ${allCardsSortDir === 'asc' ? 'ascending' : 'descending'}`"
+                @click="toggleAllCardsSortDir"
+              >
+                {{ allCardsSortDir === "asc" ? "↑" : "↓" }}
+              </button>
+            </div>
+          </label>
+        </div>
+      </FilterSidebar>
 
-        <label v-if="isAllView" class="manager-filter">
-          <span>Sort by</span>
-          <select :value="allCardsSort" @change="updateAllCardsSort">
-            <option value="number">Collector number</option>
-            <option value="value">Value</option>
-            <option value="changePct">Price change (%)</option>
-            <option value="changeEuro">Price change (€)</option>
-          </select>
-          <button
-            type="button"
-            class="btn btn-secondary collection-sort-dir"
-            :title="allCardsSortDir === 'asc' ? 'Ascending' : 'Descending'"
-            :aria-label="`Sort ${allCardsSortDir === 'asc' ? 'ascending' : 'descending'}`"
-            @click="toggleAllCardsSortDir"
-          >
-            {{ allCardsSortDir === "asc" ? "↑" : "↓" }}
-          </button>
-        </label>
-
-        <RouterLink :to="statsLink" class="btn btn-secondary btn-small">
-          View stats
-        </RouterLink>
-      </div>
-    </div>
-
-    <p class="manager-stats">
-      <template v-if="isAllView && sortedAllCards.length">
-        Showing {{ allCardsRangeStart }}–{{ allCardsRangeEnd }} of {{ sortedAllCards.length }} cards
-        <span v-if="allCardsTotalPages > 1"> · page {{ allCardsPage }} / {{ allCardsTotalPages }}</span>
-      </template>
-      <template v-else>
+      <div class="page-with-sidebar-main">
+    <p v-if="!isAllView || !sortedAllCards.length" class="manager-stats">
+      <template v-if="!isAllView">
         Showing {{ displayCards.length }} of {{ cardsPayload?.totalMatches ?? 0 }} matches
       </template>
     </p>
@@ -1125,14 +1140,25 @@ onUnmounted(stopPolling);
       No cards match these filters.
     </div>
 
-    <div v-else-if="isAllView" class="table-panel cards-panel reports-cards-panel">
-      <PageControls
-        v-if="allCardsTotalPages > 1"
-        :page="allCardsPage"
-        :total-pages="allCardsTotalPages"
-        class="collection-pagination collection-pagination--top"
-        @update:page="goToAllCardsPage"
-      />
+    <div v-else-if="isAllView" class="table-panel cards-panel reports-cards-panel collection-gallery-panel">
+      <div class="collection-gallery-toolbar">
+        <p class="collection-gallery-toolbar-stats">
+          Showing {{ allCardsRangeStart }}–{{ allCardsRangeEnd }} of {{ sortedAllCards.length }} cards
+        </p>
+        <PageControls
+          v-if="allCardsTotalPages > 1"
+          :page="allCardsPage"
+          :total-pages="allCardsTotalPages"
+          class="collection-gallery-toolbar-pagination"
+          @update:page="goToAllCardsPage"
+        />
+        <CollectionGalleryScaleControl
+          class="collection-gallery-toolbar-scale"
+          :model-value="collectionCardScale"
+          :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+          @update:model-value="setCollectionCardScale"
+        />
+      </div>
       <GalleryLoadingOverlay :loading="loadingCards" label="Updating cards…">
         <CollectionCardGrid
           :cards="paginatedAllCards"
@@ -1227,6 +1253,8 @@ onUnmounted(stopPolling);
         </tbody>
       </table>
       </GalleryLoadingOverlay>
+    </div>
+      </div>
     </div>
   </div>
 </template>

@@ -7,7 +7,10 @@ import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SearchArtBrowser from "../components/SearchArtBrowser.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
+import PageControls from "../components/PageControls.vue";
+import FilterSidebar from "../components/FilterSidebar.vue";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { formatSetDropdownLabel } from "../utils/format";
 
@@ -30,7 +33,7 @@ const page = ref(1);
 const randomLoading = ref(false);
 const routeSyncReady = ref(false);
 const { loading, run } = useAsyncLoad();
-const { collectionCardScale } = usePricingSettings();
+const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
 
 let debounceTimer = null;
 
@@ -38,6 +41,13 @@ const sets = computed(() => meta.value?.sets || []);
 const cards = computed(() => resultsPayload.value?.cards || []);
 const totalMatches = computed(() => resultsPayload.value?.totalMatches ?? 0);
 const totalPages = computed(() => resultsPayload.value?.totalPages ?? 1);
+const resultsRangeStart = computed(() => {
+  if (!totalMatches.value) {
+    return 0;
+  }
+  return (page.value - 1) * PAGE_SIZE + 1;
+});
+const resultsRangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalMatches.value));
 
 const setLabels = computed(() => {
   const labels = new Map();
@@ -183,6 +193,10 @@ function setFoilFilter(value) {
   page.value = 1;
 }
 
+async function setCollectionCardScale(scale) {
+  await savePricingSettings({ collectionCardScale: Number(scale) });
+}
+
 function goToPage(nextPage) {
   page.value = Math.max(1, Math.min(nextPage, totalPages.value));
 }
@@ -319,72 +333,80 @@ onMounted(async () => {
       </form>
     </section>
 
-    <div class="reports-toolbar">
-      <div class="reports-toolbar-filters">
-        <div class="button-group collection-ownership-group">
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: ownedFilter === 'owned' }"
-            @click="setOwnedFilter('owned')"
-          >
-            Owned
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: ownedFilter === 'all' }"
-            @click="setOwnedFilter('all')"
-          >
-            All
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: ownedFilter === 'unowned' }"
-            @click="setOwnedFilter('unowned')"
-          >
-            Not owned
-          </button>
-        </div>
+    <div class="page-with-sidebar">
+      <FilterSidebar>
+        <div class="filter-sidebar-section filter-sidebar-section--compact-filters">
+          <div class="filter-sidebar-compact-filter">
+            <p class="filter-sidebar-label">Ownership</p>
+            <div class="button-group collection-ownership-group">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'owned' }"
+                @click="setOwnedFilter('owned')"
+              >
+                Owned
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'all' }"
+                @click="setOwnedFilter('all')"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'unowned' }"
+                @click="setOwnedFilter('unowned')"
+              >
+                Unowned
+              </button>
+            </div>
+          </div>
 
-        <div class="button-group collection-finish-group">
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'all' }"
-            @click="setFoilFilter('all')"
-          >
-            All finishes
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'nonfoil' }"
-            @click="setFoilFilter('nonfoil')"
-          >
-            Non-foil
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'foil' }"
-            @click="setFoilFilter('foil')"
-          >
-            Foil
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: foilFilter === 'etched' }"
-            @click="setFoilFilter('etched')"
-          >
-            Etched
-          </button>
+          <div class="filter-sidebar-compact-filter">
+            <p class="filter-sidebar-label">Finish</p>
+            <div class="button-group collection-finish-group">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'all' }"
+                @click="setFoilFilter('all')"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'nonfoil' }"
+                @click="setFoilFilter('nonfoil')"
+              >
+                Non-foil
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'foil' }"
+                @click="setFoilFilter('foil')"
+              >
+                Foil
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: foilFilter === 'etched' }"
+                @click="setFoilFilter('etched')"
+              >
+                Etched
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </FilterSidebar>
 
+      <div class="page-with-sidebar-main">
     <SearchArtBrowser
       v-if="artExplorer"
       :name="artExplorer.name"
@@ -396,24 +418,38 @@ onMounted(async () => {
       @close="closeArtExplorer"
     />
 
-    <p v-if="searchQuery.trim()" class="manager-stats">
-      <template v-if="totalMatches">
-        {{ totalMatches }} unique card{{ totalMatches === 1 ? "" : "s" }} for “{{ searchQuery }}”
-        <span v-if="totalPages > 1"> · page {{ page }} / {{ totalPages }}</span>
-      </template>
-      <template v-else-if="!loading">
+    <p v-if="!searchQuery.trim() || !totalMatches" class="manager-stats collection-search-empty-prompt">
+      <template v-if="searchQuery.trim() && !loading && !totalMatches">
         No cards match “{{ searchQuery }}” with these filters.
       </template>
-    </p>
-    <p v-else class="manager-stats collection-search-empty-prompt">
-      Browsing a random card. Enter a search term to find specific cards.
+      <template v-else-if="!searchQuery.trim()">
+        Browsing a random card. Enter a search term to find specific cards.
+      </template>
     </p>
 
     <div v-if="loading && !cards.length" class="storage-empty">
       <LoadingIndicator label="Searching cards…" />
     </div>
 
-    <div v-else-if="searchQuery.trim() && cards.length" class="table-panel cards-panel reports-cards-panel">
+    <div v-else-if="searchQuery.trim() && cards.length" class="table-panel cards-panel reports-cards-panel collection-gallery-panel">
+      <div class="collection-gallery-toolbar">
+        <p class="collection-gallery-toolbar-stats">
+          Showing {{ resultsRangeStart }}–{{ resultsRangeEnd }} of {{ totalMatches }} cards
+        </p>
+        <PageControls
+          v-if="totalPages > 1"
+          :page="page"
+          :total-pages="totalPages"
+          class="collection-gallery-toolbar-pagination"
+          @update:page="goToPage"
+        />
+        <CollectionGalleryScaleControl
+          class="collection-gallery-toolbar-scale"
+          :model-value="collectionCardScale"
+          :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+          @update:model-value="setCollectionCardScale"
+        />
+      </div>
       <GalleryLoadingOverlay :loading="loading" label="Searching cards…">
         <CollectionCardGrid
           :cards="cards"
@@ -425,25 +461,7 @@ onMounted(async () => {
         />
       </GalleryLoadingOverlay>
     </div>
-
-    <div v-if="searchQuery.trim() && totalPages > 1" class="manager-pagination">
-      <button
-        type="button"
-        class="btn btn-secondary btn-small"
-        :disabled="page <= 1"
-        @click="goToPage(page - 1)"
-      >
-        Previous
-      </button>
-      <span>Page {{ page }} / {{ totalPages }}</span>
-      <button
-        type="button"
-        class="btn btn-secondary btn-small"
-        :disabled="page >= totalPages"
-        @click="goToPage(page + 1)"
-      >
-        Next
-      </button>
+      </div>
     </div>
   </div>
 </template>

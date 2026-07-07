@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 
+import AppLogoIcon from "./AppLogoIcon.vue";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
@@ -11,6 +12,7 @@ const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
   { to: "/collection/top", label: "Top owned" },
   { to: "/collection/search", label: "Search" },
+  { to: "/stats", label: "Stats" },
 ];
 
 const navItems = [
@@ -20,24 +22,25 @@ const navItems = [
     matchPrefix: "/collection",
     subnav: collectionSubnav,
   },
-  { to: "/stats", label: "Stats", matchPrefix: false },
   { to: "/storage", label: "Storage", matchPrefix: false },
   { to: "/manager", label: "Set Manager", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
   { to: "/settings", label: "Settings", matchPrefix: false },
 ];
 
-const pageTitle = computed(() => {
-  if (route.path.startsWith("/collection/")) {
-    const activeView = collectionSubnav.find((item) => route.path === item.to);
-    if (activeView) {
-      return `Collection · ${activeView.label}`;
-    }
-  }
-  return route.meta.title || APP_TITLE;
-});
+const showCollectionSubnav = computed(() =>
+  route.path.startsWith("/collection") || route.path === "/stats",
+);
+
+const brandLink = computed(() => ({
+  path: "/collection/all",
+  query: collectionNavQuery(route, "/collection/all"),
+}));
 
 function isNavActive(item) {
+  if (item.matchPrefix === "/collection") {
+    return route.path.startsWith(item.matchPrefix) || route.path === "/stats";
+  }
   if (item.matchPrefix) {
     return route.path.startsWith(item.matchPrefix);
   }
@@ -48,21 +51,23 @@ function isSubnavActive(item) {
   return route.path === item.to;
 }
 
-function isSubnavOpen(item) {
-  return Boolean(item.matchPrefix && route.path.startsWith(item.matchPrefix));
-}
-
 function navLinkTo(item) {
   const query = item.matchPrefix === "/collection"
     ? collectionNavQuery(route, item.to)
     : setScopeQueryFromRoute(route);
-  if (item.matchPrefix === "/collection" || item.to === "/stats") {
+  if (item.matchPrefix === "/collection") {
     return { path: item.to, query };
   }
   return item.to;
 }
 
-function subnavLinkTo(item, subItem) {
+function subnavLinkTo(subItem) {
+  if (subItem.to === "/stats") {
+    return {
+      path: "/stats",
+      query: setScopeQueryFromRoute(route),
+    };
+  }
   return {
     path: subItem.to,
     query: collectionNavQuery(route, subItem.to),
@@ -72,54 +77,45 @@ function subnavLinkTo(item, subItem) {
 
 <template>
   <div class="app-shell">
-    <header class="app-header">
-      <h1>{{ APP_TITLE }}</h1>
-      <p class="app-subtitle">{{ pageTitle }}</p>
-    </header>
+    <div class="app-chrome">
+      <header class="app-topbar">
+        <RouterLink :to="brandLink" class="app-brand" aria-label="Home">
+          <AppLogoIcon class="app-brand-icon" :size="22" />
+          <span class="app-brand-text">{{ APP_TITLE }}</span>
+        </RouterLink>
 
-    <div class="report-layout">
-      <aside class="side-nav">
-        <nav aria-label="Main navigation" class="side-nav-list">
-          <div
+        <nav class="app-topnav" aria-label="Main navigation">
+          <RouterLink
             v-for="item in navItems"
             :key="item.to"
-            class="side-nav-group"
-            :class="{ 'has-subnav': item.subnav }"
+            :to="navLinkTo(item)"
+            class="app-topnav-link"
+            :class="{ 'is-active': isNavActive(item) }"
           >
-            <RouterLink
-              :to="navLinkTo(item)"
-              class="side-nav-link"
-              :class="{ 'is-active': isNavActive(item) && !item.subnav }"
-            >
-              {{ item.label }}
-            </RouterLink>
-
-            <div
-              v-if="item.subnav"
-              class="side-nav-sub-wrap"
-              :class="{ 'is-open': isSubnavOpen(item) }"
-            >
-              <div class="side-nav-sub-inner">
-                <div class="side-nav-sub">
-                  <RouterLink
-                    v-for="subItem in item.subnav"
-                    :key="subItem.to"
-                    :to="subnavLinkTo(item, subItem)"
-                    class="side-nav-sublink"
-                    :class="{ 'is-active': isSubnavActive(subItem) }"
-                  >
-                    {{ subItem.label }}
-                  </RouterLink>
-                </div>
-              </div>
-            </div>
-          </div>
+            {{ item.label }}
+          </RouterLink>
         </nav>
-      </aside>
+      </header>
 
-      <main class="report-content">
-        <slot />
-      </main>
+      <nav
+        v-if="showCollectionSubnav"
+        class="app-subnav"
+        aria-label="Collection views"
+      >
+        <RouterLink
+          v-for="subItem in collectionSubnav"
+          :key="subItem.to"
+          :to="subnavLinkTo(subItem)"
+          class="app-subnav-link"
+          :class="{ 'is-active': isSubnavActive(subItem) }"
+        >
+          {{ subItem.label }}
+        </RouterLink>
+      </nav>
     </div>
+
+    <main class="app-main">
+      <slot />
+    </main>
   </div>
 </template>

@@ -74,13 +74,14 @@ class ReportDataCountTests(unittest.TestCase):
 
         self.assertEqual(counts["LTR"], 1)
 
-    def test_catalog_count_uses_unique_collector_numbers(self):
+    def test_catalog_count_uses_completion_slots(self):
         self.conn.executemany(
             "INSERT INTO cards (set_code, collector_number, name, art_style) VALUES (?, ?, ?, '')",
             [
                 ("LTR", "1", "Card A"),
-                ("LTR", "1", "Card A duplicate"),
+                ("LTR", "001", "Card A variant"),
                 ("LTR", "2", "Card B"),
+                ("LTR", "99z", "Serialized"),
             ],
         )
         self.conn.commit()

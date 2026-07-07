@@ -5,6 +5,7 @@ import sqlite3
 
 from lib.art_styles import ensure_art_style_rules_file
 from lib.config import HTTP_USER_AGENT
+from lib.config import normalize_set_code
 from util.db_migrate import ensure_card_columns
 from util.set_catalog import ensure_sets_table, sync_set_metadata
 
@@ -17,7 +18,7 @@ def import_set_catalog_from_scryfall(
 ) -> int:
     from update_prices import sync_set_catalog
 
-    normalized = set_code.strip().upper()
+    normalized = normalize_set_code(set_code)
     if not normalized:
         raise ValueError("Set code is required")
 

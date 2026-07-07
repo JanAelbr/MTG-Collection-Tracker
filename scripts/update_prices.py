@@ -4,7 +4,14 @@ import sqlite3
 import time
 from datetime import date
 
-from lib.config import DB_PATH, HTTP_USER_AGENT, LOGS_DIR, list_set_csv_files
+from lib.config import (
+    DB_PATH,
+    HTTP_USER_AGENT,
+    LOGS_DIR,
+    canonical_set_code_lower,
+    list_set_csv_files,
+    normalize_set_code,
+)
 from lib.art_styles import ensure_art_style_rules_file, get_art_style
 from lib.deck_csv import list_deck_sync_set_codes
 from lib.run_log import BuildTimer, configure_logging, get_logger
@@ -76,9 +83,12 @@ def refresh_art_styles() -> None:
 
 # Return lowercase set codes for purchase CSVs and deck-required prints.
 def get_set_codes() -> list[str]:
-    purchase_sets = {path.stem.lower() for path in list_set_csv_files()}
-    deck_sets = {code.lower() for code in list_deck_sync_set_codes()}
-    return sorted(purchase_sets | deck_sets)
+    purchase_sets = {
+        canonical_set_code_lower(path.stem)
+        for path in list_set_csv_files()
+    }
+    deck_sets = {canonical_set_code_lower(code) for code in list_deck_sync_set_codes()}
+    return sorted(code for code in (purchase_sets | deck_sets) if code)
 
 
 # Build the initial Scryfall search URL for one set.

@@ -9,6 +9,7 @@ from util.db_migrate import (
     ensure_card_columns,
     ensure_card_indexes,
     ensure_purchase_unique_index,
+    ensure_set_code_aliases,
 )
 from util.deck_tables import ensure_deck_tables
 from util.set_catalog import backfill_missing_set_icon_uris, ensure_sets_columns, ensure_sets_table
@@ -81,6 +82,7 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         backfill_card_types(conn)
         ensure_card_indexes(conn)
         ensure_purchase_unique_index(conn)
+        ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
         if db_path:
             _initialized_db_paths.add(db_path)

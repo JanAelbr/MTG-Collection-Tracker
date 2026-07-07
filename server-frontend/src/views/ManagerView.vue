@@ -5,12 +5,15 @@ import { api, clearClientCache } from "../api";
 import CardPreview from "../components/CardPreview.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SetPicker from "../components/SetPicker.vue";
+import FilterSidebar from "../components/FilterSidebar.vue";
 import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
+import { shouldOpenManagerArtStyleEditor } from "../utils/setScope";
 import { FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, canManageFinish } from "../utils/finishes";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import ArtStyleRulesPanel from "../components/ArtStyleRulesPanel.vue";
+import StorageLocationSelect from "../components/StorageLocationSelect.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -275,6 +278,9 @@ watch(pageSize, () => {
 
 onMounted(async () => {
   await Promise.all([fetchPricingSettings(), loadSets(), loadStorageLocations()]);
+  if (shouldOpenManagerArtStyleEditor(route)) {
+    artStyleRulesOpen.value = true;
+  }
   if (selectedSetCode.value) {
     await loadCards();
   }
@@ -290,121 +296,128 @@ onMounted(async () => {
       @sets-changed="onSetsChanged"
     />
 
-    <div class="manager-layout manager-layout--single">
-      <div class="manager-detail">
-        <div class="manager-toolbar">
-          <div class="manager-toolbar-filters">
-            <SetPicker
-              v-model="selectedSetCode"
-              layout="dropdown"
-              :sets="sets"
-            />
-            <button
-              v-if="setPickerMode !== 'browser' && selectedSetCode && activeSet"
-              type="button"
-              class="btn btn-secondary btn-small manager-set-favorite-btn"
-              :class="{ 'is-favorite': activeSetFavorite }"
-              @click="toggleFavorite(activeSet)"
-            >
-              {{ activeSetFavorite ? "★ Favourited" : "☆ Favourite set" }}
-            </button>
-            <button
-              v-if="selectedSetCode && activeSet"
-              type="button"
-              class="btn btn-secondary btn-small"
-              :class="{ active: artStyleRulesOpen }"
-              @click="artStyleRulesOpen = !artStyleRulesOpen"
-            >
-              {{ artStyleRulesOpen ? "Hide art styles" : "Edit art styles" }}
-            </button>
-            <button
-              v-if="selectedSetCode && activeSet"
-              type="button"
-              class="btn btn-secondary btn-small"
-              :disabled="catalogReloading"
-              @click="reloadCatalog"
-            >
-              {{ catalogReloading ? "Reloading catalog…" : "Reload catalog" }}
-            </button>
-            <input
-              v-model="searchInput"
-              type="search"
-              class="manager-search"
-              placeholder="Search cards…"
-            />
-            <ArtStylePicker
-              v-model="artStyle"
-              :art-styles="artStyles"
-            />
-            <div class="manager-filter">
-              <span>Finish filter</span>
-              <div class="button-group deck-gallery-sort-group">
-                <button
-                  type="button"
-                  class="filter-button"
-                  :class="{ active: foilFilter === 'all' }"
-                  @click="setFoilFilter('all')"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  class="filter-button"
-                  :class="{ active: foilFilter === 'nonfoil' }"
-                  @click="setFoilFilter('nonfoil')"
-                >
-                  Non-foil
-                </button>
-                <button
-                  type="button"
-                  class="filter-button"
-                  :class="{ active: foilFilter === 'foil' }"
-                  @click="setFoilFilter('foil')"
-                >
-                  Foil
-                </button>
-                <button
-                  type="button"
-                  class="filter-button"
-                  :class="{ active: foilFilter === 'etched' }"
-                  @click="setFoilFilter('etched')"
-                >
-                  Etched
-                </button>
-              </div>
-            </div>
-            <LoadingIndicator v-if="loadingCards" compact label="Loading cards…" />
-            <p
-              v-if="catalogMessage"
-              class="collection-sync-message"
-              :class="{ error: catalogMessage.startsWith('Could') }"
-            >
-              {{ catalogMessage }}
-            </p>
-          </div>
+    <div class="page-with-sidebar">
+      <FilterSidebar>
+        <div class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Set</p>
+          <SetPicker
+            v-model="selectedSetCode"
+            layout="dropdown"
+            :sets="sets"
+          />
+          <button
+            v-if="setPickerMode !== 'browser' && selectedSetCode && activeSet"
+            type="button"
+            class="btn btn-secondary btn-small manager-set-favorite-btn"
+            :class="{ 'is-favorite': activeSetFavorite }"
+            @click="toggleFavorite(activeSet)"
+          >
+            {{ activeSetFavorite ? "★ Favourited" : "☆ Favourite set" }}
+          </button>
+          <button
+            v-if="selectedSetCode && activeSet"
+            type="button"
+            class="btn btn-secondary btn-small"
+            :class="{ active: artStyleRulesOpen }"
+            @click="artStyleRulesOpen = !artStyleRulesOpen"
+          >
+            {{ artStyleRulesOpen ? "Hide art styles" : "Edit art styles" }}
+          </button>
+          <button
+            v-if="selectedSetCode && activeSet"
+            type="button"
+            class="btn btn-secondary btn-small"
+            :disabled="catalogReloading"
+            @click="reloadCatalog"
+          >
+            {{ catalogReloading ? "Reloading catalog…" : "Reload catalog" }}
+          </button>
+        </div>
 
-          <div class="manager-toolbar-actions">
+        <div class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Search</p>
+          <input
+            v-model="searchInput"
+            type="search"
+            class="manager-search"
+            placeholder="Search cards…"
+          />
+        </div>
+
+        <div v-if="artStyles.length" class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Art style</p>
+          <ArtStylePicker
+            v-model="artStyle"
+            layout="list"
+            :art-styles="artStyles"
+          />
+        </div>
+
+        <div class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Finish</p>
+          <div class="button-group deck-gallery-sort-group">
+            <button
+              type="button"
+              class="filter-button"
+              :class="{ active: foilFilter === 'all' }"
+              @click="setFoilFilter('all')"
+            >
+              All
+            </button>
+            <button
+              type="button"
+              class="filter-button"
+              :class="{ active: foilFilter === 'nonfoil' }"
+              @click="setFoilFilter('nonfoil')"
+            >
+              Non-foil
+            </button>
+            <button
+              type="button"
+              class="filter-button"
+              :class="{ active: foilFilter === 'foil' }"
+              @click="setFoilFilter('foil')"
+            >
+              Foil
+            </button>
+            <button
+              type="button"
+              class="filter-button"
+              :class="{ active: foilFilter === 'etched' }"
+              @click="setFoilFilter('etched')"
+            >
+              Etched
+            </button>
+          </div>
+          <LoadingIndicator v-if="loadingCards" compact label="Loading cards…" />
+          <p
+            v-if="catalogMessage"
+            class="collection-sync-message"
+            :class="{ error: catalogMessage.startsWith('Could') }"
+          >
+            {{ catalogMessage }}
+          </p>
+        </div>
+      </FilterSidebar>
+
+      <div class="page-with-sidebar-main manager-detail">
+        <div class="manager-toolbar-actions">
             <label class="manager-select-all">
               <input v-model="allVisibleSelected" type="checkbox" />
               Select visible
             </label>
 
-            <label class="manager-filter">
+            <label class="manager-filter manager-filter-storage">
               <span>Assign to</span>
-              <select v-model="assignLocationSlug">
-                <option
-                  v-for="location in storageLocations"
-                  :key="location.slug"
-                  :value="location.slug"
-                >
-                  {{ location.label }}
-                </option>
-              </select>
+              <StorageLocationSelect
+                v-model="assignLocationSlug"
+                :locations="storageLocations"
+                aria-label="Assign storage location"
+              />
             </label>
             <button type="button" class="btn btn-secondary" @click="assignSelectedToStorage">
               Assign storage
             </button>
-          </div>
         </div>
 
         <ArtStyleRulesPanel

@@ -7,7 +7,7 @@ from lib.art_styles import (
     save_art_style_rules,
     validate_art_style_rules,
 )
-from lib.config import EXCLUDED_SET_CODES, list_set_csv_files, purchase_csv_path
+from lib.config import EXCLUDED_SET_CODES, list_set_csv_files, normalize_set_code, purchase_csv_path
 from lib.deck_csv import list_deck_sync_set_codes
 from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
@@ -18,6 +18,7 @@ from report.manager_data import (
 )
 from util.card_metadata import card_metadata_api
 from api.services import settings_service
+from api.services.pricing_service import price_from_strategy
 from report.report_data import (
     build_art_style_options_for_set,
     build_sorted_set_options,
@@ -26,7 +27,15 @@ from report.report_data import (
     load_owned_count_by_set,
 )
 from api.services.storage_service import StorageError, get_location
-from util.card_finishes import finish_label, has_finish_flag, normalize_finish
+from util.card_finishes import (
+    FINISH_ETCHED,
+    FINISH_FOIL,
+    FINISH_NONFOIL,
+    finish_label,
+    has_finish_flag,
+    normalize_finish,
+)
+from util.db_migrate import ensure_card_columns
 from util.app_tables import ensure_app_tables
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
 
@@ -441,7 +450,7 @@ def _load_copy_instances(
     )
     rows = conn.execute(
         """
-        SELECT ci.instance_id, ci.location_slug, sl.label
+        SELECT ci.instance_id, ci.location_slug, sl.label, ci.purchase_value
         FROM card_instances ci
         JOIN storage_locations sl ON sl.location_slug = ci.location_slug
         WHERE ci.set_code = ? AND ci.collector_number = ? AND ci.finish = ?
@@ -454,9 +463,348 @@ def _load_copy_instances(
             "instanceId": int(instance_id),
             "locationSlug": slug,
             "label": label,
+            "purchaseValue": _float_or_none(purchase_value),
         }
-        for instance_id, slug, label in rows
+        for instance_id, slug, label, purchase_value in rows
     ]
+
+
+def _float_or_none(value) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _owned_finishes_for_print(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+) -> set[int]:
+    normalized_set, normalized_number, _ = _normalized_print(set_code, collector_number, 0)
+    finishes: set[int] = set()
+    for row in conn.execute(
+        """
+        SELECT DISTINCT finish
+        FROM purchases
+        WHERE set_code = ? AND collector_number = ?
+        """,
+        (normalized_set, normalized_number),
+    ):
+        finishes.add(int(row[0]))
+    table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
+    ).fetchone()
+    if table:
+        for row in conn.execute(
+            """
+            SELECT DISTINCT finish
+            FROM card_instances
+            WHERE set_code = ? AND collector_number = ?
+            """,
+            (normalized_set, normalized_number),
+        ):
+            finishes.add(int(row[0]))
+    return finishes
+
+
+def _load_card_pricing_row(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+):
+    ensure_card_columns(conn)
+    return conn.execute(
+        """
+        SELECT
+            cardmarket_url,
+            cardmarket_url_foil,
+            market_value,
+            market_value_foil,
+            market_value_etched
+        FROM cards
+        WHERE set_code = ? AND collector_number = ?
+        """,
+        (set_code.upper(), str(collector_number).strip()),
+    ).fetchone()
+
+
+def _current_value_for_finish(card_row, finish: int, strategy: str) -> float | None:
+    if card_row is None:
+        return None
+    return price_from_strategy(
+        card_row["cardmarket_url"],
+        finish,
+        strategy,
+        cardmarket_url_foil=card_row["cardmarket_url_foil"],
+        market_value=_float_or_none(card_row["market_value"]),
+        market_value_foil=_float_or_none(card_row["market_value_foil"]),
+        market_value_etched=_float_or_none(card_row["market_value_etched"]),
+    )
+
+
+def _sync_finish_purchase_aggregate(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+) -> None:
+    normalized_set, normalized_number, normalized_finish = _normalized_print(
+        set_code,
+        collector_number,
+        finish,
+    )
+    count = _instance_count(conn, normalized_set, normalized_number, normalized_finish)
+    if count <= 0:
+        _apply_ownership(
+            conn,
+            set_code=normalized_set,
+            collector_number=normalized_number,
+            finish=normalized_finish,
+            owned=False,
+        )
+        return
+
+    rows = conn.execute(
+        """
+        SELECT purchase_value
+        FROM card_instances
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (normalized_set, normalized_number, normalized_finish),
+    ).fetchall()
+    positive = [
+        float(row[0])
+        for row in rows
+        if row[0] is not None and float(row[0]) > 0
+    ]
+    cursor = conn.cursor()
+    if positive:
+        avg_value = sum(positive) / len(positive)
+        upsert_purchase_value(
+            cursor,
+            normalized_set,
+            normalized_number,
+            normalized_finish,
+            avg_value,
+            overwrite_zero_only=False,
+        )
+        return
+
+    upsert_purchase_value(
+        cursor,
+        normalized_set,
+        normalized_number,
+        normalized_finish,
+        0.0,
+        overwrite_zero_only=False,
+    )
+
+
+def _build_ownership_summary(
+    instances: list[dict],
+    *,
+    card_row,
+    strategy: str,
+) -> list[dict]:
+    grouped: dict[int, list[dict]] = {}
+    for instance in instances:
+        grouped.setdefault(int(instance["finish"]), []).append(instance)
+
+    summary: list[dict] = []
+    for finish_id in sorted(grouped):
+        copies = grouped[finish_id]
+        paid_values = [
+            float(item["purchaseValue"])
+            for item in copies
+            if item.get("purchaseValue") is not None and float(item["purchaseValue"]) > 0
+        ]
+        if not paid_values:
+            continue
+        avg_purchase = sum(paid_values) / len(paid_values)
+        current_value = _current_value_for_finish(card_row, finish_id, strategy)
+        gain_loss = None
+        if current_value is not None:
+            gain_loss = (current_value - avg_purchase) * len(copies)
+        summary.append({
+            "finish": finish_id,
+            "label": finish_label(finish_id),
+            "count": len(copies),
+            "avgPurchase": avg_purchase,
+            "currentValue": current_value,
+            "gainLoss": gain_loss,
+        })
+    return summary
+
+
+def load_owned_instances_for_print(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+    *,
+    strategy: str | None = None,
+) -> dict:
+    _validate_set_code(set_code)
+    ensure_app_tables(conn)
+    normalized_set, normalized_number, _ = _normalized_print(set_code, collector_number, 0)
+    if strategy is None:
+        strategy = settings_service.get_settings(conn)["priceStrategy"]
+
+    for finish_id in _owned_finishes_for_print(conn, normalized_set, normalized_number):
+        _ensure_materialized_copies(conn, normalized_set, normalized_number, finish_id)
+
+    card_row = _load_card_pricing_row(conn, normalized_set, normalized_number)
+    rows = conn.execute(
+        """
+        SELECT
+            ci.instance_id,
+            ci.finish,
+            ci.location_slug,
+            sl.label,
+            ci.purchase_value
+        FROM card_instances ci
+        JOIN storage_locations sl ON sl.location_slug = ci.location_slug
+        WHERE ci.set_code = ? AND ci.collector_number = ?
+        ORDER BY ci.finish, ci.instance_id
+        """,
+        (normalized_set, normalized_number),
+    ).fetchall()
+
+    finish_counts: dict[int, int] = {}
+    instances: list[dict] = []
+    for instance_id, finish, slug, label, purchase_value in rows:
+        finish_id = int(finish)
+        finish_counts[finish_id] = finish_counts.get(finish_id, 0) + 1
+        index_within_finish = finish_counts[finish_id]
+        purchase = _float_or_none(purchase_value)
+        current_value = _current_value_for_finish(card_row, finish_id, strategy)
+        profit_loss = None
+        if purchase is not None and current_value is not None:
+            profit_loss = current_value - purchase
+        instances.append({
+            "instanceId": int(instance_id),
+            "finish": finish_id,
+            "finishLabel": finish_label(finish_id),
+            "finishIndex": index_within_finish,
+            "locationSlug": slug,
+            "locationLabel": label,
+            "purchaseValue": purchase,
+            "currentValue": current_value,
+            "profitLoss": profit_loss,
+        })
+
+    return {
+        "ownedInstances": instances,
+        "ownershipSummary": _build_ownership_summary(
+            instances,
+            card_row=card_row,
+            strategy=strategy,
+        ),
+    }
+
+
+def update_copy_instance(
+    conn: sqlite3.Connection,
+    *,
+    instance_id: int,
+    purchase_value: float | None = None,
+    finish: int | None = None,
+    location_slug: str | None = None,
+) -> dict:
+    ensure_app_tables(conn)
+    row = conn.execute(
+        """
+        SELECT set_code, collector_number, finish
+        FROM card_instances
+        WHERE instance_id = ?
+        """,
+        (instance_id,),
+    ).fetchone()
+    if row is None:
+        raise ManagerError("Copy not found", status_code=404)
+
+    set_code = row["set_code"]
+    collector_number = row["collector_number"]
+    old_finish = int(row["finish"])
+    new_finish = normalize_finish(finish) if finish is not None else old_finish
+
+    if location_slug is not None:
+        get_location(conn, location_slug)
+        conn.execute(
+            "UPDATE card_instances SET location_slug = ? WHERE instance_id = ?",
+            (location_slug, instance_id),
+        )
+
+    if finish is not None and new_finish != old_finish:
+        card_row = conn.execute(
+            """
+            SELECT has_nonfoil, has_foil, has_etched
+            FROM cards
+            WHERE set_code = ? AND collector_number = ?
+            """,
+            (set_code, collector_number),
+        ).fetchone()
+        if card_row is None:
+            raise ManagerError("Card not found", status_code=404)
+        if not has_finish_flag(card_row, new_finish):
+            raise ManagerError(f"Card is not available as {finish_label(new_finish)}")
+        conn.execute(
+            "UPDATE card_instances SET finish = ? WHERE instance_id = ?",
+            (new_finish, instance_id),
+        )
+
+    if purchase_value is not None:
+        if purchase_value < 0:
+            raise ManagerError("Purchase value must be zero or greater")
+        conn.execute(
+            "UPDATE card_instances SET purchase_value = ? WHERE instance_id = ?",
+            (float(purchase_value), instance_id),
+        )
+
+    _sync_finish_purchase_aggregate(conn, set_code, collector_number, old_finish)
+    if new_finish != old_finish:
+        _sync_finish_purchase_aggregate(conn, set_code, collector_number, new_finish)
+
+    bump_cache_epoch()
+    strategy = settings_service.get_settings(conn)["priceStrategy"]
+    return load_owned_instances_for_print(
+        conn,
+        set_code,
+        collector_number,
+        strategy=strategy,
+    )
+
+
+def delete_copy_instance(
+    conn: sqlite3.Connection,
+    *,
+    instance_id: int,
+) -> dict:
+    ensure_app_tables(conn)
+    row = conn.execute(
+        """
+        SELECT set_code, collector_number, finish
+        FROM card_instances
+        WHERE instance_id = ?
+        """,
+        (instance_id,),
+    ).fetchone()
+    if row is None:
+        raise ManagerError("Copy not found", status_code=404)
+
+    set_code = row["set_code"]
+    collector_number = row["collector_number"]
+    finish = int(row["finish"])
+
+    conn.execute("DELETE FROM card_instances WHERE instance_id = ?", (instance_id,))
+    _sync_finish_purchase_aggregate(conn, set_code, collector_number, finish)
+    bump_cache_epoch()
+    strategy = settings_service.get_settings(conn)["priceStrategy"]
+    return load_owned_instances_for_print(
+        conn,
+        set_code,
+        collector_number,
+        strategy=strategy,
+    )
 
 
 def _ensure_materialized_copies(
@@ -606,6 +954,12 @@ def adjust_copy_count(
             )
 
     bump_cache_epoch()
+    _sync_finish_purchase_aggregate(
+        conn,
+        normalized_set,
+        normalized_number,
+        normalized_finish,
+    )
     return get_copy_state(conn, normalized_set, normalized_number, normalized_finish)
 
 
@@ -794,7 +1148,7 @@ def bulk_assign_storage(
 
 
 def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
-    normalized = set_code.strip().upper()
+    normalized = normalize_set_code(set_code)
     if not normalized:
         raise ManagerError("Set code is required")
     if normalized in EXCLUDED_SET_CODES:
@@ -881,7 +1235,7 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
 
 
 def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
-    tracked = {path.stem.upper() for path in list_set_csv_files()}
+    tracked = {normalize_set_code(path.stem) for path in list_set_csv_files()}
     tracked |= {code.upper() for code in list_deck_sync_set_codes()}
 
     rows = conn.execute("SELECT DISTINCT set_code FROM cards").fetchall()
@@ -960,6 +1314,6 @@ def _serialize_manager_card(card: dict) -> dict:
 
 
 def _validate_set_code(set_code: str) -> None:
-    normalized = set_code.strip().upper()
+    normalized = normalize_set_code(set_code)
     if not normalized or normalized in EXCLUDED_SET_CODES:
         raise ManagerError("Invalid set code")

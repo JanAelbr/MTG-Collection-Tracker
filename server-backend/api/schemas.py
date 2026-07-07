@@ -130,6 +130,12 @@ class CopyStorageUpdate(BaseModel):
     locationSlug: str = Field(min_length=1, max_length=120)
 
 
+class CopyInstanceUpdate(BaseModel):
+    purchaseValue: float | None = Field(default=None, ge=0)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    locationSlug: str | None = Field(default=None, max_length=120)
+
+
 class CopyAllocationItem(BaseModel):
     locationSlug: str = Field(min_length=1, max_length=120)
     count: int = Field(ge=0, le=99)

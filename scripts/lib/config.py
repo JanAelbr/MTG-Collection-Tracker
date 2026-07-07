@@ -46,23 +46,48 @@ SYNC_COLLECTION_SCRIPT = SCRIPTS_DIR / "sync_collection.py"
 EXCLUDED_PURCHASE_CSV_NAMES = frozenset({"purchases.csv", "example.csv"})
 EXCLUDED_SET_CODES = frozenset({"EXAMPLE"})
 
+# Legacy or mistaken set codes mapped to Scryfall's canonical code.
+SET_CODE_ALIASES: dict[str, str] = {
+    "PLIST": "PLST",
+}
+
+
+def normalize_set_code(set_code: str | None) -> str:
+    normalized = str(set_code or "").strip().upper()
+    if not normalized:
+        return ""
+    return SET_CODE_ALIASES.get(normalized, normalized)
+
+
+def canonical_set_code_lower(set_code: str | None) -> str:
+    return normalize_set_code(set_code).lower()
+
 
 # Return the art-style rules file for one set code.
 def art_style_rules_path(set_code: str) -> Path:
-    return ART_STYLES_DIR / f"{set_code.lower()}.json"
+    return ART_STYLES_DIR / f"{canonical_set_code_lower(set_code)}.json"
 
 
 # Return the purchase CSV path for one set code.
 def purchase_csv_path(set_code: str) -> Path:
-    return DATA_DIR / f"{set_code.lower()}.csv"
+    return DATA_DIR / f"{canonical_set_code_lower(set_code)}.csv"
 
 
 # Return per-set purchase CSV files from data/.
 def list_set_csv_files() -> list[Path]:
-    return sorted(
+    paths = sorted(
         p for p in DATA_DIR.glob("*.csv")
         if p.is_file() and p.name.lower() not in EXCLUDED_PURCHASE_CSV_NAMES
     )
+    seen_canonical: set[str] = set()
+    unique_paths: list[Path] = []
+    for path in paths:
+        canonical = normalize_set_code(path.stem)
+        if canonical in seen_canonical:
+            continue
+        seen_canonical.add(canonical)
+        unique_paths.append(path)
+    return unique_paths
 
 
 # Return deck list CSV files registered in data/decks/decks.csv.

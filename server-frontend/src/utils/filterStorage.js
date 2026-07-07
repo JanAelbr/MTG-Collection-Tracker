@@ -57,3 +57,36 @@ export function storeAllCardsSort(sort, dir) {
     }),
   );
 }
+
+export const FILTER_SIDEBAR_PREFS_KEY = "filterSidebarPrefs";
+
+const FILTER_SIDEBAR_WIDTHS = {
+  narrow: 220,
+  wide: 300,
+};
+
+export function getFilterSidebarPrefs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FILTER_SIDEBAR_PREFS_KEY) || "{}");
+    return {
+      collapsed: Boolean(parsed.collapsed),
+      wide: Boolean(parsed.wide),
+    };
+  } catch {
+    return { collapsed: false, wide: false };
+  }
+}
+
+export function storeFilterSidebarPrefs(prefs) {
+  localStorage.setItem(
+    FILTER_SIDEBAR_PREFS_KEY,
+    JSON.stringify({
+      collapsed: Boolean(prefs.collapsed),
+      wide: Boolean(prefs.wide),
+    }),
+  );
+}
+
+export function filterSidebarWidthPx(wide) {
+  return wide ? FILTER_SIDEBAR_WIDTHS.wide : FILTER_SIDEBAR_WIDTHS.narrow;
+}
