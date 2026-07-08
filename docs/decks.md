@@ -53,24 +53,19 @@ Deck `purchase_price` is stored on the deck row for aggregate invested/ROI figur
 
 **New install**
 
-1. `python scripts/reset_and_build.py` — empty database
-2. Start the app (`scripts/dev_app.ps1` or `scripts/run_app.ps1`)
-3. Add sets in **Set Manager**, create decks in **Decks**, mark ownership
+1. Start the app (`scripts/dev_app.ps1` or `scripts/run_app.ps1`) — the database is created on first API start
+2. Add sets in **Set Manager**, create decks in **Decks**, mark ownership
 
 **Moving to another machine**
 
 1. **Settings → Export collection** (backup ZIP)
 2. Install the app on the new machine
 3. **Settings → Restore from backup**
-4. Add any missing sets in Set Manager, then **Sync prices** or run `python scripts/update_prices.py`
+4. Add any missing sets in Set Manager, then **Sync prices**
 
 **Refresh prices**
 
-```bash
-python scripts/update_prices.py
-```
-
-Or use **Settings → Sync prices** in the app (Cardmarket only; faster).
+Use **Settings → Sync prices** in the app (Cardmarket only).
 
 ---
 

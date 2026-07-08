@@ -13,6 +13,25 @@ export const DECK_COLOR_LABELS = {
 
 const SECTION_ORDER = { commander: 0, main: 1, sideboard: 2 };
 
+export function deckTypeIconType(source) {
+  if (!source) {
+    return "";
+  }
+  if (typeof source === "object") {
+    if (source.kind === "type" && source.type) {
+      return String(source.type).toLowerCase();
+    }
+    if (source.section === "commander") {
+      return "commander";
+    }
+    if (source.section === "sideboard") {
+      return "sideboard";
+    }
+    return "";
+  }
+  return String(source).toLowerCase();
+}
+
 export function deckTypeLabel(type) {
   if (!type) {
     return "Unknown";
@@ -20,6 +39,34 @@ export function deckTypeLabel(type) {
   const normalized = String(type).toLowerCase();
   return COLLECTION_TYPE_LABELS[normalized]
     || normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+export function deckTypeHeadingLabel(type) {
+  return deckTypeLabel(type).toUpperCase();
+}
+
+export function countDeckCards(cards) {
+  return (cards || []).reduce((sum, card) => sum + (Number(card.qty) || 0), 0);
+}
+
+export function deckTypeCounts(cards) {
+  const counts = new Map();
+  for (const card of cards || []) {
+    const type = cardTypeGroup(card);
+    if (!type) {
+      continue;
+    }
+    counts.set(type, (counts.get(type) || 0) + (Number(card.qty) || 0));
+  }
+  return counts;
+}
+
+export function formatDeckGroupHeading(group) {
+  const count = group.count ?? countDeckCards(group.cards);
+  if (group.kind === "type") {
+    return `${deckTypeHeadingLabel(group.type)} (${count})`;
+  }
+  return `${group.label} (${count})`;
 }
 
 export function cardTypeGroup(card) {
@@ -175,6 +222,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
         kind: "section",
         section,
         label: "Commander",
+        count: countDeckCards(sectionCards),
         cards: sortDeckCards(sectionCards, sortBy),
       });
       continue;
@@ -186,6 +234,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
       kind: "section",
       section,
       label: sectionLabel,
+      count: countDeckCards(sectionCards),
       cards: [],
     });
 
@@ -200,6 +249,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
         section,
         type,
         label: deckTypeLabel(type),
+        count: countDeckCards(typeCards),
         cards: sortDeckCards(typeCards, sortBy),
       });
     }

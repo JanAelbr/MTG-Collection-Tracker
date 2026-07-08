@@ -2,40 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Update Prices",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/update_prices.py"],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Update Prices (Daily)",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/update_prices.py"],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "Run Current PowerShell Script",
       "type": "shell",
       "command": "powershell.exe",
@@ -48,48 +14,6 @@
       ],
       "options": {
         "cwd": "${fileDirname}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Run Daily Update",
-      "type": "shell",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/scripts/run_daily_update.ps1"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Register Daily Task",
-      "type": "shell",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/scripts/register_daily_task.ps1"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
       },
       "presentation": {
         "reveal": "always",
@@ -148,6 +72,10 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
@@ -166,21 +94,6 @@
         "-File",
         "${workspaceFolder}/scripts/build_frontend.ps1"
       ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "focus": true
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Reset & Build (recreates database)",
-      "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": ["scripts/reset_and_build.py"],
       "options": {
         "cwd": "${workspaceFolder}"
       },

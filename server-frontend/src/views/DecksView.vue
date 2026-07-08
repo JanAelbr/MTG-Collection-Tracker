@@ -5,11 +5,14 @@ import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
 import DeckHero from "../components/DeckHero.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
+import DeckCardStacks from "../components/DeckCardStacks.vue";
+import DeckTopCards from "../components/DeckTopCards.vue";
 import DeckAddCardModal from "../components/DeckAddCardModal.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
+import DeckTypeIcon from "../components/DeckTypeIcon.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
-import { api } from "../api";
+import { api, clearClientCache } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import {
@@ -17,6 +20,7 @@ import {
   isDeckCardFullyOwned,
   mergeOwnershipPatchesIntoPages,
   ownershipRevision,
+  setOwnershipPatch,
 } from "../composables/cardContextMenu";
 import {
   DECK_CARDS_VIEW_KEY,
@@ -29,7 +33,10 @@ import {
   buildEmptyDeckCardGroups,
   cardTypeGroup,
   collectDeckCardTypes,
+  deckTypeCounts,
+  deckTypeIconType,
   deckTypeLabel,
+  formatDeckGroupHeading,
   DECK_COLOR_ORDER,
   filterDeckCards,
   sortDeckCards,
@@ -37,10 +44,7 @@ import {
 } from "../utils/deckCards";
 import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import {
-  formatDeckOwned,
   formatEuro,
-  formatProfit,
-  formatRoi,
 } from "../utils/format";
 
 const route = useRoute();
@@ -56,6 +60,7 @@ const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
 const emptyDeckAddOpen = ref(false);
+const ownedToggleBusy = ref("");
 
 const { loading: loadingBrowse, run: runBrowseLoad } = useAsyncLoad();
 
@@ -81,15 +86,29 @@ const mainDeckCards = computed(() => {
 
 const isDeckEmpty = computed(() => mainDeckCards.value.length === 0);
 
-const isFilterEmpty = computed(
-  () => !isDeckEmpty.value && filteredDeckCards.value.length === 0,
-);
-
 const filteredDeckCards = computed(() =>
   filterDeckCards(mainDeckCards.value, {
     typeFilter: deckTypeFilter.value,
     colorFilters: deckColorFilters.value,
   }),
+);
+
+const filteredAllDeckCards = computed(() =>
+  filterDeckCards(browseStats.value?.cards || [], {
+    typeFilter: deckTypeFilter.value,
+    colorFilters: deckColorFilters.value,
+  }),
+);
+
+const activeFilteredCards = computed(() => {
+  if (deckCardsView.value === "stacks" || deckCardsView.value === "top") {
+    return filteredAllDeckCards.value;
+  }
+  return filteredDeckCards.value;
+});
+
+const isFilterEmpty = computed(
+  () => !isDeckEmpty.value && activeFilteredCards.value.length === 0,
 );
 
 const groupedBrowseCards = computed(() => {
@@ -99,7 +118,21 @@ const groupedBrowseCards = computed(() => {
   return buildDeckCardGroups(filteredDeckCards.value, deckCardSort.value);
 });
 
+const groupedStackCards = computed(() => {
+  if (!(browseStats.value?.cards || []).length) {
+    return buildEmptyDeckCardGroups();
+  }
+  return buildDeckCardGroups(filteredAllDeckCards.value, deckCardSort.value);
+});
+
 const deckTypeFilterOptions = computed(() => collectDeckCardTypes(mainDeckCards.value));
+
+const deckTypeCountByType = computed(() => deckTypeCounts(mainDeckCards.value));
+
+function deckTypeFilterLabel(type) {
+  const count = deckTypeCountByType.value.get(type) || 0;
+  return `${deckTypeLabel(type)} (${count})`;
+}
 
 function openEmptyDeckAdd() {
   emptyDeckAddOpen.value = true;
@@ -107,13 +140,6 @@ function openEmptyDeckAdd() {
 
 function closeEmptyDeckAdd() {
   emptyDeckAddOpen.value = false;
-}
-
-function profitClass(value) {
-  if (value == null || Number.isNaN(value)) {
-    return "";
-  }
-  return value >= 0 ? "reports-gain" : "reports-loss";
 }
 
 function toggleColorFilter(color) {
@@ -233,6 +259,49 @@ function onDeckCardRemoved(result) {
 function onDeckCardChanged(result) {
   patchDeckFromMutation(result);
   void refreshDeckPage(result?.deckId);
+}
+
+function deckOwnedToggleKey(card) {
+  return `${card.section}-${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`;
+}
+
+function deckCardCanMarkOwned(card) {
+  return Boolean(card?.setCode && card?.collectorNumber != null && String(card.collectorNumber).trim());
+}
+
+async function toggleDeckOwned(card, owned) {
+  if (!deckId.value || !deckCardCanMarkOwned(card)) {
+    return;
+  }
+  const busyKey = deckOwnedToggleKey(card);
+  ownedToggleBusy.value = busyKey;
+  try {
+    const result = await api.setDeckCardOwned(deckId.value, {
+      setCode: card.setCode,
+      collectorNumber: card.collectorNumber,
+      finish: cardFinish(card),
+      section: card.section || "main",
+      owned,
+    });
+    setOwnershipPatch(
+      card.setCode,
+      card.collectorNumber,
+      cardFinish(card),
+      {
+        owned: (result.ownedQty ?? 0) > 0,
+        ownedCount: result.ownedQty ?? 0,
+      },
+    );
+    patchDeckFromMutation(result);
+    clearClientCache();
+    void refreshDeckPage(result?.deckId);
+  } catch (error) {
+    window.alert(error?.message || "Could not update owned status.");
+  } finally {
+    if (ownedToggleBusy.value === busyKey) {
+      ownedToggleBusy.value = "";
+    }
+  }
 }
 
 async function onDeckRenamed(updatedDeck) {
@@ -482,39 +551,6 @@ onMounted(async () => {
       >
         <DeckHero :deck="activeBrowseDeck" :stats="browseStats" :deck-id="deckId" />
 
-        <div class="deck-secondary-stats">
-          <div class="deck-secondary-stat">
-            <span class="deck-secondary-stat-label">Purchase price</span>
-            <strong>{{ formatEuro(browseStats.purchasePrice) }}</strong>
-          </div>
-          <div class="deck-secondary-stat">
-            <span class="deck-secondary-stat-label">Profit / loss</span>
-            <strong :class="profitClass(browseStats.profit)">
-              {{ formatProfit(browseStats.profit) }}
-            </strong>
-          </div>
-          <div class="deck-secondary-stat">
-            <span class="deck-secondary-stat-label">ROI</span>
-            <strong>
-              {{ formatRoi(browseStats.profit, browseStats.purchasePrice || browseStats.invested) }}
-            </strong>
-          </div>
-          <div class="deck-secondary-stat">
-            <span class="deck-secondary-stat-label">Priced</span>
-            <strong>
-              {{
-                browseStats.trackedCoverage != null
-                  ? `${browseStats.trackedCoverage}%`
-                  : "Unknown"
-              }}
-            </strong>
-          </div>
-          <div class="deck-secondary-stat">
-            <span class="deck-secondary-stat-label">Owned</span>
-            <strong>{{ formatDeckOwned(browseStats.ownedQty, browseStats.deckSize) || "—" }}</strong>
-          </div>
-        </div>
-
         <section
           v-if="hasUnknownCards"
           class="table-panel deck-unknown-panel"
@@ -568,10 +604,26 @@ onMounted(async () => {
                 <button
                   type="button"
                   class="filter-button"
+                  :class="{ active: deckCardsView === 'top' }"
+                  @click="changeDeckCardsView('top')"
+                >
+                  Top
+                </button>
+                <button
+                  type="button"
+                  class="filter-button"
                   :class="{ active: deckCardsView === 'images' }"
                   @click="changeDeckCardsView('images')"
                 >
                   Images
+                </button>
+                <button
+                  type="button"
+                  class="filter-button"
+                  :class="{ active: deckCardsView === 'stacks' }"
+                  @click="changeDeckCardsView('stacks')"
+                >
+                  Stacks
                 </button>
                 <button
                   type="button"
@@ -595,7 +647,7 @@ onMounted(async () => {
                     :key="type"
                     :value="type"
                   >
-                    {{ deckTypeLabel(type) }}
+                    {{ deckTypeFilterLabel(type) }}
                   </option>
                 </select>
               </label>
@@ -625,7 +677,7 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <div class="deck-cards-filter-group-compact">
+              <div v-if="deckCardsView !== 'top'" class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Sort</span>
                 <div class="button-group deck-cards-filter-group">
                   <button
@@ -667,9 +719,14 @@ onMounted(async () => {
 
           <div
             class="deck-cards-layout"
-            :class="{ 'has-commander': commanderCards.length }"
+            :class="{
+              'has-commander': commanderCards.length && !['stacks', 'top'].includes(deckCardsView),
+              'is-stacks-view': deckCardsView === 'stacks',
+              'is-top-view': deckCardsView === 'top',
+            }"
           >
               <DeckCommanderPane
+                v-if="!['stacks', 'top'].includes(deckCardsView)"
                 :cards="commanderCards"
                 :default-deck-id="deckId"
                 :show-deck-remove="true"
@@ -694,7 +751,24 @@ onMounted(async () => {
                   @deck-changed="onDeckCardChanged"
                 />
 
-                <table v-else class="reports-table deck-cards-table">
+                <DeckTopCards
+                  v-else-if="deckCardsView === 'top'"
+                  :cards="filteredAllDeckCards"
+                  :deck-id="deckId"
+                />
+
+                <DeckCardStacks
+                  v-else-if="deckCardsView === 'stacks'"
+                  :groups="groupedStackCards"
+                  :default-deck-id="deckId"
+                  :show-deck-remove="true"
+                  :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+                  @deck-added="onDeckCardAdded"
+                  @deck-removed="onDeckCardRemoved"
+                  @deck-changed="onDeckCardChanged"
+                />
+
+                <table v-else-if="deckCardsView === 'table'" class="reports-table deck-cards-table">
                   <thead>
                     <tr>
                       <th>Color</th>
@@ -703,12 +777,11 @@ onMounted(async () => {
                       <th>Type</th>
                       <th>Value</th>
                       <th>Owned</th>
-                      <th>Gain / loss</th>
                     </tr>
                   </thead>
                   <tbody v-if="isDeckEmpty">
                     <tr class="deck-cards-empty-row">
-                      <td colspan="7">
+                      <td colspan="6">
                         <p class="storage-empty deck-cards-empty-message">This deck is empty.</p>
                         <button
                           type="button"
@@ -726,11 +799,17 @@ onMounted(async () => {
                         v-if="group.kind === 'section' && !group.cards?.length"
                         class="deck-cards-group-row deck-cards-section-row"
                       >
-                        <td colspan="7">{{ group.label }}</td>
+                        <td colspan="6" class="deck-type-heading">
+                          <DeckTypeIcon :type="deckTypeIconType(group)" />
+                          <span>{{ formatDeckGroupHeading(group) }}</span>
+                        </td>
                       </tr>
                       <template v-else-if="group.cards?.length">
                         <tr class="deck-cards-group-row">
-                          <td colspan="7">{{ group.label }}</td>
+                          <td colspan="6" class="deck-type-heading">
+                            <DeckTypeIcon :type="deckTypeIconType(group)" />
+                            <span>{{ formatDeckGroupHeading(group) }}</span>
+                          </td>
                         </tr>
                         <tr
                           v-for="card in group.cards"
@@ -739,7 +818,7 @@ onMounted(async () => {
                           :class="deckCardOwnershipClass(card)"
                         >
                           <td><ManaSymbols :colors="card.colors" :size="18" /></td>
-                          <td>{{ card.qty }}</td>
+                          <td>{{ card.qty > 1 ? card.qty : "" }}</td>
                           <td>
                             <RouterLink
                               v-if="cardRoute(card)"
@@ -750,10 +829,29 @@ onMounted(async () => {
                             </RouterLink>
                             <span v-else>{{ card.cardName }}</span>
                           </td>
-                          <td>{{ deckTypeLabel(cardTypeGroup(card)) }}</td>
+                          <td class="deck-type-label">
+                            <DeckTypeIcon :type="cardTypeGroup(card)" />
+                            <span>{{ deckTypeLabel(cardTypeGroup(card)) }}</span>
+                          </td>
                           <td>{{ formatEuro(card.currentValue) }}</td>
-                          <td>{{ deckCardOwnedLabel(card) }}</td>
-                          <td>{{ formatProfit(card.profitLoss) }}</td>
+                          <td class="manager-checkbox-cell deck-owned-cell">
+                            <template v-if="deckCardCanMarkOwned(card)">
+                              <input
+                                type="checkbox"
+                                :checked="isDeckCardFullyOwned(card)"
+                                :disabled="ownedToggleBusy === deckOwnedToggleKey(card)"
+                                :aria-label="`Mark ${card.cardName} as owned`"
+                                @change="toggleDeckOwned(card, $event.target.checked)"
+                              />
+                              <span
+                                v-if="!isDeckCardFullyOwned(card) && effectiveDeckOwnedQty(card) > 0"
+                                class="deck-owned-partial"
+                              >
+                                {{ deckCardOwnedLabel(card) }}
+                              </span>
+                            </template>
+                            <span v-else>{{ deckCardOwnedLabel(card) }}</span>
+                          </td>
                         </tr>
                       </template>
                     </template>

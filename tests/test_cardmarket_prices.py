@@ -317,9 +317,6 @@ class SyncPricesFromGuideTests(unittest.TestCase):
             "util.cardmarket_prices.DB_PATH",
             self.db_path,
         ), unittest.mock.patch(
-            "util.cardmarket_prices.LOGS_DIR",
-            Path(self.temp_dir.name),
-        ), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -437,9 +434,6 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
             "util.cardmarket_prices.DB_PATH",
             self.db_path,
         ), unittest.mock.patch(
-            "util.cardmarket_prices.LOGS_DIR",
-            Path(self.temp_dir.name),
-        ), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -497,9 +491,6 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         with unittest.mock.patch(
             "util.cardmarket_prices.DB_PATH",
             self.db_path,
-        ), unittest.mock.patch(
-            "util.cardmarket_prices.LOGS_DIR",
-            Path(self.temp_dir.name),
         ), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
@@ -604,8 +595,6 @@ class SyncPairedCardmarketUrlTests(unittest.TestCase):
         }
         self.conn.close()
         with unittest.mock.patch("util.cardmarket_prices.DB_PATH", self.db_path), unittest.mock.patch(
-            "util.cardmarket_prices.LOGS_DIR", Path(self.temp_dir.name)
-        ), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context", return_value=self.context
         ), unittest.mock.patch(
             "util.cardmarket_prices.clear_unowned_prices_for_non_qualifying_sets", return_value=0

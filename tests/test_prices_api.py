@@ -52,7 +52,7 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.conn.close()
         self.temp_dir.cleanup()
 
-    @patch("update_prices.update_cardmarket_prices_only")
+    @patch("util.price_sync.update_cardmarket_prices_only")
     def test_start_and_complete_price_sync(self, mock_update_prices):
         mock_update_prices.return_value = None
         started = price_sync_service.start_price_sync()
@@ -69,7 +69,7 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.assertEqual(status["status"], "completed")
         mock_update_prices.assert_called_once()
 
-    @patch("update_prices.update_cardmarket_prices_only", side_effect=RuntimeError("boom"))
+    @patch("util.price_sync.update_cardmarket_prices_only", side_effect=RuntimeError("boom"))
     def test_failed_price_sync_records_error(self, _mock_update_prices):
         price_sync_service.start_price_sync()
 
@@ -84,7 +84,7 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.assertEqual(status["status"], "failed")
         self.assertIn("boom", status["error"])
 
-    @patch("update_prices.update_cardmarket_prices_only")
+    @patch("util.price_sync.update_cardmarket_prices_only")
     def test_second_start_while_running_raises(self, mock_update_prices):
         started = threading.Event()
 

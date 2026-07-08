@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+COLLECTION = ROOT / "server-backend" / "collection"
+if str(COLLECTION) not in sys.path:
+    sys.path.insert(0, str(COLLECTION))
 
-from update_prices import upsert_card  # noqa: E402
+from util.price_sync import upsert_card  # noqa: E402
 from util.card_prices import (  # noqa: E402
     CARD_PRICES_TABLE_SQL,
     load_existing_card_prices,

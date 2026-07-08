@@ -12,6 +12,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from util.scryfall_client import (  # noqa: E402
+    CACHE_DATE_MARKER,
     cache_path_for_url,
     read_cached_response,
     scryfall_get,
@@ -38,7 +39,7 @@ class ScryfallClientTests(unittest.TestCase):
         first = cache_path_for_url(self.url, cache_date=self.cache_date, root=self.cache_root)
         second = cache_path_for_url(self.url, cache_date=self.cache_date, root=self.cache_root)
         self.assertEqual(first, second)
-        self.assertIn("2026-06-11", str(first))
+        self.assertEqual(first.parent, self.cache_root)
 
     def test_write_and_read_cached_response(self):
         response = MagicMock()
@@ -91,7 +92,11 @@ class ScryfallClientTests(unittest.TestCase):
         http_get_mock.assert_called_once()
         self.assertEqual(result.status_code, 200)
         self.assertTrue(self.cache_path.is_file())
-        cached = read_cached_response(self.cache_path)
+        cached = read_cached_response(
+            self.cache_path,
+            cache_date=self.cache_date,
+            root=self.cache_root,
+        )
         self.assertEqual(cached.json()["code"], "plst")
 
     @patch("util.scryfall_client.http_get")
@@ -159,6 +164,34 @@ class ScryfallClientTests(unittest.TestCase):
         http_get_mock.assert_called_once()
         self.assertEqual(first.status_code, 404)
         self.assertEqual(second.status_code, 404)
+
+    def test_stale_cache_is_ignored_on_new_day(self):
+        stale_date = date(2026, 6, 10)
+        stale_path = cache_path_for_url(
+            self.url,
+            cache_date=stale_date,
+            root=self.cache_root,
+        )
+        response = MagicMock()
+        response.status_code = 200
+        response.text = '{"code":"old"}'
+        write_cached_response(
+            stale_path,
+            self.url,
+            response,
+            cache_date=stale_date,
+            root=self.cache_root,
+        )
+        self.assertTrue(stale_path.is_file())
+
+        fresh_path = cache_path_for_url(
+            self.url,
+            cache_date=self.cache_date,
+            root=self.cache_root,
+        )
+        self.assertFalse(stale_path.is_file())
+        self.assertEqual(fresh_path.parent / CACHE_DATE_MARKER, self.cache_root / CACHE_DATE_MARKER)
+        self.assertIsNone(read_cached_response(fresh_path, cache_date=self.cache_date, root=self.cache_root))
 
 
 if __name__ == "__main__":

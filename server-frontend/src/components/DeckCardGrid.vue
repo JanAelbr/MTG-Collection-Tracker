@@ -2,7 +2,8 @@
 import { ref } from "vue";
 import DeckAddCardModal from "./DeckAddCardModal.vue";
 import DeckCardTile from "./DeckCardTile.vue";
-import { formatSection } from "../utils/format";
+import DeckTypeIcon from "./DeckTypeIcon.vue";
+import { deckTypeIconType, formatDeckGroupHeading } from "../utils/deckCards";
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
@@ -22,7 +23,10 @@ const addModal = ref({
 
 function sectionHeading(group) {
   if (group.kind === "section" && group.cards?.length) {
-    return formatSection(group.section);
+    return formatDeckGroupHeading(group);
+  }
+  if (group.kind === "type" || group.count != null) {
+    return formatDeckGroupHeading(group);
   }
   return group.label;
 }
@@ -52,7 +56,10 @@ function onModalAdded(result) {
         v-if="group.kind === 'section' && !group.cards?.length"
         class="deck-card-grid-section deck-card-grid-section-title"
       >
-        <h3 class="deck-card-grid-heading deck-card-grid-heading-section">{{ group.label }}</h3>
+        <h3 class="deck-card-grid-heading deck-card-grid-heading-section deck-type-heading">
+          <DeckTypeIcon :type="deckTypeIconType(group)" />
+          <span>{{ formatDeckGroupHeading(group) }}</span>
+        </h3>
       </section>
 
       <section
@@ -60,13 +67,14 @@ function onModalAdded(result) {
         class="deck-card-grid-section"
       >
         <h3
-          class="deck-card-grid-heading"
+          class="deck-card-grid-heading deck-type-heading"
           :class="{
             'deck-card-grid-heading-section': group.kind === 'section',
             'deck-card-grid-heading-type': group.kind === 'type',
           }"
         >
-          {{ sectionHeading(group) }}
+          <DeckTypeIcon :type="deckTypeIconType(group)" />
+          <span>{{ sectionHeading(group) }}</span>
         </h3>
 
         <div class="deck-card-grid-items">

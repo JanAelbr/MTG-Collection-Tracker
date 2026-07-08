@@ -260,6 +260,109 @@ class DecksApiServiceTests(unittest.TestCase):
         after_instances = self.conn.execute("SELECT COUNT(*) FROM card_instances").fetchone()[0]
         self.assertEqual(before_instances, after_instances)
 
+    def test_set_deck_card_owned_adds_copies_to_deck_location(self):
+        deck_row = self.conn.execute("SELECT deck_id, slug FROM decks LIMIT 1").fetchone()
+        deck_id = str(deck_row[0])
+        deck_slug = deck_row[1]
+
+        self.conn.execute(
+            """
+            UPDATE deck_cards
+            SET qty = 2, owned_qty = 0, section = 'main'
+            WHERE deck_id = ? AND set_code = 'LTC' AND collector_number = '284'
+            """,
+            (deck_row[0],),
+        )
+        self.conn.commit()
+
+        result = decks_service.set_deck_card_owned(
+            self.conn,
+            deck_id=deck_id,
+            set_code="LTC",
+            collector_number="284",
+            finish=0,
+            section="main",
+            owned=True,
+        )
+        self.assertEqual(result["qty"], 2)
+        self.assertEqual(result["ownedQty"], 2)
+
+        owned_qty = self.conn.execute(
+            """
+            SELECT owned_qty FROM deck_cards
+            WHERE deck_id = ? AND set_code = 'LTC' AND collector_number = '284' AND section = 'main'
+            """,
+            (deck_row[0],),
+        ).fetchone()[0]
+        self.assertEqual(owned_qty, 2)
+
+        deck_instances = self.conn.execute(
+            """
+            SELECT COUNT(*) FROM card_instances
+            WHERE set_code = 'LTC' AND collector_number = '284' AND finish = 0
+              AND location_slug = ?
+            """,
+            (f"deck:{deck_slug.lower()}",),
+        ).fetchone()[0]
+        self.assertEqual(deck_instances, 2)
+
+        purchase = self.conn.execute(
+            """
+            SELECT COUNT(*) FROM purchases
+            WHERE set_code = 'LTC' AND collector_number = '284' AND finish = 0
+            """
+        ).fetchone()[0]
+        self.assertEqual(purchase, 1)
+
+    def test_set_deck_card_unowned_moves_copies_to_default_storage(self):
+        deck_row = self.conn.execute("SELECT deck_id, slug FROM decks LIMIT 1").fetchone()
+        deck_id = str(deck_row[0])
+        deck_slug = deck_row[1]
+
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES ('LTC', '284', 1.0, 0)
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE deck_cards
+            SET qty = 1, owned_qty = 1, section = 'main'
+            WHERE deck_id = ? AND set_code = 'LTC' AND collector_number = '284'
+            """,
+            (deck_row[0],),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTC', '284', 0, ?, 1.0)
+            """,
+            (f"deck:{deck_slug.lower()}",),
+        )
+        self.conn.commit()
+
+        result = decks_service.set_deck_card_owned(
+            self.conn,
+            deck_id=deck_id,
+            set_code="LTC",
+            collector_number="284",
+            finish=0,
+            section="main",
+            owned=False,
+        )
+        self.assertEqual(result["ownedQty"], 0)
+        self.assertEqual(result["movedToStorage"], 1)
+
+        location = self.conn.execute(
+            """
+            SELECT location_slug FROM card_instances
+            WHERE set_code = 'LTC' AND collector_number = '284' AND finish = 0
+            """
+        ).fetchone()[0]
+        self.assertEqual(location, "storage:general")
+
     def test_adjust_deck_card_qty_increments_and_decrements(self):
         deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()
         deck_id = str(deck_row[0])

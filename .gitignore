@@ -27,19 +27,9 @@ collection.db
 collection.db-journal
 data/*.db
 reports/
-logs/*
-!logs/.gitkeep
-
-# Downloaded / cached market data
 data/cardmarket_price_guide.json
 data/cardmarket_price_guide.pkl
-data/cardmarket_products_singles_*.json
 data/scryfall_cache/
-
-# Legacy local CSV files (no longer used by the app; safe to delete)
-data/*.csv
-data/decks/
-!data/decks/.gitkeep
 
 # OS and editors
 .DS_Store

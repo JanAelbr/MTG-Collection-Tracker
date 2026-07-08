@@ -11,7 +11,11 @@ export function getStoredGallerySort() {
 }
 
 export function getStoredDeckCardsView() {
-  return localStorage.getItem(DECK_CARDS_VIEW_KEY) === "table" ? "table" : "images";
+  const stored = localStorage.getItem(DECK_CARDS_VIEW_KEY);
+  if (stored === "table" || stored === "stacks" || stored === "top") {
+    return stored;
+  }
+  return "images";
 }
 
 export function deckCardImageUri(card) {

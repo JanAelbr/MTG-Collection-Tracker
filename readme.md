@@ -31,21 +31,15 @@ lotr/
 │   ├── decks.md                   # deck model and backup workflow
 │   ├── frontend.md                # Vue app, PWA, navigation, filters
 │   └── python-guidelines.md
-├── logs/                          # generated price logs (not in git)
 ├── server-frontend/               # Vue 3 interactive app (Vite)
 ├── server-backend/
 │   ├── api/                       # FastAPI routers + services
 │   ├── collection/                # shared Python (lib, report, util)
 │   └── run_api.py
-├── scripts/                       # thin CLI entrypoints (db, prices, launchers)
-│   ├── reset_and_build.py             # DB reset + price fetch
-│   ├── update_prices.py               # Scryfall catalog gaps + Cardmarket prices
-│   ├── db/create_db.py
+├── scripts/                       # app launchers and frontend build helpers
 │   ├── run_app.ps1                    # build frontend + serve app on :8000
 │   ├── dev_app.ps1                    # dev: API + Vite on :5173
-│   ├── build_frontend.ps1
-│   ├── run_daily_update.ps1
-│   └── register_daily_task.ps1
+│   └── build_frontend.ps1
 └── tests/
 ```
 
@@ -81,7 +75,7 @@ The repo tracks **source code** and art-style JSON, not your local database or g
 |----------------|-------------------|
 | `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
 | `data/art_styles/*.json` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
-| `readme.md`, `requirements.txt` | `logs/`, Cardmarket cache, `data/*.csv` (legacy leftovers) |
+| `readme.md`, `requirements.txt` | Cardmarket cache, Scryfall cache |
 
 After cloning:
 
@@ -89,74 +83,19 @@ After cloning:
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python scripts\reset_and_build.py
 
 # optional: run the interactive app (see Interactive web app below)
 .\scripts\dev_app.ps1 -Install
 .\scripts\dev_app.ps1
 ```
 
-Use **Settings → Backup & restore** to move an existing collection to a new install.
+The database is created automatically on first API start. Use **Settings → Backup & restore** to move an existing collection to a new install.
 
 ---
 
 ## Workflow
 
-### Full reset (empty database + prices)
-
-```bash
-python scripts/reset_and_build.py
-```
-
-Creates a fresh database and runs price sync for any tracked sets/decks (none on first install). Does not open the browser.
-
-### Step by step
-
-**1. Create database**
-
-```bash
-python scripts/db/create_db.py
-```
-
-**2. Start the app and add sets**
-
-Open the web app, use **Set Manager** to register sets (imports Scryfall catalog), mark ownership, and create decks in **Decks**.
-
-**3. Update prices (catalog + EUR values)**
-
-```bash
-python scripts/update_prices.py
-```
-
-Downloads the Cardmarket price guide and updates EUR values. Scryfall is called once per set when that set is first tracked. See [Cardmarket prices](#cardmarket-prices) for flags.
-
-**Typical refresh after ownership changes:**
-
-```bash
-python scripts/update_prices.py
-```
-
-Or use **Settings → Sync prices** in the app (Cardmarket only).
-
-### Daily update
-
-Prices only (updates the database used by the interactive web app):
-
-```bash
-python scripts/update_prices.py
-```
-
-On Windows:
-
-```powershell
-.\scripts\run_daily_update.ps1
-```
-
-Scheduled task (daily at 08:00):
-
-```powershell
-.\scripts\register_daily_task.ps1
-```
+Start the app, register sets in **Set Manager** (imports the Scryfall catalog), mark ownership, and use **Settings → Sync prices** for Cardmarket updates.
 
 ### Interactive web app
 
@@ -214,12 +153,6 @@ The top bar and collection subnav stay fixed while scrolling.
 - **Compare date** — global baseline for price change columns and card detail charts
 
 When prices are older than today, Collection also shows a **Sync prices** banner until you sync or prices catch up.
-
-Use the CLI for a full catalog refresh (new sets, images, metadata backfill):
-
-```bash
-python scripts/update_prices.py --refresh-metadata
-```
 
 #### Set favourites
 
@@ -322,23 +255,7 @@ Unowned prices in other sets are cleared and no longer updated.
 
 The **Settings → Sync prices** button in the web app runs **Cardmarket only** (no Scryfall, set metadata, or history restore). Bulk card updates use temp-table SQL for speed (typically 1–2 seconds for a full collection after the guide is cached).
 
-```bash
-# Normal update: Cardmarket prices + Scryfall for sets not yet in the database
-python scripts/update_prices.py
-
-# Cardmarket only — no Scryfall requests
-python scripts/update_prices.py --no-scryfall
-
-# Re-fetch Scryfall catalog (colors, type line, card type) for all tracked sets
-python scripts/update_prices.py --refresh-metadata
-
-# Re-download today's Cardmarket guide
-python scripts/update_prices.py --force-cardmarket
-```
-
-Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
-
-Logs: `logs/cardmarket_prices_{date}.csv` (prices) and `logs/prices_{set}_{date}.csv` (catalog fetch audit only; not imported as prices).
+Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced from Set Manager. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
 
 ---
 
@@ -456,7 +373,7 @@ Owned finishes. Updated when you change ownership in Set Manager or Storage.
 
 ### `tracked_sets`
 
-Set codes registered in Set Manager (replaces legacy `data/{set}.csv` tracking).
+Set codes registered in Set Manager (`tracked_sets` table in `collection.db`).
 
 ### `decks` / `deck_cards`
 

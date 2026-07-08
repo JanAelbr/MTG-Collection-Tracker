@@ -3,11 +3,9 @@ import sys
 import unittest
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 COLLECTION_DIR = Path(__file__).resolve().parents[1] / "server-backend" / "collection"
-for _path in (str(COLLECTION_DIR), str(SCRIPTS_DIR)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
+if str(COLLECTION_DIR) not in sys.path:
+    sys.path.insert(0, str(COLLECTION_DIR))
 
 from lib.config import normalize_set_code  # noqa: E402
 from util.db_migrate import consolidate_set_code_aliases  # noqa: E402

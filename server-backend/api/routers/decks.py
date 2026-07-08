@@ -10,7 +10,7 @@ from api.deps import get_db
 
 from api.http_cache import serve_cached_json, with_price_strategy
 
-from api.schemas import DeckCardAdd, DeckCardQtyAdjust, DeckCardRemove, DeckCreate, DeckRename
+from api.schemas import DeckCardAdd, DeckCardOwnedUpdate, DeckCardQtyAdjust, DeckCardRemove, DeckCreate, DeckRename
 
 from api.services import decks_service
 
@@ -225,6 +225,26 @@ def adjust_deck_card_qty(
             finish=body.finish,
             section=body.section,
             delta=body.delta,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.patch("/{deck_id}/cards/owned")
+def set_deck_card_owned(
+    deck_id: str,
+    body: DeckCardOwnedUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.set_deck_card_owned(
+            conn,
+            deck_id=deck_id,
+            set_code=body.setCode,
+            collector_number=body.collectorNumber,
+            finish=body.finish,
+            section=body.section,
+            owned=body.owned,
         )
     except DeckError as exc:
         raise _deck_error(exc) from exc

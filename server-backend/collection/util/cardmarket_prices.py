@@ -1,4 +1,3 @@
-import csv
 import json
 import logging
 import math
@@ -10,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from lib.config import DATA_DIR, DB_PATH, HTTP_USER_AGENT, LOGS_DIR
+from lib.config import DATA_DIR, DB_PATH, HTTP_USER_AGENT
 from lib.run_log import get_logger
 from util.card_prices import (
     record_card_price,
@@ -20,7 +19,6 @@ from util.card_finishes import (
     FINISH_ETCHED,
     FINISH_FOIL,
     FINISH_NONFOIL,
-    FINISH_LABELS,
     MARKET_VALUE_COLUMNS,
     guide_uses_foil_keys,
     normalize_finish,
@@ -43,10 +41,6 @@ PRIMARY_NONFOIL_KEYS = ("trend", "avg", "avg7", "avg30", "avg1")
 PRIMARY_FOIL_KEYS = ("trend-foil", "avg-foil", "avg7-foil", "avg30-foil", "avg1-foil")
 NONFOIL_PRICE_KEYS = PRIMARY_NONFOIL_KEYS + ("low",)
 FOIL_PRICE_KEYS = PRIMARY_FOIL_KEYS + ("low-foil",)
-
-CARDMARKET_LOG_HEADERS = [
-    "set_code", "collector_number", "finish", "status", "price",
-]
 
 UNOWNED_PRICE_MIN_CARDS = 25
 UNOWNED_PRICE_SET_FRACTION = 0.25
@@ -654,12 +648,10 @@ def sync_prices_from_guide(
     missing_only: bool = False,
     log=None,
 ) -> dict:
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = LOGS_DIR / f"cardmarket_prices_{today}.csv"
     guide = load_price_guide_index(force_download=force_download, logger=log)
     from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
 
-    with sqlite3.connect(DB_PATH) as conn, log_file.open("w", newline="", encoding="utf-8") as handle:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.row_factory = sqlite3.Row
         ensure_card_columns(conn)
@@ -704,7 +696,6 @@ def sync_prices_from_guide(
                 "cleared_fields": cleared_unowned,
                 "cleared_unowned_fields": cleared_unowned,
                 "qualifying_sets": len(context.qualifying_sets),
-                "log_file": log_file,
             }
 
         mode = "missing values" if missing_only else "owned plus qualifying unowned cards"
@@ -740,7 +731,6 @@ def sync_prices_from_guide(
             FINISH_FOIL: [],
             FINISH_ETCHED: [],
         }
-        log_rows: list[list[str]] = []
 
         for row in rows:
             finish_rows = (
@@ -757,7 +747,6 @@ def sync_prices_from_guide(
             stats["queried"] += 1
 
             for finish_id, current_value in finish_rows:
-                finish_name = FINISH_LABELS[finish_id].lower().replace("-", "")
                 if not _finish_enabled(row, finish_id):
                     continue
                 if not should_sync_finish(
@@ -771,13 +760,6 @@ def sync_prices_from_guide(
                 if not finish_url:
                     if not missing_only and current_value is not None:
                         clears_by_finish[finish_id].append((card_set, collector_number))
-                        log_rows.append([
-                            card_set,
-                            collector_number,
-                            finish_name,
-                            "cleared",
-                            "",
-                        ])
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
@@ -791,13 +773,6 @@ def sync_prices_from_guide(
                 if price is None:
                     if not missing_only and current_value is not None:
                         clears_by_finish[finish_id].append((card_set, collector_number))
-                        log_rows.append([
-                            card_set,
-                            collector_number,
-                            finish_name,
-                            "cleared",
-                            "",
-                        ])
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
@@ -813,20 +788,8 @@ def sync_prices_from_guide(
                     continue
 
                 updates_by_finish[finish_id].append((price, card_set, collector_number))
-                log_rows.append([
-                    card_set,
-                    collector_number,
-                    finish_name,
-                    "updated",
-                    f"{price:.2f}",
-                ])
                 stats["updated"] += 1
                 totals["updated_fields"] += 1
-
-        writer = csv.writer(handle)
-        writer.writerow(CARDMARKET_LOG_HEADERS)
-        if log_rows:
-            writer.writerows(log_rows)
 
         _apply_price_sync_batches(
             conn,
@@ -857,11 +820,8 @@ def sync_prices_from_guide(
     )
     if log:
         log.info(summary)
-        log.info("Cardmarket log written to %s", log_file)
     else:
         print(summary)
-        print(f"Cardmarket log written to {log_file}")
-    totals["log_file"] = log_file
     return totals
 
 

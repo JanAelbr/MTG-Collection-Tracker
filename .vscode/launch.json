@@ -10,13 +10,6 @@
       "createTemporaryIntegratedConsole": false
     },
     {
-      "name": "PowerShell: Run Daily Update",
-      "type": "PowerShell",
-      "request": "launch",
-      "script": "${workspaceFolder}/scripts/run_daily_update.ps1",
-      "cwd": "${workspaceFolder}"
-    },
-    {
       "name": "Python: Current File",
       "type": "debugpy",
       "request": "launch",

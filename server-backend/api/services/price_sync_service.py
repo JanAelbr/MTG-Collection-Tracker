@@ -27,7 +27,7 @@ def _utc_now() -> str:
 
 def _run_price_sync() -> None:
     try:
-        from update_prices import update_cardmarket_prices_only
+        from util.price_sync import update_cardmarket_prices_only
 
         update_cardmarket_prices_only()
         from api.cache import bump_cache_epoch

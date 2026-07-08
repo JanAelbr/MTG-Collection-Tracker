@@ -4,9 +4,8 @@ import os
 from pathlib import Path
 
 COLLECTION_DIR = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = COLLECTION_DIR.parent.parent / "scripts"
-REPO_ROOT = SCRIPTS_DIR.parent
 BACKEND_DIR = COLLECTION_DIR.parent
+REPO_ROOT = BACKEND_DIR.parent
 FRONTEND_DIR = REPO_ROOT / "server-frontend"
 FRONTEND_DIST = FRONTEND_DIR / "dist"
 
@@ -36,10 +35,6 @@ def resolve_db_path(app_data_dir: Path | None = None) -> Path:
 DB_PATH = resolve_db_path()
 DATA_DIR = REPO_ROOT / "data"
 ART_STYLES_DIR = DATA_DIR / "art_styles"
-LOGS_DIR = REPO_ROOT / "logs"
-
-CREATE_DB_SCRIPT = SCRIPTS_DIR / "db" / "create_db.py"
-UPDATE_PRICES_SCRIPT = SCRIPTS_DIR / "update_prices.py"
 
 EXCLUDED_SET_CODES = frozenset({"EXAMPLE"})
 

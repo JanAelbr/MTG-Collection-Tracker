@@ -25,7 +25,6 @@ lotr/
 ├── collection.db          # runtime database (not committed; in APP_DATA_DIR)
 ├── data/                  # art_styles JSON, Cardmarket cache
 ├── docs/
-├── logs/
 ├── server-backend/
 │   ├── api/               # FastAPI routers + services
 │   ├── collection/        # shared Python packages
@@ -34,15 +33,12 @@ lotr/
 │   │   └── util/          # schema, tracked_sets, deck_tables, Cardmarket, …
 │   └── run_api.py
 ├── server-frontend/
-└── scripts/               # thin CLI: reset_and_build, update_prices, launchers
-    ├── db/create_db.py
-    ├── path_setup.py      # adds collection + scripts to sys.path
+└── scripts/               # app launchers and frontend build helpers
     └── …
 ```
 
 ### Rules
 
-- Put **runnable workflows** in top-level `scripts/*.py` (and `scripts/db/create_db.py`).
 - Put **HTTP API routes and services** in `server-backend/api/`.
 - Put **shared configuration** in `server-backend/collection/lib/`.
 - Put **shared data/query modules used by the API** in `server-backend/collection/report/`.
@@ -61,7 +57,7 @@ Path constants live in `server-backend/collection/lib/config.py`:
 from lib.config import DB_PATH, DATA_DIR, REPO_ROOT, ART_STYLES_DIR
 ```
 
-`PYTHONPATH` includes `server-backend/collection`, `scripts`, and `server-backend` (see `scripts/path_setup.py`, `run_api.py`, and PowerShell launchers).
+`PYTHONPATH` includes `server-backend/collection` and `server-backend` (see `run_api.py` and PowerShell launchers).
 
 ### Do
 
@@ -78,10 +74,10 @@ Prefer `pathlib.Path` over string paths. Build absolute paths from `config`, not
 ```python
 # Bad — breaks when cwd is not the repo root
 conn = sqlite3.connect("collection.db")
-csv_path = "data/ltr.csv"
+rules_path = "data/art_styles/ltr.json"
 ```
 
-Scripts in `scripts/db/` and CLI entrypoints use `scripts/path_setup.py` (or equivalent) to add `server-backend/collection` and `scripts` to `sys.path` before importing `lib.config`.
+Use `lib.config` for all repo paths. `run_api.py` adds `server-backend/collection` and `server-backend` to `sys.path` before imports.
 
 ---
 
@@ -140,10 +136,7 @@ Pick one composition style per pipeline:
 
 | Style | When to use |
 |-------|-------------|
-| Direct function calls | Same process, shared state, easier debugging |
-| `subprocess.run(..., check=True)` | Isolated steps, separate failure boundaries |
-
-`reset_and_build.py` currently subprocesses child scripts. New code should either follow that pattern or we migrate the orchestrator to direct imports — not both.
+| Direct function calls | Same process, shared state, easier debugging and tests |
 
 ---
 
@@ -174,13 +167,13 @@ with sqlite3.connect(DB_PATH) as conn:
 ### Rules
 
 - Open/close connections in one place; don't leak connections across modules.
-- Keep SQL in the module that owns the domain (`report_data.py` for reads, `update_prices.py` for price writes).
+- Keep SQL in the module that owns the domain (`report_data.py` for reads, `util/price_sync.py` and `util/cardmarket_prices.py` for price writes).
 - Use parameterized queries (`?` placeholders). Never interpolate user or file data into SQL strings.
 - Prefer one read layer (`report_data.py`) over copy-pasted queries.
 
 ### Schema changes
 
-- Update `scripts/db/create_db.py` for fresh databases.
+- Update `server-backend/collection/util/schema.py` for fresh databases and incremental upgrades.
 - Add incremental migrations in `server-backend/collection/util/` (e.g. `deck_tables.ensure_deck_cards_print_unique`, `tracked_sets`) and call them from `ensure_*` helpers so existing `collection.db` files upgrade in place.
 - Document breaking changes in commit messages.
 
@@ -222,10 +215,8 @@ def format_money(value: float | None) -> str:
 ### Set codes and files
 
 - Set codes in the DB: **uppercase** (`LTR`, `LTC`, `C13`).
-- Purchase filenames in `data/`: **lowercase** (`ltr.csv`).
 - Art-style filenames in `data/art_styles/`: **lowercase** (`ltr.json`).
-- When discovering purchase sets, glob `data/*.csv` and exclude `purchases.csv` and `example.csv`.
-- Tracked sets come from `tracked_sets`; deck print sets from `deck_cards` via `list_deck_sync_set_codes(conn)`. `update_prices.get_set_codes()` unions both.
+- Tracked sets come from `tracked_sets`; deck print sets from `deck_cards` via `list_deck_sync_set_codes(conn)`. `util.price_sync.get_set_codes()` unions both.
 
 ---
 
@@ -259,7 +250,7 @@ except ValueError as exc:
 - Check HTTP status before parsing JSON.
 - Respect rate limits (`time.sleep` between pages is fine).
 - Surface API errors with response body snippet, not a generic "Fout".
-- `update_prices.py` calls Scryfall only once per set, when that set is not yet stored in the local catalog. Cardmarket updates always cover owned cards; unowned catalog prices are synced only in sets where owned count ≥ min(25, 25% of set size), and cleared elsewhere.
+- `util/price_sync.py` calls Scryfall when Set Manager imports a catalog. Cardmarket updates always cover owned cards; unowned catalog prices are synced only in sets where owned count ≥ min(25, 25% of set size), and cleared elsewhere.
 
 ---
 

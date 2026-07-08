@@ -594,6 +594,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  setDeckCardOwned: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/owned`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   renameDeck: (deckId, body) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}`, {
       method: "PATCH",
