@@ -3,9 +3,10 @@
 import os
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+COLLECTION_DIR = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = COLLECTION_DIR.parent.parent / "scripts"
 REPO_ROOT = SCRIPTS_DIR.parent
-BACKEND_DIR = REPO_ROOT / "server-backend"
+BACKEND_DIR = COLLECTION_DIR.parent
 FRONTEND_DIR = REPO_ROOT / "server-frontend"
 FRONTEND_DIST = FRONTEND_DIR / "dist"
 
@@ -35,15 +36,11 @@ def resolve_db_path(app_data_dir: Path | None = None) -> Path:
 DB_PATH = resolve_db_path()
 DATA_DIR = REPO_ROOT / "data"
 ART_STYLES_DIR = DATA_DIR / "art_styles"
-DECKS_DIR = DATA_DIR / "decks"
-DECKS_MANIFEST_NAME = "decks.csv"
 LOGS_DIR = REPO_ROOT / "logs"
 
 CREATE_DB_SCRIPT = SCRIPTS_DIR / "db" / "create_db.py"
 UPDATE_PRICES_SCRIPT = SCRIPTS_DIR / "update_prices.py"
-SYNC_COLLECTION_SCRIPT = SCRIPTS_DIR / "sync_collection.py"
 
-EXCLUDED_PURCHASE_CSV_NAMES = frozenset({"purchases.csv", "example.csv"})
 EXCLUDED_SET_CODES = frozenset({"EXAMPLE"})
 
 # Legacy or mistaken set codes mapped to Scryfall's canonical code.
@@ -66,34 +63,3 @@ def canonical_set_code_lower(set_code: str | None) -> str:
 # Return the art-style rules file for one set code.
 def art_style_rules_path(set_code: str) -> Path:
     return ART_STYLES_DIR / f"{canonical_set_code_lower(set_code)}.json"
-
-
-# Return the purchase CSV path for one set code.
-def purchase_csv_path(set_code: str) -> Path:
-    return DATA_DIR / f"{canonical_set_code_lower(set_code)}.csv"
-
-
-# Return per-set purchase CSV files from data/.
-def list_set_csv_files() -> list[Path]:
-    paths = sorted(
-        p for p in DATA_DIR.glob("*.csv")
-        if p.is_file() and p.name.lower() not in EXCLUDED_PURCHASE_CSV_NAMES
-    )
-    seen_canonical: set[str] = set()
-    unique_paths: list[Path] = []
-    for path in paths:
-        canonical = normalize_set_code(path.stem)
-        if canonical in seen_canonical:
-            continue
-        seen_canonical.add(canonical)
-        unique_paths.append(path)
-    return unique_paths
-
-
-# Return deck list CSV files registered in data/decks/decks.csv.
-def list_deck_csv_files() -> list[Path]:
-    from lib.deck_csv import load_deck_entries
-
-    if not DECKS_DIR.is_dir():
-        return []
-    return [entry.path for entry in load_deck_entries()]

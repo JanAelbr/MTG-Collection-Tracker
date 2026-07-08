@@ -16,6 +16,7 @@ from util.card_prices import ensure_card_prices_table  # noqa: E402
 from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 from util.set_catalog import ensure_sets_table  # noqa: E402
+from util.tracked_sets import add_tracked_set, ensure_tracked_sets_table  # noqa: E402
 
 
 class ManagerApiServiceTests(unittest.TestCase):
@@ -420,24 +421,26 @@ class ManagerApiServiceTests(unittest.TestCase):
         self.assertEqual(updated["copies"][1]["locationSlug"], "storage:general")
 
     @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
-    @patch("api.services.manager_service.purchase_csv_path")
-    def test_remove_set_without_owned_cards(self, mock_csv_path, _mock_decks):
-        csv_file = Path(self.temp_dir.name) / "mb2.csv"
-        csv_file.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
-        mock_csv_path.return_value = csv_file
+    def test_remove_set_without_owned_cards(self, _mock_decks):
+        ensure_tracked_sets_table(self.conn)
+        add_tracked_set(self.conn, "MB2")
+        self.conn.commit()
 
         result = manager_service.remove_set(self.conn, "MB2")
 
         self.assertTrue(result["removed"])
         self.assertEqual(result["setCode"], "MB2")
-        self.assertFalse(csv_file.exists())
+        self.assertFalse(
+            self.conn.execute(
+                "SELECT 1 FROM tracked_sets WHERE set_code = 'MB2'"
+            ).fetchone()
+        )
 
     @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
-    @patch("api.services.manager_service.purchase_csv_path")
-    def test_remove_set_with_owned_cards_fails(self, mock_csv_path, _mock_decks):
-        csv_file = Path(self.temp_dir.name) / "ltr.csv"
-        csv_file.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
-        mock_csv_path.return_value = csv_file
+    def test_remove_set_with_owned_cards_fails(self, _mock_decks):
+        ensure_tracked_sets_table(self.conn)
+        add_tracked_set(self.conn, "LTR")
+        self.conn.commit()
         self.conn.execute(
             """
             INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
@@ -450,11 +453,10 @@ class ManagerApiServiceTests(unittest.TestCase):
             manager_service.remove_set(self.conn, "LTR")
 
     @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
-    @patch("api.services.manager_service.list_set_csv_files")
-    def test_prune_orphan_catalogs(self, mock_csv_files, _mock_decks):
-        tracked = Path(self.temp_dir.name) / "ltr.csv"
-        tracked.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
-        mock_csv_files.return_value = [tracked]
+    def test_prune_orphan_catalogs(self, _mock_decks):
+        ensure_tracked_sets_table(self.conn)
+        add_tracked_set(self.conn, "LTR")
+        self.conn.commit()
         ensure_sets_table(self.conn)
         self.conn.execute(
             """

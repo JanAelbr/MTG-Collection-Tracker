@@ -184,10 +184,10 @@ def load_owned_set_codes(conn: sqlite3.Connection) -> list[str]:
 
 # Return set codes that should stay in the local catalog (owned plus deck lists).
 def load_catalog_set_codes(conn: sqlite3.Connection) -> set[str]:
-    from lib.deck_csv import list_deck_sync_set_codes
+    from util.deck_tables import list_deck_sync_set_codes
 
     owned = set(load_owned_set_codes(conn))
-    deck = set(list_deck_sync_set_codes())
+    deck = set(list_deck_sync_set_codes(conn))
     return owned | deck
 
 

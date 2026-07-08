@@ -2,12 +2,13 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH, EXCLUDED_SET_CODES, list_set_csv_files, normalize_set_code
-from lib.deck_csv import list_deck_sync_set_codes
+from lib.config import DB_PATH, EXCLUDED_SET_CODES, normalize_set_code
+from util.deck_tables import list_deck_sync_set_codes
 from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
 from util.set_catalog import load_set_icon_uris
+from util.tracked_sets import list_tracked_set_codes
 
 
 _set_display_names_cache: dict[str, str] | None = None
@@ -245,19 +246,18 @@ def build_art_style_options(conn: sqlite3.Connection, set_code: str = "All") -> 
     return _build_art_style_options_from_counts(owned_counts, catalog_counts)
 
 
-# Collect set codes from the database, purchase CSVs, and deck lists.
+# Collect set codes from tracked sets, the database, and deck lists.
 def get_all_set_codes() -> list[str]:
-    csv_sets = [path.stem.upper() for path in list_set_csv_files()]
-    deck_sets = list_deck_sync_set_codes()
-
     with sqlite3.connect(DB_PATH) as conn:
+        tracked_sets = list_tracked_set_codes(conn)
+        deck_sets = list_deck_sync_set_codes(conn)
         db_sets = pd.read_sql_query(
             "SELECT DISTINCT set_code FROM cards ORDER BY set_code",
             conn,
         )["set_code"].tolist()
 
     return sorted(
-        code for code in {normalize_set_code(raw) for raw in (set(db_sets) | set(csv_sets) | set(deck_sets))}
+        code for code in {normalize_set_code(raw) for raw in (set(db_sets) | set(tracked_sets) | set(deck_sets))}
         if code and code not in EXCLUDED_SET_CODES
     )
 

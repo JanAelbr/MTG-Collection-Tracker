@@ -166,7 +166,7 @@ class SetCatalogTests(unittest.TestCase):
         self.assertNotIn("LEA", names)
         self.assertEqual(load_owned_set_codes(self.conn), ["LTR"])
 
-    @patch("lib.deck_csv.list_deck_sync_set_codes", return_value=["PIP"])
+    @patch("util.deck_tables.list_deck_sync_set_codes", return_value=["PIP"])
     def test_prune_unowned_sets_keeps_deck_sets(self, _mock_deck_sets):
         upsert_set_row(
             self.cursor,

@@ -367,6 +367,7 @@ onUnmounted(stopPolling);
       <p class="home-intro">
         Export owned cards, decks, storage assignments, and display settings.
         Card catalog rows and prices are not included — sync those after restoring on a new machine.
+        <strong>Before upgrading the app</strong>, export a backup here so you can restore if anything goes wrong.
       </p>
 
       <div class="home-sync-panel">
@@ -474,13 +475,13 @@ onUnmounted(stopPolling);
     <section class="home-panel">
       <h2>Catalog maintenance</h2>
       <p class="home-intro">
-        Removing a set from the browser only deletes its purchase CSV. Use this to clear leftover
+        Removing a set from the browser only unregisters it from tracked sets. Use this to clear leftover
         Scryfall catalogs for sets you no longer track.
       </p>
       <div class="home-sync-panel">
         <div class="home-sync-copy">
           <strong>Clear orphan catalogs</strong>
-          <p>Deletes card data for sets that are not in <code>data/*.csv</code> or referenced by decks.</p>
+          <p>Deletes card data for sets that are not tracked or referenced by decks.</p>
           <p v-if="catalogMessage" class="home-sync-message">{{ catalogMessage }}</p>
         </div>
         <button

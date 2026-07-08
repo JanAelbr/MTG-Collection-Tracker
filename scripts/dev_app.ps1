@@ -9,6 +9,7 @@ Ensure-NodePath
 $Root = Split-Path -Parent $PSScriptRoot
 $Backend = Join-Path $Root "server-backend"
 $Scripts = Join-Path $Root "scripts"
+$Collection = Join-Path $Root "server-backend\collection"
 
 if ($Install) {
     $env:PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
@@ -19,11 +20,11 @@ if ($Install) {
 }
 
 $apiJob = Start-Job -ScriptBlock {
-    param($BackendDir, $ScriptsDir)
-    $env:PYTHONPATH = "$BackendDir;$ScriptsDir"
+    param($BackendDir, $ScriptsDir, $CollectionDir)
+    $env:PYTHONPATH = "$BackendDir;$ScriptsDir;$CollectionDir"
     Set-Location $BackendDir
     python run_api.py
-} -ArgumentList $Backend, $Scripts
+} -ArgumentList $Backend, $Scripts, $Collection
 
 Push-Location (Join-Path $Root "server-frontend")
 try {

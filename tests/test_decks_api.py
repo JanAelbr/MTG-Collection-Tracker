@@ -10,8 +10,6 @@ from pathlib import Path
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import decks_service  # noqa: E402
-from lib.deck_csv import DeckEntry  # noqa: E402
-from lib.deck_loader import import_deck_file  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables, seed_storage_locations  # noqa: E402
@@ -108,15 +106,19 @@ class DecksApiServiceTests(unittest.TestCase):
         seed_storage_locations(self.conn)
         self.conn.commit()
 
-        deck_file = Path(self.temp_dir.name) / "sample.csv"
-        deck_file.write_text(
-            "set_code;collector_number;foil;qty;owned;section\n"
-            "LTC;284;0;1;1;commander\n",
-            encoding="utf-8",
+        self.conn.execute(
+            """
+            INSERT INTO decks (name, slug, purchase_price, created_at, updated_at)
+            VALUES ('Sample Deck', 'sample', 30.0, '2026-01-01', '2026-01-01')
+            """
         )
-        import_deck_file(
-            self.conn.cursor(),
-            DeckEntry(name="Sample Deck", purchase_price=30.0, path=deck_file, slug="sample"),
+        self.conn.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish,
+                qty, owned_qty, section, sort_order, in_catalog
+            ) VALUES (1, 'Sol Ring', 'LTC', '284', 0, 1, 1, 'commander', 0, 1)
+            """
         )
         seed_storage_locations(self.conn)
         self.conn.commit()
@@ -306,14 +308,11 @@ class DecksApiServiceTests(unittest.TestCase):
         self.assertEqual(label, "Renamed Deck")
 
     def test_rename_deck_rejects_duplicate_name(self):
-        other_file = Path(self.temp_dir.name) / "other.csv"
-        other_file.write_text(
-            "set_code;collector_number;foil;qty;owned;section\n",
-            encoding="utf-8",
-        )
-        import_deck_file(
-            self.conn.cursor(),
-            DeckEntry(name="Other Deck", purchase_price=20.0, path=other_file, slug="other"),
+        self.conn.execute(
+            """
+            INSERT INTO decks (name, slug, purchase_price, created_at, updated_at)
+            VALUES ('Other Deck', 'other', 20.0, '2026-01-01', '2026-01-01')
+            """
         )
         self.conn.commit()
 

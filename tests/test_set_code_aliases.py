@@ -1,19 +1,16 @@
 import sqlite3
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+COLLECTION_DIR = Path(__file__).resolve().parents[1] / "server-backend" / "collection"
+for _path in (str(COLLECTION_DIR), str(SCRIPTS_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
-from lib.config import DATA_DIR, normalize_set_code, purchase_csv_path  # noqa: E402
-from util.db_migrate import (  # noqa: E402
-    consolidate_set_code_aliases,
-    ensure_set_code_aliases,
-    migrate_deprecated_set_csv_files,
-)
+from lib.config import normalize_set_code  # noqa: E402
+from util.db_migrate import consolidate_set_code_aliases  # noqa: E402
 
 
 class SetCodeAliasTests(unittest.TestCase):
@@ -21,9 +18,6 @@ class SetCodeAliasTests(unittest.TestCase):
         self.assertEqual(normalize_set_code("plist"), "PLST")
         self.assertEqual(normalize_set_code("PLST"), "PLST")
         self.assertEqual(normalize_set_code("ltr"), "LTR")
-
-    def test_purchase_csv_path_uses_canonical_code(self):
-        self.assertEqual(purchase_csv_path("PLIST").name, "plst.csv")
 
     def test_consolidate_set_code_aliases_merges_rows(self):
         conn = sqlite3.connect(":memory:")
@@ -94,31 +88,6 @@ class SetCodeAliasTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM cards WHERE set_code = 'PLIST'").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT set_code FROM card_instances").fetchone()[0], "PLST")
         self.assertEqual(conn.execute("SELECT card_name, set_code FROM deck_cards").fetchone(), ("PLST #71", "PLST"))
-
-    def test_migrate_deprecated_set_csv_files_merges_alias_csv(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            alias_path = data_dir / "plist.csv"
-            canonical_path = data_dir / "plst.csv"
-            alias_path.write_text("card_number,purchase_value,finish\n71,0,0\n", encoding="utf-8")
-            canonical_path.write_text("card_number,purchase_value,finish\nWTH-53,0,0\n", encoding="utf-8")
-
-            original_data_dir = DATA_DIR
-            try:
-                import lib.config as config_module
-                import util.db_migrate as migrate_module
-
-                config_module.DATA_DIR = data_dir
-                migrate_module.DATA_DIR = data_dir
-                migrate_deprecated_set_csv_files()
-            finally:
-                config_module.DATA_DIR = original_data_dir
-                migrate_module.DATA_DIR = original_data_dir
-
-            self.assertFalse(alias_path.exists())
-            contents = canonical_path.read_text(encoding="utf-8")
-            self.assertIn("WTH-53", contents)
-            self.assertIn("71", contents)
 
 
 if __name__ == "__main__":

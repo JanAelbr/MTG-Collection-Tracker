@@ -115,13 +115,13 @@ Completion counts (owned / catalog) use **distinct base collector numbers** per 
 - **Serialized** prints (collector number ending in `z` / `Z`) are **excluded**
 - Numbers are normalised to digits only (`014` and `14` count as one slot; `WTH-53` → `53`)
 
-Implemented in `scripts/util/set_completion.py` and used by report/stats loaders.
+Implemented in `server-backend/collection/util/set_completion.py` and used by report/stats loaders.
 
 ---
 
 ## Set code aliases
 
-`PLIST` is normalised to **PLST** everywhere (CSV paths, database, UI). Migration runs on schema init (`scripts/util/db_migrate.py`).
+`PLIST` is normalised to **PLST** everywhere (database and UI). Alias consolidation runs on schema init (`server-backend/collection/util/db_migrate.py`).
 
 ---
 

@@ -1,8 +1,6 @@
-import csv
 import sqlite3
-from pathlib import Path
 
-from lib.config import ART_STYLES_DIR, DATA_DIR, SET_CODE_ALIASES, art_style_rules_path, purchase_csv_path
+from lib.config import SET_CODE_ALIASES
 from util.card_prices import ensure_card_prices_table
 
 CARD_COLUMNS = {
@@ -188,6 +186,8 @@ def _migrate_alias_card_instances(conn: sqlite3.Connection, alias: str, canonica
 
 def consolidate_set_code_aliases(conn: sqlite3.Connection) -> None:
     """Move legacy alias set codes (e.g. PLIST) onto their canonical code (PLST)."""
+    from util.tracked_sets import migrate_tracked_set_alias
+
     for alias, canonical in SET_CODE_ALIASES.items():
         if alias == canonical:
             continue
@@ -195,72 +195,12 @@ def consolidate_set_code_aliases(conn: sqlite3.Connection) -> None:
         _migrate_alias_card_instances(conn, alias, canonical)
         _migrate_alias_deck_cards(conn, alias, canonical)
         _migrate_alias_card_prices(conn, alias, canonical)
+        migrate_tracked_set_alias(conn, alias, canonical)
         conn.execute("DELETE FROM cards WHERE set_code = ?", (alias,))
         if _table_exists(conn, "sets"):
             conn.execute("DELETE FROM sets WHERE set_code = ?", (alias,))
 
 
-def _read_csv_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        fieldnames = list(reader.fieldnames or [])
-        return fieldnames, list(reader)
-
-
-def _write_csv_rows(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def migrate_deprecated_set_csv_files() -> None:
-    """Merge legacy per-set purchase CSV files into their canonical file."""
-    for alias, canonical in SET_CODE_ALIASES.items():
-        if alias == canonical:
-            continue
-        alias_path = DATA_DIR / f"{alias.lower()}.csv"
-        if not alias_path.exists():
-            continue
-        canonical_path = purchase_csv_path(canonical)
-        if not canonical_path.exists():
-            alias_path.replace(canonical_path)
-            continue
-
-        alias_fieldnames, alias_rows = _read_csv_rows(alias_path)
-        canonical_fieldnames, canonical_rows = _read_csv_rows(canonical_path)
-        fieldnames = canonical_fieldnames or alias_fieldnames
-        if not fieldnames:
-            alias_path.unlink(missing_ok=True)
-            continue
-
-        seen = {
-            (
-                str(row.get("card_number") or row.get("collector_number") or "").strip(),
-                str(row.get("finish") or row.get("foil") or "0").strip(),
-            )
-            for row in canonical_rows
-        }
-        for row in alias_rows:
-            key = (
-                str(row.get("card_number") or row.get("collector_number") or "").strip(),
-                str(row.get("finish") or row.get("foil") or "0").strip(),
-            )
-            if not key[0] or key in seen:
-                continue
-            canonical_rows.append(row)
-            seen.add(key)
-
-        _write_csv_rows(canonical_path, fieldnames, canonical_rows)
-        alias_path.unlink(missing_ok=True)
-
-        alias_art = ART_STYLES_DIR / f"{alias.lower()}.json"
-        canonical_art = art_style_rules_path(canonical)
-        if alias_art.exists() and canonical_art.exists():
-            alias_art.unlink(missing_ok=True)
-
-
 def ensure_set_code_aliases(conn: sqlite3.Connection) -> None:
-    migrate_deprecated_set_csv_files()
     consolidate_set_code_aliases(conn)
     conn.commit()

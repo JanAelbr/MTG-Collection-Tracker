@@ -1,22 +1,5 @@
 import sqlite3
 
-from lib.purchase_csv import parse_purchase_value
-
-
-def explicit_purchase_from_row(row: dict) -> float | None:
-    for key in ("purchase_value", "price", "purchase"):
-        if key in row and row.get(key) not in (None, ""):
-            return parse_purchase_value(row.get(key))
-    return None
-
-
-def deck_purchase_price_from_row(row: dict) -> float | None:
-    for key in ("deck_purchase_price", "deck_price", "purchase_price"):
-        if key in row and row.get(key) not in (None, ""):
-            value = parse_purchase_value(row.get(key))
-            return value if value > 0 else None
-    return None
-
 
 def lookup_unit_market(
     cursor: sqlite3.Cursor,
@@ -45,35 +28,6 @@ def lookup_unit_market(
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def allocate_deck_purchase_prices(
-    lines: list[dict],
-    total_price: float,
-) -> list[float]:
-    """Split a deck purchase price into per-line unit purchase prices."""
-    if total_price <= 0 or not lines:
-        return [0.0] * len(lines)
-
-    weights = []
-    for line in lines:
-        unit_market = line.get("unit_market")
-        qty = int(line["qty"])
-        if unit_market is not None and unit_market > 0:
-            weights.append(unit_market * qty)
-        else:
-            weights.append(float(qty))
-
-    total_weight = sum(weights)
-    if total_weight <= 0:
-        return [0.0] * len(lines)
-
-    unit_prices: list[float] = []
-    for line, weight in zip(lines, weights):
-        qty = int(line["qty"])
-        line_total = total_price * (weight / total_weight)
-        unit_prices.append(line_total / qty if qty else 0.0)
-    return unit_prices
 
 
 def upsert_purchase_value(

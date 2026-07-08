@@ -150,3 +150,33 @@ def ensure_deck_card_columns(conn: sqlite3.Connection) -> None:
         if column_name in existing:
             continue
         cursor.execute(f"ALTER TABLE deck_cards ADD COLUMN {column_name} {column_type}")
+
+
+def list_deck_sync_set_codes(conn: sqlite3.Connection) -> list[str]:
+    """Return distinct set codes referenced by deck card prints."""
+    from lib.config import normalize_set_code
+
+    if not _table_exists(conn, "deck_cards"):
+        return []
+    rows = conn.execute(
+        """
+        SELECT DISTINCT set_code
+        FROM deck_cards
+        WHERE set_code IS NOT NULL AND TRIM(set_code) != ''
+        ORDER BY set_code
+        """
+    ).fetchall()
+    codes = {
+        normalize_set_code(str(row[0]))
+        for row in rows
+        if normalize_set_code(str(row[0]))
+    }
+    return sorted(codes)
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (table_name,),
+    ).fetchone()
+    return row is not None

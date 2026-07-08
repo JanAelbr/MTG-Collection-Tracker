@@ -237,7 +237,7 @@ async function reloadCatalog(set) {
       </p>
       <template v-else>
         <p class="manager-help">
-          Creates <code>data/{set}.csv</code> and imports the full print catalog from Scryfall.
+          Registers the set and imports the full print catalog from Scryfall.
         </p>
         <label>
           <span>Set code</span>

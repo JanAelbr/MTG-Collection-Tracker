@@ -66,7 +66,7 @@ def create_deck(
     from datetime import datetime, timezone
 
     from api.cache import bump_cache_epoch
-    from lib.deck_loader import resolve_deck_row
+    from util.deck_helpers import resolve_deck_row
     from util.card_finishes import normalize_finish
     from util.deck_tables import ensure_deck_tables
     from util.storage_tables import seed_storage_locations
@@ -361,7 +361,7 @@ def add_card_to_deck(
     qty: int = 1,
 ) -> dict:
     from api.cache import bump_cache_epoch
-    from lib.deck_loader import resolve_deck_row
+    from util.deck_helpers import resolve_deck_row
     from util.card_finishes import normalize_finish
     from util.deck_tables import ensure_deck_tables
 

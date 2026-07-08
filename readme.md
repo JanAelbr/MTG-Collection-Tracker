@@ -2,19 +2,20 @@
 
 GitHub: [JanAelbr/MTG---Collection-Tracker](https://github.com/JanAelbr/MTG---Collection-Tracker)
 
-A Python workflow to import, track, and report on a **Magic: The Gathering** collection — singles by set, commander precon decks, market value, and profit/loss.
+A Python + Vue workflow to track a **Magic: The Gathering** collection — singles by set, commander decks, market value, and profit/loss.
 
 The application:
 
-- builds a SQLite database
-- syncs card data via the Scryfall API (sets from purchase CSVs **and** deck lists) and EUR prices via Cardmarket
-- imports purchase data from per-set CSV files and commander deck lists
-- tracks precon deck contents by exact printing (`set_code` + collector number)
-- stores card **colors**, **type line**, and **primary card type** (creature, land, instant, …) for filtering in the UI
-- calculates current market value and profit/loss per card, art style, and deck
+- stores everything in a **SQLite** database (`collection.db`)
+- syncs card catalogs via the Scryfall API and EUR prices via Cardmarket
+- tracks sets in **`tracked_sets`**; add/remove sets from the Set Manager UI
+- tracks commander deck contents and ownership in **`decks`** / **`deck_cards`** / **`purchases`**
+- stores card **colors**, **type line**, and **primary card type** for filtering
+- calculates market value and profit/loss per card, art style, and deck
 - serves an interactive **Vue + FastAPI** web app (Collection, stats, storage, decks, card detail)
+- exports and imports portable **backup ZIP** files from Settings
 
-Example set codes in use: **LTR**, **LTC**, **CLB**, **NCC**, **C13**, **C17**, **40K**, **PIP**, and others referenced in `data/` or `data/decks/`.
+**Upgrading from an older CSV-based workflow:** export a backup from the current app before upgrading, then restore it on the new version. There is no CSV import path in current releases.
 
 ---
 
@@ -24,45 +25,31 @@ Example set codes in use: **LTR**, **LTC**, **CLB**, **NCC**, **C13**, **C17**, 
 lotr/
 │
 ├── data/
-│   ├── example.csv                # sample purchase CSV (tracked in git)
-│   ├── ltr.csv, ltc.csv, …        # per-set purchases (local, not in git)
 │   ├── art_styles/                # art-style mapping per set ({set}.json)
-│   ├── cardmarket_price_guide.json   # Cardmarket guide cache (downloaded locally)
-│   ├── cardmarket_price_guide.pkl    # parsed guide index (auto-generated)
-│   └── decks/
-│       ├── decks.csv              # deck manifest (name, price, csv file)
-│       ├── *.csv                  # one card list per deck
-│       └── sources/               # wiki exports for precon builders
+│   └── cardmarket_price_guide.json   # Cardmarket guide cache (downloaded locally)
 ├── docs/
-│   ├── decks.md                   # deck CSV format and workflows
+│   ├── decks.md                   # deck model and backup workflow
 │   ├── frontend.md                # Vue app, PWA, navigation, filters
 │   └── python-guidelines.md
 ├── logs/                          # generated price logs (not in git)
 ├── server-frontend/               # Vue 3 interactive app (Vite)
-├── server-backend/                  # FastAPI app (api/ + run_api.py)
-├── scripts/                       # batch workflows and shared Python libraries
-│   ├── reset_and_build.py             # full pipeline (DB + collection + prices)
-│   ├── sync_collection.py             # import deck lists + purchases from CSV
-│   ├── purchase_import.py             # import purchases + deck ownership only
-│   ├── deck_import.py                 # import deck lists only
-│   ├── deck_sync.py                   # import one deck list
+├── server-backend/
+│   ├── api/                       # FastAPI routers + services
+│   ├── collection/                # shared Python (lib, report, util)
+│   └── run_api.py
+├── scripts/                       # thin CLI entrypoints (db, prices, launchers)
+│   ├── reset_and_build.py             # DB reset + price fetch
 │   ├── update_prices.py               # Scryfall catalog gaps + Cardmarket prices
-│   ├── build_catalog_decks.py         # build precon CSVs from wiki + Scryfall
-│   ├── build_deck_csv.py              # build LOTR / precon CSVs from definitions
-│   ├── generate_precon_decklists.py   # regenerate deck definition module
+│   ├── db/create_db.py
 │   ├── run_app.ps1                    # build frontend + serve app on :8000
 │   ├── dev_app.ps1                    # dev: API + Vite on :5173
-│   ├── build_frontend.ps1             # npm run build
-│   ├── run_daily_update.ps1           # daily price update (Windows)
-│   ├── register_daily_task.ps1        # register scheduled task (Windows)
-│   ├── db/create_db.py
-│   ├── lib/                           # config, import, deck CSV, Scryfall helpers
-│   ├── report/                        # shared report/data modules for the API
-│   └── util/                          # Cardmarket, card metadata, migrations, formatting
-├── tests/
+│   ├── build_frontend.ps1
+│   ├── run_daily_update.ps1
+│   └── register_daily_task.ps1
+└── tests/
 ```
 
-See **[docs/decks.md](docs/decks.md)** for deck CSV format, ownership, and precon build scripts.  
+See **[docs/decks.md](docs/decks.md)** for the deck data model and backup workflow.  
 See **[docs/frontend.md](docs/frontend.md)** for the Vue app, PWA, navigation, and UI filters.
 
 ---
@@ -72,8 +59,7 @@ See **[docs/frontend.md](docs/frontend.md)** for the Vue app, PWA, navigation, a
 - Python 3.10+
 - **Node.js 22 LTS** (for building the frontend; see [docs/frontend.md](docs/frontend.md))
 - internet access for Scryfall and Cardmarket requests
-- per-set purchase files in `data/{set_code}.csv` (copy from `data/example.csv`)
-- optional: deck lists in `data/decks/` (manifest + per-deck CSVs)
+- Node.js for building the frontend (see [docs/frontend.md](docs/frontend.md))
 
 ### Installation
 
@@ -89,14 +75,13 @@ On macOS/Linux: `source .venv/bin/activate`
 
 ## Git
 
-The repo tracks **source code** and deck definitions, not local purchase data or generated output.
+The repo tracks **source code** and art-style JSON, not your local database or generated caches.
 
 | Tracked in git | Not tracked in git |
 |----------------|-------------------|
 | `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
-| `data/art_styles/*.json`, `data/example.csv` | `data/*.csv` (purchase files in `data/`) |
-| `data/decks/` (manifest + deck CSVs) | `collection.db` |
-| `readme.md`, `requirements.txt` | `logs/`, Cardmarket cache |
+| `data/art_styles/*.json` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
+| `readme.md`, `requirements.txt` | `logs/`, Cardmarket cache, `data/*.csv` (legacy leftovers) |
 
 After cloning:
 
@@ -104,7 +89,6 @@ After cloning:
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy data\example.csv data\ltr.csv
 python scripts\reset_and_build.py
 
 # optional: run the interactive app (see Interactive web app below)
@@ -112,21 +96,21 @@ python scripts\reset_and_build.py
 .\scripts\dev_app.ps1
 ```
 
+Use **Settings → Backup & restore** to move an existing collection to a new install.
+
 ---
 
 ## Workflow
 
-### Full reset (database + import + prices)
+### Full reset (empty database + prices)
 
 ```bash
 python scripts/reset_and_build.py
 ```
 
-Creates the database, imports purchases (set CSVs + decks), and syncs prices. Does not open the browser.
+Creates a fresh database and runs price sync for any tracked sets/decks (none on first install). Does not open the browser.
 
 ### Step by step
-
-The pipeline has three independent stages: **collection** (CSV → DB), **prices** (API → DB), and the **web app** (DB → UI).
 
 **1. Create database**
 
@@ -134,15 +118,9 @@ The pipeline has three independent stages: **collection** (CSV → DB), **prices
 python scripts/db/create_db.py
 ```
 
-**2. Sync collection (purchases + deck lists)**
+**2. Start the app and add sets**
 
-```bash
-python scripts/sync_collection.py
-```
-
-Imports all deck CSVs into `deck_cards`, then rebuilds `purchases` from `data/{set}.csv` files and registered decks. Equivalent to running `deck_import.py` then `purchase_import.py`.
-
-Per-set purchase CSV (`;` delimiter) — save as `data/ltr.csv`, `data/ltc.csv`, etc. Deck ownership comes from `data/decks/`. See [docs/decks.md](docs/decks.md).
+Open the web app, use **Set Manager** to register sets (imports Scryfall catalog), mark ownership, and create decks in **Decks**.
 
 **3. Update prices (catalog + EUR values)**
 
@@ -150,14 +128,15 @@ Per-set purchase CSV (`;` delimiter) — save as `data/ltr.csv`, `data/ltc.csv`,
 python scripts/update_prices.py
 ```
 
-Downloads the Cardmarket price guide once and updates EUR values for owned cards, plus unowned catalog cards only in sets where you own enough cards to qualify. Scryfall is called only once per set, the first time that set is needed and not yet stored in the local catalog. Sets missing color/type metadata are re-synced automatically. See [Cardmarket prices](#cardmarket-prices) for flags.
+Downloads the Cardmarket price guide and updates EUR values. Scryfall is called once per set when that set is first tracked. See [Cardmarket prices](#cardmarket-prices) for flags.
 
-**Typical refresh after CSV changes:**
+**Typical refresh after ownership changes:**
 
 ```bash
-python scripts/sync_collection.py
 python scripts/update_prices.py
 ```
+
+Or use **Settings → Sync prices** in the app (Cardmarket only).
 
 ### Daily update
 
@@ -228,6 +207,7 @@ The top bar and collection subnav stay fixed while scrolling.
 
 #### Settings (`/settings`)
 
+- **Backup & restore** — export/import `.mtgbackup.zip` (purchases, decks, storage, settings). **Export before upgrading** the app.
 - **Set picker mode** — horizontal set browser or dropdown list
 - **Price sync** — apply Cardmarket prices only (fast; typically a few seconds). Does not re-run the full Scryfall catalog pipeline.
 - **Price strategy** — which EUR field to use (applies everywhere: Collection, Stats, Storage, Decks, card detail)
@@ -278,14 +258,14 @@ Default landing page: **`/collection/all`**. Old `/reports/*` and `/collection/r
 
 ### Set completion
 
-Owned/catalog counts per set use **distinct base collector numbers**. Serialized prints (collector number ending in `Z`) are excluded. `014` and `14` count as one slot. See `scripts/util/set_completion.py` and [docs/frontend.md](docs/frontend.md).
+Owned/catalog counts per set use **distinct base collector numbers**. Serialized prints (collector number ending in `Z`) are excluded. `014` and `14` count as one slot. See `server-backend/collection/util/set_completion.py` and [docs/frontend.md](docs/frontend.md).
 
 ### Set Manager
 
 - One set at a time; checkboxes for non-foil / foil / etched where the print exists
 - **Art style rules** — define collector-number groups for filters and stats
 - **Favourite** sets (★) to pin them to the top of set lists
-- Export purchases to `data/{set}.csv`, then run `python scripts/purchase_import.py`
+- Register new sets and import their Scryfall catalog from the UI
 
 ### Card detail
 
@@ -312,8 +292,8 @@ Available on Collection, Set Manager, Storage, Decks, and card detail responses.
 
 - **Browse decks** — deck list with Detail / Overview toggle; per-deck hero gallery and card list with **Images / Table** toggle
 - **Deck stats** — aggregate or single-deck metrics, portfolio history chart, card table
-- **Owned** on a deck card requires a matching `purchases` row (run `purchase_import.py`)
-- Deck purchase price from `decks.csv` is split across cards for invested / ROI figures
+- **Owned** on a deck card requires a matching `purchases` row (mark ownership in Set Manager or Storage)
+- Deck purchase price is stored on the deck row for invested / ROI figures
 
 ---
 
@@ -323,7 +303,7 @@ Available on Collection, Set Manager, Storage, Decks, and card detail responses.
 python -m unittest discover -s tests -v
 ```
 
-Covers purchase import, deck import, deck purchase allocation, Cardmarket backfill, price history, art styles, set catalog sync, card metadata, reports API, manager favourites, set ordering, set completion, set code aliases, and per-copy ownership APIs.
+Covers tracked sets, deck helpers, Cardmarket backfill, price history, art styles, set catalog sync, card metadata, reports API, manager favourites, set ordering, set completion, set code aliases, collection backup, and per-copy ownership APIs.
 
 ---
 
@@ -333,10 +313,10 @@ Daily price updates use the **Cardmarket price guide** (one JSON download per ru
 
 | Step | Source | When |
 |------|--------|------|
-| Catalog sync | Scryfall | Once per set, the first time it appears in purchases or deck lists |
+| Catalog sync | Scryfall | Once per tracked set, when first added via Set Manager |
 | Metadata backfill | Scryfall | When `colors`, `type_line`, or `card_type` are missing for cards in a tracked set |
 | Set metadata | Scryfall | Once per set, when the set row is not yet in `collection.db` |
-| Price sync | Cardmarket price guide | Every run: always for owned cards; for unowned cards only in sets where owned count ≥ min(25, 25% of set size) |
+| Price sync | Cardmarket price guide | Every run: owned cards; unowned only in qualifying sets |
 
 Unowned prices in other sets are cleared and no longer updated.
 
@@ -445,7 +425,7 @@ erDiagram
 | `1` | Foil (includes surge/rainbow/galaxy promo foils) |
 | `2` | Etched |
 
-Deck CSVs accept an optional `finish` column (`nonfoil`, `foil`, `etched`). Legacy `foil` (`0`/`1`) still works; etched-only prints are inferred on import.
+Deck CSVs accept an optional `finish` column (`nonfoil`, `foil`, `etched`). Legacy `foil` (`0`/`1`) still works in old files; the app no longer imports deck CSVs.
 
 ### `cards`
 
@@ -472,7 +452,11 @@ If `type_line` is present but `card_type` is empty, it is derived automatically 
 
 ### `purchases`
 
-Owned finishes. Populated from `data/{set}.csv` and from deck lists via `purchase_import.py`.
+Owned finishes. Updated when you change ownership in Set Manager or Storage.
+
+### `tracked_sets`
+
+Set codes registered in Set Manager (replaces legacy `data/{set}.csv` tracking).
 
 ### `decks` / `deck_cards`
 
@@ -484,14 +468,13 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 Art-style labels come from `data/art_styles/{set_code}.json`. When a set has no rules file yet, one is created automatically with a single `"All"` group for every card. Custom files use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter.
 
-Set code **PLIST** is treated as an alias for **PLST** (single canonical set in the database and file paths).
+Set code **PLIST** is treated as an alias for **PLST** in the database and UI.
 
 ---
 
 ## Data sources
 
-- **Scryfall API** — card data, images, set metadata, colors, and types (once per set)
-- **mtg.wiki** — official commander precon deck lists (via `build_catalog_decks.py`)
+- **Scryfall API** — card data, images, set metadata, colors, and types
 - **Cardmarket price guide** — daily JSON export for EUR prices (`downloads.s3.cardmarket.com`)
 
 ---

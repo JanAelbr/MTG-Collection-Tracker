@@ -1,4 +1,4 @@
-"""Reset the database, import purchases from CSV, and fetch the latest prices.
+"""Reset the database and fetch the latest prices.
 
 Usage:
     python scripts/reset_and_build.py
@@ -6,12 +6,15 @@ Usage:
 import argparse
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import path_setup  # noqa: F401
 
 from lib.config import (
     CREATE_DB_SCRIPT,
     DB_PATH,
     REPO_ROOT,
-    SYNC_COLLECTION_SCRIPT,
     UPDATE_PRICES_SCRIPT,
 )
 from lib.run_log import BuildTimer, configure_logging, get_logger
@@ -35,7 +38,7 @@ def run_script(script_path, label: str, *, extra_args: list[str] | None = None) 
     subprocess.run(command, check=True, cwd=str(REPO_ROOT))
 
 
-# Recreate the database, import purchases, fetch prices, and generate reports.
+# Recreate the database and fetch prices.
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reset database and rebuild collection data.")
     parser.add_argument(
@@ -55,12 +58,6 @@ def main() -> None:
         remove_db()
     with timer.step("Create database"):
         run_script(CREATE_DB_SCRIPT, f"Creating database via {CREATE_DB_SCRIPT.name}")
-    with timer.step("Sync collection"):
-        run_script(
-            SYNC_COLLECTION_SCRIPT,
-            "Syncing collection (sync_collection.py)",
-            extra_args=script_args,
-        )
     with timer.step("Update prices"):
         run_script(UPDATE_PRICES_SCRIPT, "Fetching prices (update_prices.py)", extra_args=script_args)
     timer.log_summary("Reset and build timing")

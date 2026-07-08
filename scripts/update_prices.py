@@ -1,19 +1,23 @@
 import csv
 import json
 import sqlite3
+import sys
 import time
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import path_setup  # noqa: F401
 
 from lib.config import (
     DB_PATH,
     HTTP_USER_AGENT,
     LOGS_DIR,
     canonical_set_code_lower,
-    list_set_csv_files,
     normalize_set_code,
 )
 from lib.art_styles import ensure_art_style_rules_file, get_art_style
-from lib.deck_csv import list_deck_sync_set_codes
+from util.deck_tables import list_deck_sync_set_codes
 from lib.run_log import BuildTimer, configure_logging, get_logger
 from util.cardmarket_prices import sync_prices_from_guide
 from util.card_prices import (
@@ -23,6 +27,7 @@ from util.card_prices import (
 from util.cardmarket_urls import load_existing_cardmarket_urls, merge_cardmarket_urls
 from util.card_finishes import card_finish_flags
 from util.db_migrate import ensure_card_columns, ensure_card_prices_table
+from util.tracked_sets import ensure_tracked_sets_ready, list_tracked_set_codes
 from util.set_catalog import (
     ensure_sets_table,
     load_catalog_set_codes,
@@ -81,13 +86,15 @@ def refresh_art_styles() -> None:
     log.info("Refreshed art styles for %s cards", updated)
 
 
-# Return lowercase set codes for purchase CSVs and deck-required prints.
+# Return lowercase set codes for tracked sets and deck-required prints.
 def get_set_codes() -> list[str]:
-    purchase_sets = {
-        canonical_set_code_lower(path.stem)
-        for path in list_set_csv_files()
-    }
-    deck_sets = {canonical_set_code_lower(code) for code in list_deck_sync_set_codes()}
+    with sqlite3.connect(DB_PATH) as conn:
+        ensure_tracked_sets_ready(conn)
+        purchase_sets = {
+            canonical_set_code_lower(code)
+            for code in list_tracked_set_codes(conn)
+        }
+        deck_sets = {canonical_set_code_lower(code) for code in list_deck_sync_set_codes(conn)}
     return sorted(code for code in (purchase_sets | deck_sets) if code)
 
 
@@ -330,7 +337,7 @@ def update_prices(
 ) -> None:
     set_codes = get_set_codes()
     if not set_codes:
-        log.warning("No set codes found from purchase/deck files; nothing to fetch")
+        log.warning("No set codes found from tracked sets/decks; nothing to fetch")
         return
 
     for set_code in set_codes:
@@ -417,7 +424,7 @@ def update_prices(
 def update_cardmarket_prices_only(*, force_cardmarket: bool = False) -> None:
     set_codes = get_set_codes()
     if not set_codes:
-        log.warning("No set codes found from purchase/deck files; nothing to price")
+        log.warning("No set codes found from tracked sets/decks; nothing to price")
         return
 
     log.info(

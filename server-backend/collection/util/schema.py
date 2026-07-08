@@ -13,6 +13,7 @@ from util.db_migrate import (
 )
 from util.deck_tables import ensure_deck_tables
 from util.set_catalog import backfill_missing_set_icon_uris, ensure_sets_columns, ensure_sets_table
+from util.tracked_sets import ensure_tracked_sets_ready
 
 CORE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS cards (
@@ -84,5 +85,6 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
+        ensure_tracked_sets_ready(conn)
         if db_path:
             _initialized_db_paths.add(db_path)

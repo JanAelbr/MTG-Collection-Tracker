@@ -7,8 +7,7 @@ from lib.art_styles import (
     save_art_style_rules,
     validate_art_style_rules,
 )
-from lib.config import EXCLUDED_SET_CODES, list_set_csv_files, normalize_set_code, purchase_csv_path
-from lib.deck_csv import list_deck_sync_set_codes
+from lib.config import EXCLUDED_SET_CODES, normalize_set_code
 from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
 from report.manager_data import (
@@ -37,7 +36,14 @@ from util.card_finishes import (
 )
 from util.db_migrate import ensure_card_columns
 from util.app_tables import ensure_app_tables
+from util.deck_tables import list_deck_sync_set_codes
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
+from util.tracked_sets import (
+    add_tracked_set,
+    is_set_tracked,
+    list_tracked_set_codes,
+    remove_tracked_set,
+)
 
 MANAGER_CARDS_PAGE_SIZE = 100
 MAX_OWNED_COPIES = 99
@@ -1156,23 +1162,23 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
     if not normalized.isalnum():
         raise ManagerError("Set code must be alphanumeric")
 
-    csv_path = purchase_csv_path(normalized)
-    if csv_path.exists():
+    if is_set_tracked(conn, normalized):
         raise ManagerError(f"Set {normalized} already exists")
 
-    csv_path.write_text("card_number,purchase_value,finish\n", encoding="utf-8")
+    add_tracked_set(conn, normalized)
     try:
         catalog_count = import_set_catalog_from_scryfall(conn, normalized)
     except ValueError as exc:
-        csv_path.unlink(missing_ok=True)
+        remove_tracked_set(conn, normalized)
         raise ManagerError(str(exc), status_code=404) from exc
 
+    conn.commit()
     bump_cache_epoch()
     set_names = get_set_display_names(refresh=True)
     return {
         "setCode": normalized,
         "label": format_set_option_label(normalized, set_names),
-        "csvPath": str(csv_path),
+        "tracked": True,
         "catalogCount": catalog_count,
     }
 
@@ -1181,13 +1187,13 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
     normalized = set_code.strip().upper()
     _validate_set_code(normalized)
 
-    tracked_csv = purchase_csv_path(normalized).exists()
-    deck_codes = {code.upper() for code in list_deck_sync_set_codes()}
+    tracked = is_set_tracked(conn, normalized)
+    deck_codes = {code.upper() for code in list_deck_sync_set_codes(conn)}
     card_count = conn.execute(
         "SELECT COUNT(*) FROM cards WHERE set_code = ?",
         (normalized,),
     ).fetchone()[0]
-    if not tracked_csv and normalized not in deck_codes and card_count == 0:
+    if not tracked and normalized not in deck_codes and card_count == 0:
         raise ManagerError(f"Set {normalized} is not tracked", status_code=404)
 
     try:
@@ -1208,7 +1214,7 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
     normalized = set_code.strip().upper()
     _validate_set_code(normalized)
 
-    deck_codes = {code.upper() for code in list_deck_sync_set_codes()}
+    deck_codes = {code.upper() for code in list_deck_sync_set_codes(conn)}
     if normalized in deck_codes:
         raise ManagerError("Cannot remove a set that is referenced by a deck")
 
@@ -1216,11 +1222,10 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
     if owned_counts.get(normalized, 0) > 0:
         raise ManagerError("Cannot remove a set that has owned cards")
 
-    csv_path = purchase_csv_path(normalized)
-    if not csv_path.exists():
+    if not remove_tracked_set(conn, normalized):
         raise ManagerError(f"Set {normalized} does not exist", status_code=404)
 
-    csv_path.unlink()
+    conn.commit()
 
     favorites = settings_service.get_favorite_sets(conn)
     if normalized in {code.upper() for code in favorites}:
@@ -1235,8 +1240,8 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
 
 
 def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
-    tracked = {normalize_set_code(path.stem) for path in list_set_csv_files()}
-    tracked |= {code.upper() for code in list_deck_sync_set_codes()}
+    tracked = {normalize_set_code(code) for code in list_tracked_set_codes(conn)}
+    tracked |= {code.upper() for code in list_deck_sync_set_codes(conn)}
 
     rows = conn.execute("SELECT DISTINCT set_code FROM cards").fetchall()
     orphan_codes = sorted(

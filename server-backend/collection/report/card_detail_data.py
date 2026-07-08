@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from lib.config import APP_CACHE_DIR, DB_PATH
+from lib.config import DB_PATH
 from util.price_history import card_price_key, load_card_detail_compare_context
 from util.set_catalog import load_sets_catalog
 from util.storage_tables import ensure_storage_tables
@@ -306,30 +306,3 @@ def load_card_detail_assets() -> tuple[dict, dict[str, dict[str, dict]]]:
 def load_card_detail_payload() -> dict:
     payload, _history = load_card_detail_assets()
     return payload
-
-
-# Build per-set history payloads for lazy loading on card detail pages.
-def load_card_history_payloads() -> dict[str, dict[str, dict]]:
-    _payload, history_payloads = load_card_detail_assets()
-    return history_payloads
-
-
-# Write one JS file per set containing price history and chart data.
-def write_card_history_scripts(set_histories: dict[str, dict[str, dict]] | None = None) -> int:
-    if set_histories is None:
-        set_histories = load_card_history_payloads()
-
-    out_dir = APP_CACHE_DIR / "card_histories"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    written = 0
-    for set_code, payload in sorted(set_histories.items()):
-        if not payload:
-            continue
-        path = out_dir / f"{set_code.upper()}.js"
-        content = f"window.CARD_SET_HISTORY = {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))};"
-        if path.is_file() and path.read_text(encoding="utf-8") == content:
-            continue
-        path.write_text(content, encoding="utf-8")
-        written += 1
-    return written

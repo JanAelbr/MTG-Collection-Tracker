@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import sys
 import tempfile
@@ -13,7 +12,6 @@ if str(SCRIPTS) not in sys.path:
 
 from report.card_detail_data import (  # noqa: E402
     load_card_detail_assets,
-    write_card_history_scripts,
 )
 from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
 from util.set_catalog import SETS_TABLE_SQL  # noqa: E402
@@ -23,7 +21,6 @@ class CardDetailDataTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test.db"
-        self.reports_data = Path(self.temp_dir.name) / "reports" / "data"
         self.conn = sqlite3.connect(self.db_path)
         self.conn.executescript(
             """
@@ -94,16 +91,10 @@ class CardDetailDataTests(unittest.TestCase):
         self.temp_dir._ignore_cleanup_errors = True
         self.temp_dir.cleanup()
 
-    @patch("report.card_detail_data.APP_CACHE_DIR")
-    def test_index_payload_omits_history_and_snapshots(self, cache_dir):
-        cache_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
-        cache_dir.__truediv__ = self.reports_data.__truediv__
-        cache_dir.mkdir = self.reports_data.mkdir
-
+    def test_index_payload_omits_history_and_snapshots(self):
         with patch("report.card_detail_data.DB_PATH", self.db_path):
-            with patch("report.card_detail_data.APP_CACHE_DIR", self.reports_data):
-                self.conn.close()
-                payload, histories = load_card_detail_assets()
+            self.conn.close()
+            payload, histories = load_card_detail_assets()
 
         self.assertNotIn("snapshots", payload)
         finish = payload["cards"]["LTR|1"]["finishes"]["0"]
@@ -115,30 +106,6 @@ class CardDetailDataTests(unittest.TestCase):
         self.assertEqual(finish["price_change"], 1.0)
         self.assertIn("LTR", histories)
         self.assertIn("1|0", histories["LTR"])
-
-    @patch("report.card_detail_data.APP_CACHE_DIR")
-    def test_write_card_history_scripts(self, cache_dir):
-        cache_dir.__str__ = lambda self: str(self.reports_data)  # noqa: ARG005
-        cache_dir.__truediv__ = self.reports_data.__truediv__
-        cache_dir.mkdir = self.reports_data.mkdir
-
-        histories = {
-            "LTR": {
-                "1|0": {
-                    "history": [{"date": "2026-06-16", "price": 2.0, "source": "scryfall"}],
-                    "chart": [{"date": "Today", "price": 2.0}],
-                },
-            },
-        }
-
-        with patch("report.card_detail_data.APP_CACHE_DIR", self.reports_data):
-            written = write_card_history_scripts(histories)
-
-        self.assertEqual(written, 1)
-        content = (self.reports_data / "card_histories" / "LTR.js").read_text(encoding="utf-8")
-        self.assertTrue(content.startswith("window.CARD_SET_HISTORY = "))
-        payload = json.loads(content.replace("window.CARD_SET_HISTORY = ", "").rstrip(";"))
-        self.assertIn("1|0", payload)
 
 
 if __name__ == "__main__":

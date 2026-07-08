@@ -29,7 +29,9 @@ if (-not $SkipBuild) {
     }
 }
 
-$env:PYTHONPATH = "$Backend;$Scripts"
+$Collection = Join-Path $Root "server-backend\collection"
+
+$env:PYTHONPATH = "$Backend;$Scripts;$Collection"
 Set-Location $Backend
 
 $listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue

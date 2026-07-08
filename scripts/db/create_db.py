@@ -1,8 +1,10 @@
-import sqlite3
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_SCRIPTS = Path(__file__).resolve().parent.parent
+_COLLECTION = _SCRIPTS.parent / "server-backend" / "collection"
+for _path in (_COLLECTION, _SCRIPTS):
+    sys.path.insert(0, str(_path))
 
 from lib.config import DB_PATH
 

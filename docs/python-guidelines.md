@@ -4,7 +4,7 @@ These guidelines describe how we want Python code in this repo to look and behav
 They are based on the current codebase and the inconsistencies we want to remove over time.
 
 **Target:** Python 3.10+  
-**Scope:** `scripts/`, `scripts/lib/`, `scripts/report/`, `scripts/db/`, `scripts/util/`, `server-backend/api/`
+**Scope:** `scripts/` (CLI entrypoints), `server-backend/collection/` (`lib/`, `report/`, `util/`), `server-backend/api/`
 
 ---
 
@@ -22,54 +22,32 @@ They are based on the current codebase and the inconsistencies we want to remove
 
 ```
 lotr/
-├── collection.db          # runtime database (not committed)
-├── data/                  # per-set CSVs, artStyles JSON, decks/
-├── docs/                  # project documentation (decks.md, frontend.md, python-guidelines.md)
-├── logs/                  # price fetch logs
-├── reports/               # generated HTML output
-├── server-backend/        # FastAPI app (api/, run_api.py)
-├── server-frontend/       # Vue app (Vite)
-├── scripts/               # batch workflows + shared lib/report/util
-│   ├── reset_and_build.py
-│   ├── sync_collection.py
-│   ├── purchase_import.py
-│   ├── deck_import.py
-│   ├── deck_sync.py
-│   ├── update_prices.py
-│   ├── build_catalog_decks.py
-│   ├── build_deck_csv.py
-│   ├── db/
-│   │   └── create_db.py
-│   ├── lib/
-│   │   ├── config.py
-│   │   ├── deck_csv.py
-│   │   ├── deck_loader.py
-│   │   ├── deck_purchase.py
-│   │   ├── deck_scryfall.py
-│   │   ├── deck_wiki.py
-│   │   ├── purchase_csv.py
-│   │   ├── purchase_loader.py
-│   │   ├── collection_sync.py
-│   │   └── run_log.py
-│   ├── report/
-│   │   ├── deck_queries.py
-│   │   ├── deck_stats_data.py
-│   │   ├── report_data.py
-│   │   └── ...
-│   └── util/
-│       ├── deck_tables.py
-│       ├── cardmarket_prices.py
-│       └── ...
+├── collection.db          # runtime database (not committed; in APP_DATA_DIR)
+├── data/                  # art_styles JSON, Cardmarket cache
+├── docs/
+├── logs/
+├── server-backend/
+│   ├── api/               # FastAPI routers + services
+│   ├── collection/        # shared Python packages
+│   │   ├── lib/           # config, art_styles, deck_purchase, run_log, …
+│   │   ├── report/        # report_data, manager_data, deck queries, …
+│   │   └── util/          # schema, tracked_sets, deck_tables, Cardmarket, …
+│   └── run_api.py
+├── server-frontend/
+└── scripts/               # thin CLI: reset_and_build, update_prices, launchers
+    ├── db/create_db.py
+    ├── path_setup.py      # adds collection + scripts to sys.path
+    └── …
 ```
 
 ### Rules
 
 - Put **runnable workflows** in top-level `scripts/*.py` (and `scripts/db/create_db.py`).
 - Put **HTTP API routes and services** in `server-backend/api/`.
-- Put **shared configuration and import logic** in `scripts/lib/`.
-- Put **shared data/query modules used by the API** in `scripts/report/`.
-- Put **low-level helpers** in `scripts/util/`.
-- Avoid duplicating the same workflow in multiple scripts.
+- Put **shared configuration** in `server-backend/collection/lib/`.
+- Put **shared data/query modules used by the API** in `server-backend/collection/report/`.
+- Put **low-level helpers** (schema, migrations, external APIs) in `server-backend/collection/util/`.
+- Import shared code via `from lib…`, `from report…`, `from util…` with `server-backend/collection` on `PYTHONPATH`.
 
 ---
 
@@ -77,20 +55,20 @@ lotr/
 
 ### Shared config
 
-Path constants live in `scripts/lib/config.py`. Import from there instead of redefining paths:
+Path constants live in `server-backend/collection/lib/config.py`:
 
 ```python
-from lib.config import DB_PATH, DATA_DIR, DECKS_DIR, REPO_ROOT, list_set_csv_files
+from lib.config import DB_PATH, DATA_DIR, REPO_ROOT, ART_STYLES_DIR
 ```
 
-Deck paths and manifest: `DECKS_DIR`, `DECKS_MANIFEST_NAME` (`decks.csv`). See `docs/decks.md`.
+`PYTHONPATH` includes `server-backend/collection`, `scripts`, and `server-backend` (see `scripts/path_setup.py`, `run_api.py`, and PowerShell launchers).
 
 ### Do
 
 Use `lib.config` for all repo paths:
 
 ```python
-from lib.config import DB_PATH, DATA_DIR, DECKS_DIR
+from lib.config import DB_PATH, DATA_DIR, ART_STYLES_DIR
 ```
 
 Prefer `pathlib.Path` over string paths. Build absolute paths from `config`, not from `cwd`.
@@ -103,7 +81,7 @@ conn = sqlite3.connect("collection.db")
 csv_path = "data/ltr.csv"
 ```
 
-Scripts in `scripts/db/` and `scripts/util/` add the scripts directory to `sys.path` before importing `lib.config`.
+Scripts in `scripts/db/` and CLI entrypoints use `scripts/path_setup.py` (or equivalent) to add `server-backend/collection` and `scripts` to `sys.path` before importing `lib.config`.
 
 ---
 
@@ -203,21 +181,20 @@ with sqlite3.connect(DB_PATH) as conn:
 ### Schema changes
 
 - Update `scripts/db/create_db.py` for fresh databases.
-- Add incremental migrations in `scripts/util/` (e.g. `deck_tables.ensure_deck_cards_print_unique`) and call them from `ensure_*` helpers so existing `collection.db` files upgrade in place.
+- Add incremental migrations in `server-backend/collection/util/` (e.g. `deck_tables.ensure_deck_cards_print_unique`, `tracked_sets`) and call them from `ensure_*` helpers so existing `collection.db` files upgrade in place.
 - Document breaking changes in commit messages.
 
 ### Deck and purchase domains
 
 | Module | Responsibility |
 |--------|----------------|
-| `lib/deck_csv.py` | Read/write deck CSVs and manifest; set sync set discovery |
-| `lib/deck_loader.py` | Import deck rows into `deck_cards` |
-| `lib/deck_purchase.py` | Allocate deck purchase price; upsert purchase rows |
-| `lib/purchase_loader.py` | Import set CSVs + deck ownership (clears `purchases` first) |
-| `lib/deck_scryfall.py` | Resolve deck card names to Scryfall prints (precon builders) |
-| `util/deck_tables.py` | Create/migrate `decks` and `deck_cards` tables |
+| `util/deck_tables.py` | Create/migrate `decks` and `deck_cards`; `list_deck_sync_set_codes(conn)` |
+| `util/deck_helpers.py` | Resolve deck card rows against the catalog (`resolve_deck_row`) |
+| `lib/deck_purchase.py` | `lookup_unit_market`, `upsert_purchase_value` for Set Manager |
+| `util/tracked_sets.py` | Which sets are registered in Set Manager |
+| `util/collection_backup.py` | Portable backup ZIP export/import |
 
-Deck import does **not** write purchases. Use `sync_collection.py` (decks + purchases), or `deck_sync.py` / `deck_import.py` followed by `purchase_import.py`.
+Decks and ownership are edited via the API. Use **Settings → Backup & restore** to move data between installs.
 
 ---
 
@@ -248,7 +225,7 @@ def format_money(value: float | None) -> str:
 - Purchase filenames in `data/`: **lowercase** (`ltr.csv`).
 - Art-style filenames in `data/art_styles/`: **lowercase** (`ltr.json`).
 - When discovering purchase sets, glob `data/*.csv` and exclude `purchases.csv` and `example.csv`.
-- Deck print sets are discovered from `data/decks/*.csv` via `list_deck_sync_set_codes()`; `update_prices.get_set_codes()` unions purchase and deck sets.
+- Tracked sets come from `tracked_sets`; deck print sets from `deck_cards` via `list_deck_sync_set_codes(conn)`. `update_prices.get_set_codes()` unions both.
 
 ---
 
@@ -383,8 +360,8 @@ Before merging Python changes, check:
 - [ ] SQL is parameterized; no duplicated query blocks without reason
 - [ ] Missing values handled with `pd.isna`, not `x != x`
 - [ ] User-facing Dutch strings only in output/templates, not in identifiers
-- [ ] Deck changes documented if CSV format or import behavior changes (`docs/decks.md`)
-- [ ] Purchase import tested when changing ownership or allocation logic
+- [ ] Deck or backup behavior changes documented in `docs/decks.md`
+- [ ] Ownership / purchase logic tested when changing manager or storage APIs
 
 ---
 
@@ -395,10 +372,10 @@ Apply guidelines incrementally in this order:
 1. ~~Add `scripts/lib/config.py` and migrate path constants.~~ Done — extend `lib/config.py` when new paths are needed.
 2. ~~Add `requirements.txt` and align `readme.md` with actual commands/files.~~ Done.
 3. Guard all `db/*.py` scripts with `main()`; stop running logic at import time.
-4. ~~Consolidate purchase import into one module.~~ Done — use `purchase_import.py` + `lib/purchase_loader.py` (set CSVs + deck ownership).
-5. ~~Add deck list import and deck reports.~~ Done — see `docs/decks.md`.
+4. ~~Move collection code under `server-backend/collection/`.~~ Done.
+5. ~~SQLite-only decks and tracked sets (no CSV import).~~ Done — see `docs/decks.md` and `util/tracked_sets.py`.
 6. Deduplicate SQL in `report_data.py`.
 7. Add `ruff` + `pyright`; fix the highest-signal issues first.
-8. Extend pytest coverage for deck CSV parsing and report payloads.
+8. Extend pytest coverage for backup restore and report payloads.
 
 Guidelines should evolve with the codebase — update this doc when we adopt a new convention.
