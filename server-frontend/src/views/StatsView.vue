@@ -5,6 +5,7 @@ import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
+import CollectionSetLink from "../components/CollectionSetLink.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings } from "../composables/pricingSettings";
@@ -290,19 +291,25 @@ onMounted(() => {
               :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
             >
               <td>
-                <button
-                  type="button"
-                  class="stats-set-drill"
-                  @click="selectSet(unknownCardSetCode(card))"
-                >
-                  <img
-                    v-if="setIconForCode(unknownCardSetCode(card))"
-                    :src="setIconForCode(unknownCardSetCode(card))"
-                    alt=""
-                    class="stats-set-icon"
+                <div class="stats-set-drill">
+                  <button
+                    type="button"
+                    class="stats-set-drill-icon"
+                    :aria-label="`Filter stats to ${setRowLabel(unknownCardSetCode(card))}`"
+                    @click="selectSet(unknownCardSetCode(card))"
                   >
-                  <span>{{ setRowLabel(unknownCardSetCode(card)) }}</span>
-                </button>
+                    <img
+                      v-if="setIconForCode(unknownCardSetCode(card))"
+                      :src="setIconForCode(unknownCardSetCode(card))"
+                      alt=""
+                      class="stats-set-icon"
+                    >
+                  </button>
+                  <CollectionSetLink
+                    :set-code="unknownCardSetCode(card)"
+                    :label="setRowLabel(unknownCardSetCode(card))"
+                  />
+                </div>
               </td>
               <td>{{ unknownCardNumber(card) }}</td>
               <td>
@@ -341,19 +348,25 @@ onMounted(() => {
           <tbody>
             <tr v-for="row in setBreakdownRows" :key="row.setCode">
               <td>
-                <button
-                  type="button"
-                  class="stats-set-drill"
-                  @click="selectSet(row.setCode)"
-                >
-                  <img
-                    v-if="setIconForCode(row.setCode)"
-                    :src="setIconForCode(row.setCode)"
-                    alt=""
-                    class="stats-set-icon"
+                <div class="stats-set-drill">
+                  <button
+                    type="button"
+                    class="stats-set-drill-icon"
+                    :aria-label="`Filter stats to ${setRowLabel(row.setCode)}`"
+                    @click="selectSet(row.setCode)"
                   >
-                  <span>{{ setRowLabel(row.setCode) }}</span>
-                </button>
+                    <img
+                      v-if="setIconForCode(row.setCode)"
+                      :src="setIconForCode(row.setCode)"
+                      alt=""
+                      class="stats-set-icon"
+                    >
+                  </button>
+                  <CollectionSetLink
+                    :set-code="row.setCode"
+                    :label="setRowLabel(row.setCode)"
+                  />
+                </div>
               </td>
               <td>{{ row.count }}</td>
               <td class="stats-value-cell">

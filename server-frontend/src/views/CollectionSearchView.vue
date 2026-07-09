@@ -25,7 +25,6 @@ const resultsPayload = ref(null);
 const artExplorer = ref(null);
 const artSelectedIndex = ref(0);
 const selectedCardName = ref("");
-const searchInput = ref("");
 const searchQuery = ref("");
 const ownedFilter = ref("all");
 const foilFilter = ref(getStoredFoilFilter());
@@ -34,8 +33,6 @@ const randomLoading = ref(false);
 const routeSyncReady = ref(false);
 const { loading, run } = useAsyncLoad();
 const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
-
-let debounceTimer = null;
 
 const sets = computed(() => meta.value?.sets || []);
 const cards = computed(() => resultsPayload.value?.cards || []);
@@ -88,7 +85,6 @@ function syncFiltersFromRoute() {
   }
   const q = route.query.q;
   searchQuery.value = typeof q === "string" ? q : "";
-  searchInput.value = searchQuery.value;
   const pageParam = route.query.page;
   const parsedPage = Number(pageParam);
   page.value = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
@@ -155,25 +151,6 @@ async function autoSelectFirstResult() {
   } catch {
     closeArtExplorer();
   }
-}
-
-function commitSearch() {
-  clearTimeout(debounceTimer);
-  const trimmed = searchInput.value.trim();
-  searchQuery.value = trimmed;
-  page.value = 1;
-  syncSearchRoute();
-  loadResults({ autoSelectFirst: true });
-}
-
-function scheduleDebouncedSearch() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    if (searchInput.value.trim() === searchQuery.value.trim()) {
-      return;
-    }
-    commitSearch();
-  }, 350);
 }
 
 function setOwnedFilter(value) {
@@ -247,6 +224,13 @@ function closeArtExplorer() {
   selectedCardName.value = "";
 }
 
+async function onArtOwnershipChanged() {
+  if (!searchQuery.value.trim()) {
+    return;
+  }
+  await loadResults();
+}
+
 watch([ownedFilter, foilFilter], () => {
   if (!routeSyncReady.value) {
     return;
@@ -302,37 +286,6 @@ onMounted(async () => {
 
 <template>
   <div class="reports-page collection-page collection-search-page">
-    <section class="collection-search-hero table-panel">
-      <form class="collection-search-form" @submit.prevent="commitSearch">
-        <div class="collection-search-input-row">
-          <input
-            v-model="searchInput"
-            type="search"
-            class="collection-search-input"
-            placeholder="Search by name, number, art style, type…"
-            autocomplete="off"
-            aria-label="Search cards"
-            @input="scheduleDebouncedSearch"
-          />
-          <button type="submit" class="btn btn-primary" :disabled="loading">
-            Search
-          </button>
-          <button
-            type="button"
-            class="btn btn-secondary"
-            :disabled="randomLoading"
-            title="Pick a random card name and browse its art on this page"
-            @click="openRandomCard"
-          >
-            {{ randomLoading ? "…" : "Random" }}
-          </button>
-        </div>
-        <p class="collection-search-hint">
-          Try a card name, collector number, art style, or card type. Filters below narrow results.
-        </p>
-      </form>
-    </section>
-
     <div class="page-with-sidebar">
       <FilterSidebar>
         <div class="filter-sidebar-section filter-sidebar-section--compact-filters">
@@ -406,61 +359,96 @@ onMounted(async () => {
         </div>
       </FilterSidebar>
 
-      <div class="page-with-sidebar-main">
-    <SearchArtBrowser
-      v-if="artExplorer"
-      :name="artExplorer.name"
-      :variants="artExplorer.variants"
-      :selected-index="artSelectedIndex"
-      :set-label-for="setLabel"
-      @update:selected-index="artSelectedIndex = $event"
-      @random="openRandomCard"
-      @close="closeArtExplorer"
-    />
+      <div class="page-with-sidebar-main collection-search-main">
+        <div class="collection-search-toolbar">
+          <p v-if="searchQuery.trim()" class="collection-search-toolbar-query">
+            Results for “{{ searchQuery.trim() }}”
+          </p>
+          <p v-else class="collection-search-toolbar-query collection-search-empty-prompt">
+            Use the search bar above to find cards by name, or browse a random one.
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary btn-small collection-search-random-btn"
+            :disabled="randomLoading"
+            title="Pick a random card name and browse its art on this page"
+            @click="openRandomCard"
+          >
+            {{ randomLoading ? "…" : "Random card" }}
+          </button>
+        </div>
 
-    <p v-if="!searchQuery.trim() || !totalMatches" class="manager-stats collection-search-empty-prompt">
-      <template v-if="searchQuery.trim() && !loading && !totalMatches">
-        No cards match “{{ searchQuery }}” with these filters.
-      </template>
-      <template v-else-if="!searchQuery.trim()">
-        Browsing a random card. Enter a search term to find specific cards.
-      </template>
-    </p>
+        <div class="collection-search-body">
+          <div class="collection-search-results">
+            <p
+              v-if="searchQuery.trim() && !loading && !totalMatches"
+              class="manager-stats collection-search-empty-prompt"
+            >
+              No cards match “{{ searchQuery }}” with these filters.
+            </p>
 
-    <div v-if="loading && !cards.length" class="storage-empty">
-      <LoadingIndicator label="Searching cards…" />
-    </div>
+            <div v-if="loading && !cards.length" class="storage-empty">
+              <LoadingIndicator label="Searching cards…" />
+            </div>
 
-    <div v-else-if="searchQuery.trim() && cards.length" class="table-panel cards-panel reports-cards-panel collection-gallery-panel">
-      <div class="collection-gallery-toolbar">
-        <p class="collection-gallery-toolbar-stats">
-          Showing {{ resultsRangeStart }}–{{ resultsRangeEnd }} of {{ totalMatches }} cards
-        </p>
-        <PageControls
-          v-if="totalPages > 1"
-          :page="page"
-          :total-pages="totalPages"
-          class="collection-gallery-toolbar-pagination"
-          @update:page="goToPage"
-        />
-        <CollectionGalleryScaleControl
-          class="collection-gallery-toolbar-scale"
-          :model-value="collectionCardScale"
-          :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
-          @update:model-value="setCollectionCardScale"
-        />
-      </div>
-      <GalleryLoadingOverlay :loading="loading" label="Searching cards…">
-        <CollectionCardGrid
-          :cards="cards"
-          :show-unowned-badge="false"
-          :card-scale="collectionCardScale"
-          browse-names
-          :selected-name="selectedCardName"
-          @browse-name="browseCardName"
-        />
-      </GalleryLoadingOverlay>
-    </div>
+            <div
+              v-else-if="searchQuery.trim() && cards.length"
+              class="table-panel cards-panel reports-cards-panel collection-gallery-panel"
+            >
+              <div class="collection-gallery-toolbar">
+                <p class="collection-gallery-toolbar-stats">
+                  Showing {{ resultsRangeStart }}–{{ resultsRangeEnd }} of {{ totalMatches }} cards
+                </p>
+                <PageControls
+                  v-if="totalPages > 1"
+                  :page="page"
+                  :total-pages="totalPages"
+                  class="collection-gallery-toolbar-pagination"
+                  @update:page="goToPage"
+                />
+                <CollectionGalleryScaleControl
+                  class="collection-gallery-toolbar-scale"
+                  :model-value="collectionCardScale"
+                  :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+                  @update:model-value="setCollectionCardScale"
+                />
+              </div>
+              <GalleryLoadingOverlay :loading="loading" label="Searching cards…">
+                <CollectionCardGrid
+                  :cards="cards"
+                  :show-unowned-badge="false"
+                  :card-scale="collectionCardScale"
+                  browse-names
+                  :selected-name="selectedCardName"
+                  @browse-name="browseCardName"
+                  @ownership-changed="onArtOwnershipChanged"
+                />
+              </GalleryLoadingOverlay>
+            </div>
+
+            <p
+              v-else-if="!searchQuery.trim() && !artExplorer"
+              class="collection-search-results-hint collection-search-empty-prompt"
+            >
+              Select a card from the list after searching, or use Random card.
+            </p>
+          </div>
+
+          <aside v-if="artExplorer" class="collection-search-detail">
+            <SearchArtBrowser
+              sidebar
+              :name="artExplorer.name"
+              :variants="artExplorer.variants"
+              :selected-index="artSelectedIndex"
+              :set-label-for="setLabel"
+              :show-random="!searchQuery.trim()"
+              @update:selected-index="artSelectedIndex = $event"
+              @random="openRandomCard"
+              @close="closeArtExplorer"
+              @ownership-changed="onArtOwnershipChanged"
+            />
+          </aside>
+        </div>
       </div>
     </div>
   </div>

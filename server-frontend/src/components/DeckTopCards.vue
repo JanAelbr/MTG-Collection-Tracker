@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import ManaSymbols from "./ManaSymbols.vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import { getTopValueCards } from "../utils/deckBrowse";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { formatEuro } from "../utils/format";
@@ -73,7 +74,8 @@ function cardRoute(card) {
           </div>
 
           <p v-if="card.setCode" class="deck-top-card-print">
-            {{ card.setCode }} #{{ card.collectorNumber }}
+            <CollectionSetLink :set-code="card.setCode" />
+            #{{ card.collectorNumber }}
             <span v-if="card.finish != null"> · {{ finishLabel(card.finish ?? card.foil ?? 0) }}</span>
           </p>
         </figcaption>

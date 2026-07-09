@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import { formatEuro } from "../utils/format";
 import {
   FINISH_ETCHED,
@@ -23,7 +24,10 @@ const props = defineProps({
   showName: { type: Boolean, default: false },
   showArrows: { type: Boolean, default: false },
   centered: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: false },
 });
+
+const emit = defineEmits(["select"]);
 
 const prevCount = ref(NEIGHBOR_BATCH);
 const nextCount = ref(NEIGHBOR_BATCH);
@@ -61,8 +65,8 @@ function cardRoute(card) {
   };
 }
 
-function printLabel(card) {
-  return `${card.setCode} · #${String(card.collectorNumber).padStart(3, "0")}`;
+function collectorNumberLabel(card) {
+  return `#${String(card.collectorNumber).padStart(3, "0")}`;
 }
 
 function scrollList(alignment = "center") {
@@ -115,6 +119,9 @@ watch(
 onMounted(() => {
   nextTick(() => scrollList("center"));
 });
+function onSelect(card) {
+  emit("select", card);
+}
 </script>
 
 <template>
@@ -145,9 +152,44 @@ onMounted(() => {
     <h2 v-else>{{ title }}</h2>
 
     <div ref="listRef" :class="listClass">
-      <template v-for="card in visibleCards" :key="`${card.setCode}-${card.collectorNumber}`">
+      <template v-for="card in visibleCards" :key="`${card.setCode}-${card.collectorNumber}-${card.artStyle || ''}`">
+        <button
+          v-if="selectable && !card.isCurrent"
+          type="button"
+          class="card-variant"
+          @click="onSelect(card)"
+        >
+          <div class="card-variant-body">
+            <div class="card-variant-image-wrap">
+              <img
+                v-if="card.imageUri"
+                :src="card.imageUri"
+                :alt="card.name"
+                class="card-variant-image"
+              />
+              <div v-else class="card-variant-image card-variant-image-empty" />
+            </div>
+            <p class="card-variant-caption">
+              <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
+              · {{ collectorNumberLabel(card) }}
+            </p>
+            <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
+            <div class="card-variant-prices">
+              <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
+                <div
+                  v-if="hasFinish(card, finishOption)"
+                  class="card-variant-price-row"
+                  :class="{ 'card-variant-price-row-highlight': finishOption !== FINISH_NONFOIL }"
+                >
+                  <span class="card-variant-key">{{ finishLabel(finishOption) }}</span>
+                  <span>{{ formatEuro(marketValueForFinish(card, finishOption)) }}</span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </button>
         <RouterLink
-          v-if="!card.isCurrent"
+          v-else-if="!card.isCurrent"
           :to="cardRoute(card)"
           class="card-variant"
         >
@@ -161,17 +203,20 @@ onMounted(() => {
               />
               <div v-else class="card-variant-image card-variant-image-empty" />
             </div>
-            <p class="card-variant-caption">{{ printLabel(card) }}</p>
+            <p class="card-variant-caption">
+              <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
+              · {{ collectorNumberLabel(card) }}
+            </p>
             <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
             <div class="card-variant-prices">
-              <template v-for="finish in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finish">
+              <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
                 <div
-                  v-if="hasFinish(card, finish)"
+                  v-if="hasFinish(card, finishOption)"
                   class="card-variant-price-row"
-                  :class="{ 'card-variant-price-row-highlight': finish !== FINISH_NONFOIL }"
+                  :class="{ 'card-variant-price-row-highlight': finishOption !== FINISH_NONFOIL }"
                 >
-                  <span class="card-variant-key">{{ finishLabel(finish) }}</span>
-                  <span>{{ formatEuro(marketValueForFinish(card, finish)) }}</span>
+                  <span class="card-variant-key">{{ finishLabel(finishOption) }}</span>
+                  <span>{{ formatEuro(marketValueForFinish(card, finishOption)) }}</span>
                 </div>
               </template>
             </div>
@@ -188,17 +233,20 @@ onMounted(() => {
               />
               <div v-else class="card-variant-image card-variant-image-empty" />
             </div>
-            <p class="card-variant-caption">{{ printLabel(card) }}</p>
+            <p class="card-variant-caption">
+              <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
+              · {{ collectorNumberLabel(card) }}
+            </p>
             <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
             <div class="card-variant-prices">
-              <template v-for="finish in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finish">
+              <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
                 <div
-                  v-if="hasFinish(card, finish)"
+                  v-if="hasFinish(card, finishOption)"
                   class="card-variant-price-row"
-                  :class="{ 'card-variant-price-row-highlight': finish !== FINISH_NONFOIL }"
+                  :class="{ 'card-variant-price-row-highlight': finishOption !== FINISH_NONFOIL }"
                 >
-                  <span class="card-variant-key">{{ finishLabel(finish) }}</span>
-                  <span>{{ formatEuro(marketValueForFinish(card, finish)) }}</span>
+                  <span class="card-variant-key">{{ finishLabel(finishOption) }}</span>
+                  <span>{{ formatEuro(marketValueForFinish(card, finishOption)) }}</span>
                 </div>
               </template>
             </div>

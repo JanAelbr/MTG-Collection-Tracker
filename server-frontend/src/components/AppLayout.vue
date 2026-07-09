@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 
 import AppLogoIcon from "./AppLogoIcon.vue";
+import NavbarSearch from "./NavbarSearch.vue";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
@@ -79,22 +80,26 @@ function subnavLinkTo(subItem) {
   <div class="app-shell">
     <div class="app-chrome">
       <header class="app-topbar">
-        <RouterLink :to="brandLink" class="app-brand" aria-label="Home">
-          <AppLogoIcon class="app-brand-icon" :size="22" />
-          <span class="app-brand-text">{{ APP_TITLE }}</span>
-        </RouterLink>
-
-        <nav class="app-topnav" aria-label="Main navigation">
-          <RouterLink
-            v-for="item in navItems"
-            :key="item.to"
-            :to="navLinkTo(item)"
-            class="app-topnav-link"
-            :class="{ 'is-active': isNavActive(item) }"
-          >
-            {{ item.label }}
+        <div class="app-topbar-main">
+          <RouterLink :to="brandLink" class="app-brand" aria-label="Home">
+            <AppLogoIcon class="app-brand-icon" :size="22" />
+            <span class="app-brand-text">{{ APP_TITLE }}</span>
           </RouterLink>
-        </nav>
+
+          <nav class="app-topnav" aria-label="Main navigation">
+            <RouterLink
+              v-for="item in navItems"
+              :key="item.to"
+              :to="navLinkTo(item)"
+              class="app-topnav-link"
+              :class="{ 'is-active': isNavActive(item) }"
+            >
+              {{ item.label }}
+            </RouterLink>
+          </nav>
+        </div>
+
+        <NavbarSearch class="app-topbar-search" />
       </header>
 
       <nav

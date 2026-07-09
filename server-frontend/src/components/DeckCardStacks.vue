@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import DeckAddCardModal from "./DeckAddCardModal.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import {
   effectiveDeckOwnedQty,
@@ -216,7 +217,10 @@ function closeAddModal() {
                   </div>
                   <div v-if="card.setCode" class="deck-stacks-detail-row">
                     <dt>Print</dt>
-                    <dd>{{ card.setCode }} #{{ card.collectorNumber }}</dd>
+                    <dd>
+                      <CollectionSetLink :set-code="card.setCode" />
+                      #{{ card.collectorNumber }}
+                    </dd>
                   </div>
                   <div v-if="card.finish != null" class="deck-stacks-detail-row">
                     <dt>Finish</dt>

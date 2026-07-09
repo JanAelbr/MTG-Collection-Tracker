@@ -171,3 +171,15 @@ export function canManageFinish(card, finish) {
     || cardHasCatalogFinish(card, finish)
   );
 }
+
+export function cardSupportsNonfoilFoilToggle(card) {
+  if (!card) {
+    return false;
+  }
+  const available = (card.availableFinishes || [])
+    .map((value) => normalizeFinish(value));
+  if (available.includes(FINISH_NONFOIL) && available.includes(FINISH_FOIL)) {
+    return true;
+  }
+  return canManageFinish(card, FINISH_NONFOIL) && canManageFinish(card, FINISH_FOIL);
+}

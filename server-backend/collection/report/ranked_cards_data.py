@@ -98,6 +98,12 @@ def load_ranked_cards_data() -> pd.DataFrame:
     return expand_cards_for_ranking(cards_df)
 
 
+def _int_flag(value) -> int:
+    if value is None or pd.isna(value):
+        return 0
+    return int(value)
+
+
 # Build compact card rows for client-side ranked report rendering.
 def serialize_ranked_cards(cards_df: pd.DataFrame) -> list[dict]:
     if cards_df.empty:
@@ -122,6 +128,9 @@ def serialize_ranked_cards(cards_df: pd.DataFrame) -> list[dict]:
             "market_value": _float_or_none(row.market_value),
             "market_value_foil": _float_or_none(row.market_value_foil),
             "market_value_etched": _float_or_none(row.market_value_etched),
+            "has_nonfoil": _int_flag(row.has_nonfoil),
+            "has_foil": _int_flag(row.has_foil),
+            "has_etched": _int_flag(row.has_etched),
             "image_uri": str_or_empty(row.image_uri),
             "cardmarket_url": str_or_empty(row.cardmarket_url),
             **card_metadata_snake(row),

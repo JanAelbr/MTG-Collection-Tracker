@@ -7,6 +7,7 @@ import { useRoute } from "vue-router";
 import { api } from "../api";
 
 import CardPreview from "../components/CardPreview.vue";
+import CollectionSetLink from "../components/CollectionSetLink.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
@@ -164,15 +165,6 @@ function cardRoute(card) {
 
   };
 
-}
-
-
-
-function setReportRoute(setCode) {
-  return {
-    path: "/collection/top",
-    query: { set: setCode },
-  };
 }
 
 
@@ -596,13 +588,7 @@ onMounted(async () => {
               <tr v-for="card in cardsPayload.cards" :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`">
 
                 <td>
-
-                  <RouterLink :to="setReportRoute(card.setCode)" class="reports-card-link">
-
-                    {{ card.setCode }}
-
-                  </RouterLink>
-
+                  <CollectionSetLink :set-code="card.setCode" />
                 </td>
 
                 <td>{{ card.collectorNumber }}</td>

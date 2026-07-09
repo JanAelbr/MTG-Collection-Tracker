@@ -1,6 +1,9 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
+import CardCopyControls from "./CardCopyControls.vue";
+import CardVariantGallery from "./CardVariantGallery.vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
 import { formatEuro } from "../utils/format";
 import {
@@ -20,14 +23,16 @@ const props = defineProps({
   setLabelFor: { type: Function, default: null },
   showRandom: { type: Boolean, default: true },
   compact: { type: Boolean, default: false },
+  sidebar: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:selectedIndex", "random", "close"]);
+const emit = defineEmits(["update:selectedIndex", "random", "close", "ownership-changed"]);
 
 const panelRef = ref(null);
-const listRef = ref(null);
+const imageZoomOpen = ref(false);
 
 const selectedVariant = computed(() => props.variants[props.selectedIndex] || null);
+const useZoomPreview = computed(() => props.sidebar || props.compact);
 
 const selectedIsOwned = computed(() => {
   ownershipRevision.value;
@@ -56,19 +61,21 @@ const availableFinishes = computed(() => {
   return [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => finishes.includes(finish));
 });
 
+const galleryCards = computed(() =>
+  props.variants.map((card, index) => ({
+    ...card,
+    isCurrent: index === props.selectedIndex,
+  })),
+);
+
+const showVariantGallery = computed(() => props.variants.length > 1);
+const selectedFinish = computed(() => cardFinish(selectedVariant.value || {}));
+
 function setLabel(code) {
   if (props.setLabelFor) {
     return props.setLabelFor(code);
   }
   return code;
-}
-
-function variantKey(card, index) {
-  return `${card.setCode}-${card.collectorNumber}-${card.artStyle || ""}-${index}`;
-}
-
-function thumbTitle(card) {
-  return card.artStyle || props.name;
 }
 
 function valueForFinish(card, finish) {
@@ -83,42 +90,65 @@ function valueForFinish(card, finish) {
   return null;
 }
 
-function selectVariant(index) {
-  if (index < 0 || index >= props.variants.length) {
-    return;
+function onGallerySelect(card) {
+  const index = props.variants.findIndex(
+    (variant) =>
+      variant.setCode === card.setCode
+      && String(variant.collectorNumber) === String(card.collectorNumber)
+      && (variant.artStyle || "") === (card.artStyle || ""),
+  );
+  if (index >= 0) {
+    emit("update:selectedIndex", index);
   }
-  emit("update:selectedIndex", index);
 }
 
-function scrollSelectedIntoView() {
-  nextTick(() => {
-    const list = listRef.value;
-    if (!list) {
-      return;
-    }
-    const active = list.querySelector(".search-art-thumb.is-active");
-    active?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-  });
+function closeImageZoom() {
+  imageZoomOpen.value = false;
+}
+
+function onImageZoomKeydown(event) {
+  if (event.key === "Escape") {
+    closeImageZoom();
+  }
 }
 
 function scrollPanelIntoView() {
+  if (props.sidebar) {
+    return;
+  }
   nextTick(() => {
     panelRef.value?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 }
 
 watch(
-  () => props.selectedIndex,
-  () => scrollSelectedIntoView(),
-);
-
-watch(
   () => [props.name, props.variants],
   () => {
-    scrollSelectedIntoView();
     scrollPanelIntoView();
   },
 );
+
+watch(
+  () => props.selectedIndex,
+  () => {
+    imageZoomOpen.value = false;
+  },
+);
+
+watch(imageZoomOpen, (open) => {
+  if (open) {
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onImageZoomKeydown);
+    return;
+  }
+  document.body.style.overflow = "";
+  window.removeEventListener("keydown", onImageZoomKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = "";
+  window.removeEventListener("keydown", onImageZoomKeydown);
+});
 </script>
 
 <template>
@@ -126,16 +156,28 @@ watch(
     v-if="name && variants.length"
     ref="panelRef"
     class="table-panel collection-search-art-panel"
-    :class="{ 'collection-search-art-panel--compact': compact }"
+    :class="{
+      'collection-search-art-panel--compact': compact,
+      'collection-search-art-panel--sidebar': sidebar,
+    }"
   >
     <div class="collection-search-art-header">
       <div>
-        <h2 class="collection-search-art-title">{{ name }}</h2>
+        <h2 class="collection-search-art-title">
+          <RouterLink
+            v-if="selectedRoute"
+            :to="selectedRoute"
+            class="collection-search-art-title-link"
+          >
+            {{ name }}
+          </RouterLink>
+          <span v-else>{{ name }}</span>
+        </h2>
         <p class="collection-search-art-meta">
-          {{ variants.length }} art{{ variants.length === 1 ? "" : "s" }} across sets
+          {{ variants.length }} version{{ variants.length === 1 ? "" : "s" }} across sets
         </p>
       </div>
-      <div class="collection-search-art-actions">
+      <div v-if="showRandom || !sidebar" class="collection-search-art-actions">
         <button
           v-if="showRandom"
           type="button"
@@ -144,7 +186,12 @@ watch(
         >
           Another random
         </button>
-        <button type="button" class="btn btn-secondary btn-small" @click="emit('close')">
+        <button
+          v-if="!sidebar"
+          type="button"
+          class="btn btn-secondary btn-small"
+          @click="emit('close')"
+        >
           Close
         </button>
       </div>
@@ -152,13 +199,20 @@ watch(
 
     <div v-if="selectedVariant" class="collection-search-art-selected">
       <div class="collection-search-art-preview-image-wrap">
-        <img
-          v-if="compact && selectedVariant.imageUri"
-          :src="selectedVariant.imageUri"
-          :alt="name"
-          loading="lazy"
-          class="collection-search-art-preview-image"
-        />
+        <button
+          v-if="useZoomPreview && selectedVariant.imageUri"
+          type="button"
+          class="collection-search-art-preview-zoom-btn"
+          aria-label="View larger image"
+          @click="imageZoomOpen = true"
+        >
+          <img
+            :src="selectedVariant.imageUri"
+            :alt="name"
+            loading="lazy"
+            class="collection-search-art-preview-image"
+          >
+        </button>
         <CardInteractiveImage
           v-else-if="selectedVariant.imageUri"
           :src="selectedVariant.imageUri"
@@ -166,6 +220,7 @@ watch(
           :card="selectedVariant"
           :show-details="false"
           img-class="collection-search-art-preview-image"
+          @ownership-changed="emit('ownership-changed')"
         />
         <div v-else class="collection-search-art-preview-empty">No image</div>
       </div>
@@ -174,7 +229,13 @@ watch(
         <dl class="collection-search-art-details-list">
           <div class="collection-search-art-detail">
             <dt>Set</dt>
-            <dd>{{ setLabel(selectedVariant.setCode) }}</dd>
+            <dd>
+              <CollectionSetLink
+                :set-code="selectedVariant.setCode"
+                :art-style="selectedVariant.artStyle || ''"
+                :label="setLabel(selectedVariant.setCode)"
+              />
+            </dd>
           </div>
           <div class="collection-search-art-detail">
             <dt>Number</dt>
@@ -205,35 +266,50 @@ watch(
             </dd>
           </div>
         </dl>
-        <RouterLink
-          v-if="selectedRoute"
-          :to="selectedRoute"
-          class="btn btn-secondary btn-small"
-        >
-          Open card page
-        </RouterLink>
+        <CardCopyControls
+          :card="selectedVariant"
+          variant="panel"
+          :visible="true"
+          @ownership-changed="emit('ownership-changed')"
+        />
       </div>
     </div>
 
-    <div ref="listRef" class="collection-search-art-thumbs">
-      <button
-        v-for="(variant, index) in variants"
-        :key="variantKey(variant, index)"
-        type="button"
-        class="search-art-thumb"
-        :class="{ 'is-active': index === selectedIndex }"
-        :title="thumbTitle(variant)"
-        :aria-label="thumbTitle(variant)"
-        @click="selectVariant(index)"
+    <CardVariantGallery
+      v-if="showVariantGallery"
+      class="collection-search-art-gallery"
+      title="Alternative versions"
+      :cards="galleryCards"
+      :current-index="selectedIndex"
+      :finish="selectedFinish"
+      :centered="sidebar"
+      selectable
+      @select="onGallerySelect"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="imageZoomOpen && selectedVariant?.imageUri"
+        class="card-image-zoom-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Card image preview"
+        @click.self="closeImageZoom"
       >
+        <button
+          type="button"
+          class="card-image-zoom-close"
+          aria-label="Close image preview"
+          @click="closeImageZoom"
+        >
+          ×
+        </button>
         <img
-          v-if="variant.imageUri"
-          :src="variant.imageUri"
-          :alt="thumbTitle(variant)"
-          class="search-art-thumb-image"
-        />
-        <div v-else class="search-art-thumb-image search-art-thumb-empty" />
-      </button>
-    </div>
+          :src="selectedVariant.imageUri"
+          :alt="name"
+          class="card-image-zoom-image"
+        >
+      </div>
+    </Teleport>
   </section>
 </template>

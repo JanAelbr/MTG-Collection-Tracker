@@ -16,8 +16,8 @@ import {
   canManageFinish,
   normalizeFinish,
 } from "../utils/finishes";
-import { collectionScopeToQuery } from "../utils/setScope";
 import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
+import CollectionSetLink from "../components/CollectionSetLink.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -80,16 +80,6 @@ const menuCard = computed(() => {
 const showVariantGallery = computed(
   () => (card.value?.variantGallery?.cards?.length || 0) > 1,
 );
-
-const collectionSetLink = computed(() => {
-  if (!card.value?.setCode) {
-    return null;
-  }
-  return {
-    path: "/collection/all",
-    query: collectionScopeToQuery(card.value.setCode, card.value.artStyle || ""),
-  };
-});
 
 const defaultDeckId = computed(() =>
   typeof route.query.deck === "string" ? route.query.deck : "",
@@ -259,14 +249,11 @@ onUnmounted(() => {
       <div class="card-detail-meta">
         <h1>{{ card.name }}</h1>
         <p class="card-detail-set">
-          <RouterLink
-            v-if="collectionSetLink"
-            :to="collectionSetLink"
-            class="card-detail-set-link"
-          >
-            {{ card.setLabel }}
-          </RouterLink>
-          <span v-else>{{ card.setLabel }}</span>
+          <CollectionSetLink
+            :set-code="card.setCode"
+            :art-style="card.artStyle || ''"
+            :label="card.setLabel"
+          />
         </p>
         <p class="card-detail-subtitle">#{{ String(card.collectorNumber).padStart(3, "0") }}</p>
         <p v-if="card.artStyle" class="card-detail-art-style">{{ card.artStyle }}</p>

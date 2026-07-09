@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
 import { formatEuro, formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
@@ -17,7 +18,7 @@ const props = defineProps({
   priceChangeMode: { type: String, default: "" },
 });
 
-const emit = defineEmits(["browse-name"]);
+const emit = defineEmits(["browse-name", "ownership-changed"]);
 
 const gridStyle = computed(() => ({
   "--collection-card-scale": String(props.cardScale / 100),
@@ -115,13 +116,18 @@ function isCardSelected(card) {
         class="collection-card-grid-select"
         @click="emit('browse-name', card.name)"
       >
-        <img
-          v-if="card.imageUri"
-          :src="card.imageUri"
-          :alt="card.name"
-          class="collection-card-grid-image"
-        />
-        <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
+        <div class="collection-card-grid-image-wrap">
+          <CardInteractiveImage
+            v-if="card.imageUri"
+            :src="card.imageUri"
+            :alt="card.name"
+            :card="card"
+            :show-details="false"
+            img-class="collection-card-grid-image"
+            @ownership-changed="emit('ownership-changed')"
+          />
+          <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
+        </div>
         <span class="collection-card-grid-name">{{ card.name }}</span>
       </button>
       <template v-else>
@@ -143,7 +149,13 @@ function isCardSelected(card) {
         >
           #{{ String(card.collectorNumber).padStart(3, "0") }} · {{ cardDisplayName(card) }}
         </RouterLink>
-        <span v-if="showSetLabel" class="collection-card-grid-set">{{ setLabel(card) }}</span>
+        <span v-if="showSetLabel" class="collection-card-grid-set">
+          <CollectionSetLink
+            :set-code="card.setCode"
+            :art-style="card.artStyle || ''"
+            :label="setLabel(card)"
+          />
+        </span>
         <span
           v-if="showFinishBadge"
           class="collection-card-grid-finish"

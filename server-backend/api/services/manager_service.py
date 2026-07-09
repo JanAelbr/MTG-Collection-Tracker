@@ -470,6 +470,7 @@ def _load_copy_instances(
             "locationSlug": slug,
             "label": label,
             "purchaseValue": _float_or_none(purchase_value),
+            "finish": normalized_finish,
         }
         for instance_id, slug, label, purchase_value in rows
     ]

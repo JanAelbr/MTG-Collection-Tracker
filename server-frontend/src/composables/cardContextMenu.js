@@ -383,6 +383,41 @@ export async function updateCardCopyStorage(card, instanceId, locationSlug) {
   return state;
 }
 
+export async function updateCardCopyFinish(card, instanceId, toFinish) {
+  const target = normalizeCardMenuTarget(card);
+  if (!target || !instanceId) {
+    throw new Error("Invalid card or copy.");
+  }
+  const normalizedTo = cardFinish({ finish: toFinish });
+  const fromFinish = target.finish;
+  await api.updateCardInstance(instanceId, { finish: normalizedTo });
+  clearClientCache();
+
+  if (card) {
+    card.finish = normalizedTo;
+    card.foil = normalizedTo;
+  }
+
+  const nextTarget = { ...target, finish: normalizedTo };
+  const state = await api.getCardCopyState({
+    setCode: nextTarget.setCode,
+    collectorNumber: nextTarget.collectorNumber,
+    finish: normalizedTo,
+  });
+  publishOwnershipChange(nextTarget, state, card);
+
+  if (fromFinish !== normalizedTo) {
+    const previousState = await api.getCardCopyState({
+      setCode: target.setCode,
+      collectorNumber: target.collectorNumber,
+      finish: fromFinish,
+    });
+    publishOwnershipChange({ ...target, finish: fromFinish }, previousState, card);
+  }
+
+  return state;
+}
+
 export function applyOptimisticCopyCount(card, ownedCount, previousCount = null) {
   clearClientCache();
   const target = normalizeCardMenuTarget(card);

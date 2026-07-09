@@ -121,6 +121,17 @@ export function collectionScopeToQuery(setCode, artStyle = "") {
   return query;
 }
 
+export function collectionRouteForSet(setCode, artStyle = "") {
+  const code = String(setCode || "").trim();
+  if (!code || code.toLowerCase() === "all") {
+    return { path: "/collection/all" };
+  }
+  return {
+    path: "/collection/all",
+    query: collectionScopeToQuery(code, artStyle),
+  };
+}
+
 export function searchNavQuery(route) {
   const query = {};
   if (route.path === "/collection/search") {

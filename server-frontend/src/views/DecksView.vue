@@ -10,6 +10,7 @@ import DeckTopCards from "../components/DeckTopCards.vue";
 import DeckAddCardModal from "../components/DeckAddCardModal.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
+import CollectionSetLink from "../components/CollectionSetLink.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
 import { api, clearClientCache } from "../api";
@@ -577,7 +578,11 @@ onMounted(async () => {
                 v-for="(card, index) in unknownCards"
                 :key="`${card.set_code || card.setCode}-${card.collector_number || card.collectorNumber}-${index}`"
               >
-                <td>{{ card.setCode || card.set_code || "—" }}</td>
+                <td>
+                  <CollectionSetLink
+                    :set-code="card.setCode || card.set_code || ''"
+                  />
+                </td>
                 <td>{{ card.collectorNumber ?? card.collector_number ?? "—" }}</td>
                 <td>
                   <RouterLink
