@@ -988,6 +988,7 @@ onUnmounted(stopPolling);
           <ArtStylePicker
             v-model="artStyle"
             layout="list"
+            :set-code="setCode"
             :art-styles="artStyles"
           />
         </div>

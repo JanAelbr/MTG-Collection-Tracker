@@ -1,6 +1,46 @@
 [
     {
-        "name": "All",
-        "all": true
+        "name": "01. Main set",
+        "firstNumber": 1,
+        "lastNumber": 281
+    },
+    {
+        "name": "02. Borderless planeswalkers",
+        "firstNumber": 282,
+        "lastNumber": 286
+    },
+    {
+        "name": "03. Borderless dragons",
+        "firstNumber": 287,
+        "lastNumber": 298
+    },
+    {
+        "name": "04. Showcase",
+        "firstNumber": 299,
+        "lastNumber": 358
+    },
+    {
+        "name": "05. Extended art",
+        "firstNumber": 359,
+        "lastNumber": 395
+    },
+    {
+        "name": "06. Buy-a-Box",
+        "firstNumber": 396,
+        "lastNumber": 396
+    },
+    {
+        "name": "07. Bundle promo",
+        "firstNumber": 397,
+        "lastNumber": 397
+    },
+    {
+        "name": "08. Promo pack",
+        "firstNumber": 398,
+        "lastNumber": 402
+    },
+    {
+        "name": "09. Alchemy promos",
+        "prefix": "A-"
     }
 ]

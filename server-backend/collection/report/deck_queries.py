@@ -3,10 +3,11 @@ import sqlite3
 import pandas as pd
 
 from lib.config import DB_PATH
+from util.alchemy_cards import exclude_alchemy_sql
 from util.price_history import PriceSnapshotCache, card_price_key, load_price_snapshot_cache
 
 
-DECK_CARDS_QUERY = """
+DECK_CARDS_QUERY = f"""
 SELECT
     dc.deck_id,
     d.name AS deck_name,
@@ -41,6 +42,8 @@ LEFT JOIN purchases p
     ON p.set_code = dc.set_code
     AND p.collector_number = dc.collector_number
     AND p.finish = dc.finish
+WHERE dc.collector_number IS NULL
+   OR {exclude_alchemy_sql("dc.collector_number")}
 ORDER BY dc.deck_id, dc.sort_order
 """
 

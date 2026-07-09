@@ -490,7 +490,9 @@ body {
 }
 
 .art-style-list-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 7px 10px;
   border: none;
@@ -501,6 +503,29 @@ body {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.art-style-list-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.art-style-list-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.art-style-list-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .art-style-list-item:last-child {
@@ -527,13 +552,6 @@ body {
 .art-style-list-item:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.art-style-list-label {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .storage-toolbar {

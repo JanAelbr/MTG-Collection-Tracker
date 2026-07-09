@@ -123,6 +123,20 @@ class ArtStyleTests(unittest.TestCase):
         self.assertEqual(get_art_style("tdm", "426"), "11. Buy-a-Box")
         self.assertEqual(get_art_style("tdm", "A-103"), "12. Alchemy promos")
 
+    def test_afr_main_showcases_and_promos(self):
+        self.assertEqual(get_art_style("afr", "100"), "01. Main set")
+        self.assertEqual(get_art_style("afr", "281"), "01. Main set")
+        self.assertEqual(get_art_style("afr", "282"), "02. Borderless planeswalkers")
+        self.assertEqual(get_art_style("afr", "287"), "03. Borderless dragons")
+        self.assertEqual(get_art_style("afr", "298"), "03. Borderless dragons")
+        self.assertEqual(get_art_style("afr", "299"), "04. Showcase")
+        self.assertEqual(get_art_style("afr", "358"), "04. Showcase")
+        self.assertEqual(get_art_style("afr", "359"), "05. Extended art")
+        self.assertEqual(get_art_style("afr", "396"), "06. Buy-a-Box")
+        self.assertEqual(get_art_style("afr", "397"), "07. Bundle promo")
+        self.assertEqual(get_art_style("afr", "402"), "08. Promo pack")
+        self.assertEqual(get_art_style("afr", "A-87"), "09. Alchemy promos")
+
 
 if __name__ == "__main__":
     unittest.main()

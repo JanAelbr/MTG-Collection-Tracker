@@ -22,6 +22,7 @@ from util.scryfall_card import (
     card_primary_type,
     card_type_line,
 )
+from util.alchemy_cards import is_alchemy_scryfall_card
 from util.scryfall_client import scryfall_get
 from util.set_catalog import upsert_set_from_card
 from util.tracked_sets import ensure_tracked_sets_ready, list_tracked_set_codes
@@ -79,6 +80,8 @@ def upsert_card(
     price_date: str,
     owned_set_codes: set[str] | None = None,
 ) -> None:
+    if is_alchemy_scryfall_card(card):
+        return
     collector_number = str(card.get("collector_number", ""))
     market_value, market_value_foil, market_value_etched = load_existing_card_prices(
         cursor, set_code, collector_number,
@@ -145,10 +148,14 @@ def write_price_page(
     price_date: str,
     owned_set_codes: set[str] | None = None,
 ) -> int:
+    written = 0
     for card in page_cards:
+        if is_alchemy_scryfall_card(card):
+            continue
         upsert_card(cursor, set_code, card, price_date, owned_set_codes)
+        written += 1
     log_page_fetch(set_code, page_cards)
-    return len(page_cards)
+    return written
 
 
 def sync_set_catalog(
@@ -176,6 +183,11 @@ def sync_set_catalog(
         )
         url = data.get("next_page")
         time.sleep(0.1)
+
+    cursor.execute(
+        "DELETE FROM cards WHERE set_code = ? AND UPPER(collector_number) LIKE 'A-%'",
+        (set_code.upper(),),
+    )
 
     log.info("Set %s: retrieved %s cards from Scryfall", set_code.upper(), count)
     return count

@@ -1,5 +1,12 @@
 # SQL for cards the user owns (inner join on purchases).
-OWNED_CARDS_QUERY = """
+from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
+
+_EXCLUDE_ALCHEMY = (
+    f"{exclude_alchemy_sql('c.collector_number')} "
+    f"AND {exclude_alchemy_art_style_sql('c.art_style')}"
+)
+
+OWNED_CARDS_QUERY = f"""
 SELECT
     c.set_code,
     c.collector_number,
@@ -37,11 +44,12 @@ FROM cards c
 JOIN purchases p
     ON p.set_code = c.set_code
     AND p.collector_number = c.collector_number
+WHERE {_EXCLUDE_ALCHEMY}
 ORDER BY c.set_code, CAST(c.collector_number AS INTEGER)
 """
 
 # SQL for every card in the database, with optional purchase data.
-ALL_CARDS_QUERY = """
+ALL_CARDS_QUERY = f"""
 SELECT
     c.set_code,
     c.collector_number,
@@ -85,11 +93,12 @@ FROM cards c
 LEFT JOIN purchases p
     ON p.set_code = c.set_code
     AND p.collector_number = c.collector_number
+WHERE {_EXCLUDE_ALCHEMY}
 ORDER BY c.set_code, CAST(c.collector_number AS INTEGER)
 """
 
 # Purchases that are not linked to a catalog row yet.
-ORPHAN_PURCHASES_QUERY = """
+ORPHAN_PURCHASES_QUERY = f"""
 SELECT
     p.set_code,
     p.collector_number,
@@ -113,11 +122,12 @@ LEFT JOIN cards c
     ON c.set_code = p.set_code
     AND c.collector_number = p.collector_number
 WHERE c.set_code IS NULL
+  AND {exclude_alchemy_sql("p.collector_number")}
 ORDER BY p.set_code, CAST(p.collector_number AS INTEGER), p.finish
 """
 
 # SQL summary grouped by set and art style; lists every art style with owned totals.
-OWNED_SUMMARY_QUERY = """
+OWNED_SUMMARY_QUERY = f"""
 SELECT
     c.set_code,
     c.art_style,
@@ -167,12 +177,13 @@ FROM cards c
 LEFT JOIN purchases p
     ON p.set_code = c.set_code
     AND p.collector_number = c.collector_number
+WHERE {_EXCLUDE_ALCHEMY}
 GROUP BY c.set_code, c.art_style
 ORDER BY c.set_code, c.art_style
 """
 
 # SQL summary grouped by set and art style for all cards in the database.
-ALL_SUMMARY_QUERY = """
+ALL_SUMMARY_QUERY = f"""
 SELECT
     c.set_code,
     c.art_style,
@@ -212,6 +223,7 @@ FROM cards c
 LEFT JOIN purchases p
     ON p.set_code = c.set_code
     AND p.collector_number = c.collector_number
+WHERE {_EXCLUDE_ALCHEMY}
 GROUP BY c.set_code, c.art_style
 ORDER BY c.set_code, c.art_style
 """

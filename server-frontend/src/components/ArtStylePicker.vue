@@ -1,11 +1,17 @@
 <script setup>
 import { computed } from "vue";
 import BrowseSelect from "./BrowseSelect.vue";
-import { artStyleOptionValue, formatArtStyleDropdownLabel } from "../utils/format";
+import {
+  artStyleCompletionRarity,
+  artStyleOptionValue,
+  formatArtStyleDropdownLabel,
+} from "../utils/format";
+import { mtgVectorsSetIconUri } from "../utils/mtgVectors";
 
 const props = defineProps({
   artStyles: { type: Array, default: () => [] },
   modelValue: { type: String, default: "" },
+  setCode: { type: String, default: "" },
   disabled: { type: Boolean, default: false },
   layout: {
     type: String,
@@ -16,6 +22,17 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue"]);
 
+function artStyleIconSrc(style) {
+  if (!props.setCode || typeof style === "string" || !style) {
+    return null;
+  }
+  const rarity = artStyleCompletionRarity(style);
+  if (!rarity) {
+    return null;
+  }
+  return mtgVectorsSetIconUri(props.setCode, rarity);
+}
+
 const options = computed(() => [
   { value: "", label: "All art styles", searchText: "all art styles" },
   ...props.artStyles.map((style) => {
@@ -24,9 +41,12 @@ const options = computed(() => [
       value,
       label: formatArtStyleDropdownLabel(style),
       searchText: value,
+      iconSrc: artStyleIconSrc(style),
     };
   }),
 ]);
+
+const hasCompletionIcons = computed(() => options.value.some((option) => option.iconSrc));
 
 function selectValue(value) {
   if (props.disabled) {
@@ -56,6 +76,18 @@ function selectValue(value) {
         :title="option.label"
         @click="selectValue(option.value)"
       >
+        <span
+          v-if="option.iconSrc"
+          class="art-style-list-icon-wrap"
+          aria-hidden="true"
+        >
+          <img
+            :src="option.iconSrc"
+            alt=""
+            class="art-style-list-icon"
+            loading="lazy"
+          >
+        </span>
         <span class="art-style-list-label">{{ option.label }}</span>
       </button>
     </div>
@@ -64,6 +96,8 @@ function selectValue(value) {
       :model-value="modelValue"
       :options="options"
       :disabled="disabled"
+      :show-icons="hasCompletionIcons"
+      optional-icons
       filterable
       aria-label="Art style"
       @update:model-value="emit('update:modelValue', $event)"

@@ -10,6 +10,7 @@ from util.set_catalog import load_sets_catalog
 from util.storage_tables import ensure_storage_tables
 from util.card_metadata import card_metadata_snake
 from util.db_migrate import ensure_card_columns
+from util.alchemy_cards import exclude_alchemy_sql, exclude_alchemy_art_style_sql
 
 
 def _float_or_none(value) -> float | None:
@@ -254,6 +255,8 @@ def load_card_detail_assets() -> tuple[dict, dict[str, dict[str, dict]]]:
                 market_value_foil
                 ,market_value_etched
             FROM cards
+            WHERE {exclude_alchemy_sql()}
+              AND {exclude_alchemy_art_style_sql()}
             ORDER BY name, set_code, CAST(collector_number AS INTEGER), collector_number
             """,
             conn,

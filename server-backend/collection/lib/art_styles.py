@@ -2,6 +2,7 @@ import json
 
 from lib.config import ART_STYLES_DIR, art_style_rules_path
 from lib.run_log import get_logger
+from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 
 log = get_logger(__name__)
 
@@ -132,10 +133,12 @@ def load_art_style_rules(set_code: str) -> list:
 def refresh_art_styles_for_set(conn, set_code: str) -> int:
     normalized = str(set_code).strip().lower()
     rows = conn.execute(
-        """
+        f"""
         SELECT collector_number
         FROM cards
         WHERE set_code = ?
+          AND {exclude_alchemy_sql()}
+          AND {exclude_alchemy_art_style_sql()}
         """,
         (normalized.upper(),),
     ).fetchall()

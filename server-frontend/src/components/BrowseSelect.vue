@@ -7,6 +7,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   filterable: { type: Boolean, default: false },
   showIcons: { type: Boolean, default: false },
+  optionalIcons: { type: Boolean, default: false },
   placeholder: { type: String, default: "Select…" },
   ariaLabel: { type: String, default: "Select option" },
 });
@@ -153,14 +154,18 @@ onUnmounted(() => {
         aria-haspopup="listbox"
         @click="togglePanel"
       >
-        <span v-if="showIcons" class="browse-select-icon-wrap" aria-hidden="true">
+        <span
+          v-if="showIcons && (!optionalIcons || activeOption?.iconSrc)"
+          class="browse-select-icon-wrap"
+          aria-hidden="true"
+        >
           <img
             v-if="activeOption?.iconSrc"
             :src="activeOption.iconSrc"
             alt=""
             class="browse-select-icon"
           >
-          <span v-else class="browse-select-icon browse-select-icon-placeholder">
+          <span v-else-if="!optionalIcons" class="browse-select-icon browse-select-icon-placeholder">
             {{ activeOption?.value === "All" || !activeOption?.iconSrc ? "All" : "?" }}
           </span>
         </span>
@@ -189,14 +194,18 @@ onUnmounted(() => {
             :class="{ active: option.value === modelValue }"
             @click="select(option.value)"
           >
-            <span v-if="showIcons" class="browse-select-icon-wrap" aria-hidden="true">
+            <span
+              v-if="showIcons && (!optionalIcons || option.iconSrc)"
+              class="browse-select-icon-wrap"
+              aria-hidden="true"
+            >
               <img
                 v-if="option.iconSrc"
                 :src="option.iconSrc"
                 alt=""
                 class="browse-select-icon"
               >
-              <span v-else class="browse-select-icon browse-select-icon-placeholder">
+              <span v-else-if="!optionalIcons" class="browse-select-icon browse-select-icon-placeholder">
                 {{ option.value === "All" || !option.iconSrc ? "All" : "?" }}
               </span>
             </span>

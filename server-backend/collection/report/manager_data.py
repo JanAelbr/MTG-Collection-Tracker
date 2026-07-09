@@ -13,6 +13,7 @@ from util.card_finishes import (
     has_finish_flag,
 )
 from util.app_tables import ensure_app_tables
+from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 
 MANAGER_CARDS_FROM = """
 FROM cards c
@@ -141,7 +142,10 @@ def _manager_filter_clauses(
     search: str = "",
     finish_filter: str = "all",
 ) -> tuple[str, list]:
-    clauses: list[str] = []
+    clauses: list[str] = [
+        exclude_alchemy_sql("c.collector_number"),
+        exclude_alchemy_art_style_sql("c.art_style"),
+    ]
     params: list = []
 
     if finish_filter == "foil":

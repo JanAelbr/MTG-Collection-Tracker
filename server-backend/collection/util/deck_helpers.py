@@ -1,6 +1,7 @@
 import sqlite3
 
 from util.card_finishes import infer_finish_for_print, parse_finish_from_row
+from util.alchemy_cards import exclude_alchemy_sql, is_alchemy_collector_number
 
 # Official precon names that differ from catalog card names in tracked sets.
 CARD_NAME_ALIASES = {
@@ -17,9 +18,10 @@ def lookup_card_name(
     collector_number: str,
 ) -> str | None:
     row = cursor.execute(
-        """
+        f"""
         SELECT name FROM cards
         WHERE set_code = ? AND collector_number = ?
+          AND {exclude_alchemy_sql()}
         """,
         (set_code.upper(), collector_number),
     ).fetchone()
@@ -34,10 +36,11 @@ def resolve_card_name(cursor: sqlite3.Cursor, card_name: str) -> tuple[str, str]
 
     for candidate in candidates:
         rows = cursor.execute(
-            """
+            f"""
             SELECT set_code, collector_number
             FROM cards
             WHERE name = ? COLLATE NOCASE
+              AND {exclude_alchemy_sql()}
             ORDER BY set_code, CAST(collector_number AS INTEGER), collector_number
             """,
             (candidate,),
@@ -46,10 +49,11 @@ def resolve_card_name(cursor: sqlite3.Cursor, card_name: str) -> tuple[str, str]
             return rows[0]
 
     rows = cursor.execute(
-        """
+        f"""
         SELECT set_code, collector_number
         FROM cards
         WHERE name LIKE ? ESCAPE '\\'
+          AND {exclude_alchemy_sql()}
         ORDER BY set_code, CAST(collector_number AS INTEGER), collector_number
         """,
         (f"%{card_name.strip().replace('%', '\\%').replace('_', '\\_')}",),
@@ -69,11 +73,15 @@ def resolve_deck_row(cursor: sqlite3.Cursor, row: dict) -> dict:
 
     finish = parse_finish_from_row(row)
     in_catalog = 0
+    if set_code and collector_number and is_alchemy_collector_number(collector_number):
+        set_code = None
+        collector_number = None
     if set_code and collector_number:
         exists = cursor.execute(
-            """
+            f"""
             SELECT has_nonfoil, has_foil, has_etched FROM cards
             WHERE set_code = ? AND collector_number = ?
+              AND {exclude_alchemy_sql()}
             """,
             (set_code, collector_number),
         ).fetchone()
@@ -93,9 +101,10 @@ def resolve_deck_row(cursor: sqlite3.Cursor, row: dict) -> dict:
             if resolved:
                 set_code, collector_number = resolved
                 flags = cursor.execute(
-                    """
+                    f"""
                     SELECT has_nonfoil, has_foil, has_etched FROM cards
                     WHERE set_code = ? AND collector_number = ?
+                      AND {exclude_alchemy_sql()}
                     """,
                     (set_code, collector_number),
                 ).fetchone()

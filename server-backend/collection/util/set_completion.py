@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 
 from lib.art_styles import normalize_collector_number
+from util.alchemy_cards import is_alchemy_art_style, is_alchemy_collector_number
 
 
 def is_serialized_collector_number(collector_number: str) -> bool:
@@ -11,6 +12,8 @@ def is_serialized_collector_number(collector_number: str) -> bool:
 
 def completion_collector_key(collector_number: str) -> str | None:
     """Return the base collector slot for completion, or None when excluded."""
+    if is_alchemy_collector_number(collector_number):
+        return None
     if is_serialized_collector_number(collector_number):
         return None
     number = normalize_collector_number(collector_number)
@@ -52,13 +55,15 @@ def count_completion_keys_by_set(rows: Iterable[tuple[str, str]]) -> dict[str, i
 
 
 def count_completion_keys_by_art_style(
-    rows: Iterable[tuple[str, str]],
+    rows: Iterable[tuple[str, str, str]],
     *,
     set_code: str | None = None,
 ) -> dict[str, int]:
     keys_by_style: dict[str, set[str]] = {}
     normalized_set = str(set_code).upper() if set_code else None
     for raw_set_code, collector_number, art_style in rows:
+        if is_alchemy_art_style(art_style):
+            continue
         if normalized_set and str(raw_set_code).upper() != normalized_set:
             continue
         slot = completion_collector_key(collector_number)

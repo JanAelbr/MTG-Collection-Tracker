@@ -13,6 +13,7 @@ from util.db_migrate import (
 )
 from util.deck_tables import ensure_deck_tables
 from util.set_catalog import backfill_missing_set_icon_uris, ensure_sets_columns, ensure_sets_table
+from util.alchemy_cards import prune_alchemy_cards
 from util.tracked_sets import ensure_tracked_sets_ready
 
 CORE_TABLES_SQL = """
@@ -80,6 +81,7 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         backfill_missing_set_icon_uris(conn, {"User-Agent": HTTP_USER_AGENT})
         ensure_card_prices_table(conn)
         ensure_card_columns(conn)
+        prune_alchemy_cards(conn)
         backfill_card_types(conn)
         ensure_card_indexes(conn)
         ensure_purchase_unique_index(conn)

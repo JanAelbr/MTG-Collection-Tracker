@@ -9,6 +9,11 @@ from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
 from util.set_catalog import load_set_icon_uris
 from util.tracked_sets import list_tracked_set_codes
+from util.alchemy_cards import (
+    exclude_alchemy_art_style_sql,
+    exclude_alchemy_sql,
+    is_alchemy_art_style,
+)
 
 
 _set_display_names_cache: dict[str, str] | None = None
@@ -96,6 +101,7 @@ def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
         f"""
         SELECT set_code, collector_number
         FROM ({owned_prints}) owned_prints
+        WHERE {exclude_alchemy_sql()}
         """
     ).fetchall()
     return count_completion_keys_by_set(rows)
@@ -105,9 +111,11 @@ def load_catalog_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     from util.set_completion import count_completion_keys_by_set
 
     rows = conn.execute(
-        """
+        f"""
         SELECT set_code, collector_number
         FROM cards
+        WHERE {exclude_alchemy_sql()}
+          AND {exclude_alchemy_art_style_sql()}
         """
     ).fetchall()
     return count_completion_keys_by_set(rows)
@@ -176,7 +184,13 @@ def _load_art_style_owned_counts(conn: sqlite3.Connection, *, set_code: str | No
     from util.set_completion import count_completion_keys_by_art_style
 
     owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
-    where_parts = ["c.art_style IS NOT NULL", "TRIM(c.art_style) != ''"]
+    where_parts = [
+        "c.art_style IS NOT NULL",
+        "TRIM(c.art_style) != ''",
+        exclude_alchemy_sql("c.collector_number"),
+        exclude_alchemy_sql("owned.collector_number"),
+        exclude_alchemy_art_style_sql("c.art_style"),
+    ]
     params: tuple[str, ...] = ()
     if set_code is not None:
         where_parts.insert(0, "owned.set_code = ?")
@@ -199,7 +213,12 @@ def _load_art_style_owned_counts(conn: sqlite3.Connection, *, set_code: str | No
 def _load_art_style_catalog_counts(conn: sqlite3.Connection, *, set_code: str | None = None) -> dict[str, int]:
     from util.set_completion import count_completion_keys_by_art_style
 
-    where_parts = ["art_style IS NOT NULL", "TRIM(art_style) != ''"]
+    where_parts = [
+        "art_style IS NOT NULL",
+        "TRIM(art_style) != ''",
+        exclude_alchemy_sql(),
+        exclude_alchemy_art_style_sql(),
+    ]
     params: tuple[str, ...] = ()
     if set_code is not None:
         where_parts.insert(0, "set_code = ?")
@@ -220,7 +239,11 @@ def _build_art_style_options_from_counts(
     owned_counts: dict[str, int],
     catalog_counts: dict[str, int],
 ) -> list[dict]:
-    names = sorted(set(catalog_counts.keys()) | set(owned_counts.keys()))
+    names = sorted(
+        style
+        for style in (set(catalog_counts.keys()) | set(owned_counts.keys()))
+        if not is_alchemy_art_style(style)
+    )
     return [
         build_art_style_option(
             name,

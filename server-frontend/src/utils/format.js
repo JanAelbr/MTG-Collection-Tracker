@@ -180,16 +180,18 @@ export function setCompletionPercent(set) {
   if (!set?.setCode || set.setCode === "All") {
     return null;
   }
-  const catalogCount = set.catalogCount ?? 0;
-  if (catalogCount <= 0) {
-    return null;
-  }
-  const ownedCount = set.ownedCount ?? 0;
-  return (ownedCount / catalogCount) * 100;
+  return completionPercent(set.ownedCount, set.catalogCount);
 }
 
-export function setCompletionRarity(set) {
-  const percent = setCompletionPercent(set);
+export function completionPercent(ownedCount, catalogCount) {
+  const catalog = catalogCount ?? 0;
+  if (catalog <= 0) {
+    return null;
+  }
+  return ((ownedCount ?? 0) / catalog) * 100;
+}
+
+export function completionRarityFromPercent(percent) {
   if (percent == null) {
     return null;
   }
@@ -203,6 +205,21 @@ export function setCompletionRarity(set) {
     return "uncommon";
   }
   return "common";
+}
+
+export function setCompletionRarity(set) {
+  return completionRarityFromPercent(setCompletionPercent(set));
+}
+
+export function artStyleCompletionRarity(style) {
+  if (typeof style === "string" || !style) {
+    return null;
+  }
+  const ownedCount = style.ownedCount ?? 0;
+  if (ownedCount <= 0) {
+    return null;
+  }
+  return completionRarityFromPercent(completionPercent(style.ownedCount, style.catalogCount));
 }
 
 export function artStyleOptionValue(style) {

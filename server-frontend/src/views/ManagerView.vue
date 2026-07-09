@@ -346,6 +346,7 @@ onMounted(async () => {
           <ArtStylePicker
             v-model="artStyle"
             layout="list"
+            :set-code="selectedSetCode"
             :art-styles="artStyles"
           />
         </div>
