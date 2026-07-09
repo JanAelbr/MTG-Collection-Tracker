@@ -132,7 +132,10 @@ async function saveAddSet() {
 }
 
 async function removeSet(set) {
-  if (!set?.setCode || deletingSetCode.value) {
+  if (!set?.setCode) {
+    return;
+  }
+  if (deletingSetCode.value === set.setCode) {
     return;
   }
   if (!window.confirm(`Remove set ${set.setCode}? The card catalog stays in the database.`)) {
@@ -153,10 +156,10 @@ async function removeSet(set) {
 }
 
 async function reloadCatalog(set) {
-  if (!set?.setCode || set.setCode === "All" || reloadingSetCode.value) {
+  if (!set?.setCode || set.setCode === "All") {
     return;
   }
-  if (!window.confirm(`Reload the ${set.setCode} catalog from Scryfall? This may take a few seconds.`)) {
+  if (reloadingSetCode.value === set.setCode) {
     return;
   }
   reloadingSetCode.value = set.setCode;

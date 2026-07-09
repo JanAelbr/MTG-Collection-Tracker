@@ -124,9 +124,6 @@ async function reloadCatalog() {
     return;
   }
   const code = selectedSetCode.value;
-  if (!window.confirm(`Reload the ${code} catalog from Scryfall? This may take a few seconds.`)) {
-    return;
-  }
   catalogReloading.value = true;
   catalogMessage.value = "";
   try {

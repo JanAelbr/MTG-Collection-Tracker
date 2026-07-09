@@ -97,6 +97,32 @@ class ArtStyleTests(unittest.TestCase):
         self.assertEqual(get_art_style("mh3", "382"), "08. Borderless concept Eldrazi")
         self.assertEqual(get_art_style("mh3", "382z"), "08z. Borderless concept Eldrazi: serialized")
 
+    def test_2x2_main_borderless_etched_and_promos(self):
+        self.assertEqual(get_art_style("2x2", "79"), "01. Main set")
+        self.assertEqual(get_art_style("2x2", "332"), "01. Main set")
+        self.assertEqual(get_art_style("2x2", "333"), "02. Borderless planeswalkers")
+        self.assertEqual(get_art_style("2x2", "335"), "03. Borderless")
+        self.assertEqual(get_art_style("2x2", "412"), "03. Borderless")
+        self.assertEqual(get_art_style("2x2", "413"), "04. Foil etched")
+        self.assertEqual(get_art_style("2x2", "572"), "04. Foil etched")
+        self.assertEqual(get_art_style("2x2", "573"), "05. Textured foil")
+        self.assertEqual(get_art_style("2x2", "578"), "06. Promos")
+
+    def test_tdm_main_showcases_and_promos(self):
+        self.assertEqual(get_art_style("tdm", "100"), "01. Main set")
+        self.assertEqual(get_art_style("tdm", "291"), "01. Main set")
+        self.assertEqual(get_art_style("tdm", "292"), "02. Draconic showcases")
+        self.assertEqual(get_art_style("tdm", "327"), "03. Borderless clan showcases")
+        self.assertEqual(get_art_style("tdm", "377"), "04. Reversible dragons")
+        self.assertEqual(get_art_style("tdm", "383"), "05. Borderless alternate art")
+        self.assertEqual(get_art_style("tdm", "399"), "06. Ghostfire showcases")
+        self.assertEqual(get_art_style("tdm", "409"), "07. Halo foil ghostfire")
+        self.assertEqual(get_art_style("tdm", "419"), "08. Serialized headliner")
+        self.assertEqual(get_art_style("tdm", "420"), "09. Promo pack")
+        self.assertEqual(get_art_style("tdm", "425"), "10. Bundle promo")
+        self.assertEqual(get_art_style("tdm", "426"), "11. Buy-a-Box")
+        self.assertEqual(get_art_style("tdm", "A-103"), "12. Alchemy promos")
+
 
 if __name__ == "__main__":
     unittest.main()

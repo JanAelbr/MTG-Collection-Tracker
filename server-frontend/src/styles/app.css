@@ -2948,14 +2948,14 @@ body {
   right: 32px;
 }
 
-.set-gallery-reload:hover:not(:disabled) {
+.set-gallery-reload:hover {
   border-color: #90caf9;
   background: #f3f9ff;
   color: #1565c0;
 }
 
-.set-gallery-reload:disabled {
-  cursor: default;
+.set-gallery-reload.is-loading {
+  cursor: progress;
 }
 
 .set-gallery-reload-spinner {
@@ -2983,14 +2983,14 @@ body {
   padding: 0;
 }
 
-.set-gallery-delete:hover:not(:disabled) {
+.set-gallery-delete:hover {
   border-color: #ef9a9a;
   background: #fff5f5;
   color: #c62828;
 }
 
-.set-gallery-delete:disabled {
-  cursor: default;
+.set-gallery-delete.is-loading {
+  cursor: progress;
 }
 
 .set-gallery-delete-spinner {

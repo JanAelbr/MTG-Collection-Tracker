@@ -92,17 +92,11 @@ function onToggleFavorite(event, set) {
 
 function onRemove(event, set) {
   event.stopPropagation();
-  if (isDeleting(set)) {
-    return;
-  }
   emit("remove-set", set);
 }
 
 function onReload(event, set) {
   event.stopPropagation();
-  if (isReloading(set)) {
-    return;
-  }
   emit("reload-catalog", set);
 }
 
@@ -148,8 +142,9 @@ onMounted(positionActiveSet);
         v-if="canReload(set)"
         type="button"
         class="set-gallery-reload"
-        :disabled="isReloading(set)"
+        :class="{ 'is-loading': isReloading(set) }"
         :aria-label="`Reload ${set.setCode} catalog from Scryfall`"
+        :aria-busy="isReloading(set) ? 'true' : 'false'"
         title="Reload catalog from Scryfall"
         @click.stop="onReload($event, set)"
       >
@@ -161,8 +156,9 @@ onMounted(positionActiveSet);
         v-if="canDelete(set)"
         type="button"
         class="set-gallery-delete"
-        :disabled="isDeleting(set)"
+        :class="{ 'is-loading': isDeleting(set) }"
         :aria-label="`Remove set ${set.setCode}`"
+        :aria-busy="isDeleting(set) ? 'true' : 'false'"
         title="Remove set (catalog is kept)"
         @click.stop="onRemove($event, set)"
       >
