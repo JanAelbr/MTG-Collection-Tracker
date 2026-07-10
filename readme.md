@@ -17,6 +17,16 @@ The application:
 
 **Upgrading from an older CSV-based workflow:** export a backup from the current app before upgrading, then restore it on the new version. There is no CSV import path in current releases.
 
+## UI examples
+
+**Collection** — set browser, filters, and card gallery:
+
+![Collection view](docs/images/collection-view.png)
+
+**Decks** — deck browser with value, progress, and card grid:
+
+![Decks view](docs/images/decks-view.png)
+
 ---
 
 ## Project structure
@@ -27,6 +37,7 @@ lotr/
 ├── data/
 │   └── cardmarket_price_guide.json   # Cardmarket guide cache (downloaded locally)
 ├── docs/
+│   ├── images/                    # UI screenshots for readme
 │   ├── decks.md                   # deck model and backup workflow
 │   ├── frontend.md                # Vue app, PWA, navigation, filters
 │   └── python-guidelines.md
