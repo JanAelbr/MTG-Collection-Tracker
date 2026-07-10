@@ -3,7 +3,12 @@ import sqlite3
 import pandas as pd
 
 from lib.config import DB_PATH
-from report.report_queries import ALL_CARDS_QUERY, ORPHAN_PURCHASES_QUERY
+from report.report_queries import (
+    ALL_CARDS_QUERY,
+    ORPHAN_PURCHASES_QUERY,
+    SET_CARDS_QUERY,
+    SET_ORPHAN_PURCHASES_QUERY,
+)
 from report.serialize_helpers import str_or_empty
 from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, MARKET_VALUE_COLUMNS
 from util.card_metadata import card_metadata_snake
@@ -98,6 +103,20 @@ def load_ranked_cards_data() -> pd.DataFrame:
     return expand_cards_for_ranking(cards_df)
 
 
+# Load finish rows for a single set.
+def load_ranked_cards_data_for_set(set_code: str) -> pd.DataFrame:
+    normalized = (set_code or "").strip().upper()
+    if not normalized:
+        return pd.DataFrame()
+    with sqlite3.connect(DB_PATH) as conn:
+        ensure_card_columns(conn)
+        cards_df = pd.read_sql_query(SET_CARDS_QUERY, conn, params=(normalized,))
+        orphan_df = pd.read_sql_query(SET_ORPHAN_PURCHASES_QUERY, conn, params=(normalized,))
+    if not orphan_df.empty:
+        cards_df = pd.concat([cards_df, orphan_df], ignore_index=True)
+    return expand_cards_for_ranking(cards_df)
+
+
 def _int_flag(value) -> int:
     if value is None or pd.isna(value):
         return 0
@@ -133,6 +152,7 @@ def serialize_ranked_cards(cards_df: pd.DataFrame) -> list[dict]:
             "has_etched": _int_flag(row.has_etched),
             "image_uri": str_or_empty(row.image_uri),
             "cardmarket_url": str_or_empty(row.cardmarket_url),
+            "cardmarket_url_foil": str_or_empty(row.cardmarket_url_foil),
             **card_metadata_snake(row),
         })
     return cards

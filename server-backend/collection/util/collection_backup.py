@@ -9,8 +9,8 @@ import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 
-from lib.config import ART_STYLES_DIR
-from lib.art_styles import normalize_art_style_rules
+from lib.config import normalize_set_code
+from lib.art_styles import import_art_style_rules, load_art_style_rules_for_sets
 from util.app_tables import ensure_app_tables
 from util.card_finishes import normalize_finish
 from util.deck_tables import ensure_deck_tables
@@ -262,19 +262,8 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
     }
 
 
-def _load_art_style_files(set_codes: list[str]) -> dict[str, list]:
-    art_styles: dict[str, list] = {}
-    for set_code in set_codes:
-        path = ART_STYLES_DIR / f"{set_code.lower()}.json"
-        if not path.is_file():
-            continue
-        try:
-            rules = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(rules, list) and rules:
-            art_styles[set_code.lower()] = rules
-    return art_styles
+def _load_art_style_rules(conn: sqlite3.Connection, set_codes: list[str]) -> dict[str, list]:
+    return load_art_style_rules_for_sets(conn, set_codes)
 
 
 def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
@@ -307,7 +296,7 @@ def summarize_backup(collection: dict, art_styles: dict[str, list]) -> dict:
 def export_collection_zip(conn: sqlite3.Connection) -> bytes:
     collection = build_collection_payload(conn)
     sets_referenced = _sets_referenced(collection)
-    art_styles = _load_art_style_files(sets_referenced)
+    art_styles = _load_art_style_rules(conn, sets_referenced)
     manifest = build_manifest(collection, art_style_sets=sorted(art_styles))
 
     buffer = io.BytesIO()
@@ -484,7 +473,7 @@ def import_collection(
     _import_purchases(conn, collection.get("purchases") or [], merge=normalized_mode == "merge")
     _import_card_instances(conn, collection.get("cardInstances") or [], merge=normalized_mode == "merge")
     _import_settings(conn, collection.get("settings") or {}, merge=normalized_mode == "merge")
-    _import_art_styles(art_styles, merge=normalized_mode == "merge")
+    _import_art_styles(conn, art_styles, merge=normalized_mode == "merge")
     seed_storage_locations(conn)
 
     sets_referenced = _sets_referenced(collection)
@@ -789,18 +778,10 @@ def _import_settings(conn: sqlite3.Connection, settings: dict, *, merge: bool) -
         )
 
 
-def _import_art_styles(art_styles: dict[str, list], *, merge: bool) -> None:
-    ART_STYLES_DIR.mkdir(parents=True, exist_ok=True)
-    for set_code, rules in art_styles.items():
-        normalized_set = str(set_code).strip().lower()
-        path = ART_STYLES_DIR / f"{normalized_set}.json"
-        normalized_rules = normalize_art_style_rules(rules)
-        serialized = json.dumps(normalized_rules, indent=4, ensure_ascii=False) + "\n"
-        if merge and path.is_file():
-            try:
-                existing_rules = json.loads(path.read_text(encoding="utf-8"))
-                if normalize_art_style_rules(existing_rules) == normalized_rules:
-                    continue
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
-        path.write_text(serialized, encoding="utf-8")
+def _import_art_styles(
+    conn: sqlite3.Connection,
+    art_styles: dict[str, list],
+    *,
+    merge: bool,
+) -> None:
+    import_art_style_rules(conn, art_styles, merge=merge)

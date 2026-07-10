@@ -200,35 +200,21 @@ def list_art_styles(
 
 
 @router.get("/sets/{set_code}/art-style-rules")
-
 def get_art_style_rules(
-
     set_code: str,
-
     request: Request,
-
+    conn: sqlite3.Connection = Depends(get_db),
 ):
-
     try:
-
         return serve_cached_json(
-
             request,
-
             namespace="manager.art_style_rules",
-
             params={"setCode": set_code},
-
             ttl=45,
-
             loader=lambda: {
-
                 "setCode": set_code.strip().upper(),
-
-                "rules": manager_service.get_art_style_rules(set_code),
-
+                "rules": manager_service.get_art_style_rules(conn, set_code),
             },
-
         )
 
     except ManagerError as exc:

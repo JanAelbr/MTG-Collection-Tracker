@@ -5,7 +5,9 @@ import CardCopyControls from "./CardCopyControls.vue";
 import CardVariantGallery from "./CardVariantGallery.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
+import { usePricingSettings } from "../composables/pricingSettings";
 import { formatEuro } from "../utils/format";
+import { valueForStrategy } from "../utils/priceStrategies";
 import {
   FINISH_ETCHED,
   FINISH_FOIL,
@@ -27,6 +29,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:selectedIndex", "random", "close", "ownership-changed"]);
+
+const { settings: pricingSettings } = usePricingSettings();
 
 const panelRef = ref(null);
 const imageZoomOpen = ref(false);
@@ -79,13 +83,18 @@ function setLabel(code) {
 }
 
 function valueForFinish(card, finish) {
+  const strategy = pricingSettings.value?.priceStrategy || "trend";
   const values = card.finishValues || {};
   const normalized = normalizeFinish(finish);
+  const byStrategy = card.finishValuesByStrategy?.[normalized];
+  if (byStrategy?.[strategy] != null) {
+    return byStrategy[strategy];
+  }
   if (values[normalized] != null) {
     return values[normalized];
   }
-  if (normalizeFinish(card.finish) === normalized) {
-    return card.currentValue;
+  if (normalizeFinish(card.finish ?? card.foil) === normalized) {
+    return valueForStrategy(card, strategy);
   }
   return null;
 }

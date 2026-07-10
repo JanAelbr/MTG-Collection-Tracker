@@ -3,7 +3,6 @@
 from datetime import date
 import sqlite3
 
-from lib.art_styles import ensure_art_style_rules_file
 from lib.config import HTTP_USER_AGENT
 from lib.config import normalize_set_code
 from report.report_data import load_catalog_count_by_set
@@ -24,7 +23,6 @@ def import_set_catalog_from_scryfall(
 
     ensure_sets_table(conn)
     ensure_card_columns(conn)
-    ensure_art_style_rules_file(normalized.lower())
 
     cursor = conn.cursor()
     today = date.today().isoformat()

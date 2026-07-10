@@ -330,6 +330,40 @@ body {
   font-weight: 600;
 }
 
+.app-subnav-set-filter {
+  flex: 0 1 auto;
+  margin: 0 6px 0 4px;
+}
+
+.app-subnav-set-filter input {
+  width: 7.5rem;
+  max-width: 28vw;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.app-subnav-set-filter input::placeholder {
+  color: #999;
+}
+
+.app-subnav-set-filter input:hover {
+  background: #eceef1;
+}
+
+.app-subnav-set-filter input:focus {
+  outline: none;
+  border-color: #d0d4da;
+  background: #fff;
+}
+
 .app-main {
   flex: 1 1 auto;
   min-width: 0;
@@ -2585,6 +2619,37 @@ body {
   background: #fff;
 }
 
+.card-copy-controls--overlay {
+  align-items: center;
+  width: 100%;
+}
+
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-owned,
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copies,
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy {
+  align-items: center;
+  width: min(100%, 13rem);
+}
+
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-label {
+  text-align: center;
+  width: 100%;
+}
+
+.card-interactive-overlay .card-copy-controls--overlay .card-copy-controls-owned-row,
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy-controls {
+  justify-content: center;
+  width: 100%;
+}
+
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy-controls {
+  flex-wrap: wrap;
+}
+
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-status {
+  text-align: center;
+}
+
 .collection-search-art-details-list {
   display: grid;
   gap: 10px;
@@ -3261,16 +3326,16 @@ body {
 }
 
 .set-gallery-wrap {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .set-gallery {
   display: flex;
   flex-wrap: nowrap;
-  gap: 12px;
+  gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 4px 12px;
+  padding: 2px 2px 6px;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
@@ -3281,13 +3346,13 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  flex: 0 0 112px;
-  width: 112px;
-  min-height: 108px;
-  padding: 10px 8px 8px;
+  gap: 4px;
+  flex: 0 0 76px;
+  width: 76px;
+  min-height: 82px;
+  padding: 6px 4px 5px;
   border: 1px solid #e8e8e8;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
   cursor: pointer;
   scroll-snap-align: start;
@@ -3314,16 +3379,16 @@ body {
 
 .set-gallery-favorite {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 2;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: 1px solid #e8e8e8;
   border-radius: 999px;
   background: #fff;
   color: #bbb;
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -3337,31 +3402,31 @@ body {
 
 .set-gallery-favorite--left {
   right: auto;
-  left: 6px;
+  left: 4px;
 }
 
 .set-gallery-reload {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: #bbb;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
 }
 
 .set-gallery-card.has-delete-action .set-gallery-reload {
-  right: 32px;
+  right: 24px;
 }
 
 .set-gallery-reload:hover {
@@ -3375,25 +3440,25 @@ body {
 }
 
 .set-gallery-reload-spinner {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .set-gallery-delete {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: #bbb;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -3410,8 +3475,8 @@ body {
 }
 
 .set-gallery-delete-spinner {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .set-gallery-card--add {
@@ -3431,11 +3496,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   background: #f0f0f0;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 300;
   line-height: 1;
 }
@@ -3452,9 +3517,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   background: #f8f9fa;
 }
 
@@ -3475,8 +3540,8 @@ body {
 }
 
 .set-gallery-icon {
-  width: 48px;
-  height: 48px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
 }
 
@@ -3484,10 +3549,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
   background: #f5f5f5;
   color: #666;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -3500,7 +3567,7 @@ body {
 }
 
 .set-gallery-code {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   color: #222;
 }
@@ -3517,7 +3584,7 @@ body {
 }
 
 .set-gallery-count {
-  font-size: 11px;
+  font-size: 10px;
   color: #888;
 }
 
@@ -3756,7 +3823,7 @@ body {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 10px;

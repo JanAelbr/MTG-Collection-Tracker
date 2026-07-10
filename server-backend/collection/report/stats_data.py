@@ -20,7 +20,7 @@ def _float_or_none(value):
 def _owned_completion_count(owned: pd.DataFrame, *, set_code: str | None = None) -> int:
     if owned.empty:
         return 0
-    rows = [(row["set_code"], row["collector_number"]) for _, row in owned.iterrows()]
+    rows = list(zip(owned["set_code"].tolist(), owned["collector_number"].tolist()))
     return count_completion_keys(rows, set_code=set_code)
 
 

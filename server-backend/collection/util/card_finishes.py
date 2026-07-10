@@ -101,13 +101,25 @@ def scryfall_finishes(card: dict) -> list[int]:
 
 def has_finish_flag(row, finish: int) -> bool:
     column = HAS_FINISH_COLUMNS[finish]
-    raw = row[column] if isinstance(row, dict) else row[column]
+    if isinstance(row, dict):
+        raw = row.get(column)
+    else:
+        raw = row[column]
     if raw is None:
         return False
     try:
         return bool(int(raw))
     except (TypeError, ValueError):
         return False
+
+
+def is_etched_only_print(row) -> bool:
+    """True when Scryfall lists etched as the only available finish."""
+    return (
+        has_finish_flag(row, FINISH_ETCHED)
+        and not has_finish_flag(row, FINISH_NONFOIL)
+        and not has_finish_flag(row, FINISH_FOIL)
+    )
 
 
 def _positive_price(value) -> bool:
@@ -126,7 +138,11 @@ def finish_has_pricing(row, finish: int, guide_prices: dict | None = None) -> bo
     if guide_prices:
         group = GUIDE_PRICE_GROUPS[finish_id]
         prices = guide_prices.get(group) or {}
-        return any(_positive_price(price) for price in prices.values())
+        if any(_positive_price(price) for price in prices.values()):
+            return True
+        if finish_id == FINISH_ETCHED and is_etched_only_print(row):
+            foil_prices = guide_prices.get("foil") or {}
+            return any(_positive_price(price) for price in foil_prices.values())
     return False
 
 

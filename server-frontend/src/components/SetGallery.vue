@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { formatSetCountLabel, setCompletionRarity, setDisplayName } from "../utils/format";
 import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
+import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 
 const props = defineProps({
   sets: { type: Array, default: () => [] },
@@ -15,9 +16,26 @@ const props = defineProps({
 
 const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set", "reload-catalog"]);
 
+const { setGalleryFilter } = useSetGalleryFilter();
 const galleryRef = ref(null);
 
-const visibleSets = computed(() => props.sets.filter((set) => set?.setCode));
+const visibleSets = computed(() => {
+  const query = setGalleryFilter.value.trim().toLowerCase();
+  return props.sets.filter((set) => {
+    if (!set?.setCode) {
+      return false;
+    }
+    if (!query || set.setCode === "All") {
+      return true;
+    }
+    const haystack = [
+      set.setCode,
+      set.label,
+      setDisplayName(set),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(query);
+  });
+});
 
 function setIconUri(set) {
   return resolveSetGalleryIconUri(set);

@@ -4,7 +4,14 @@ import pandas as pd
 
 from lib.config import DB_PATH, EXCLUDED_SET_CODES, normalize_set_code
 from util.deck_tables import list_deck_sync_set_codes
-from report.report_queries import cards_query, ORPHAN_PURCHASES_QUERY, summary_query
+from report.report_queries import (
+    OWNED_CARDS_FOR_SET_QUERY,
+    OWNED_CARDS_QUERY,
+    ORPHAN_PURCHASES_QUERY,
+    SET_ORPHAN_PURCHASES_QUERY,
+    cards_query,
+    summary_query,
+)
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
 from util.set_catalog import load_set_icon_uris
@@ -310,3 +317,19 @@ def select_owned_cards(cards_df: pd.DataFrame, owned_only: bool) -> pd.DataFrame
     if owned_only:
         return cards_df.copy()
     return cards_df[cards_df["purchase_value"].notna()]
+
+
+def load_owned_collection_data(
+    conn: sqlite3.Connection,
+    set_code: str | None = None,
+) -> pd.DataFrame:
+    normalized = (set_code or "").strip().upper()
+    if normalized and normalized != "ALL":
+        cards_df = pd.read_sql_query(OWNED_CARDS_FOR_SET_QUERY, conn, params=(normalized,))
+        orphan_df = pd.read_sql_query(SET_ORPHAN_PURCHASES_QUERY, conn, params=(normalized,))
+    else:
+        cards_df = pd.read_sql_query(OWNED_CARDS_QUERY, conn)
+        orphan_df = pd.read_sql_query(ORPHAN_PURCHASES_QUERY, conn)
+    if not orphan_df.empty:
+        cards_df = pd.concat([cards_df, orphan_df], ignore_index=True)
+    return cards_df

@@ -2,10 +2,18 @@ import sqlite3
 
 from api.cache import get_cache_epoch, memory_cache
 from report.card_detail_data import collector_sort_key
-from report.ranked_cards_data import DEFAULT_PAGE_SIZE, load_ranked_cards_data, serialize_ranked_cards
+from report.ranked_cards_data import (
+    DEFAULT_PAGE_SIZE,
+    load_ranked_cards_data_for_set,
+    serialize_ranked_cards,
+)
 from report.report_data import build_art_style_options, build_sorted_set_options
-from api.services.pricing_service import price_from_strategy
+from api.services.pricing_service import (
+    value_from_strategy_map,
+    values_by_strategy_for_finish,
+)
 from api.services import settings_service
+from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 from util.cardmarket_urls import cardmarket_url_for_finish
 from util.card_metadata import (
     COLLECTION_FILTER_TYPES,
@@ -97,8 +105,10 @@ def list_report_cards(
     settings = settings_service.get_settings(conn)
     strategy = settings["priceStrategy"]
     selected_compare = compare_date or settings["compareDate"]
+    set_codes = _resolve_set_codes(conn, set_code=set_code)
     cards, selected_compare = _load_enriched_report_cards(
         conn,
+        set_codes=set_codes,
         strategy=strategy,
         compare_date=selected_compare,
     )
@@ -141,10 +151,56 @@ def list_report_cards(
     }
 
 
+def _resolve_set_codes(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str = "All",
+    search_term: str | None = None,
+) -> list[str]:
+    normalized_set = (set_code or "All").strip()
+    if normalized_set.upper() != "ALL":
+        return [normalized_set.upper()]
+
+    term = (search_term or "").strip()
+    if term:
+        return _sets_matching_search(conn, term)
+
+    rows = conn.execute(
+        "SELECT DISTINCT set_code FROM cards ORDER BY set_code"
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def _sets_matching_search(conn: sqlite3.Connection, term: str) -> list[str]:
+    pattern = f"%{term.strip()}%"
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT set_code
+        FROM cards
+        WHERE name LIKE ? COLLATE NOCASE
+          AND {exclude_alchemy_sql()}
+          AND {exclude_alchemy_art_style_sql()}
+        ORDER BY set_code
+        """,
+        (pattern,),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
 def _load_enriched_report_cards(
     conn: sqlite3.Connection,
     *,
+    set_codes: list[str],
     strategy: str,
+    compare_date: str | None,
+) -> tuple[list[dict], str | None]:
+    neutral, selected_compare = _load_enriched_sets(conn, set_codes, compare_date)
+    return _apply_strategy_to_cards(neutral, strategy), selected_compare
+
+
+def _load_enriched_sets(
+    conn: sqlite3.Connection,
+    set_codes: list[str],
     compare_date: str | None,
 ) -> tuple[list[dict], str | None]:
     if compare_date:
@@ -152,28 +208,56 @@ def _load_enriched_report_cards(
     else:
         selected_compare = default_compare_date(get_price_snapshot_dates(conn))
 
-    epoch = get_cache_epoch()
-    cache_key = memory_cache.make_key(
-        "reports.enriched",
-        {"strategy": strategy, "compareDate": selected_compare or ""},
-        epoch,
-    )
-    cached = memory_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if not set_codes:
+        return [], selected_compare
 
-    cards_df = load_ranked_cards_data()
-    base_cards = serialize_ranked_cards(cards_df)
     locations_map = _load_card_locations(conn)
     owned_keys = _load_owned_print_keys(conn)
     snapshot_cache = load_price_snapshot_cache(conn)
     if not compare_date:
         selected_compare = default_compare_date(snapshot_cache.dates)
     snapshot_prices = snapshot_cache.snapshots.get(selected_compare or "", {})
+
+    merged: list[dict] = []
+    for code in set_codes:
+        merged.extend(
+            _load_enriched_set(
+                conn,
+                code,
+                selected_compare,
+                locations_map=locations_map,
+                owned_keys=owned_keys,
+                snapshot_prices=snapshot_prices,
+            )
+        )
+    return merged, selected_compare
+
+
+def _load_enriched_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+    selected_compare: str | None,
+    *,
+    locations_map: dict[str, list[dict]],
+    owned_keys: frozenset[str],
+    snapshot_prices: dict[str, float],
+) -> list[dict]:
+    normalized = set_code.strip().upper()
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key(
+        "reports.enriched.set",
+        {"setCode": normalized, "compareDate": selected_compare or ""},
+        epoch,
+    )
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    cards_df = load_ranked_cards_data_for_set(normalized)
+    base_cards = serialize_ranked_cards(cards_df)
     enriched = [
         _enrich_card(
             card,
-            strategy=strategy,
             locations_map=locations_map,
             owned_keys=owned_keys,
             snapshot_prices=snapshot_prices,
@@ -181,9 +265,38 @@ def _load_enriched_report_cards(
         )
         for card in base_cards
     ]
-    payload = (enriched, selected_compare)
-    memory_cache.set(cache_key, payload, _ENRICHED_REPORTS_TTL)
-    return payload
+    memory_cache.set(cache_key, enriched, _ENRICHED_REPORTS_TTL)
+    return enriched
+
+
+def _apply_strategy_to_cards(cards: list[dict], strategy: str) -> list[dict]:
+    return [_apply_strategy(card, strategy) for card in cards]
+
+
+def _apply_strategy(card: dict, strategy: str) -> dict:
+    result = dict(card)
+    finish = int(card["finish"])
+    values = card.get("valuesByStrategy") or {}
+    current_value = value_from_strategy_map(
+        values,
+        strategy,
+        finish=finish,
+        market_value=card.get("marketValue"),
+        market_value_foil=card.get("marketValueFoil"),
+        market_value_etched=card.get("marketValueEtched"),
+    )
+    purchase_value = card.get("purchaseValue")
+    profit_loss = None
+    if purchase_value is not None and purchase_value != 0 and current_value is not None:
+        profit_loss = current_value - purchase_value
+    previous_value = card.get("previousValue")
+    price_change = None
+    if current_value is not None and previous_value is not None:
+        price_change = current_value - previous_value
+    result["currentValue"] = current_value
+    result["profitLoss"] = profit_loss
+    result["priceChange"] = price_change
+    return result
 
 
 def _load_owned_print_keys(conn: sqlite3.Connection) -> frozenset[str]:
@@ -207,33 +320,18 @@ def _load_owned_print_keys(conn: sqlite3.Connection) -> frozenset[str]:
 def _enrich_card(
     card: dict,
     *,
-    strategy: str,
     locations_map: dict[str, list[dict]],
     owned_keys: frozenset[str],
     snapshot_prices: dict[str, float],
     compare_date: str | None,
 ) -> dict:
     finish = int(card["finish"])
-    current_value = price_from_strategy(
-        card.get("cardmarket_url") or None,
-        finish,
-        strategy,
-        cardmarket_url_foil=card.get("cardmarket_url_foil") or None,
-        market_value=card.get("market_value"),
-        market_value_foil=card.get("market_value_foil"),
-        market_value_etched=card.get("market_value_etched"),
-    )
+    values_by_strategy = values_by_strategy_for_finish(card, finish)
     purchase_value = card.get("purchase_value")
-    profit_loss = None
-    if purchase_value is not None and purchase_value != 0 and current_value is not None:
-        profit_loss = current_value - purchase_value
 
     key = card_price_key(card["set_code"], card["collector_number"], finish)
     locations = locations_map.get(key, [])
     previous_value = snapshot_prices.get(key)
-    price_change = None
-    if current_value is not None and previous_value is not None:
-        price_change = current_value - previous_value
 
     return {
         "setCode": card["set_code"],
@@ -243,10 +341,8 @@ def _enrich_card(
         "finish": finish,
         "foil": finish,
         "purchaseValue": purchase_value,
-        "currentValue": current_value,
-        "profitLoss": profit_loss,
+        "valuesByStrategy": values_by_strategy,
         "previousValue": previous_value,
-        "priceChange": price_change,
         "previousDate": compare_date,
         "imageUri": card.get("image_uri") or "",
         "cardmarketUrl": cardmarket_url_for_finish(card, finish) or "",

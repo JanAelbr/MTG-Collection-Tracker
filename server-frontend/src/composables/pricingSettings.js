@@ -24,7 +24,10 @@ export async function savePricingSettings(patch) {
   if (patch.pageSize != null) {
     localStorage.setItem(LEGACY_PAGE_SIZE_KEY, String(settings.value.pageSize));
   }
-  clearClientCache();
+  const strategyOnly = Object.keys(patch).length === 1 && patch.priceStrategy != null;
+  if (!strategyOnly) {
+    clearClientCache();
+  }
   return settings.value;
 }
 

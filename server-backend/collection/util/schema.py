@@ -2,6 +2,7 @@ import sqlite3
 import threading
 
 from lib.config import HTTP_USER_AGENT
+from lib.art_styles import ensure_art_style_rules_table
 from util.app_tables import ensure_app_tables
 from util.card_prices import ensure_card_prices_table
 from util.db_migrate import (
@@ -87,6 +88,7 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
+        ensure_art_style_rules_table(conn)
         ensure_tracked_sets_ready(conn)
         if db_path:
             _initialized_db_paths.add(db_path)

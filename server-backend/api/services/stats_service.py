@@ -1,11 +1,17 @@
 import sqlite3
 
-from report.report_data import build_sorted_set_options, load_collection_data, select_owned_cards
+from api.cache import get_cache_epoch, memory_cache
+from report.report_data import build_sorted_set_options, load_owned_collection_data
 from report.report_stats import load_catalog_counts
 from report.stats_data import compute_stats_page
 from util.price_history import load_price_snapshot_cache
 from api.services import settings_service
-from api.services.pricing_helpers import apply_strategy_to_owned_df
+from api.services.pricing_helpers import (
+    apply_strategy_to_neutral_owned_df,
+    build_neutral_owned_df,
+)
+
+_VALUED_OWNED_TTL = 300
 
 
 def load_collection_stats(
@@ -16,9 +22,17 @@ def load_collection_stats(
 ) -> dict:
     settings = settings_service.get_settings(conn)
     strategy = settings["priceStrategy"]
-    cards_df, _ = load_collection_data(owned_only=True, conn=conn)
-    owned_df = select_owned_cards(cards_df, True)
-    owned_df = apply_strategy_to_owned_df(owned_df, strategy)
+    normalized_set_code = _normalize_set_code(set_code)
+    cached_payload = _load_cached_stats_payload(
+        set_code=normalized_set_code,
+        finish_filter=finish_filter,
+        strategy=strategy,
+    )
+    if cached_payload is not None:
+        return cached_payload
+
+    neutral_df = _load_neutral_owned_df(conn, normalized_set_code)
+    owned_df = apply_strategy_to_neutral_owned_df(neutral_df, strategy)
 
     if finish_filter == "nonfoil":
         owned_df = owned_df[owned_df["finish"] == 0]
@@ -29,7 +43,6 @@ def load_collection_stats(
 
     catalog_df = load_catalog_counts(conn)
     favorite_sets = settings_service.get_favorite_sets(conn)
-    normalized_set_code = "All" if str(set_code).lower() == "all" else set_code
     page_stats = compute_stats_page(
         normalized_set_code,
         owned_df,
@@ -40,7 +53,7 @@ def load_collection_stats(
         include_client_drilldowns=False,
     )
 
-    return {
+    payload = {
         "setCode": normalized_set_code,
         "finishFilter": finish_filter,
         "foilFilter": finish_filter,
@@ -53,6 +66,105 @@ def load_collection_stats(
         ),
         "stats": _serialize_stats_page(page_stats),
     }
+    _store_stats_payload_cache(
+        set_code=normalized_set_code,
+        finish_filter=finish_filter,
+        strategy=strategy,
+        payload=payload,
+    )
+    return payload
+
+
+def _page_cache_key(set_code: str, finish_filter: str, strategy: str, epoch: int) -> str:
+    return memory_cache.make_key(
+        "stats.page",
+        {"setCode": set_code, "finishFilter": finish_filter, "strategy": strategy},
+        epoch,
+    )
+
+
+def _load_cached_stats_payload(
+    *,
+    set_code: str,
+    finish_filter: str,
+    strategy: str,
+) -> dict | None:
+    epoch = get_cache_epoch()
+    return memory_cache.get(_page_cache_key(set_code, finish_filter, strategy, epoch))
+
+
+def _store_stats_payload_cache(
+    *,
+    set_code: str,
+    finish_filter: str,
+    strategy: str,
+    payload: dict,
+) -> None:
+    epoch = get_cache_epoch()
+    memory_cache.set(
+        _page_cache_key(set_code, finish_filter, strategy, epoch),
+        payload,
+        _VALUED_OWNED_TTL,
+    )
+
+
+def _normalize_set_code(set_code: str) -> str:
+    normalized = (set_code or "All").strip()
+    if normalized.lower() == "all":
+        return "All"
+    return normalized.upper()
+
+
+def _owned_cache_key(epoch: int) -> str:
+    return memory_cache.make_key("stats.valued.owned", {}, epoch)
+
+
+def _set_cache_key(set_code: str, epoch: int) -> str:
+    return memory_cache.make_key("stats.valued.set", {"setCode": set_code}, epoch)
+
+
+def _populate_set_caches_from_owned(full_df: pd.DataFrame, epoch: int) -> None:
+    if full_df.empty:
+        return
+    for set_code, group in full_df.groupby("set_code", sort=False):
+        normalized = str(set_code).upper()
+        cache_key = _set_cache_key(normalized, epoch)
+        if memory_cache.get(cache_key) is None:
+            memory_cache.set(cache_key, group.copy(), _VALUED_OWNED_TTL)
+
+
+def _slice_owned_for_set(full_df: pd.DataFrame, set_code: str) -> pd.DataFrame:
+    subset = full_df[full_df["set_code"] == set_code]
+    return subset.copy()
+
+
+def _load_neutral_owned_df(conn: sqlite3.Connection, set_code: str) -> pd.DataFrame:
+    epoch = get_cache_epoch()
+    if set_code == "All":
+        cache_key = _owned_cache_key(epoch)
+        cached = memory_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        neutral = build_neutral_owned_df(load_owned_collection_data(conn))
+        memory_cache.set(cache_key, neutral, _VALUED_OWNED_TTL)
+        _populate_set_caches_from_owned(neutral, epoch)
+        return neutral
+
+    set_key = _set_cache_key(set_code, epoch)
+    cached = memory_cache.get(set_key)
+    if cached is not None:
+        return cached
+
+    full = memory_cache.get(_owned_cache_key(epoch))
+    if full is not None:
+        subset = _slice_owned_for_set(full, set_code)
+        memory_cache.set(set_key, subset, _VALUED_OWNED_TTL)
+        return subset
+
+    neutral = build_neutral_owned_df(load_owned_collection_data(conn, set_code))
+    memory_cache.set(set_key, neutral, _VALUED_OWNED_TTL)
+    return neutral
 
 
 def _serialize_stats_page(page: dict) -> dict:

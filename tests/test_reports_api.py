@@ -107,15 +107,19 @@ class ReportsApiServiceTests(unittest.TestCase):
             "market_value": 2.0,
             "market_value_foil": 4.0,
             "market_value_etched": None,
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
             "image_uri": "",
             "cardmarket_url": "",
+            "cardmarket_url_foil": "",
         }]
 
     def tearDown(self):
         self.conn.close()
         self.temp_dir.cleanup()
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_top_report_includes_locations_and_gain_loss(self, load_ranked):
         import pandas as pd
 
@@ -131,8 +135,10 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(card["profitLoss"], 1.0)
         self.assertEqual(len(card["locations"]), 1)
         self.assertEqual(card["locations"][0]["slug"], "storage:general")
+        self.assertIn("valuesByStrategy", card)
+        self.assertIn("trend", card["valuesByStrategy"])
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_risers_require_positive_change(self, load_ranked):
         import pandas as pd
 
@@ -234,7 +240,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["collectorNumber"], "1")
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_instance_only_card_is_marked_owned(self, load_ranked):
         import pandas as pd
 
@@ -252,8 +258,12 @@ class ReportsApiServiceTests(unittest.TestCase):
             "market_value": 2.0,
             "market_value_foil": 4.0,
             "market_value_etched": None,
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
             "image_uri": "",
             "cardmarket_url": "",
+            "cardmarket_url_foil": "",
         }])
         payload = reports_service.list_report_cards(
             self.conn,
@@ -266,7 +276,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertTrue(payload["cards"][0]["owned"])
         self.assertEqual(len(payload["cards"][0]["locations"]), 1)
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_all_report_includes_unpriced_unowned_catalog_cards(self, load_ranked):
         import pandas as pd
 
@@ -283,8 +293,12 @@ class ReportsApiServiceTests(unittest.TestCase):
                 "market_value": None,
                 "market_value_foil": None,
                 "market_value_etched": None,
+                "has_nonfoil": 1,
+                "has_foil": 0,
+                "has_etched": 0,
                 "image_uri": "https://example.com/bilbo.jpg",
                 "cardmarket_url": "",
+                "cardmarket_url_foil": "",
             },
             {
                 "set_code": "LTR",
@@ -298,8 +312,12 @@ class ReportsApiServiceTests(unittest.TestCase):
                 "market_value": 2.0,
                 "market_value_foil": 4.0,
                 "market_value_etched": None,
+                "has_nonfoil": 1,
+                "has_foil": 1,
+                "has_etched": 0,
                 "image_uri": "",
                 "cardmarket_url": "",
+                "cardmarket_url_foil": "",
             },
         ])
         payload = reports_service.list_report_cards(
@@ -315,7 +333,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertIsNone(card["currentValue"])
         self.assertFalse(card["owned"])
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_top_report_still_excludes_unpriced_cards(self, load_ranked):
         import pandas as pd
 
@@ -332,8 +350,12 @@ class ReportsApiServiceTests(unittest.TestCase):
                 "market_value": None,
                 "market_value_foil": None,
                 "market_value_etched": None,
+                "has_nonfoil": 1,
+                "has_foil": 0,
+                "has_etched": 0,
                 "image_uri": "",
                 "cardmarket_url": "",
+                "cardmarket_url_foil": "",
             },
         ])
         payload = reports_service.list_report_cards(
@@ -346,7 +368,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["totalMatches"], 0)
         self.assertEqual(payload["cards"], [])
 
-    @patch("api.services.reports_service.load_ranked_cards_data")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
     def test_filter_changes_reuse_enriched_cache(self, load_ranked):
         import pandas as pd
 
@@ -468,8 +490,9 @@ class ReportsApiServiceTests(unittest.TestCase):
         set_codes = [variant["setCode"] for variant in payload["variants"]]
         self.assertEqual(set(set_codes), {"LTR", "HOU"})
 
+    @patch("api.services.search_service._resolve_set_codes", return_value=["LTR", "MH3"])
     @patch("api.services.search_service._load_enriched_report_cards")
-    def test_search_and_variants_order_newest_first(self, load_enriched):
+    def test_search_and_variants_order_newest_first(self, load_enriched, _resolve_sets):
         ensure_sets_table(self.conn)
         self.conn.executemany(
             """
@@ -527,15 +550,15 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
             None,
         )
-        search_payload = search_service.search_cards(self.conn, search="instant")
-        self.assertEqual(search_payload["totalMatches"], 2)
+        search_payload = search_service.search_cards(self.conn, search="lightning")
+        self.assertEqual(search_payload["totalMatches"], 1)
         self.assertEqual(
             [card["setCode"] for card in search_payload["cards"]],
-            ["MH3", "MH3"],
+            ["MH3"],
         )
         self.assertEqual(
             {card["name"] for card in search_payload["cards"]},
-            {"Lightning Bolt", "Shock"},
+            {"Lightning Bolt"},
         )
 
         variants_payload = search_service.list_name_variants(self.conn, name="Lightning Bolt")
@@ -543,6 +566,70 @@ class ReportsApiServiceTests(unittest.TestCase):
             [variant["setCode"] for variant in variants_payload["variants"]],
             ["MH3", "LTR"],
         )
+
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
+    def test_enrich_card_stores_values_by_strategy(self, values_mock):
+        values_mock.return_value = {"trend": 144.91, "low": 250.0, "avg": 150.0}
+        enriched = reports_service._enrich_card(
+            {
+                "set_code": "LTR",
+                "collector_number": "790",
+                "name": "The Ozolith",
+                "art_style": "",
+                "finish": 1,
+                "purchase_value": None,
+                "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=100",
+                "cardmarket_url_foil": "https://www.cardmarket.com/en/Magic/Products?idProduct=200",
+                "market_value": 10.0,
+                "market_value_foil": 144.91,
+                "market_value_etched": None,
+            },
+            locations_map={},
+            owned_keys=frozenset(),
+            snapshot_prices={},
+            compare_date=None,
+        )
+        self.assertEqual(enriched["valuesByStrategy"]["low"], 250.0)
+        applied = reports_service._apply_strategy(
+            {
+                **enriched,
+                "marketValue": 10.0,
+                "marketValueFoil": 144.91,
+                "marketValueEtched": None,
+            },
+            "low",
+        )
+        self.assertEqual(applied["currentValue"], 250.0)
+
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
+    def test_strategy_switch_reuses_per_set_cache(self, load_ranked, values_mock):
+        import pandas as pd
+
+        values_mock.return_value = {"trend": 2.0, "low": 1.5}
+        load_ranked.return_value = pd.DataFrame(self.ranked_rows)
+        trend_payload = reports_service.list_report_cards(
+            self.conn,
+            report="top",
+            set_code="LTR",
+            page_size=25,
+        )
+        self.assertEqual(trend_payload["cards"][0]["currentValue"], 2.0)
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO user_settings (key, value)
+            VALUES ('price_strategy', 'low')
+            """
+        )
+        self.conn.commit()
+        low_payload = reports_service.list_report_cards(
+            self.conn,
+            report="top",
+            set_code="LTR",
+            page_size=25,
+        )
+        load_ranked.assert_called_once()
+        self.assertEqual(low_payload["cards"][0]["currentValue"], 1.5)
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_random_card_empty_pool_returns_error(self, load_enriched):

@@ -12,6 +12,7 @@ import CardPreview from "../components/CardPreview.vue";
 import SetPicker from "../components/SetPicker.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { applyStrategyToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
@@ -97,6 +98,10 @@ const cards = computed(() => {
     });
   }
   return cardsPayload.value?.cards || [];
+});
+const strategyCards = computed(() => {
+  pricingSettings.value?.priceStrategy;
+  return applyStrategyToCards(cards.value, pricingSettings.value?.priceStrategy || "trend");
 });
 const isAllView = computed(() => viewType.value === "all");
 const isAllSetsView = computed(() => isAllSetsCode(setCode.value));
@@ -274,7 +279,7 @@ const sortedAllCards = computed(() => {
   if (!isAllView.value) {
     return [];
   }
-  const list = [...cards.value];
+  const list = [...strategyCards.value];
   const ascending = allCardsSortDir.value === "asc";
 
   return list.sort((left, right) => {
@@ -334,7 +339,7 @@ const displayCards = computed(() => {
   if (isAllView.value) {
     return paginatedAllCards.value;
   }
-  return cards.value;
+  return strategyCards.value;
 });
 const lastPriceUpdate = computed(
   () => syncStatus.value?.lastPriceUpdate || appMeta.value?.lastPriceUpdate || null,

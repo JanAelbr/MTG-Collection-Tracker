@@ -205,7 +205,15 @@ export async function apiRequest(path, options = {}) {
         noteServerEpoch(String(payload.cacheEpoch));
       }
     } else if (method !== "GET") {
-      invalidateAfterMutation(path, method);
+      let mutationBody = null;
+      if (options.body) {
+        try {
+          mutationBody = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+        } catch {
+          mutationBody = null;
+        }
+      }
+      invalidateAfterMutation(path, method, mutationBody);
     }
 
     return payload;

@@ -25,7 +25,6 @@ The application:
 lotr/
 │
 ├── data/
-│   ├── art_styles/                # art-style mapping per set ({set}.json)
 │   └── cardmarket_price_guide.json   # Cardmarket guide cache (downloaded locally)
 ├── docs/
 │   ├── decks.md                   # deck model and backup workflow
@@ -69,13 +68,13 @@ On macOS/Linux: `source .venv/bin/activate`
 
 ## Git
 
-The repo tracks **source code** and art-style JSON, not your local database or generated caches.
+The repo tracks **source code**, not your local database or generated caches.
 
 | Tracked in git | Not tracked in git |
 |----------------|-------------------|
 | `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
-| `data/art_styles/*.json` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
-| `readme.md`, `requirements.txt` | Cardmarket cache, Scryfall cache |
+| `readme.md`, `requirements.txt` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
+| | Cardmarket cache, Scryfall cache |
 
 After cloning:
 
@@ -383,7 +382,7 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 ## Art style mapping
 
-Art-style labels come from `data/art_styles/{set_code}.json`. When a set has no rules file yet, one is created automatically with a single `"All"` group for every card. Custom files use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter.
+Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter. Legacy `data/art_styles/*.json` files are imported once on upgrade if present.
 
 Set code **PLIST** is treated as an alias for **PLST** in the database and UI.
 

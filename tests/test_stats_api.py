@@ -1,14 +1,13 @@
+import runpy
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-
-import runpy
-import sys
-from pathlib import Path
+from unittest.mock import patch
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
+from api.cache import bump_cache_epoch  # noqa: E402
 from api.services import stats_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.db_migrate import ensure_card_columns  # noqa: E402
@@ -17,6 +16,7 @@ from util.storage_tables import ensure_storage_tables  # noqa: E402
 
 class StatsApiServiceTests(unittest.TestCase):
     def setUp(self):
+        bump_cache_epoch()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test.db"
         self.conn = sqlite3.connect(self.db_path)
@@ -128,6 +128,82 @@ class StatsApiServiceTests(unittest.TestCase):
         ltr = next(row for row in breakdown if row["setCode"] == "LTR")
         self.assertEqual(ltr["count"], 1)
         self.assertEqual(ltr["profit"], 1.0)
+
+    @patch("api.services.pricing_helpers.values_by_strategy_for_finish")
+    def test_strategy_switch_reuses_valued_owned_cache(self, values_mock):
+        values_mock.return_value = {"trend": 2.0, "low": 1.5}
+        trend_payload = stats_service.load_collection_stats(self.conn, set_code="LTR")
+        self.assertEqual(trend_payload["stats"]["profit"], 1.0)
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO user_settings (key, value)
+            VALUES ('price_strategy', 'low')
+            """
+        )
+        self.conn.commit()
+        low_payload = stats_service.load_collection_stats(self.conn, set_code="LTR")
+        self.assertEqual(low_payload["stats"]["profit"], 0.5)
+        self.assertEqual(values_mock.call_count, 3)
+
+    @patch("api.services.stats_service.load_owned_collection_data")
+    def test_set_scoped_stats_loads_one_set(self, load_owned):
+        import pandas as pd
+
+        load_owned.return_value = pd.DataFrame([{
+            "set_code": "LTR",
+            "collector_number": "1",
+            "name": "Test Card",
+            "art_style": "Main",
+            "finish": 0,
+            "purchase_value": 1.0,
+            "market_value": 2.0,
+            "market_value_foil": 3.0,
+            "market_value_etched": None,
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
+            "cardmarket_url": None,
+            "cardmarket_url_foil": None,
+        }])
+        stats_service.load_collection_stats(self.conn, set_code="LTR")
+        load_owned.assert_called_once_with(self.conn, "LTR")
+
+    def test_all_then_set_drilldown_reuses_owned_cache(self):
+        stats_service.load_collection_stats(self.conn, set_code="All")
+        with patch("api.services.stats_service.load_owned_collection_data") as load_owned:
+            stats_service.load_collection_stats(self.conn, set_code="LTR")
+            load_owned.assert_not_called()
+
+    def test_vectorized_strategy_apply_matches_legacy_path(self):
+        import pandas as pd
+
+        from api.services.pricing_helpers import (
+            _apply_strategy_from_price_columns,
+            _apply_strategy_from_values_by_finish,
+            build_neutral_owned_df,
+        )
+
+        raw = pd.DataFrame([{
+            "set_code": "LTR",
+            "collector_number": "1",
+            "name": "Test Card",
+            "art_style": "Main",
+            "finish": 0,
+            "purchase_value": 1.0,
+            "market_value": 2.0,
+            "market_value_foil": 3.0,
+            "market_value_etched": None,
+            "has_nonfoil": 1,
+            "has_foil": 1,
+            "has_etched": 0,
+            "cardmarket_url": None,
+            "cardmarket_url_foil": None,
+        }])
+        neutral = build_neutral_owned_df(raw)
+        vectorized = _apply_strategy_from_price_columns(neutral, "trend")
+        legacy = _apply_strategy_from_values_by_finish(neutral, "trend")
+        self.assertEqual(vectorized["current_value"].iloc[0], legacy["current_value"].iloc[0])
+        self.assertEqual(vectorized["profit_loss"].iloc[0], legacy["profit_loss"].iloc[0])
 
 
 if __name__ == "__main__":

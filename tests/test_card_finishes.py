@@ -95,6 +95,20 @@ class CardFinishesTests(unittest.TestCase):
         entry = {"trend": 2.42, "trend-foil": 5.54}
         self.assertEqual(price_from_guide_entry(entry, FINISH_ETCHED), 2.42)
 
+    def test_price_from_guide_entry_uses_foil_keys_for_etched_only_product(self):
+        entry = {"trend": 0, "trend-foil": 0.34, "avg-foil": 0.35}
+        self.assertEqual(price_from_guide_entry(entry, FINISH_ETCHED), 0.34)
+
+    def test_finish_has_pricing_uses_foil_guide_for_etched_only_print(self):
+        row = {
+            "market_value_etched": None,
+            "has_nonfoil": 0,
+            "has_foil": 0,
+            "has_etched": 1,
+        }
+        guide = {"foil": {"trend": 0.34}, "etched": {}}
+        self.assertTrue(finish_has_pricing(row, FINISH_ETCHED, guide))
+
     def test_resolve_valuation_finish_uses_foil_price_for_foil_only_print(self):
         row = {
             "has_nonfoil": 0,

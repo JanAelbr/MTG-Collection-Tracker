@@ -90,7 +90,7 @@ def upsert_card(
         cursor, set_code, collector_number,
     )
     has_nonfoil, has_foil, has_etched = card_finish_flags(card)
-    art_style = get_art_style(set_code, collector_number)
+    art_style = get_art_style(cursor.connection, set_code, collector_number)
     name = card.get("name", "")
     image_uri = card_image_uri(card)
     nonfoil_url, foil_url = merge_cardmarket_urls(

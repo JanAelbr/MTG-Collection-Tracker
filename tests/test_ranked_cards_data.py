@@ -9,7 +9,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from report.ranked_cards_data import expand_cards_for_ranking  # noqa: E402
+from report.ranked_cards_data import expand_cards_for_ranking, serialize_ranked_cards  # noqa: E402
 
 
 class RankedCardsDataTests(unittest.TestCase):
@@ -130,6 +130,39 @@ class RankedCardsDataTests(unittest.TestCase):
         for column in ("has_nonfoil", "has_foil", "has_etched"):
             self.assertIn(column, ALL_CARDS_QUERY)
             self.assertIn(column, ORPHAN_PURCHASES_QUERY)
+
+    def test_serialize_ranked_cards_includes_foil_cardmarket_url(self):
+        cards_df = pd.DataFrame([
+            {
+                "set_code": "LTR",
+                "collector_number": "790",
+                "name": "The Ozolith",
+                "art_style": "15. Surge foil",
+                "image_uri": "",
+                "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=100",
+                "cardmarket_url_foil": "https://www.cardmarket.com/en/Magic/Products?idProduct=200",
+                "market_value": 10.0,
+                "market_value_foil": 144.91,
+                "market_value_etched": None,
+                "has_nonfoil": 0,
+                "has_foil": 1,
+                "has_etched": 0,
+                "finish": 1,
+                "purchase_value": 100.0,
+                "current_value": 144.91,
+                "profit_loss": 44.91,
+                "colors": None,
+                "type_line": "Legendary Artifact",
+                "card_type": "artifact",
+            }
+        ])
+
+        cards = serialize_ranked_cards(cards_df)
+
+        self.assertEqual(
+            cards[0]["cardmarket_url_foil"],
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=200",
+        )
 
 
 if __name__ == "__main__":

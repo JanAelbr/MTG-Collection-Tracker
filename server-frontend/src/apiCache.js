@@ -93,13 +93,20 @@ const MUTATION_PREFIXES = {
   "/prices/sync": () => clearClientCache(),
 };
 
-export function invalidateAfterMutation(path, method) {
+export function invalidateAfterMutation(path, method, body) {
   if (method !== "POST" && method !== "PATCH" && method !== "DELETE") {
     return;
   }
   if (path.startsWith("/prices/sync")) {
     clearClientCache();
     return;
+  }
+  if (path.startsWith("/settings") && method === "PATCH") {
+    const keys = body && typeof body === "object" ? Object.keys(body) : [];
+    if (keys.length === 1 && keys[0] === "priceStrategy") {
+      clearClientCachePrefix("/settings");
+      return;
+    }
   }
   for (const [prefix, targets] of Object.entries(MUTATION_PREFIXES)) {
     if (!path.startsWith(prefix)) {

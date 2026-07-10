@@ -1,13 +1,17 @@
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
+import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
 const route = useRoute();
+const { setPickerMode } = usePricingSettings();
+const { setGalleryFilter } = useSetGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
@@ -31,6 +35,10 @@ const navItems = [
 
 const showCollectionSubnav = computed(() =>
   route.path.startsWith("/collection") || route.path === "/stats",
+);
+
+const showSetGalleryFilter = computed(
+  () => showCollectionSubnav.value && setPickerMode.value === "browser",
 );
 
 const brandLink = computed(() => ({
@@ -74,6 +82,10 @@ function subnavLinkTo(subItem) {
     query: collectionNavQuery(route, subItem.to),
   };
 }
+
+onMounted(() => {
+  fetchPricingSettings();
+});
 </script>
 
 <template>
@@ -107,15 +119,28 @@ function subnavLinkTo(subItem) {
         class="app-subnav"
         aria-label="Collection views"
       >
-        <RouterLink
-          v-for="subItem in collectionSubnav"
-          :key="subItem.to"
-          :to="subnavLinkTo(subItem)"
-          class="app-subnav-link"
-          :class="{ 'is-active': isSubnavActive(subItem) }"
-        >
-          {{ subItem.label }}
-        </RouterLink>
+        <template v-for="(subItem, index) in collectionSubnav" :key="subItem.to">
+          <RouterLink
+            :to="subnavLinkTo(subItem)"
+            class="app-subnav-link"
+            :class="{ 'is-active': isSubnavActive(subItem) }"
+          >
+            {{ subItem.label }}
+          </RouterLink>
+          <label
+            v-if="index === 0 && showSetGalleryFilter"
+            class="app-subnav-set-filter"
+          >
+            <span class="sr-only">Filter sets</span>
+            <input
+              v-model="setGalleryFilter"
+              type="search"
+              placeholder="Filter sets"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+        </template>
       </nav>
     </div>
 

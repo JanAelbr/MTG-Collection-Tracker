@@ -47,14 +47,30 @@ const title = computed(() => (
       aria-hidden="true"
     >
       <rect
-        x="3"
-        y="2.5"
-        width="10"
-        height="11"
-        rx="1.2"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.4"
+        x="3.25"
+        y="2.25"
+        width="9.5"
+        height="11.5"
+        rx="1.35"
+        fill="currentColor"
+      />
+      <rect
+        x="5.1"
+        y="5"
+        width="5.8"
+        height="1.1"
+        rx="0.35"
+        fill="#fff"
+        opacity="0.42"
+      />
+      <rect
+        x="5.1"
+        y="7.1"
+        width="4.2"
+        height="1.1"
+        rx="0.35"
+        fill="#fff"
+        opacity="0.42"
       />
     </svg>
   </button>

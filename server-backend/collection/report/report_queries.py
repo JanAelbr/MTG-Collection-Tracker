@@ -48,6 +48,50 @@ WHERE {_EXCLUDE_ALCHEMY}
 ORDER BY c.set_code, CAST(c.collector_number AS INTEGER)
 """
 
+# Owned cards for a single set.
+OWNED_CARDS_FOR_SET_QUERY = f"""
+SELECT
+    c.set_code,
+    c.collector_number,
+    c.name,
+    c.art_style,
+    c.image_uri,
+    c.cardmarket_url,
+    c.cardmarket_url_foil,
+    c.colors,
+    c.type_line,
+    c.card_type,
+    c.market_value,
+    c.market_value_foil,
+    c.market_value_etched,
+    c.has_nonfoil,
+    c.has_foil,
+    c.has_etched,
+    p.finish,
+    p.purchase_value,
+    CASE
+        WHEN p.finish = 2 THEN c.market_value_etched
+        WHEN p.finish = 1 THEN c.market_value_foil
+        ELSE c.market_value
+    END AS current_value,
+    CASE
+        WHEN p.finish = 2 AND c.market_value_etched IS NOT NULL
+            THEN c.market_value_etched - p.purchase_value
+        WHEN p.finish = 1 AND c.market_value_foil IS NOT NULL
+            THEN c.market_value_foil - p.purchase_value
+        WHEN p.finish = 0 AND c.market_value IS NOT NULL
+            THEN c.market_value - p.purchase_value
+        ELSE NULL
+    END AS profit_loss
+FROM cards c
+JOIN purchases p
+    ON p.set_code = c.set_code
+    AND p.collector_number = c.collector_number
+WHERE c.set_code = ?
+  AND {_EXCLUDE_ALCHEMY}
+ORDER BY CAST(c.collector_number AS INTEGER)
+"""
+
 # SQL for every card in the database, with optional purchase data.
 ALL_CARDS_QUERY = f"""
 SELECT
@@ -97,6 +141,56 @@ WHERE {_EXCLUDE_ALCHEMY}
 ORDER BY c.set_code, CAST(c.collector_number AS INTEGER)
 """
 
+# All cards for a single set, with optional purchase data.
+SET_CARDS_QUERY = f"""
+SELECT
+    c.set_code,
+    c.collector_number,
+    c.name,
+    c.art_style,
+    c.image_uri,
+    c.cardmarket_url,
+    c.cardmarket_url_foil,
+    c.colors,
+    c.type_line,
+    c.card_type,
+    c.market_value,
+    c.market_value_foil,
+    c.market_value_etched,
+    c.has_nonfoil,
+    c.has_foil,
+    c.has_etched,
+    p.finish,
+    p.purchase_value,
+    CASE
+        WHEN p.finish = 2 THEN c.market_value_etched
+        WHEN p.finish = 1 THEN c.market_value_foil
+        ELSE c.market_value
+    END AS current_value,
+    CASE
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 2
+            AND c.market_value_etched IS NOT NULL
+            THEN c.market_value_etched - p.purchase_value
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 1
+            AND c.market_value_foil IS NOT NULL
+            THEN c.market_value_foil - p.purchase_value
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 0
+            AND c.market_value IS NOT NULL
+            THEN c.market_value - p.purchase_value
+        ELSE NULL
+    END AS profit_loss
+FROM cards c
+LEFT JOIN purchases p
+    ON p.set_code = c.set_code
+    AND p.collector_number = c.collector_number
+WHERE c.set_code = ?
+  AND {_EXCLUDE_ALCHEMY}
+ORDER BY CAST(c.collector_number AS INTEGER)
+"""
+
 # Purchases that are not linked to a catalog row yet.
 ORPHAN_PURCHASES_QUERY = f"""
 SELECT
@@ -124,6 +218,36 @@ LEFT JOIN cards c
 WHERE c.set_code IS NULL
   AND {exclude_alchemy_sql("p.collector_number")}
 ORDER BY p.set_code, CAST(p.collector_number AS INTEGER), p.finish
+"""
+
+# Orphan purchases for a single set (no matching catalog row).
+SET_ORPHAN_PURCHASES_QUERY = f"""
+SELECT
+    p.set_code,
+    p.collector_number,
+    NULL AS name,
+    '' AS art_style,
+    '' AS image_uri,
+    '' AS cardmarket_url,
+    '' AS cardmarket_url_foil,
+    NULL AS market_value,
+    NULL AS market_value_foil,
+    NULL AS market_value_etched,
+    NULL AS has_nonfoil,
+    NULL AS has_foil,
+    NULL AS has_etched,
+    p.finish,
+    p.purchase_value,
+    NULL AS current_value,
+    NULL AS profit_loss
+FROM purchases p
+LEFT JOIN cards c
+    ON c.set_code = p.set_code
+    AND c.collector_number = p.collector_number
+WHERE c.set_code IS NULL
+  AND p.set_code = ?
+  AND {exclude_alchemy_sql("p.collector_number")}
+ORDER BY CAST(p.collector_number AS INTEGER), p.finish
 """
 
 # SQL summary grouped by set and art style; lists every art style with owned totals.

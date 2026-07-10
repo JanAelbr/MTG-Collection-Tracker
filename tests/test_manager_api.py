@@ -482,40 +482,34 @@ class ManagerApiServiceTests(unittest.TestCase):
         self.assertEqual(row[0], 0)
 
     def test_save_art_style_rules_for_set_updates_cards(self):
-        art_styles_dir = Path(self.temp_dir.name) / "art_styles"
-        art_styles_dir.mkdir()
-        with (
-            patch("lib.art_styles.ART_STYLES_DIR", art_styles_dir),
-            patch("lib.config.ART_STYLES_DIR", art_styles_dir),
-        ):
-            self.conn.execute("DELETE FROM cards WHERE set_code = 'LTR'")
-            self.conn.executemany(
-                """
-                INSERT INTO cards (
-                    set_code, collector_number, name, art_style,
-                    market_value, market_value_foil, market_value_etched,
-                    has_nonfoil, has_foil, has_etched, colors, type_line, card_type
-                ) VALUES (?, ?, ?, ?, 1.0, NULL, NULL, 1, 0, 0, NULL, NULL, NULL)
-                """,
-                [
-                    ("LTR", "1", "Card One", ""),
-                    ("LTR", "100", "Card Two", ""),
-                ],
-            )
-            self.conn.commit()
+        self.conn.execute("DELETE FROM cards WHERE set_code = 'LTR'")
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES (?, ?, ?, ?, 1.0, NULL, NULL, 1, 0, 0, NULL, NULL, NULL)
+            """,
+            [
+                ("LTR", "1", "Card One", ""),
+                ("LTR", "100", "Card Two", ""),
+            ],
+        )
+        self.conn.commit()
 
-            result = manager_service.save_art_style_rules_for_set(
-                self.conn,
-                "LTR",
-                [{"name": "Main", "firstNumber": 1, "lastNumber": 99}],
-            )
+        result = manager_service.save_art_style_rules_for_set(
+            self.conn,
+            "LTR",
+            [{"name": "Main", "firstNumber": 1, "lastNumber": 99}],
+        )
 
-            self.assertEqual(result["updatedCards"], 2)
-            self.assertEqual(result["artStyles"][0]["artStyle"], "Main")
-            row = self.conn.execute(
-                "SELECT art_style FROM cards WHERE set_code = 'LTR' AND collector_number = '1'"
-            ).fetchone()
-            self.assertEqual(row[0], "Main")
+        self.assertEqual(result["updatedCards"], 2)
+        self.assertEqual(result["artStyles"][0]["artStyle"], "Main")
+        row = self.conn.execute(
+            "SELECT art_style FROM cards WHERE set_code = 'LTR' AND collector_number = '1'"
+        ).fetchone()
+        self.assertEqual(row[0], "Main")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
+import io
+import json
 import sqlite3
+import zipfile
 import sys
 import tempfile
 import unittest
@@ -177,6 +180,14 @@ class CollectionBackupTests(unittest.TestCase):
         preview = preview_backup(archive)
         self.assertEqual(preview["summary"]["purchases"], 1)
         self.assertIn("LTR", preview["summary"]["setsReferenced"])
+
+    def test_export_includes_art_style_rules_from_database(self):
+        archive = export_collection_zip(self.conn)
+        with zipfile.ZipFile(io.BytesIO(archive)) as exported:
+            names = set(exported.namelist())
+            self.assertIn("art_styles/ltr.json", names)
+            rules = json.loads(exported.read("art_styles/ltr.json").decode("utf-8"))
+            self.assertTrue(any(rule.get("name") == "01. Main Set" for rule in rules))
 
     def test_build_collection_payload_uses_camel_case(self):
         payload = build_collection_payload(self.conn)

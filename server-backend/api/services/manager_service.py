@@ -92,10 +92,10 @@ def list_art_styles(conn: sqlite3.Connection, set_code: str) -> list[dict]:
     return build_art_style_options_for_set(conn, set_code)
 
 
-def get_art_style_rules(set_code: str) -> list[dict]:
+def get_art_style_rules(conn: sqlite3.Connection, set_code: str) -> list[dict]:
     normalized = set_code.strip().upper()
     _validate_set_code(normalized)
-    return load_art_style_rules(normalized.lower())
+    return load_art_style_rules(conn, normalized.lower())
 
 
 def save_art_style_rules_for_set(
@@ -111,7 +111,7 @@ def save_art_style_rules_for_set(
         raise ManagerError(errors[0], status_code=400)
 
     try:
-        saved_rules = save_art_style_rules(normalized, rules)
+        saved_rules = save_art_style_rules(conn, normalized, rules)
     except ValueError as exc:
         raise ManagerError(str(exc), status_code=400) from exc
 

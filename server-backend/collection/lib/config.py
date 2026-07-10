@@ -53,8 +53,3 @@ def normalize_set_code(set_code: str | None) -> str:
 
 def canonical_set_code_lower(set_code: str | None) -> str:
     return normalize_set_code(set_code).lower()
-
-
-# Return the art-style rules file for one set code.
-def art_style_rules_path(set_code: str) -> Path:
-    return ART_STYLES_DIR / f"{canonical_set_code_lower(set_code)}.json"

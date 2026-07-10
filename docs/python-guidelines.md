@@ -23,7 +23,7 @@ They are based on the current codebase and the inconsistencies we want to remove
 ```
 lotr/
 ├── collection.db          # runtime database (not committed; in APP_DATA_DIR)
-├── data/                  # art_styles JSON, Cardmarket cache
+├── data/                  # Cardmarket cache
 ├── docs/
 ├── server-backend/
 │   ├── api/               # FastAPI routers + services
@@ -54,7 +54,7 @@ lotr/
 Path constants live in `server-backend/collection/lib/config.py`:
 
 ```python
-from lib.config import DB_PATH, DATA_DIR, REPO_ROOT, ART_STYLES_DIR
+from lib.config import DB_PATH, DATA_DIR, REPO_ROOT
 ```
 
 `PYTHONPATH` includes `server-backend/collection` and `server-backend` (see `run_api.py` and PowerShell launchers).
@@ -64,7 +64,7 @@ from lib.config import DB_PATH, DATA_DIR, REPO_ROOT, ART_STYLES_DIR
 Use `lib.config` for all repo paths:
 
 ```python
-from lib.config import DB_PATH, DATA_DIR, ART_STYLES_DIR
+from lib.config import DB_PATH, DATA_DIR, REPO_ROOT
 ```
 
 Prefer `pathlib.Path` over string paths. Build absolute paths from `config`, not from `cwd`.
@@ -74,7 +74,6 @@ Prefer `pathlib.Path` over string paths. Build absolute paths from `config`, not
 ```python
 # Bad — breaks when cwd is not the repo root
 conn = sqlite3.connect("collection.db")
-rules_path = "data/art_styles/ltr.json"
 ```
 
 Use `lib.config` for all repo paths. `run_api.py` adds `server-backend/collection` and `server-backend` to `sys.path` before imports.
@@ -215,7 +214,7 @@ def format_money(value: float | None) -> str:
 ### Set codes and files
 
 - Set codes in the DB: **uppercase** (`LTR`, `LTC`, `C13`).
-- Art-style filenames in `data/art_styles/`: **lowercase** (`ltr.json`).
+- Art-style rules in the DB: **lowercase** set code keys (`ltr`, `ltc`, `c13`).
 - Tracked sets come from `tracked_sets`; deck print sets from `deck_cards` via `list_deck_sync_set_codes(conn)`. `util.price_sync.get_set_codes()` unions both.
 
 ---
@@ -325,6 +324,34 @@ requests>=2.31,<3
 ```
 
 Install into `.venv` and document setup in `readme.md`. Do not commit `.venv/`.
+
+---
+
+## Performance benchmarks
+
+Search and All-cards set filtering currently load and enrich the full catalog before filtering in memory. Use the benchmark suite to track regressions:
+
+```powershell
+py -3 -m unittest tests.test_performance_benchmarks -v
+# or
+.\scripts\run_perf_benchmarks.ps1
+```
+
+Each run prints lines like `PERF search_cards[cold] … median=…ms p95=…ms` to stderr. Cold timings rebuild the enriched card cache; warm timings measure cache hits. Stats benchmarks cover set-scoped loads, strategy switches, and All→set drill-down after the portfolio cache is warm.
+
+Optional strict thresholds (fail the run when exceeded):
+
+```powershell
+$env:LOTR_PERF_STRICT = "1"
+$env:LOTR_PERF_SEARCH_COLD_MS = "500"
+$env:LOTR_PERF_SET_FILTER_COLD_MS = "500"
+$env:LOTR_PERF_STATS_WARM_MS = "25"
+$env:LOTR_PERF_STATS_STRATEGY_SWITCH_MS = "25"
+$env:LOTR_PERF_STATS_ALL_TO_SET_MS = "25"
+py -3 -m unittest tests.test_performance_benchmarks -v
+```
+
+HTTP endpoint benchmarks run when `httpx` is installed (`pip install httpx`).
 
 ---
 

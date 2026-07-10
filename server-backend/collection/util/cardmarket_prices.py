@@ -320,7 +320,16 @@ def _nonfoil_low_is_reliable(entry: dict, low: float) -> bool:
 # Return the first positive price from a Cardmarket price guide entry.
 def price_from_guide_entry(entry: dict, finish: int | bool) -> float | None:
     finish_id = normalize_finish(finish)
-    use_foil_keys = guide_uses_foil_keys(finish_id)
+    if finish_id == FINISH_ETCHED:
+        for use_foil_keys in (False, True):
+            price = _price_from_guide_keys(entry, use_foil_keys=use_foil_keys)
+            if price is not None:
+                return price
+        return None
+    return _price_from_guide_keys(entry, use_foil_keys=guide_uses_foil_keys(finish_id))
+
+
+def _price_from_guide_keys(entry: dict, *, use_foil_keys: bool) -> float | None:
     keys = PRIMARY_FOIL_KEYS if use_foil_keys else PRIMARY_NONFOIL_KEYS
     for key in keys:
         value = entry.get(key)

@@ -9,6 +9,7 @@ from api.services.reports_service import (
     ReportsError,
     _apply_filters,
     _load_enriched_report_cards,
+    _resolve_set_codes,
 )
 from api.services import settings_service
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
@@ -64,8 +65,11 @@ def _filtered_pool(
     search: str = "",
 ) -> list[dict]:
     settings = settings_service.get_settings(conn)
+    term = search.strip()
+    set_codes = _resolve_set_codes(conn, set_code=set_code, search_term=term or None)
     cards, _compare_date = _load_enriched_report_cards(
         conn,
+        set_codes=set_codes,
         strategy=settings["priceStrategy"],
         compare_date=settings["compareDate"],
     )
@@ -76,10 +80,10 @@ def _filtered_pool(
         owned_filter=owned_filter,
         foil_filter=foil_filter,
     )
-    term = search.strip().lower()
     if not term:
         return filtered
-    return [card for card in filtered if _card_matches_term(card, term)]
+    lowered = term.lower()
+    return [card for card in filtered if _card_matches_term(card, lowered)]
 
 
 def _print_key(card: dict) -> tuple:
@@ -137,12 +141,14 @@ def _finish_catalog_for_name(
         if card.get("name") != name:
             continue
         key = _print_key(card)
-        entry = catalog.setdefault(key, {"finishes": [], "finishValues": {}})
+        entry = catalog.setdefault(key, {"finishes": [], "finishValues": {}, "finishValuesByStrategy": {}})
         finish = int(card["finish"])
         current = card.get("currentValue")
         if current is not None and float(current) > 0:
             _append_catalog_finish(entry, finish)
             entry["finishValues"][finish] = current
+            if card.get("valuesByStrategy"):
+                entry["finishValuesByStrategy"][finish] = dict(card["valuesByStrategy"])
         _apply_print_flags(entry, {
             "hasNonfoil": card.get("hasNonfoil"),
             "hasFoil": card.get("hasFoil"),
@@ -151,7 +157,7 @@ def _finish_catalog_for_name(
 
     if print_flags:
         for key, flags in print_flags.items():
-            entry = catalog.setdefault(key, {"finishes": [], "finishValues": {}})
+            entry = catalog.setdefault(key, {"finishes": [], "finishValues": {}, "finishValuesByStrategy": {}})
             _apply_print_flags(entry, flags)
 
     for entry in catalog.values():
@@ -179,6 +185,10 @@ def _merge_variant_finishes(
         variant["finishValues"] = {
             **catalog_entry["finishValues"],
             **(variant.get("finishValues") or {}),
+        }
+        variant["finishValuesByStrategy"] = {
+            **catalog_entry.get("finishValuesByStrategy", {}),
+            **(variant.get("finishValuesByStrategy") or {}),
         }
 
 
