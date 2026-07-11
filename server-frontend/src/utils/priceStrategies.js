@@ -48,3 +48,21 @@ export function applyStrategyToCard(card, strategyId) {
 export function applyStrategyToCards(cards, strategyId) {
   return (cards || []).map((card) => applyStrategyToCard(card, strategyId));
 }
+
+export function hasStrategyPrices(card) {
+  const values = card?.valuesByStrategy;
+  if (!values || typeof values !== "object") {
+    return false;
+  }
+  return Object.values(values).some((value) => value != null);
+}
+
+export function strategyPriceRows(card, strategies, activeStrategyId) {
+  return (strategies || []).map((strategy) => ({
+    id: strategy.id,
+    label: strategy.label,
+    description: priceStrategyDescription(strategy.id),
+    value: valueForStrategy(card, strategy.id),
+    isActive: strategy.id === activeStrategyId,
+  }));
+}

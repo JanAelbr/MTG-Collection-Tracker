@@ -12,6 +12,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from lib.art_styles import save_art_style_rules  # noqa: E402
 from util.collection_backup import (  # noqa: E402
     build_collection_payload,
     export_collection_zip,
@@ -188,6 +189,84 @@ class CollectionBackupTests(unittest.TestCase):
             self.assertIn("art_styles/ltr.json", names)
             rules = json.loads(exported.read("art_styles/ltr.json").decode("utf-8"))
             self.assertTrue(any(rule.get("name") == "01. Main Set" for rule in rules))
+
+    def test_export_includes_custom_art_styles_without_owned_cards(self):
+        save_art_style_rules(
+            self.conn,
+            "NCC",
+            [
+                {"name": "01. Face commanders", "firstNumber": 1, "lastNumber": 10},
+                {"name": "02. New cards", "firstNumber": 11, "lastNumber": 99},
+            ],
+        )
+        self.conn.commit()
+
+        archive = export_collection_zip(self.conn)
+        with zipfile.ZipFile(io.BytesIO(archive)) as exported:
+            self.assertIn("art_styles/ncc.json", set(exported.namelist()))
+            rules = json.loads(exported.read("art_styles/ncc.json").decode("utf-8"))
+            self.assertEqual(rules[0]["name"], "01. Face commanders")
+
+    def test_replace_import_restores_custom_art_styles(self):
+        custom_rules = [
+            {"name": "01. Custom main", "firstNumber": 1, "lastNumber": 200},
+            {"name": "02. Custom showcase", "firstNumber": 201, "lastNumber": 300},
+        ]
+        save_art_style_rules(self.conn, "LTR", custom_rules)
+        self.conn.commit()
+
+        archive = export_collection_zip(self.conn)
+
+        replace_conn = sqlite3.connect(":memory:")
+        replace_conn.row_factory = sqlite3.Row
+        ensure_database_schema(replace_conn)
+        import_collection_zip(replace_conn, archive, mode="replace")
+        replace_conn.commit()
+
+        row = replace_conn.execute(
+            "SELECT rules_json FROM art_style_rules WHERE set_code = 'ltr'",
+        ).fetchone()
+        self.assertIsNotNone(row)
+        restored = json.loads(row[0])
+        self.assertEqual(restored[0]["name"], "01. Custom main")
+        self.assertEqual(restored[1]["lastNumber"], 300)
+
+    def test_replace_import_clears_art_styles_not_in_backup(self):
+        save_art_style_rules(
+            self.conn,
+            "NCC",
+            [{"name": "01. Face commanders", "firstNumber": 1, "lastNumber": 10}],
+        )
+        self.conn.commit()
+
+        archive = export_collection_zip(self.conn)
+        # Backup was taken with NCC rules; strip them to simulate an older/partial backup.
+        with zipfile.ZipFile(io.BytesIO(archive), "r") as exported:
+            names = [name for name in exported.namelist() if name != "art_styles/ncc.json"]
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as rebuilt:
+                for name in names:
+                    rebuilt.writestr(name, exported.read(name))
+            partial_archive = buffer.getvalue()
+
+        replace_conn = sqlite3.connect(":memory:")
+        replace_conn.row_factory = sqlite3.Row
+        ensure_database_schema(replace_conn)
+        save_art_style_rules(
+            replace_conn,
+            "NCC",
+            [{"name": "01. Stale rules", "firstNumber": 1, "lastNumber": 5}],
+        )
+        replace_conn.commit()
+
+        import_collection_zip(replace_conn, partial_archive, mode="replace")
+        replace_conn.commit()
+
+        self.assertIsNone(
+            replace_conn.execute(
+                "SELECT 1 FROM art_style_rules WHERE set_code = 'ncc'",
+            ).fetchone(),
+        )
 
     def test_build_collection_payload_uses_camel_case(self):
         payload = build_collection_payload(self.conn)

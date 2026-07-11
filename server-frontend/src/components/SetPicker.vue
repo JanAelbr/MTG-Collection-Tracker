@@ -1,9 +1,9 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import BrowseSelect from "./BrowseSelect.vue";
-import LoadingIndicator from "./LoadingIndicator.vue";
 import SetGallery from "./SetGallery.vue";
 import { api, clearClientCache } from "../api";
+import { useAvailableManagerSets } from "../composables/availableSets";
 import { usePricingSettings } from "../composables/pricingSettings";
 import { formatSetFilterLabel, formatSetCountLabel, setDisplayName, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
@@ -30,12 +30,14 @@ const useBrowser = computed(() => settings.value?.setPickerMode === "browser");
 const showFavoriteStars = computed(() => useBrowser.value && props.showFavorites);
 const deletingSetCode = ref("");
 const reloadingSetCode = ref("");
-const addSetEditor = reactive({
-  open: false,
-  setCode: "",
-  saving: false,
-  error: "",
-});
+const addingSetCode = ref("");
+const {
+  availableSets,
+  loadingAvailableSets,
+  loadError: addSetError,
+  fetchAvailableManagerSets,
+  removeAvailableSet,
+} = useAvailableManagerSets();
 
 const browseOptions = computed(() =>
   props.sets.map((set) => ({
@@ -44,6 +46,21 @@ const browseOptions = computed(() =>
     iconSrc: resolveSetIconUri(set),
     searchText: [set.setCode, set.label, setDisplayName(set)].filter(Boolean).join(" "),
   })),
+);
+
+const trackedSetCodes = computed(
+  () => new Set(props.sets.map((set) => set.setCode).filter((code) => code && code !== "All")),
+);
+
+const addSetOptions = computed(() =>
+  availableSets.value
+    .filter((set) => !trackedSetCodes.value.has(set.setCode))
+    .map((set) => ({
+      value: set.setCode,
+      label: `${set.setCode} — ${set.name || set.setCode}`,
+      iconSrc: set.iconUri || resolveSetIconUri(set),
+      searchText: [set.setCode, set.name].filter(Boolean).join(" "),
+    })),
 );
 
 const activeSet = computed(() =>
@@ -82,20 +99,6 @@ async function toggleFavorite(set) {
   }
 }
 
-function openAddSetEditor() {
-  addSetEditor.open = true;
-  addSetEditor.setCode = "";
-  addSetEditor.error = "";
-}
-
-function closeAddSetEditor() {
-  if (addSetEditor.saving) {
-    return;
-  }
-  addSetEditor.open = false;
-  addSetEditor.error = "";
-}
-
 function selectFallbackSet(removedCode) {
   const remaining = props.sets.filter((set) => set.setCode !== removedCode);
   const next = remaining.find((set) => set.setCode !== "All") || remaining[0]?.setCode || "";
@@ -112,22 +115,30 @@ async function refreshSetsList(result) {
   return sets;
 }
 
-async function saveAddSet() {
-  const setCode = addSetEditor.setCode.trim().toUpperCase();
-  if (!setCode || addSetEditor.saving) {
+async function loadAvailableSets() {
+  if (!props.manageSets || !useBrowser.value || props.layout !== "banner") {
     return;
   }
-  addSetEditor.saving = true;
-  addSetEditor.error = "";
+  await fetchAvailableManagerSets();
+}
+
+async function addSet(setCode) {
+  const normalized = String(setCode || "").trim().toUpperCase();
+  if (!normalized || addingSetCode.value) {
+    return;
+  }
+  addingSetCode.value = normalized;
+  addSetError.value = "";
   try {
-    const result = await api.createManagerSet({ setCode });
+    const result = await api.createManagerSet({ setCode: normalized });
     await refreshSetsList(result);
+    removeAvailableSet(normalized);
     emit("update:modelValue", result.setCode);
-    addSetEditor.open = false;
   } catch (error) {
-    addSetEditor.error = error.message || "Could not add set.";
+    addSetError.value = error.message || "Could not add set.";
+    window.alert(addSetError.value);
   } finally {
-    addSetEditor.saving = false;
+    addingSetCode.value = "";
   }
 }
 
@@ -148,6 +159,7 @@ async function removeSet(set) {
     if (props.modelValue === set.setCode) {
       selectFallbackSet(set.setCode);
     }
+    await loadAvailableSets();
   } catch (error) {
     window.alert(error.message || "Could not remove set.");
   } finally {
@@ -173,6 +185,17 @@ async function reloadCatalog(set) {
     reloadingSetCode.value = "";
   }
 }
+
+watch(
+  () => [useBrowser.value, props.manageSets, props.layout],
+  () => {
+    loadAvailableSets();
+  },
+);
+
+onMounted(() => {
+  loadAvailableSets();
+});
 </script>
 
 <template>
@@ -188,12 +211,18 @@ async function reloadCatalog(set) {
       :show-reload-catalog="showReloadCatalog"
       :deleting-set-code="deletingSetCode"
       :reloading-set-code="reloadingSetCode"
+      :available-set-options="addSetOptions"
+      :loading-available-sets="loadingAvailableSets"
+      :adding-set-code="addingSetCode"
       @select="onSelect"
       @toggle-favorite="onFavoriteClick"
-      @add-set="openAddSetEditor"
+      @add-set="addSet"
       @remove-set="removeSet"
       @reload-catalog="reloadCatalog"
     />
+    <p v-if="addSetError" class="collection-sync-message error set-gallery-add-error">
+      {{ addSetError }}
+    </p>
   </div>
 
   <div
@@ -228,47 +257,4 @@ async function reloadCatalog(set) {
       @update:model-value="onSelect"
     />
   </label>
-
-  <div v-if="addSetEditor.open" class="modal-backdrop" @click.self="closeAddSetEditor">
-    <form class="modal-card" @submit.prevent="saveAddSet">
-      <h3>Add set</h3>
-      <p v-if="addSetEditor.saving" class="set-picker-add-status">
-        <LoadingIndicator
-          compact
-          label="Creating set and fetching catalog from Scryfall…"
-        />
-      </p>
-      <template v-else>
-        <p class="manager-help">
-          Registers the set and imports the full print catalog from Scryfall.
-        </p>
-        <label>
-          <span>Set code</span>
-          <input
-            v-model="addSetEditor.setCode"
-            type="text"
-            maxlength="16"
-            placeholder="e.g. MH3"
-            required
-          />
-        </label>
-        <p v-if="addSetEditor.error" class="collection-sync-message error">
-          {{ addSetEditor.error }}
-        </p>
-      </template>
-      <div class="modal-actions">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="addSetEditor.saving"
-          @click="closeAddSetEditor"
-        >
-          Cancel
-        </button>
-        <button type="submit" class="btn btn-primary" :disabled="addSetEditor.saving">
-          Create
-        </button>
-      </div>
-    </form>
-  </div>
 </template>

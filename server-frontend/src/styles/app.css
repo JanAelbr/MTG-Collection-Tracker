@@ -2185,6 +2185,98 @@ body {
   color: #2e7d32;
 }
 
+.collection-page .collection-card-grid-value .price-strategy-value {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.price-strategy-value {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.price-strategy-value.has-strategy-tooltip {
+  cursor: help;
+}
+
+.price-strategy-value-main {
+  border-bottom: 1px dotted transparent;
+}
+
+.price-strategy-value.has-strategy-tooltip .price-strategy-value-main,
+.price-strategy-value.has-strategy-tooltip:hover .price-strategy-value-main {
+  border-bottom-color: #9e9e9e;
+}
+
+.price-strategy-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 148px;
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  color: #333;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.price-strategy-value.has-strategy-tooltip:hover .price-strategy-tooltip,
+.price-strategy-value.has-strategy-tooltip:focus-within .price-strategy-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.price-strategy-tooltip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.price-strategy-tooltip-row.is-active-strategy {
+  font-weight: 700;
+  color: #1b5e20;
+}
+
+.price-strategy-tooltip-label {
+  color: #666;
+}
+
+.price-strategy-tooltip-row.is-active-strategy .price-strategy-tooltip-label {
+  color: #1b5e20;
+}
+
+.price-strategy-tooltip-price {
+  font-variant-numeric: tabular-nums;
+  color: #222;
+}
+
+.storage-unit-value {
+  display: block;
+  margin-top: 2px;
+  color: #666;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.storage-unit-value-suffix {
+  color: #666;
+}
+
 .collection-page .collection-card-grid-change {
   font-weight: 600;
 }
@@ -3327,6 +3419,115 @@ body {
 
 .set-gallery-wrap {
   margin-bottom: 8px;
+}
+
+.set-gallery-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.set-gallery-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.set-gallery-add-slot {
+  position: relative;
+  flex: 0 0 76px;
+  width: 76px;
+  min-height: 82px;
+  align-self: flex-start;
+}
+
+.set-gallery-add-slot.is-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  border: 1px dashed #cfd8dc;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.set-gallery-add-loading {
+  width: 100%;
+  font-size: 11px;
+  text-align: center;
+}
+
+.set-gallery-add-error {
+  margin: 4px 0 0;
+}
+
+.set-gallery-add-select.browse-select {
+  width: 100%;
+  height: 100%;
+}
+
+.set-gallery-add-select .browse-select-main {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.set-gallery-add-select .browse-select-trigger {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 82px;
+  padding: 6px 4px 5px;
+  border-style: dashed;
+  border-color: #cfd8dc;
+  border-radius: 10px;
+  background: #fafafa;
+  color: #666;
+  font-size: 11px;
+  text-align: center;
+}
+
+.set-gallery-add-select .browse-select-trigger:hover:not(:disabled) {
+  border-color: #1b5e20;
+  background: #f4faf4;
+  color: #1b5e20;
+}
+
+.set-gallery-add-select .browse-select-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.set-gallery-add-select .browse-select-chevron {
+  display: none;
+}
+
+.set-gallery-add-select .browse-select-icon-wrap {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f0f0f0;
+}
+
+.set-gallery-add-select .browse-select-trigger:hover:not(:disabled) .browse-select-icon-wrap {
+  background: #e8f5e9;
+}
+
+.set-gallery-add-select .browse-select-icon-placeholder {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  background: transparent;
+}
+
+.set-gallery-add-select .browse-select-panel {
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  width: min(320px, 70vw);
 }
 
 .set-gallery {
@@ -7027,5 +7228,123 @@ button.card-variant {
   .home-sync-panel {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+.stats-set-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 4px 12px;
+  color: #666;
+  font-size: 13px;
+}
+
+.stats-set-breadcrumb-back {
+  border: 0;
+  background: transparent;
+  color: #1b5e20;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.stats-set-breadcrumb-back:hover {
+  text-decoration: underline;
+}
+
+.stats-set-collection-link {
+  margin-left: auto;
+  color: #1b5e20;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.stats-set-collection-link:hover {
+  text-decoration: underline;
+}
+
+.stats-set-row {
+  cursor: pointer;
+}
+
+.stats-set-row:hover {
+  background: #f8faf8;
+}
+
+.manager-price-health-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #444;
+}
+
+.manager-price-health-count {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8a6a00;
+}
+
+.manager-price-health-cell {
+  width: 42px;
+  text-align: center;
+}
+
+.manager-price-health-badge {
+  color: #c62828;
+  font-weight: 700;
+  cursor: help;
+}
+
+.manager-price-health-ok {
+  color: #2e7d32;
+  font-size: 12px;
+}
+
+.deck-cheapest-alternative {
+  margin: 4px 0 0;
+  color: #666;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .app-subnav-set-filter input {
+    max-width: 42vw;
+    min-width: 88px;
+  }
+
+  .set-gallery {
+    gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .price-strategy-tooltip {
+    left: auto;
+    right: 0;
+    max-width: min(92vw, 220px);
+    white-space: normal;
+  }
+
+  .stats-set-collection-link {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .collection-page .collection-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(calc(96px * var(--collection-card-scale)), 1fr));
+    gap: calc(10px * var(--collection-card-scale));
+  }
+
+  .app-subnav {
+    gap: 6px;
+  }
+
+  .app-subnav-link {
+    padding: 6px 8px;
+    font-size: 12px;
   }
 }

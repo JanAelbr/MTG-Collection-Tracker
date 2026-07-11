@@ -9,6 +9,7 @@ import { api } from "../api";
 import CardPreview from "../components/CardPreview.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import PriceStrategyValue from "../components/PriceStrategyValue.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
@@ -614,21 +615,19 @@ onMounted(async () => {
                 <td>{{ card.copyCount }}</td>
 
                 <td>
-
-                  <span>{{ formatEuro(lineTotal(card)) }}</span>
-
+                  <PriceStrategyValue
+                    v-if="card.copyCount <= 1"
+                    :card="card"
+                    :value="lineTotal(card)"
+                  />
+                  <span v-else>{{ formatEuro(lineTotal(card)) }}</span>
                   <span
-
                     v-if="card.copyCount > 1 && card.currentValue != null"
-
                     class="storage-unit-value"
-
                   >
-
-                    {{ formatEuro(card.currentValue) }} each
-
+                    <PriceStrategyValue :card="card" tag="span" />
+                    <span class="storage-unit-value-suffix"> each</span>
                   </span>
-
                 </td>
 
                 <td class="storage-row-actions">

@@ -156,10 +156,37 @@ export function sortDeckCards(cards, sortBy) {
   return sorted;
 }
 
-export function filterDeckCards(cards, { typeFilter = "all", colorFilters = [] } = {}) {
+export function isDeckCardMissing(card) {
+  const qty = Number(card?.qty) || 0;
+  if (qty <= 0) {
+    return false;
+  }
+  const ownedQty = Number(card?.ownedQty);
+  if (!Number.isNaN(ownedQty)) {
+    return ownedQty < qty;
+  }
+  return qty > 0 && !card?.owned;
+}
+
+export function cardMatchesOwnershipFilter(card, ownershipFilter = "all") {
+  if (!ownershipFilter || ownershipFilter === "all") {
+    return true;
+  }
+  const missing = isDeckCardMissing(card);
+  if (ownershipFilter === "missing") {
+    return missing;
+  }
+  if (ownershipFilter === "owned") {
+    return !missing;
+  }
+  return true;
+}
+
+export function filterDeckCards(cards, { typeFilter = "all", colorFilters = [], ownershipFilter = "all" } = {}) {
   return (cards || []).filter(
     (card) => cardMatchesTypeFilter(card, typeFilter)
-      && cardMatchesColorFilter(card, colorFilters),
+      && cardMatchesColorFilter(card, colorFilters)
+      && cardMatchesOwnershipFilter(card, ownershipFilter),
   );
 }
 

@@ -10,6 +10,8 @@ const props = defineProps({
   optionalIcons: { type: Boolean, default: false },
   placeholder: { type: String, default: "Select…" },
   ariaLabel: { type: String, default: "Select option" },
+  hideArrows: { type: Boolean, default: false },
+  emptyIconLabel: { type: String, default: "" },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -133,8 +135,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="browse-select" :class="{ 'is-disabled': disabled, 'is-open': open }">
+  <div class="browse-select" :class="{ 'is-disabled': disabled, 'is-open': open, 'hide-arrows': hideArrows }">
     <button
+      v-if="!hideArrows"
       type="button"
       class="browse-select-arrow"
       :disabled="!canGoPrev"
@@ -155,7 +158,7 @@ onUnmounted(() => {
         @click="togglePanel"
       >
         <span
-          v-if="showIcons && (!optionalIcons || activeOption?.iconSrc)"
+          v-if="showIcons && (!optionalIcons || activeOption?.iconSrc || emptyIconLabel)"
           class="browse-select-icon-wrap"
           aria-hidden="true"
         >
@@ -165,8 +168,8 @@ onUnmounted(() => {
             alt=""
             class="browse-select-icon"
           >
-          <span v-else-if="!optionalIcons" class="browse-select-icon browse-select-icon-placeholder">
-            {{ activeOption?.value === "All" || !activeOption?.iconSrc ? "All" : "?" }}
+          <span v-else class="browse-select-icon browse-select-icon-placeholder">
+            {{ emptyIconLabel || (activeOption?.value === "All" || !activeOption?.iconSrc ? "All" : "?") }}
           </span>
         </span>
         <span class="browse-select-label">{{ activeLabel }}</span>
@@ -219,6 +222,7 @@ onUnmounted(() => {
     </div>
 
     <button
+      v-if="!hideArrows"
       type="button"
       class="browse-select-arrow"
       :disabled="!canGoNext"

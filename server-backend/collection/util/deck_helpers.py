@@ -131,3 +131,63 @@ def resolve_deck_row(cursor: sqlite3.Cursor, row: dict) -> dict:
         "finish": finish,
         "in_catalog": in_catalog,
     }
+
+
+def _market_value_for_owned_finish(row, finish: int) -> float | None:
+    if finish == 1:
+        value = row["market_value_foil"]
+        if value is None:
+            value = row["market_value_etched"]
+        return float(value) if value is not None else None
+    if finish == 2:
+        value = row["market_value_etched"]
+        if value is None:
+            value = row["market_value_foil"]
+        return float(value) if value is not None else None
+    value = row["market_value"]
+    return float(value) if value is not None else None
+
+
+def cheapest_owned_printing_by_name(
+    conn: sqlite3.Connection,
+    card_name: str,
+) -> dict | None:
+    normalized = str(card_name or "").strip()
+    if not normalized:
+        return None
+    rows = conn.execute(
+        f"""
+        SELECT
+            c.set_code,
+            c.collector_number,
+            c.name,
+            p.finish,
+            c.market_value,
+            c.market_value_foil,
+            c.market_value_etched
+        FROM purchases p
+        JOIN cards c
+          ON c.set_code = p.set_code
+         AND c.collector_number = p.collector_number
+        WHERE LOWER(TRIM(c.name)) = LOWER(TRIM(?))
+          AND {exclude_alchemy_sql("c.collector_number")}
+        """,
+        (normalized,),
+    ).fetchall()
+    best = None
+    best_value = None
+    for row in rows:
+        finish = int(row["finish"])
+        value = _market_value_for_owned_finish(row, finish)
+        if value is None:
+            continue
+        if best_value is None or value < best_value:
+            best = {
+                "set_code": row["set_code"],
+                "collector_number": str(row["collector_number"]),
+                "name": row["name"],
+                "finish": finish,
+                "current_value": value,
+            }
+            best_value = value
+    return best

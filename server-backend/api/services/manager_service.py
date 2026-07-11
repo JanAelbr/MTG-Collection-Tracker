@@ -12,6 +12,7 @@ from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
 from report.manager_data import (
     count_manager_cards_for_set,
+    count_manager_price_issues_for_set,
     load_manager_cards_for_set,
     query_manager_cards_for_set,
 )
@@ -24,6 +25,7 @@ from report.report_data import (
     format_set_option_label,
     get_set_display_names,
     load_owned_count_by_set,
+    scryfall_set_icon_uri,
 )
 from api.services.storage_service import StorageError, get_location
 from util.card_finishes import (
@@ -38,6 +40,7 @@ from util.db_migrate import ensure_card_columns
 from util.app_tables import ensure_app_tables
 from util.deck_tables import list_deck_sync_set_codes
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
+from util.set_catalog import fetch_all_scryfall_sets
 from util.tracked_sets import (
     add_tracked_set,
     is_set_tracked,
@@ -66,6 +69,32 @@ def list_sets(conn: sqlite3.Connection) -> list[dict]:
         sort_mode=settings["setSortMode"],
         include_all=False,
     )
+
+
+def list_available_sets(conn: sqlite3.Connection) -> list[dict]:
+    tracked = {
+        normalize_set_code(code)
+        for code in list_tracked_set_codes(conn)
+        if normalize_set_code(code)
+    }
+    available: list[dict] = []
+    for item in fetch_all_scryfall_sets():
+        code = normalize_set_code(item.get("code"))
+        if not code or code in EXCLUDED_SET_CODES or not code.isalnum():
+            continue
+        if code in tracked:
+            continue
+        released_at = str(item.get("released_at") or "")
+        available.append(
+            {
+                "setCode": code,
+                "name": item.get("name") or code,
+                "releasedAt": released_at,
+                "iconUri": item.get("icon_svg_uri") or scryfall_set_icon_uri(code),
+            }
+        )
+    available.sort(key=lambda row: row["releasedAt"], reverse=True)
+    return available
 
 
 def toggle_favorite_set(conn: sqlite3.Connection, set_code: str) -> dict:
@@ -152,6 +181,7 @@ def list_set_cards(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    price_issues_only: bool = False,
     page: int = 1,
     page_size: int = MANAGER_CARDS_PAGE_SIZE,
 ) -> dict:
@@ -159,13 +189,22 @@ def list_set_cards(
     normalized = set_code.upper()
     art_styles = build_art_style_options_for_set(conn, normalized)
 
-    total = count_manager_cards_for_set(
-        conn,
-        normalized,
-        art_style=art_style,
-        search=search,
-        finish_filter=finish_filter,
-    )
+    if price_issues_only:
+        total = count_manager_price_issues_for_set(
+            conn,
+            normalized,
+            art_style=art_style,
+            search=search,
+            finish_filter=finish_filter,
+        )
+    else:
+        total = count_manager_cards_for_set(
+            conn,
+            normalized,
+            art_style=art_style,
+            search=search,
+            finish_filter=finish_filter,
+        )
     safe_page = max(1, page)
     safe_page_size = max(1, min(page_size, 500))
     start = (safe_page - 1) * safe_page_size
@@ -175,6 +214,7 @@ def list_set_cards(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        price_issues_only=price_issues_only,
         offset=start,
         limit=safe_page_size,
     )
@@ -187,6 +227,13 @@ def list_set_cards(
         "pageSize": safe_page_size,
         "total": total,
         "totalPages": max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1,
+        "priceIssueCount": count_manager_price_issues_for_set(
+            conn,
+            normalized,
+            art_style=art_style,
+            search=search,
+            finish_filter=finish_filter,
+        ),
     }
 
 
@@ -1316,6 +1363,7 @@ def _serialize_manager_card(card: dict) -> dict:
         "purchaseValueNonfoil": card.get("purchase_value_nonfoil"),
         "purchaseValueFoil": card.get("purchase_value_foil"),
         "purchaseValueEtched": card.get("purchase_value_etched"),
+        "priceIssues": card.get("price_issues") or [],
     }
 
 

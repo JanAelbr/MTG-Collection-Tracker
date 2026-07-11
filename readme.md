@@ -156,7 +156,7 @@ The top bar and collection subnav stay fixed while scrolling.
 
 #### Settings (`/settings`)
 
-- **Backup & restore** — export/import `.mtgbackup.zip` (purchases, decks, storage, settings). **Export before upgrading** the app.
+- **Backup & restore** — export/import `.mtgbackup.zip` (purchases, decks, storage, art-style rules, settings). **Export before upgrading** the app.
 - **Set picker mode** — horizontal set browser or dropdown list
 - **Price sync** — apply Cardmarket prices only (fast; typically a few seconds). Does not re-run the full Scryfall catalog pipeline.
 - **Price strategy** — which EUR field to use (applies everywhere: Collection, Stats, Storage, Decks, card detail)
@@ -393,7 +393,7 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 ## Art style mapping
 
-Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter. Legacy `data/art_styles/*.json` files are imported once on upgrade if present.
+Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter. Legacy `data/art_styles/*.json` files are imported once on upgrade if present. See **[docs/art-styles.md](docs/art-styles.md)** for the seed generator workflow.
 
 Set code **PLIST** is treated as an alias for **PLST** in the database and UI.
 

@@ -156,6 +156,26 @@ async function triggerPriceSync() {
   }
 }
 
+async function syncCatalogsAndPrices() {
+  const sets = importComplete.value?.setsNeedingCatalog || [];
+  backupError.value = "";
+  try {
+    if (sets.length) {
+      syncMessage.value = `Importing Scryfall catalogs for ${sets.length} set${sets.length === 1 ? "" : "s"}…`;
+      const catalogResult = await api.syncBackupCatalogs(sets);
+      if (catalogResult.errors?.length) {
+        const failed = catalogResult.errors.map((item) => item.setCode).join(", ");
+        backupError.value = `Catalog sync failed for: ${failed}.`;
+      }
+      syncMessage.value = catalogResult.message || "Catalog sync finished.";
+      clearClientCache();
+    }
+    await triggerPriceSync();
+  } catch (error) {
+    syncMessage.value = error.message || "Could not sync catalogs and prices.";
+  }
+}
+
 async function exportCollectionBackup() {
   backupError.value = "";
   backupMessage.value = "";
@@ -420,7 +440,7 @@ onUnmounted(stopPolling);
               <input v-model="backupMode" type="radio" value="replace" />
               <span class="home-backup-mode-option-body">
                 <strong>Replace</strong>
-                <span>Overwrite purchases, decks, storage, and settings from the backup</span>
+                <span>Overwrite purchases, decks, storage, art styles, and settings from the backup</span>
               </span>
             </label>
             <label
@@ -462,9 +482,9 @@ onUnmounted(stopPolling);
           type="button"
           class="btn btn-primary"
           :disabled="syncRunning"
-          @click="triggerPriceSync"
+          @click="syncCatalogsAndPrices"
         >
-          {{ syncRunning ? "Syncing prices…" : "Sync catalog & prices now" }}
+          {{ syncRunning ? "Syncing…" : "Sync catalog & prices now" }}
         </button>
       </div>
 

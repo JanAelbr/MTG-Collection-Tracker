@@ -33,6 +33,7 @@ def serve_cached_json(
     params: Any,
     ttl: int = DEFAULT_TTL_SECONDS,
     loader: Callable[[], Any],
+    cache_if: Callable[[Any], bool] | None = None,
 ) -> Response:
     epoch = get_cache_epoch()
     cache_key = memory_cache.make_key(namespace, params, epoch)
@@ -46,7 +47,8 @@ def serve_cached_json(
     cached = memory_cache.get(cache_key)
     if cached is None:
         cached = loader()
-        memory_cache.set(cache_key, cached, ttl)
+        if cache_if is None or cache_if(cached):
+            memory_cache.set(cache_key, cached, ttl)
 
     return JSONResponse(
         content=cached,

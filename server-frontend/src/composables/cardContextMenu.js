@@ -266,6 +266,8 @@ async function ensureStorageLocations() {
   storageLocations.value = payload.locations || [];
 }
 
+export { ensureStorageLocations };
+
 function defaultStorageSlug(state, settings) {
   if (state?.copies?.length === 1) {
     return state.copies[0].locationSlug;

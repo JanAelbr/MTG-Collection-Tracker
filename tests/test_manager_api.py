@@ -511,6 +511,38 @@ class ManagerApiServiceTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row[0], "Main")
 
+    @patch("api.services.manager_service.fetch_all_scryfall_sets")
+    def test_list_available_sets_excludes_tracked_and_sorts_newest_first(self, mock_fetch):
+        mock_fetch.return_value = [
+            {
+                "code": "ltr",
+                "name": "Tales of Middle-earth",
+                "released_at": "2023-06-23",
+                "icon_svg_uri": "https://svgs.scryfall.io/sets/ltr.svg",
+            },
+            {
+                "code": "mh3",
+                "name": "Modern Horizons 3",
+                "released_at": "2024-06-14",
+                "icon_svg_uri": "https://svgs.scryfall.io/sets/mh3.svg",
+            },
+            {
+                "code": "dsk",
+                "name": "Duskmourn",
+                "released_at": "2024-09-27",
+                "icon_svg_uri": "https://svgs.scryfall.io/sets/dsk.svg",
+            },
+        ]
+        ensure_tracked_sets_table(self.conn)
+        add_tracked_set(self.conn, "LTR")
+        self.conn.commit()
+
+        available = manager_service.list_available_sets(self.conn)
+
+        self.assertEqual([item["setCode"] for item in available], ["DSK", "MH3"])
+        self.assertEqual(available[0]["name"], "Duskmourn")
+        self.assertTrue(available[0]["iconUri"].endswith("/dsk.svg"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from lib.config import normalize_set_code
-from lib.art_styles import import_art_style_rules, load_art_style_rules_for_sets
+from lib.art_styles import import_art_style_rules, load_all_art_style_rules
 from util.app_tables import ensure_app_tables
 from util.card_finishes import normalize_finish
 from util.deck_tables import ensure_deck_tables
@@ -262,10 +262,6 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
     }
 
 
-def _load_art_style_rules(conn: sqlite3.Connection, set_codes: list[str]) -> dict[str, list]:
-    return load_art_style_rules_for_sets(conn, set_codes)
-
-
 def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
     sets_referenced = _sets_referenced(collection)
     return {
@@ -295,8 +291,7 @@ def summarize_backup(collection: dict, art_styles: dict[str, list]) -> dict:
 
 def export_collection_zip(conn: sqlite3.Connection) -> bytes:
     collection = build_collection_payload(conn)
-    sets_referenced = _sets_referenced(collection)
-    art_styles = _load_art_style_rules(conn, sets_referenced)
+    art_styles = load_all_art_style_rules(conn)
     manifest = build_manifest(collection, art_style_sets=sorted(art_styles))
 
     buffer = io.BytesIO()
@@ -497,6 +492,7 @@ def _clear_collection_data(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM deck_cards")
     conn.execute("DELETE FROM decks")
     conn.execute("DELETE FROM purchases")
+    conn.execute("DELETE FROM art_style_rules")
     conn.execute(
         """
         DELETE FROM storage_locations

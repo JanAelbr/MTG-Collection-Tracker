@@ -295,6 +295,8 @@ export const api = {
 
   listManagerSets: () => apiRequest("/manager/sets"),
 
+  listAvailableManagerSets: () => apiRequest("/manager/sets/available"),
+
   createManagerSet: (body) =>
 
     apiRequest("/manager/sets", {
@@ -360,6 +362,8 @@ export const api = {
     if (params.search) query.set("search", params.search);
 
     if (params.foilFilter && params.foilFilter !== "all") query.set("foilFilter", params.foilFilter);
+
+    if (params.priceIssuesOnly) query.set("priceIssuesOnly", "true");
 
     if (params.page) query.set("page", String(params.page));
 
@@ -682,6 +686,12 @@ export const api = {
     clearClientCache();
     return payload;
   },
+
+  syncBackupCatalogs: (setCodes) =>
+    apiRequest("/backup/sync-catalogs", {
+      method: "POST",
+      body: JSON.stringify({ setCodes }),
+    }),
 
 };
 

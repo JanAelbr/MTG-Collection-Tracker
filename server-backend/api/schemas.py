@@ -268,3 +268,7 @@ class DeckCreate(BaseModel):
         if deck_format == "commander" and len(self.commanders) < 1:
             raise ValueError("At least one commander is required")
         return self
+
+
+class BackupCatalogSyncRequest(BaseModel):
+    setCodes: list[str] = Field(default_factory=list)

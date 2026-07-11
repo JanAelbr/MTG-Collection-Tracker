@@ -83,6 +83,30 @@ def list_sets(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
 
 
+@router.get("/sets/available")
+
+def list_available_sets(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+
+    return serve_cached_json(
+
+        request,
+
+        namespace="manager.sets.available",
+
+        params={},
+
+        ttl=3600,
+
+        loader=lambda: {"sets": manager_service.list_available_sets(conn)},
+
+        cache_if=lambda payload: bool(payload.get("sets")),
+
+    )
+
+
+
+
+
 @router.post("/sets")
 
 def create_set(body: ManagerSetCreate, conn: sqlite3.Connection = Depends(get_db)):
@@ -299,6 +323,7 @@ def list_set_cards(
 
     finishFilter: str = Query(default="all"),
     foilFilter: str | None = Query(default=None),
+    priceIssuesOnly: bool = Query(default=False),
 
     page: int = Query(default=1, ge=1),
 
@@ -316,6 +341,7 @@ def list_set_cards(
 
         "finishFilter": finishFilter,
         "foilFilter": foilFilter,
+        "priceIssuesOnly": priceIssuesOnly,
 
         "page": page,
 
@@ -346,6 +372,8 @@ def list_set_cards(
                 search=search,
 
                 finish_filter=foilFilter or finishFilter,
+
+                price_issues_only=priceIssuesOnly,
 
                 page=page,
 

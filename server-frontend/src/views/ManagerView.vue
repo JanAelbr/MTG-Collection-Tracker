@@ -35,6 +35,7 @@ const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
 const catalogReloading = ref(false);
 const catalogMessage = ref("");
 const artStyleRulesOpen = ref(false);
+const priceIssuesOnly = ref(false);
 
 const visibleCards = computed(() => cardsPayload.value?.cards || []);
 const totalPages = computed(() => cardsPayload.value?.totalPages || 1);
@@ -69,6 +70,22 @@ const allVisibleSelected = computed({
 
 function rowKey(card) {
   return card.collectorNumber;
+}
+
+function priceIssueLabel(issue) {
+  const [kind, finish] = String(issue || "").split(":");
+  const finishLabel = finish ? ` (${finish})` : "";
+  if (kind === "missing_url") {
+    return `Missing Cardmarket URL${finishLabel}`;
+  }
+  if (kind === "no_price") {
+    return `No market price${finishLabel}`;
+  }
+  return issue;
+}
+
+function cardPriceIssueTitle(card) {
+  return (card.priceIssues || []).map(priceIssueLabel).join("; ");
 }
 
 function isRowSelected(card) {
@@ -148,6 +165,7 @@ async function loadCards() {
       artStyle: artStyle.value,
       search: search.value.trim(),
       foilFilter: foilFilter.value,
+      priceIssuesOnly: priceIssuesOnly.value,
       page: page.value,
       pageSize: pageSize.value,
     });
@@ -251,7 +269,7 @@ function setFoilFilter(nextFilter) {
   loadCards();
 }
 
-watch([artStyle, search], () => {
+watch([artStyle, search, priceIssuesOnly], () => {
   page.value = 1;
   loadCards();
 });
@@ -396,6 +414,19 @@ onMounted(async () => {
             {{ catalogMessage }}
           </p>
         </div>
+
+        <div v-if="selectedSetCode" class="filter-sidebar-section">
+          <p class="filter-sidebar-label">Price health</p>
+          <label class="manager-price-health-toggle">
+            <input v-model="priceIssuesOnly" type="checkbox" />
+            <span>Show owned cards with URL/price issues only</span>
+          </label>
+          <p v-if="cardsPayload?.priceIssueCount" class="manager-price-health-count">
+            {{ cardsPayload.priceIssueCount }} owned
+            {{ cardsPayload.priceIssueCount === 1 ? "card has" : "cards have" }}
+            pricing issues in this set.
+          </p>
+        </div>
       </FilterSidebar>
 
       <div class="page-with-sidebar-main manager-detail">
@@ -448,6 +479,7 @@ onMounted(async () => {
                 <th>#</th>
                 <th>Card</th>
                 <th>Art Style</th>
+                <th>Price</th>
                 <th>Non-foil</th>
                 <th>Foil</th>
                 <th>Etched</th>
@@ -477,6 +509,16 @@ onMounted(async () => {
                   </CardPreview>
                 </td>
                 <td>{{ card.artStyle || "—" }}</td>
+                <td class="manager-price-health-cell">
+                  <span
+                    v-if="card.priceIssues?.length"
+                    class="manager-price-health-badge"
+                    :title="cardPriceIssueTitle(card)"
+                  >
+                    ⚠
+                  </span>
+                  <span v-else class="manager-price-health-ok" title="Pricing looks OK for owned finishes">✓</span>
+                </td>
                 <td class="manager-checkbox-cell">
                   <input
                     v-if="canManageFinish(card, FINISH_NONFOIL)"

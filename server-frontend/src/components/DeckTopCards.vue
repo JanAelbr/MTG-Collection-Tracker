@@ -2,9 +2,9 @@
 import { computed } from "vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { getTopValueCards } from "../utils/deckBrowse";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
-import { formatEuro } from "../utils/format";
 
 const TOP_CARD_LIMIT = 10;
 
@@ -70,7 +70,7 @@ function cardRoute(card) {
           <p v-if="card.typeLine" class="deck-top-card-type-line">{{ card.typeLine }}</p>
 
           <div class="deck-top-card-values">
-            <span class="top-card-value">{{ formatEuro(card.currentValue) }}</span>
+            <PriceStrategyValue :card="card" class="top-card-value" />
           </div>
 
           <p v-if="card.setCode" class="deck-top-card-print">

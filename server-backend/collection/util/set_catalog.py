@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import date
 
+from lib.config import HTTP_USER_AGENT
 from lib.run_log import get_logger
 from util.scryfall_client import scryfall_get
 
@@ -84,6 +85,37 @@ def upsert_set_from_card(
         card.get("set_uri"),
         updated_at or date.today().isoformat(),
     )
+
+
+SCRYFALL_SETS_INDEX_URL = "https://api.scryfall.com/sets"
+
+
+# Fetch every set from Scryfall's paginated /sets endpoint.
+def fetch_all_scryfall_sets(
+    headers: dict[str, str] | None = None,
+    *,
+    force: bool = False,
+) -> list[dict]:
+    resolved_headers = headers or {"User-Agent": HTTP_USER_AGENT}
+    sets: list[dict] = []
+    url: str | None = SCRYFALL_SETS_INDEX_URL
+    while url:
+        response = scryfall_get(
+            url,
+            headers=resolved_headers,
+            timeout=30,
+            logger=log,
+            label="Scryfall sets index",
+            force=force,
+        )
+        if response.status_code != 200:
+            log.error("Scryfall sets index fetch failed: HTTP %s", response.status_code)
+            log.error("%s", response.text)
+            break
+        payload = response.json()
+        sets.extend(payload.get("data") or [])
+        url = payload.get("next_page") if payload.get("has_more") else None
+    return sets
 
 
 # Fetch one set document from the Scryfall API.

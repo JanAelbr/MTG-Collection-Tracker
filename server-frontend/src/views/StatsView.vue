@@ -137,6 +137,21 @@ function selectSet(code) {
   setCode.value = code;
 }
 
+function clearSetFilter() {
+  setCode.value = "All";
+}
+
+function collectionLinkForSet() {
+  return {
+    path: "/collection/all",
+    query: collectionScopeToQuery(setCode.value),
+  };
+}
+
+function onSetRowClick(code) {
+  selectSet(code);
+}
+
 function syncSetRoute() {
   router.replace({
     path: route.path,
@@ -224,6 +239,16 @@ onMounted(() => {
       </FilterSidebar>
 
       <div class="page-with-sidebar-main">
+    <p v-if="!isAllSetsView" class="stats-set-breadcrumb">
+      <button type="button" class="stats-set-breadcrumb-back" @click="clearSetFilter">
+        All sets
+      </button>
+      <span aria-hidden="true">›</span>
+      <strong>{{ setRowLabel(setCode) }}</strong>
+      <RouterLink :to="collectionLinkForSet()" class="stats-set-collection-link">
+        View collection
+      </RouterLink>
+    </p>
     <div v-if="loading && !stats" class="storage-empty">
       <LoadingIndicator label="Loading stats…" />
     </div>
@@ -346,14 +371,19 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in setBreakdownRows" :key="row.setCode">
+            <tr
+              v-for="row in setBreakdownRows"
+              :key="row.setCode"
+              class="stats-set-row"
+              @click="onSetRowClick(row.setCode)"
+            >
               <td>
                 <div class="stats-set-drill">
                   <button
                     type="button"
                     class="stats-set-drill-icon"
                     :aria-label="`Filter stats to ${setRowLabel(row.setCode)}`"
-                    @click="selectSet(row.setCode)"
+                    @click.stop="selectSet(row.setCode)"
                   >
                     <img
                       v-if="setIconForCode(row.setCode)"

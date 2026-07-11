@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from api.deps import get_db
+from api.schemas import BackupCatalogSyncRequest
 from api.services import backup_service
 from api.services.backup_service import BackupImportError
 
@@ -54,3 +55,11 @@ async def import_collection_backup(
         return backup_service.import_backup_file(conn, data, mode=normalized_mode)
     except BackupImportError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
+
+
+@router.post("/sync-catalogs")
+def sync_backup_catalogs(
+    body: BackupCatalogSyncRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    return backup_service.sync_catalogs_for_sets(conn, body.setCodes)

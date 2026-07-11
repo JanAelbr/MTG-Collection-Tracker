@@ -14,6 +14,7 @@ from util.card_finishes import (
 )
 from util.app_tables import ensure_app_tables
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
+from util.price_health import card_has_price_issues, price_issues_for_card
 
 MANAGER_CARDS_FROM = """
 FROM cards c
@@ -68,6 +69,8 @@ SELECT
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
+    c.cardmarket_url,
+    c.cardmarket_url_foil,
     c.has_nonfoil,
     c.has_foil,
     c.has_etched,
@@ -133,6 +136,9 @@ def _serialize_manager_card(row) -> dict:
         "purchase_value_nonfoil": _float_or_none(data["purchase_value_nonfoil"]),
         "purchase_value_foil": _float_or_none(data["purchase_value_foil"]),
         "purchase_value_etched": _float_or_none(data["purchase_value_etched"]),
+        "cardmarket_url": data.get("cardmarket_url"),
+        "cardmarket_url_foil": data.get("cardmarket_url_foil"),
+        "price_issues": price_issues_for_card(data),
     }
 
 
@@ -241,18 +247,50 @@ def query_manager_cards_for_set(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    price_issues_only: bool = False,
     offset: int = 0,
     limit: int | None = None,
 ) -> list[dict]:
-    return _execute_manager_query(
+    if not price_issues_only:
+        return _execute_manager_query(
+            conn,
+            set_code,
+            art_style=art_style,
+            search=search,
+            finish_filter=finish_filter,
+            offset=offset,
+            limit=limit,
+        )
+    cards = _execute_manager_query(
         conn,
         set_code,
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
-        offset=offset,
-        limit=limit,
     )
+    filtered = [card for card in cards if card.get("price_issues")]
+    if limit is None:
+        return filtered
+    start = max(0, offset or 0)
+    return filtered[start:start + limit]
+
+
+def count_manager_price_issues_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+    *,
+    art_style: str = "",
+    search: str = "",
+    finish_filter: str = "all",
+) -> int:
+    cards = _execute_manager_query(
+        conn,
+        set_code,
+        art_style=art_style,
+        search=search,
+        finish_filter=finish_filter,
+    )
+    return sum(1 for card in cards if card.get("price_issues"))
 
 
 def load_manager_cards_for_set(conn: sqlite3.Connection, set_code: str) -> list[dict]:

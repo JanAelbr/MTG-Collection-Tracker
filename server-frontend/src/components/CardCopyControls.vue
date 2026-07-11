@@ -5,6 +5,7 @@ import {
   applyOptimisticCopyCount,
   changeCardOwnershipFinish,
   effectiveDeckOwnedQty,
+  ensureStorageLocations,
   fetchCardCopyState,
   normalizeCardMenuTarget,
   ownershipRevision,
@@ -12,6 +13,7 @@ import {
   updateCardCopyFinish,
   updateCardCopyStorage,
 } from "../composables/cardContextMenu";
+import { fetchPricingSettings } from "../composables/pricingSettings";
 import FinishToggleButton from "./FinishToggleButton.vue";
 import StorageLocationSelect from "./StorageLocationSelect.vue";
 import {
@@ -104,6 +106,17 @@ function resolveDefaultStorageSlug(state, settings) {
   return storageLocations.value[0]?.slug || "storage:general";
 }
 
+async function ensureDefaultsForAdd() {
+  if (defaultStorageSlug.value) {
+    return;
+  }
+  const [, settings] = await Promise.all([
+    ensureStorageLocations(),
+    fetchPricingSettings(),
+  ]);
+  defaultStorageSlug.value = resolveDefaultStorageSlug(null, settings);
+}
+
 async function loadPanelState() {
   if (!isInteractive.value) {
     return;
@@ -147,7 +160,10 @@ watch(
 watch(
   () => props.visible,
   (visible) => {
-    if (visible && isInteractive.value && !copyState.value && !panelLoading.value) {
+    if (!visible || !isInteractive.value || copyState.value || panelLoading.value) {
+      return;
+    }
+    if (ownedCount.value > 0) {
       loadPanelState();
     }
   },
@@ -179,6 +195,9 @@ async function onAdjust(delta) {
   const previousCount = ownedCount.value;
   if (delta > 0 && previousCount >= maxCopies.value) {
     return;
+  }
+  if (delta > 0 && previousCount === 0 && !copyState.value) {
+    await ensureDefaultsForAdd();
   }
   const optimisticCount = Math.max(0, previousCount + delta);
   panelLoading.value = true;

@@ -216,6 +216,28 @@ def load_art_style_rules_for_sets(
     return art_styles
 
 
+def load_all_art_style_rules(conn: sqlite3.Connection) -> dict[str, list]:
+    _ensure_art_style_rules_table(conn)
+    art_styles: dict[str, list] = {}
+    try:
+        rows = conn.execute(
+            f"SELECT set_code, rules_json FROM {ART_STYLE_RULES_TABLE} ORDER BY set_code",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return art_styles
+    for row in rows:
+        set_code = canonical_set_code_lower(row["set_code"] if isinstance(row, sqlite3.Row) else row[0])
+        raw_rules = row["rules_json"] if isinstance(row, sqlite3.Row) else row[1]
+        try:
+            rules = json.loads(raw_rules)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(rules, list) or not rules:
+            continue
+        art_styles[set_code] = rules
+    return art_styles
+
+
 def import_art_style_rules(
     conn: sqlite3.Connection,
     art_styles: dict[str, list],

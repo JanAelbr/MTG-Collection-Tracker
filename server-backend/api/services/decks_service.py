@@ -248,7 +248,7 @@ def load_deck_stats(
 
         "decks": decks,
 
-        "stats": _serialize_deck_stats(stats),
+        "stats": _serialize_deck_stats(stats, conn),
 
     }
 
@@ -265,7 +265,6 @@ def load_deck_browse_index(conn: sqlite3.Connection) -> dict:
     pages = {
 
         str(deck["id"]): _serialize_deck_stats(
-
             compute_deck_stats_page(
 
                 str(deck["id"]),
@@ -276,8 +275,8 @@ def load_deck_browse_index(conn: sqlite3.Connection) -> dict:
 
                 include_portfolio_history=False,
 
-            )
-
+            ),
+            conn,
         )
 
         for deck in decks
@@ -342,7 +341,7 @@ def load_deck_browse(
 
         "priceStrategy": strategy,
 
-        "stats": _serialize_deck_stats(stats),
+        "stats": _serialize_deck_stats(stats, conn),
 
     }
 
@@ -1051,95 +1050,65 @@ def rename_deck(conn: sqlite3.Connection, *, deck_id: str, name: str) -> dict:
     return {"deck": deck}
 
 
-def _serialize_deck_stats(stats: dict) -> dict:
+def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -> dict:
+    from util.deck_helpers import cheapest_owned_printing_by_name
+
+    serialized_cards = []
+    for card in stats.get("cards") or []:
+        owned_qty = int(card.get("owned_qty") or 0)
+        qty = int(card.get("qty") or 0)
+        entry = {
+            "deckId": card.get("deck_id"),
+            "deckName": card.get("deck_name"),
+            "cardName": card.get("card_name"),
+            "setCode": card.get("set_code"),
+            "collectorNumber": card.get("collector_number"),
+            "finish": card.get("finish"),
+            "foil": card.get("finish"),
+            "qty": card.get("qty"),
+            "section": card.get("section"),
+            "ownedQty": card.get("owned_qty"),
+            "currentValue": card.get("current_value"),
+            "unitValue": card.get("unit_value"),
+            "invested": card.get("invested"),
+            "profitLoss": card.get("profit_loss"),
+            "imageUri": card.get("image_uri"),
+            "colors": card.get("colors") or [],
+            "typeLine": card.get("type_line") or "",
+            "cardType": card.get("card_type") or "",
+            "cardTypes": card.get("card_types") or [],
+            "cardmarketUrl": card.get("cardmarket_url"),
+            "inCatalog": card.get("in_catalog"),
+        }
+        if conn is not None and owned_qty < qty:
+            alternative = cheapest_owned_printing_by_name(conn, card.get("card_name"))
+            if alternative:
+                entry["cheapestOwnedAlternative"] = {
+                    "setCode": alternative["set_code"],
+                    "collectorNumber": alternative["collector_number"],
+                    "finish": alternative["finish"],
+                    "currentValue": alternative["current_value"],
+                }
+        serialized_cards.append(entry)
 
     return {
-
         "current": stats.get("current"),
-
         "ownedCurrent": stats.get("ownedCurrent"),
-
         "invested": stats.get("invested"),
-
         "profit": stats.get("profit"),
-
         "purchasePrice": stats.get("purchasePrice"),
-
         "deckSize": stats.get("deckSize"),
-
         "trackedQty": stats.get("trackedQty"),
-
         "ownedQty": stats.get("ownedQty"),
-
         "missingQty": stats.get("missingQty"),
-
         "trackedCoverage": stats.get("trackedCoverage"),
-
         "ownedCoverage": stats.get("ownedCoverage"),
-
         "average": stats.get("average"),
-
         "unknownQty": stats.get("unknownQty"),
-
         "unknownCount": stats.get("unknownCount"),
-
         "unknownCards": stats.get("unknownCards") or [],
-
         "winners": stats.get("winners"),
-
         "losers": stats.get("losers"),
-
-        "cards": [
-
-            {
-
-                "deckId": card.get("deck_id"),
-
-                "deckName": card.get("deck_name"),
-
-                "cardName": card.get("card_name"),
-
-                "setCode": card.get("set_code"),
-
-                "collectorNumber": card.get("collector_number"),
-
-                "finish": card.get("finish"),
-                "foil": card.get("finish"),
-
-                "qty": card.get("qty"),
-
-                "section": card.get("section"),
-
-                "ownedQty": card.get("owned_qty"),
-
-                "currentValue": card.get("current_value"),
-
-                "unitValue": card.get("unit_value"),
-
-                "invested": card.get("invested"),
-
-                "profitLoss": card.get("profit_loss"),
-
-                "imageUri": card.get("image_uri"),
-
-                "colors": card.get("colors") or [],
-
-                "typeLine": card.get("type_line") or "",
-
-                "cardType": card.get("card_type") or "",
-
-                "cardTypes": card.get("card_types") or [],
-
-                "cardmarketUrl": card.get("cardmarket_url"),
-
-                "inCatalog": card.get("in_catalog"),
-
-            }
-
-            for card in (stats.get("cards") or [])
-
-        ],
-
+        "cards": serialized_cards,
     }
-
 

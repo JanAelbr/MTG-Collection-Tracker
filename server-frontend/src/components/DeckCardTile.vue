@@ -7,6 +7,7 @@ import ManaSymbols from "./ManaSymbols.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
+import PriceStrategyValue from "./PriceStrategyValue.vue";
 
 import {
 
@@ -17,8 +18,6 @@ import {
   ownershipRevision,
 
 } from "../composables/cardContextMenu";
-
-import { formatEuro } from "../utils/format";
 
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
 
@@ -262,7 +261,7 @@ function ownedLabel(card) {
 
       <span class="deck-card-grid-meta">
 
-        <span v-if="card.currentValue != null">{{ formatEuro(card.currentValue) }}</span>
+        <PriceStrategyValue v-if="card.currentValue != null" :card="card" />
 
         <span v-if="ownedLabel(card)">{{ ownedLabel(card) }}</span>
 

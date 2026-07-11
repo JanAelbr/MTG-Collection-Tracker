@@ -56,6 +56,7 @@ const browseIndex = ref(null);
 const gallerySort = ref(getStoredGallerySort());
 const deckCardsView = ref(getStoredDeckCardsView());
 const deckTypeFilter = ref("all");
+const deckOwnershipFilter = ref("all");
 const deckColorFilters = ref([]);
 const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
@@ -91,6 +92,7 @@ const filteredDeckCards = computed(() =>
   filterDeckCards(mainDeckCards.value, {
     typeFilter: deckTypeFilter.value,
     colorFilters: deckColorFilters.value,
+    ownershipFilter: deckOwnershipFilter.value,
   }),
 );
 
@@ -98,6 +100,7 @@ const filteredAllDeckCards = computed(() =>
   filterDeckCards(browseStats.value?.cards || [], {
     typeFilter: deckTypeFilter.value,
     colorFilters: deckColorFilters.value,
+    ownershipFilter: deckOwnershipFilter.value,
   }),
 );
 
@@ -682,6 +685,36 @@ onMounted(async () => {
                 </div>
               </div>
 
+              <div class="deck-cards-filter-group-compact">
+                <span class="deck-cards-filter-label">Ownership</span>
+                <div class="button-group deck-cards-filter-group">
+                  <button
+                    type="button"
+                    class="filter-button"
+                    :class="{ active: deckOwnershipFilter === 'all' }"
+                    @click="deckOwnershipFilter = 'all'"
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    :class="{ active: deckOwnershipFilter === 'missing' }"
+                    @click="deckOwnershipFilter = 'missing'"
+                  >
+                    Missing
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    :class="{ active: deckOwnershipFilter === 'owned' }"
+                    @click="deckOwnershipFilter = 'owned'"
+                  >
+                    Owned
+                  </button>
+                </div>
+              </div>
+
               <div v-if="deckCardsView !== 'top'" class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Sort</span>
                 <div class="button-group deck-cards-filter-group">
@@ -833,6 +866,27 @@ onMounted(async () => {
                               {{ card.cardName }}
                             </RouterLink>
                             <span v-else>{{ card.cardName }}</span>
+                            <p
+                              v-if="card.cheapestOwnedAlternative"
+                              class="deck-cheapest-alternative"
+                            >
+                              Cheapest owned:
+                              <RouterLink
+                                :to="{
+                                  name: 'card',
+                                  params: {
+                                    setCode: card.cheapestOwnedAlternative.setCode,
+                                    collectorNumber: card.cheapestOwnedAlternative.collectorNumber,
+                                  },
+                                  query: cardRouteQuery(card.cheapestOwnedAlternative.finish),
+                                }"
+                                class="reports-card-link"
+                              >
+                                {{ card.cheapestOwnedAlternative.setCode }}
+                                #{{ card.cheapestOwnedAlternative.collectorNumber }}
+                              </RouterLink>
+                              ({{ formatEuro(card.cheapestOwnedAlternative.currentValue) }})
+                            </p>
                           </td>
                           <td class="deck-type-label">
                             <DeckTypeIcon :type="cardTypeGroup(card)" />

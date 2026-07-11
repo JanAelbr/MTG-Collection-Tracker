@@ -2,8 +2,9 @@
 import { computed } from "vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
-import { formatEuro, formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
+import { formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 
 const props = defineProps({
@@ -164,7 +165,7 @@ function isCardSelected(card) {
           {{ finishLabel(cardFinish(card)) }}
         </span>
         <span class="collection-card-grid-value">
-          <span>{{ formatEuro(card.currentValue) }}</span>
+          <PriceStrategyValue :card="card" />
           <span
             v-if="gainBracket(card)"
             class="collection-card-grid-gain"
