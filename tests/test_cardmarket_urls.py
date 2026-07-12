@@ -262,6 +262,51 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertIn("834121", row[0] or "")
         self.assertIsNone(row[1])
 
+    def test_backfill_repairs_price_outlier_nonfoil_url(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        rows = [
+            ("40K", "248", "https://www.cardmarket.com/en/Magic/Products?idProduct=675760", None, 1, 0, 0),
+            ("40K", "249", "https://www.cardmarket.com/en/Magic/Products?idProduct=718040", None, 1, 0, 0),
+            ("40K", "250", "https://www.cardmarket.com/en/Magic/Products?idProduct=671291", None, 1, 0, 0),
+        ]
+        conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        guide = {
+            675760: {"trend": 7.18},
+            718040: {"trend": 527.88, "low": 800},
+            671291: {"trend": 2.22},
+        }
+        updated = backfill_cardmarket_urls(conn, guide)
+        row = conn.execute(
+            "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '249'"
+        ).fetchone()
+        conn.close()
+        self.assertGreaterEqual(updated, 1)
+        self.assertIn("671291", row[0] or "")
+        self.assertIsNone(row[1])
+
     def test_backfill_updates_misplaced_foil_url(self):
         import sqlite3
 
@@ -294,6 +339,39 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertEqual(updated, 1)
         self.assertIn("738284", row[0])
         self.assertIn("738285", row[1])
+
+    def test_merge_keeps_repaired_nonfoil_url_over_scryfall_outlier(self):
+        guide = {
+            671291: {"trend": 2.22},
+            718040: {"trend": 527.88},
+            718047: {"trend": 0, "trend-foil": 2204.09},
+        }
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=671291",
+            None,
+            {
+                "finishes": ["nonfoil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=718047",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIn("671291", nonfoil or "")
+        self.assertIsNone(foil)
+
+    def test_normalize_does_not_pair_scryfall_foil_product_to_outlier_nonfoil(self):
+        guide = {
+            718040: {"trend": 527.88},
+            718047: {"trend": 0, "trend-foil": 2204.09},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=718047",
+            None,
+            guide,
+        )
+        self.assertIn("718047", foil or "")
+        self.assertIsNone(nonfoil)
 
 
 if __name__ == "__main__":

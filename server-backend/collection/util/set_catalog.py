@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sets (
 
 SET_COLUMNS = {
     "icon_svg_uri": "TEXT",
+    "catalog_synced_at": "TEXT",
 }
 
 UPSERT_SET_SQL = """

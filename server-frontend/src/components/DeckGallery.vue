@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { api, clearClientCache } from "../api";
 import { useDeckRename } from "../composables/useDeckRename";
 import {
   deckCardImageUri,
@@ -15,6 +16,7 @@ const props = defineProps({
   activeDeckId: { type: String, default: "" },
   sortBy: { type: String, default: "year" },
   onRenamed: { type: Function, default: null },
+  onDeleted: { type: Function, default: null },
 });
 
 const emit = defineEmits(["select", "create"]);
@@ -44,6 +46,28 @@ const {
   () => activeDeck.value?.name || "",
   (updatedDeck) => props.onRenamed?.(updatedDeck),
 );
+
+const deleting = ref(false);
+
+async function deleteActiveDeck() {
+  if (!props.activeDeckId || deleting.value || renaming.value) {
+    return;
+  }
+  const deckName = activeDeck.value?.name || "this deck";
+  if (!window.confirm(`Delete "${deckName}"? This cannot be undone.`)) {
+    return;
+  }
+  deleting.value = true;
+  try {
+    await api.deleteDeck(props.activeDeckId);
+    clearClientCache();
+    await props.onDeleted?.(props.activeDeckId);
+  } catch (err) {
+    window.alert(err?.message || "Could not delete deck.");
+  } finally {
+    deleting.value = false;
+  }
+}
 
 function deckStats(deck) {
   return props.pages[String(deck.id)] || {};
@@ -177,6 +201,7 @@ onMounted(() => scrollActiveIntoView("auto"));
               class="deck-rename-edit-button"
               aria-label="Rename deck"
               title="Rename deck"
+              :disabled="deleting"
               @click.stop="startRename"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -185,6 +210,18 @@ onMounted(() => scrollActiveIntoView("auto"));
                   fill="currentColor"
                 />
               </svg>
+            </button>
+            <button
+              type="button"
+              class="deck-gallery-delete"
+              :class="{ 'is-loading': deleting }"
+              aria-label="Delete deck"
+              title="Delete deck"
+              :disabled="renaming || deleting"
+              @click.stop="deleteActiveDeck"
+            >
+              <span v-if="deleting" class="loading-spinner deck-gallery-delete-spinner" aria-hidden="true" />
+              <span v-else aria-hidden="true">×</span>
             </button>
           </div>
           <p v-if="renameError" class="deck-rename-error">{{ renameError }}</p>

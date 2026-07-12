@@ -1,0 +1,303 @@
+import sqlite3
+
+from report.builder_queries import (
+    commander_keywords,
+    dedupe_pool_by_name,
+    identity_for_commanders,
+    load_catalog_candidates,
+    load_owned_pool,
+    resolve_commander_rows,
+)
+from util.card_role_seed import SLOT_ROLES, card_bracket_weight, card_has_excluded_role, card_roles
+from util.commander_rules import validate_commander_deck
+
+DEFAULT_SLOT_COUNTS = {
+    "lands": 38,
+    "ramp": 10,
+    "draw": 8,
+    "removal": 8,
+    "protection": 4,
+    "synergy": 20,
+    "flex": 11,
+}
+
+BASIC_LAND_NAMES = {
+    "W": "Plains",
+    "U": "Island",
+    "B": "Swamp",
+    "R": "Mountain",
+    "G": "Forest",
+}
+
+
+class DeckBuilderError(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+def _finish_value(card: dict) -> float:
+    finish = int(card.get("finish") or 0)
+    if finish == 1:
+        return float(card.get("marketValueFoil") or 0)
+    if finish == 2:
+        return float(card.get("marketValueEtched") or 0)
+    return float(card.get("marketValue") or 0)
+
+
+def _slot_role_score(card_name: str, slot: str) -> int:
+    roles = set(card_roles(card_name))
+    target_roles = SLOT_ROLES.get(slot) or set()
+    if not target_roles:
+        return 1
+    return len(roles & target_roles) * 50
+
+
+def _keyword_score(card: dict, keywords: set[str]) -> int:
+    oracle = str(card.get("oracleText") or "").lower()
+    if not oracle or not keywords:
+        return 0
+    return sum(5 for keyword in keywords if keyword in oracle)
+
+
+def _cmc_penalty(card: dict, slot: str) -> int:
+    if slot not in {"ramp", "draw", "removal", "protection"}:
+        return 0
+    cmc = float(card.get("cmc") or 0)
+    if slot == "ramp" and cmc > 3:
+        return int((cmc - 3) * 5)
+    if slot in {"removal", "protection"} and cmc > 5:
+        return int((cmc - 5) * 3)
+    return 0
+
+
+def _score_candidate(card: dict, *, slot: str, keywords: set[str]) -> int:
+    name = card.get("name") or ""
+    score = _slot_role_score(name, slot)
+    score += _keyword_score(card, keywords)
+    score -= _cmc_penalty(card, slot)
+    if card.get("owned"):
+        score += 1000
+    if slot == "lands" and (card.get("isBasicLand") or card.get("cardType") == "land"):
+        score += 25
+    return score
+
+
+def _pick_for_slot(
+    candidates: dict[str, dict],
+    *,
+    slot: str,
+    keywords: set[str],
+    used_names: set[str],
+    excluded_roles: set[str],
+    budget_remaining: float | None,
+) -> dict | None:
+    best_card = None
+    best_score = None
+    for name, card in candidates.items():
+        if name in used_names:
+            continue
+        if card_has_excluded_role(name, excluded_roles):
+            continue
+        if slot != "lands" and (card.get("isBasicLand") or card.get("cardType") == "land"):
+            continue
+        if slot == "lands" and card.get("cardType") != "land" and not card.get("isBasicLand"):
+            continue
+        if budget_remaining is not None and not card.get("owned"):
+            value = _finish_value(card)
+            if value > budget_remaining:
+                continue
+        score = _score_candidate(card, slot=slot, keywords=keywords)
+        if best_score is None or score > best_score or (score == best_score and name < (best_card or {}).get("name", "")):
+            best_score = score
+            best_card = card
+    return best_card
+
+
+def _fill_basic_lands(
+    chosen: list[dict],
+    *,
+    allowed_identity: list[str],
+    land_target: int,
+    catalog_by_name: dict[str, dict],
+    used_names: set[str],
+) -> list[dict]:
+    current_lands = sum(
+        1 for card in chosen
+        if card.get("isBasicLand") or card.get("cardType") == "land"
+    )
+    needed = max(0, land_target - current_lands)
+    if needed == 0:
+        return chosen
+
+    colors = allowed_identity or ["C"]
+    if colors == ["C"] or not colors:
+        colors = ["C"]
+
+    per_color = max(1, needed // max(1, len(colors)))
+    for color in colors:
+        basic_name = BASIC_LAND_NAMES.get(color, "Wastes")
+        for _ in range(per_color):
+            if len([c for c in chosen if c.get("cardType") == "land" or c.get("isBasicLand")]) >= land_target:
+                break
+            if basic_name in used_names:
+                continue
+            card = catalog_by_name.get(basic_name)
+            if card is None:
+                card = {
+                    "name": basic_name,
+                    "setCode": "",
+                    "collectorNumber": "",
+                    "finish": 0,
+                    "owned": False,
+                    "cardType": "land",
+                    "isBasicLand": True,
+                    "slot": "lands",
+                    "suggested": True,
+                }
+            else:
+                card = {
+                    **card,
+                    "owned": bool(card.get("owned")),
+                    "slot": "lands",
+                    "suggested": not card.get("owned"),
+                }
+            chosen.append(card)
+            used_names.add(basic_name)
+    return chosen
+
+
+def generate_deck_proposal(
+    conn: sqlite3.Connection,
+    *,
+    commanders: list[dict],
+    location_slugs: list[str],
+    include_deck_storage: bool = False,
+    land_count: int = 38,
+    budget_cap: float | None = None,
+    exclude_categories: list[str] | None = None,
+    slot_counts: dict[str, int] | None = None,
+) -> dict:
+    commander_rows = resolve_commander_rows(conn, commanders)
+    if not commander_rows:
+        raise DeckBuilderError("Commander not found in catalog", status_code=400)
+
+    allowed_identity = identity_for_commanders(commander_rows)
+    keywords = commander_keywords(commander_rows)
+    excluded_roles = set(exclude_categories or [])
+
+    owned_pool = load_owned_pool(
+        conn,
+        location_slugs,
+        include_deck_storage=include_deck_storage,
+    )
+    owned_by_name = dedupe_pool_by_name(owned_pool, prefer_owned=True)
+    commander_names = {row.get("name") for row in commander_rows if row.get("name")}
+
+    catalog = load_catalog_candidates(
+        conn,
+        allowed_identity=allowed_identity,
+        exclude_names=commander_names,
+    )
+    catalog_by_name = dedupe_pool_by_name(catalog, prefer_owned=False)
+    combined_candidates = dict(catalog_by_name)
+    for name, card in owned_by_name.items():
+        combined_candidates[name] = {**card, "owned": True}
+
+    counts = {**DEFAULT_SLOT_COUNTS, **(slot_counts or {})}
+    counts["lands"] = max(20, min(45, int(land_count)))
+    flex_total = 99 - sum(counts.values())
+    counts["flex"] = max(0, counts.get("flex", 0) + flex_total)
+
+    chosen: list[dict] = []
+    used_names: set[str] = set(commander_names)
+    warnings: list[str] = []
+    budget_remaining = budget_cap
+
+    slot_order = ["ramp", "draw", "removal", "protection", "synergy", "lands", "flex"]
+    for slot in slot_order:
+        target = int(counts.get(slot, 0))
+        for _ in range(target):
+            card = _pick_for_slot(
+                combined_candidates,
+                slot=slot,
+                keywords=keywords,
+                used_names=used_names,
+                excluded_roles=excluded_roles,
+                budget_remaining=budget_remaining,
+            )
+            if card is None:
+                warnings.append(f"Could not fill {slot} slot.")
+                break
+            entry = {
+                **card,
+                "slot": slot,
+                "suggested": not bool(card.get("owned")),
+                "qty": 1,
+                "section": "main",
+            }
+            chosen.append(entry)
+            used_names.add(card.get("name") or "")
+            if entry["suggested"] and budget_remaining is not None:
+                budget_remaining -= _finish_value(card)
+
+    chosen = _fill_basic_lands(
+        chosen,
+        allowed_identity=allowed_identity,
+        land_target=counts["lands"],
+        catalog_by_name=combined_candidates,
+        used_names=used_names,
+    )
+
+    while len(chosen) < 99:
+        card = _pick_for_slot(
+            combined_candidates,
+            slot="flex",
+            keywords=keywords,
+            used_names=used_names,
+            excluded_roles=excluded_roles,
+            budget_remaining=budget_remaining,
+        )
+        if card is None:
+            warnings.append("Could not reach 99 maindeck cards from catalog.")
+            break
+        entry = {
+            **card,
+            "slot": "flex",
+            "suggested": not bool(card.get("owned")),
+            "qty": 1,
+            "section": "main",
+        }
+        chosen.append(entry)
+        used_names.add(card.get("name") or "")
+        if entry["suggested"] and budget_remaining is not None:
+            budget_remaining -= _finish_value(card)
+
+    owned_count = sum(1 for card in chosen if not card.get("suggested"))
+    suggested_count = len(chosen) - owned_count
+    estimated_cost = round(
+        sum(_finish_value(card) for card in chosen if card.get("suggested")),
+        2,
+    )
+
+    validation = validate_commander_deck(
+        chosen,
+        commanders=commander_rows,
+        min_maindeck=len(chosen),
+    )
+    warnings.extend(validation.get("warnings") or [])
+
+    return {
+        "commanders": commander_rows,
+        "cards": chosen,
+        "colorIdentity": allowed_identity,
+        "stats": {
+            "ownedCount": owned_count,
+            "suggestedCount": suggested_count,
+            "totalCards": len(chosen),
+            "estimatedCost": estimated_cost,
+        },
+        "warnings": warnings,
+        "validation": validation,
+    }

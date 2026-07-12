@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 
 from lib.config import SET_CODE_ALIASES
 from util.card_prices import ensure_card_prices_table
@@ -14,7 +15,77 @@ CARD_COLUMNS = {
     "colors": "TEXT",
     "type_line": "TEXT",
     "card_type": "TEXT",
+    "color_identity": "TEXT",
+    "oracle_text": "TEXT",
+    "mana_cost": "TEXT",
+    "cmc": "REAL",
+    "legalities": "TEXT",
+    "is_basic_land": "INTEGER",
+    "scryfall_id": "TEXT",
 }
+
+
+def backfill_basic_land_flags(conn: sqlite3.Connection) -> int:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE cards
+        SET is_basic_land = 1
+        WHERE COALESCE(is_basic_land, 0) = 0
+          AND type_line IS NOT NULL
+          AND LOWER(type_line) LIKE '%basic%land%'
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE cards
+        SET card_type = 'land'
+        WHERE (card_type IS NULL OR card_type = '')
+          AND type_line IS NOT NULL
+          AND LOWER(type_line) LIKE '%land%'
+        """
+    )
+    return cursor.rowcount
+
+
+def mark_complete_catalog_sets(conn: sqlite3.Connection) -> int:
+    """Stamp catalog_synced_at on sets whose stored cards already have power metadata."""
+    from util.price_sync import count_cards_missing_power_metadata
+
+    today = date.today().isoformat()
+    cursor = conn.cursor()
+    set_codes = [
+        row[0]
+        for row in cursor.execute(
+            """
+            SELECT DISTINCT set_code
+            FROM cards
+            WHERE set_code IS NOT NULL AND set_code != ''
+            """
+        ).fetchall()
+    ]
+    marked = 0
+    for set_code in set_codes:
+        if count_cards_missing_power_metadata(cursor, set_code) > 0:
+            continue
+        row = cursor.execute(
+            "SELECT catalog_synced_at FROM sets WHERE set_code = ?",
+            (set_code,),
+        ).fetchone()
+        if row and row[0]:
+            continue
+        cursor.execute(
+            """
+            INSERT INTO sets (set_code, name, released_at, scryfall_uri, icon_svg_uri, updated_at, catalog_synced_at)
+            VALUES (?, ?, NULL, NULL, NULL, ?, ?)
+            ON CONFLICT(set_code) DO UPDATE SET
+                catalog_synced_at = excluded.catalog_synced_at,
+                updated_at = COALESCE(sets.updated_at, excluded.updated_at)
+            """,
+            (set_code, set_code, today, today),
+        )
+        marked += 1
+    return marked
 
 
 def backfill_card_types(conn: sqlite3.Connection) -> int:

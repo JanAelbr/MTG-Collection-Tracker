@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.db import connect
-from api.routers import backup, cards, decks, health, manager, meta, prices, reports, settings, stats, storage
+from api.routers import backup, cards, deck_builder, decks, health, manager, meta, prices, reports, settings, stats, storage
 from lib.config import FRONTEND_DIST
 from util.schema import ensure_database_schema
 
@@ -43,6 +43,7 @@ app = FastAPI(
         {"name": "reports", "description": "Collection report payloads for the UI."},
         {"name": "stats", "description": "Aggregated collection statistics."},
         {"name": "decks", "description": "Commander deck lists and browse data."},
+        {"name": "builder", "description": "Commander deck builder and generation."},
         {"name": "cards", "description": "Single-card detail lookups."},
         {"name": "manager", "description": "Set manager: ownership, art styles, favourites."},
         {"name": "storage", "description": "Physical storage locations and assignments."},
@@ -78,6 +79,7 @@ app.include_router(manager.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(decks.router, prefix="/api")
+app.include_router(deck_builder.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")

@@ -48,6 +48,9 @@ def _load_guide() -> dict[int, dict]:
 def refresh_guide_cache() -> None:
     global _guide_index
     _guide_index = None
+    from util.cardmarket_prices import invalidate_price_guide_memory_cache
+
+    invalidate_price_guide_memory_cache()
 
 
 def _cardmarket_row(
@@ -184,6 +187,23 @@ def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | 
     return strategy_values
 
 
+MARKET_VALUE_OUTLIER_RATIO = 6.0
+MARKET_VALUE_OUTLIER_FLOOR = 150.0
+
+
+def _prefer_stored_value_over_outlier(
+    strategy_value: float | None,
+    stored_value: float | None,
+) -> float | None:
+    if strategy_value is None:
+        return stored_value
+    if stored_value is None or stored_value <= 0:
+        return strategy_value
+    if strategy_value > max(MARKET_VALUE_OUTLIER_FLOOR, stored_value * MARKET_VALUE_OUTLIER_RATIO):
+        return float(stored_value)
+    return strategy_value
+
+
 def value_from_strategy_map(
     values_by_strategy: dict[str, float | None],
     strategy: str,
@@ -195,12 +215,16 @@ def value_from_strategy_map(
 ) -> float | None:
     normalized = normalize_strategy(strategy)
     value = values_by_strategy.get(normalized)
-    if value is not None:
-        return value
     finish_id = int(finish)
     if finish_id == FINISH_ETCHED:
-        return market_value_etched
-    return market_value_foil if finish_id == FINISH_FOIL else market_value
+        fallback = market_value_etched
+    elif finish_id == FINISH_FOIL:
+        fallback = market_value_foil
+    else:
+        fallback = market_value
+    if value is not None:
+        return _prefer_stored_value_over_outlier(value, fallback)
+    return fallback
 
 
 def _value_from_entry(entry: dict, key: str, *, foil: bool) -> float | None:

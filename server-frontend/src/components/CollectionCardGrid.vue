@@ -4,6 +4,7 @@ import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
+import { cardSelectionKey } from "../utils/collectionScopeStats";
 import { formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 
@@ -17,9 +18,13 @@ const props = defineProps({
   selectedName: { type: String, default: "" },
   cardScale: { type: Number, default: 100 },
   priceChangeMode: { type: String, default: "" },
+  selectable: { type: Boolean, default: false },
+  selectedKeys: { type: Object, default: null },
+  focusedIndex: { type: Number, default: -1 },
+  startIndex: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(["browse-name", "ownership-changed"]);
+const emit = defineEmits(["browse-name", "ownership-changed", "toggle-select", "focus-index"]);
 
 const gridStyle = computed(() => ({
   "--collection-card-scale": String(props.cardScale / 100),
@@ -98,18 +103,45 @@ function onCardActivate(card, event) {
 function isCardSelected(card) {
   return Boolean(props.browseNames && props.selectedName && card.name === props.selectedName);
 }
+
+function isBulkSelected(card) {
+  return Boolean(props.selectedKeys?.has(cardSelectionKey(card)));
+}
+
+function isFocused(index) {
+  return props.focusedIndex === index;
+}
+
+function onTileClick(card, index, event) {
+  if (props.selectable) {
+    event?.preventDefault();
+    emit("toggle-select", card);
+    emit("focus-index", props.startIndex + index);
+    return;
+  }
+  emit("focus-index", props.startIndex + index);
+}
+
+function onTileFocus(index) {
+  emit("focus-index", props.startIndex + index);
+}
 </script>
 
 <template>
   <div class="collection-card-grid" :style="gridStyle">
     <figure
-      v-for="card in cards"
+      v-for="(card, index) in cards"
       :key="cardKey(card)"
       class="collection-card-grid-item"
       :class="{
         'is-unowned': showUnownedBadge && !cardIsOwned(card),
-        'is-selected': isCardSelected(card),
+        'is-selected': isCardSelected(card) || isBulkSelected(card),
+        'is-focused': isFocused(index),
+        'is-selectable': selectable,
       }"
+      :tabindex="selectable || focusedIndex === startIndex + index ? 0 : -1"
+      @click="onTileClick(card, index, $event)"
+      @focus="onTileFocus(index)"
     >
       <button
         v-if="browseNames"
@@ -133,12 +165,14 @@ function isCardSelected(card) {
       </button>
       <template v-else>
       <div class="collection-card-grid-image-wrap">
+        <span v-if="selectable && isBulkSelected(card)" class="collection-card-grid-check" aria-hidden="true">✓</span>
         <CardInteractiveImage
           v-if="card.imageUri"
           :src="card.imageUri"
           :alt="card.name"
           :card="card"
           :show-details="false"
+          @ownership-changed="emit('ownership-changed')"
         />
         <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
       </div>
@@ -147,6 +181,7 @@ function isCardSelected(card) {
           :to="cardRoute(card)"
           class="collection-card-grid-name"
           @click="onCardActivate(card, $event)"
+          @focus="onTileFocus(index)"
         >
           #{{ String(card.collectorNumber).padStart(3, "0") }} · {{ cardDisplayName(card) }}
         </RouterLink>

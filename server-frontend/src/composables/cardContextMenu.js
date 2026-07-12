@@ -79,6 +79,16 @@ function finishOwnedCount(finishInfo) {
   return 0;
 }
 
+function cardLocationsOwnedCount(card) {
+  if (!Array.isArray(card?.locations) || !card.locations.length) {
+    return null;
+  }
+  return card.locations.reduce(
+    (sum, location) => sum + (Number(location.count) || 0),
+    0,
+  );
+}
+
 export function isEffectivelyOwned(card) {
   const patch = getOwnershipPatch(card);
   if (patch) {
@@ -111,6 +121,13 @@ export function effectiveDeckOwnedQty(card) {
   const finishCount = finishOwnedCount(finishDataForCard(card));
   if (finishCount != null) {
     return finishCount;
+  }
+  const locationCount = cardLocationsOwnedCount(card);
+  if (locationCount != null && locationCount > 0) {
+    return locationCount;
+  }
+  if (card.purchaseValue != null && isEffectivelyOwned(card)) {
+    return 1;
   }
   return Number(card.ownedQty) || 0;
 }

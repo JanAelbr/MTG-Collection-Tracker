@@ -7,6 +7,7 @@ import {
   effectiveDeckOwnedQty,
   ensureStorageLocations,
   fetchCardCopyState,
+  isEffectivelyOwned,
   normalizeCardMenuTarget,
   ownershipRevision,
   storageLocations,
@@ -151,7 +152,7 @@ watch(
     copyState.value = null;
     defaultStorageSlug.value = "";
     panelError.value = "";
-    if (props.visible && ownedCount.value > 0) {
+    if (props.visible && isEffectivelyOwned(props.card)) {
       loadPanelState();
     }
   },
@@ -163,7 +164,7 @@ watch(
     if (!visible || !isInteractive.value || copyState.value || panelLoading.value) {
       return;
     }
-    if (ownedCount.value > 0) {
+    if (isEffectivelyOwned(props.card)) {
       loadPanelState();
     }
   },

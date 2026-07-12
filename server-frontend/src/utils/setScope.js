@@ -25,6 +25,7 @@ const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "changeEuro", "changeP
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
+import { collectionLensFromRoute } from "./collectionLenses";
 
 const ALL_CARDS_TYPE_FILTERS = COLLECTION_TYPE_FILTER_VALUES;
 const ALL_CARDS_COLOR_FILTERS = new Set(["W", "U", "B", "R", "G", "C"]);
@@ -66,7 +67,22 @@ export function allCardsFiltersFromRoute(route) {
       .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
     : [];
 
-  return { ownedFilter, foilFilter, sort, sortDir, page, typeFilter, colorFilters };
+  const searchParam = route.query?.q;
+  const searchQuery = typeof searchParam === "string" ? searchParam.trim() : "";
+
+  const lens = collectionLensFromRoute(route);
+
+  return {
+    ownedFilter,
+    foilFilter,
+    sort,
+    sortDir,
+    page,
+    typeFilter,
+    colorFilters,
+    searchQuery,
+    lens,
+  };
 }
 
 export function allCardsRouteQuery({
@@ -79,6 +95,8 @@ export function allCardsRouteQuery({
   sort = "value",
   sortDir = "desc",
   page = 1,
+  searchQuery = "",
+  lens = "",
 } = {}) {
   const query = collectionScopeToQuery(setCode, artStyle);
   if (ownedFilter !== "owned") {
@@ -92,6 +110,12 @@ export function allCardsRouteQuery({
   }
   if (colorFilters.length) {
     query.colors = colorFilters.join(",");
+  }
+  if (searchQuery) {
+    query.q = searchQuery;
+  }
+  if (lens) {
+    query.lens = lens;
   }
   if (sort !== "value") {
     query.sort = sort;
@@ -172,6 +196,8 @@ export function collectionNavQuery(route, targetPath) {
         sort: "value",
         sortDir: "desc",
         page: 1,
+        searchQuery: "",
+        lens: "",
       };
     return allCardsRouteQuery({ setCode, artStyle, ...filters });
   }

@@ -20,6 +20,7 @@ const props = defineProps({
   showFavorites: { type: Boolean, default: true },
   manageSets: { type: Boolean, default: true },
   showReloadCatalog: { type: Boolean, default: true },
+  activeArtStyle: { type: String, default: "" },
 });
 
 const emit = defineEmits(["update:modelValue", "toggleFavorite", "sets-changed"]);
@@ -206,6 +207,7 @@ onMounted(() => {
     <SetGallery
       :sets="sets"
       :active-set-code="modelValue"
+      :active-art-style="activeArtStyle"
       :show-favorites="showFavoriteStars"
       :manage-sets="manageSets"
       :show-reload-catalog="showReloadCatalog"

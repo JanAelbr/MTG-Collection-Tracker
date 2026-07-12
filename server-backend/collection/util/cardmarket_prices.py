@@ -28,6 +28,15 @@ from util.http_client import http_get
 
 log = get_logger(__name__)
 
+_GUIDE_INDEX_MEMORY: dict[int, dict] | None = None
+_PRICE_GUIDE_CACHE_LOGGED = False
+
+
+def invalidate_price_guide_memory_cache() -> None:
+    global _GUIDE_INDEX_MEMORY, _PRICE_GUIDE_CACHE_LOGGED
+    _GUIDE_INDEX_MEMORY = None
+    _PRICE_GUIDE_CACHE_LOGGED = False
+
 PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_1.json"
 PRICE_GUIDE_CACHE = DATA_DIR / "cardmarket_price_guide.json"
 PRICE_GUIDE_INDEX_CACHE = DATA_DIR / "cardmarket_price_guide.pkl"
@@ -305,6 +314,7 @@ def _save_guide_index_cache(guide: dict[int, dict]) -> None:
 def _invalidate_guide_index_cache() -> None:
     if PRICE_GUIDE_INDEX_CACHE.is_file():
         PRICE_GUIDE_INDEX_CACHE.unlink()
+    invalidate_price_guide_memory_cache()
 
 
 # Return True when a non-foil low price is not just a foil listing floor.
@@ -347,12 +357,15 @@ def _price_from_guide_keys(entry: dict, *, use_foil_keys: bool) -> float | None:
 
 # Download the Cardmarket price guide when the cache is missing or stale.
 def ensure_price_guide(force: bool = False, logger: logging.Logger | None = None) -> Path:
+    global _PRICE_GUIDE_CACHE_LOGGED
     request_log = logger or log
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not force and PRICE_GUIDE_CACHE.is_file():
         age = datetime.now() - datetime.fromtimestamp(PRICE_GUIDE_CACHE.stat().st_mtime)
         if age < PRICE_GUIDE_MAX_AGE:
-            request_log.info("Using cached Cardmarket price guide: %s", PRICE_GUIDE_CACHE)
+            if not _PRICE_GUIDE_CACHE_LOGGED:
+                request_log.info("Using cached Cardmarket price guide: %s", PRICE_GUIDE_CACHE)
+                _PRICE_GUIDE_CACHE_LOGGED = True
             return PRICE_GUIDE_CACHE
 
     response = http_get(
@@ -374,21 +387,28 @@ def load_price_guide_index(
     force_download: bool = False,
     logger: logging.Logger | None = None,
 ) -> dict[int, dict]:
+    global _GUIDE_INDEX_MEMORY
     request_log = logger or log
+    if not force_download and _GUIDE_INDEX_MEMORY is not None:
+        return _GUIDE_INDEX_MEMORY
+
     ensure_price_guide(force=force_download, logger=request_log)
     if force_download:
         _invalidate_guide_index_cache()
     cached = _load_guide_index_cache()
     if cached is not None:
-        request_log.info(
-            "Loaded %s products from Cardmarket price guide index cache",
-            len(cached),
-        )
+        if _GUIDE_INDEX_MEMORY is None:
+            request_log.info(
+                "Loaded %s products from Cardmarket price guide index cache",
+                len(cached),
+            )
+        _GUIDE_INDEX_MEMORY = cached
         return cached
     data = json.loads(PRICE_GUIDE_CACHE.read_text(encoding="utf-8"))
     guide = {entry["idProduct"]: entry for entry in data["priceGuides"]}
     _save_guide_index_cache(guide)
     request_log.info("Loaded %s products from Cardmarket price guide", len(guide))
+    _GUIDE_INDEX_MEMORY = guide
     return guide
 
 

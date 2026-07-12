@@ -32,6 +32,10 @@ SELECT
     c.colors,
     c.type_line,
     c.card_type,
+    c.color_identity,
+    c.cmc,
+    c.mana_cost,
+    c.is_basic_land,
     p.purchase_value
 FROM deck_cards dc
 JOIN decks d ON d.deck_id = dc.deck_id

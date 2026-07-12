@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
 import DeckHero from "../components/DeckHero.vue";
+import DeckPowerPanel from "../components/DeckPowerPanel.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
 import DeckTopCards from "../components/DeckTopCards.vue";
@@ -113,6 +114,12 @@ const activeFilteredCards = computed(() => {
 
 const isFilterEmpty = computed(
   () => !isDeckEmpty.value && activeFilteredCards.value.length === 0,
+);
+
+const powerRefreshKey = computed(() =>
+  (browseStats.value?.cards || [])
+    .map((card) => `${card.cardName || card.name || ""}:${card.qty || 1}`)
+    .join("|"),
 );
 
 const groupedBrowseCards = computed(() => {
@@ -319,6 +326,30 @@ async function onDeckRenamed(updatedDeck) {
   }
 }
 
+async function onDeckDeleted(deletedDeckId) {
+  const deletedKey = String(deletedDeckId);
+  if (browseIndex.value) {
+    const pages = { ...(browseIndex.value.pages || {}) };
+    delete pages[deletedKey];
+    browseIndex.value = {
+      ...browseIndex.value,
+      decks: (browseIndex.value.decks || []).filter(
+        (deck) => String(deck.id) !== deletedKey,
+      ),
+      pages,
+    };
+  }
+  if (String(deckId.value) === deletedKey) {
+    const remaining = browseIndex.value?.decks || [];
+    if (remaining.length) {
+      selectBrowseDeck(String(remaining[0].id));
+    } else {
+      deckId.value = "";
+      syncDeckRoute();
+    }
+  }
+}
+
 function openCreateDeck() {
   createDeckOpen.value = true;
 }
@@ -511,6 +542,9 @@ onMounted(async () => {
           <button type="button" class="btn btn-secondary btn-small" @click="openCreateDeck">
             New deck
           </button>
+          <button type="button" class="btn btn-primary btn-small" @click="router.push('/decks/build')">
+            Build deck
+          </button>
           <span class="deck-gallery-toolbar-label">Sort by</span>
           <div class="button-group deck-gallery-sort-group">
             <button
@@ -542,6 +576,7 @@ onMounted(async () => {
             :active-deck-id="deckId"
             :sort-by="gallerySort"
             :on-renamed="onDeckRenamed"
+            :on-deleted="onDeckDeleted"
             @select="selectBrowseDeck"
             @create="openCreateDeck"
           />
@@ -641,11 +676,19 @@ onMounted(async () => {
                 >
                   Table
                 </button>
+                <button
+                  type="button"
+                  class="filter-button"
+                  :class="{ active: deckCardsView === 'power' }"
+                  @click="changeDeckCardsView('power')"
+                >
+                  Power
+                </button>
               </div>
               </div>
             </div>
 
-            <div class="deck-cards-toolbar-compact">
+            <div v-if="deckCardsView !== 'power'" class="deck-cards-toolbar-compact">
               <label class="manager-filter deck-cards-type-filter">
                 <span class="deck-cards-filter-label">Type</span>
                 <select :value="deckTypeFilter" @change="deckTypeFilter = $event.target.value">
@@ -715,7 +758,7 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <div v-if="deckCardsView !== 'top'" class="deck-cards-filter-group-compact">
+              <div v-if="deckCardsView !== 'top' && deckCardsView !== 'power'" class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Sort</span>
                 <div class="button-group deck-cards-filter-group">
                   <button
@@ -758,13 +801,14 @@ onMounted(async () => {
           <div
             class="deck-cards-layout"
             :class="{
-              'has-commander': commanderCards.length && !['stacks', 'top'].includes(deckCardsView),
+              'has-commander': commanderCards.length && !['stacks', 'top', 'power'].includes(deckCardsView),
               'is-stacks-view': deckCardsView === 'stacks',
               'is-top-view': deckCardsView === 'top',
+              'is-power-view': deckCardsView === 'power',
             }"
           >
               <DeckCommanderPane
-                v-if="!['stacks', 'top'].includes(deckCardsView)"
+                v-if="!['stacks', 'top', 'power'].includes(deckCardsView)"
                 :cards="commanderCards"
                 :default-deck-id="deckId"
                 :show-deck-remove="true"
@@ -804,6 +848,13 @@ onMounted(async () => {
                   @deck-added="onDeckCardAdded"
                   @deck-removed="onDeckCardRemoved"
                   @deck-changed="onDeckCardChanged"
+                />
+
+                <DeckPowerPanel
+                  v-else-if="deckCardsView === 'power'"
+                  :deck-id="deckId"
+                  :refresh-key="powerRefreshKey"
+                  class="deck-power-panel--tab"
                 />
 
                 <table v-else-if="deckCardsView === 'table'" class="reports-table deck-cards-table">

@@ -395,6 +395,16 @@ export const api = {
 
     }),
 
+  bulkUpdateOwnership: (body) =>
+
+    apiRequest("/manager/ownership/bulk", {
+
+      method: "POST",
+
+      body: JSON.stringify(body),
+
+    }),
+
   bulkAssignStorage: (body) =>
 
     apiRequest("/manager/bulk-assign-storage", {
@@ -618,11 +628,46 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  deleteDeck: (deckId) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}`, {
+      method: "DELETE",
+    }),
+
   createDeck: (body) =>
     apiRequest("/decks", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  getBuilderCommanders: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.page) query.set("page", String(params.page));
+    if (params.pageSize) query.set("pageSize", String(params.pageSize));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest(`/builder/commanders${suffix}`);
+  },
+
+  previewBuilderPool: (body) =>
+    apiRequest("/builder/pool/preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  generateDeck: (body) =>
+    apiRequest("/builder/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  bulkAddDeckCards: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/bulk`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  getDeckPower: (deckId) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/power`),
 
   triggerPriceSync: () =>
 

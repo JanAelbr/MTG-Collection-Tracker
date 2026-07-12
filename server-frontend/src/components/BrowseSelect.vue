@@ -12,6 +12,7 @@ const props = defineProps({
   ariaLabel: { type: String, default: "Select option" },
   hideArrows: { type: Boolean, default: false },
   emptyIconLabel: { type: String, default: "" },
+  portalPanel: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -19,7 +20,10 @@ const emit = defineEmits(["update:modelValue"]);
 const open = ref(false);
 const filter = ref("");
 const mainRef = ref(null);
+const triggerRef = ref(null);
+const panelRef = ref(null);
 const filterRef = ref(null);
+const panelStyle = ref({});
 
 const optionValues = computed(() => props.options.map((option) => option.value));
 
@@ -80,6 +84,24 @@ function goNext() {
 function closePanel() {
   open.value = false;
   filter.value = "";
+  panelStyle.value = {};
+}
+
+function updatePanelPosition() {
+  if (!props.portalPanel || !open.value || !triggerRef.value) {
+    return;
+  }
+  const rect = triggerRef.value.getBoundingClientRect();
+  const panelWidth = Math.min(320, Math.max(rect.width, 220), window.innerWidth - 16);
+  let left = rect.left;
+  if (left + panelWidth + 8 > window.innerWidth) {
+    left = Math.max(8, window.innerWidth - panelWidth - 8);
+  }
+  panelStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${left}px`,
+    width: `${panelWidth}px`,
+  };
 }
 
 async function openPanel() {
@@ -88,6 +110,7 @@ async function openPanel() {
   }
   open.value = true;
   await nextTick();
+  updatePanelPosition();
   filterRef.value?.focus();
 }
 
@@ -100,12 +123,18 @@ function togglePanel() {
 }
 
 function onDocumentClick(event) {
-  if (!open.value || !mainRef.value) {
+  if (!open.value) {
     return;
   }
-  if (!mainRef.value.contains(event.target)) {
-    closePanel();
+  const target = event.target;
+  if (mainRef.value?.contains(target) || panelRef.value?.contains(target)) {
+    return;
   }
+  closePanel();
+}
+
+function onViewportChange() {
+  updatePanelPosition();
 }
 
 function onDocumentKeydown(event) {
@@ -113,6 +142,22 @@ function onDocumentKeydown(event) {
     closePanel();
   }
 }
+
+watch(
+  () => open.value,
+  (isOpen) => {
+    if (!props.portalPanel) {
+      return;
+    }
+    if (isOpen) {
+      window.addEventListener("resize", onViewportChange);
+      window.addEventListener("scroll", onViewportChange, true);
+      return;
+    }
+    window.removeEventListener("resize", onViewportChange);
+    window.removeEventListener("scroll", onViewportChange, true);
+  },
+);
 
 watch(
   () => props.modelValue,
@@ -131,6 +176,8 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
   document.removeEventListener("keydown", onDocumentKeydown);
+  window.removeEventListener("resize", onViewportChange);
+  window.removeEventListener("scroll", onViewportChange, true);
 });
 </script>
 
@@ -149,6 +196,7 @@ onUnmounted(() => {
 
     <div ref="mainRef" class="browse-select-main">
       <button
+        ref="triggerRef"
         type="button"
         class="browse-select-trigger"
         :disabled="disabled"
@@ -176,7 +224,59 @@ onUnmounted(() => {
         <span class="browse-select-chevron" aria-hidden="true">▾</span>
       </button>
 
-      <div v-if="open" class="browse-select-panel" role="presentation">
+      <Teleport v-if="portalPanel" to="body" :disabled="!open">
+        <div
+          v-if="open"
+          ref="panelRef"
+          class="browse-select-panel is-portaled"
+          :style="panelStyle"
+          role="presentation"
+        >
+          <input
+            v-if="filterable"
+            ref="filterRef"
+            v-model="filter"
+            type="search"
+            class="browse-select-filter"
+            placeholder="Filter…"
+            aria-label="Filter options"
+            @click.stop
+          >
+          <ul class="browse-select-list" role="listbox" :aria-label="ariaLabel">
+            <li
+              v-for="option in filteredOptions"
+              :key="option.value || '__empty__'"
+              class="browse-select-option"
+              role="option"
+              :aria-selected="option.value === modelValue ? 'true' : 'false'"
+              :class="{ active: option.value === modelValue }"
+              @click="select(option.value)"
+            >
+              <span
+                v-if="showIcons && (!optionalIcons || option.iconSrc)"
+                class="browse-select-icon-wrap"
+                aria-hidden="true"
+              >
+                <img
+                  v-if="option.iconSrc"
+                  :src="option.iconSrc"
+                  alt=""
+                  class="browse-select-icon"
+                >
+                <span v-else-if="!optionalIcons" class="browse-select-icon browse-select-icon-placeholder">
+                  {{ option.value === "All" || !option.iconSrc ? "All" : "?" }}
+                </span>
+              </span>
+              <span class="browse-select-option-label">{{ option.label }}</span>
+            </li>
+            <li v-if="!filteredOptions.length" class="browse-select-empty">
+              No matches
+            </li>
+          </ul>
+        </div>
+      </Teleport>
+
+      <div v-else-if="open" class="browse-select-panel" role="presentation">
         <input
           v-if="filterable"
           ref="filterRef"

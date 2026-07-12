@@ -272,3 +272,56 @@ class DeckCreate(BaseModel):
 
 class BackupCatalogSyncRequest(BaseModel):
     setCodes: list[str] = Field(default_factory=list)
+
+
+class BuilderCommanderPrint(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class BuilderPoolPreview(BaseModel):
+    locationSlugs: list[str] = Field(default_factory=list)
+    includeDeckStorage: bool = False
+
+
+class BuilderGenerateRequest(BaseModel):
+    commanders: list[BuilderCommanderPrint] = Field(min_length=1, max_length=4)
+    locationSlugs: list[str] = Field(default_factory=list)
+    includeDeckStorage: bool = False
+    landCount: int = Field(default=38, ge=20, le=45)
+    budgetCap: float | None = Field(default=None, ge=0)
+    excludeCategories: list[str] = Field(default_factory=list)
+
+
+class DeckBulkCardItem(BaseModel):
+    setCode: str = Field(min_length=0, max_length=16)
+    collectorNumber: str = Field(min_length=0, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    section: str = Field(default="main", min_length=1, max_length=16)
+    qty: int = Field(default=1, ge=1, le=99)
+    owned: bool | None = None
+    cardName: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish_optional(cls, values):
+        if not isinstance(values, dict):
+            return values
+        if values.get("finish") is None and values.get("foil") is not None:
+            values["finish"] = values["foil"]
+        return values
+
+
+class DeckBulkCardsAdd(BaseModel):
+    cards: list[DeckBulkCardItem] = Field(min_length=1)
+    replaceMain: bool = False

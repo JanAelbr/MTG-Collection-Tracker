@@ -2,13 +2,19 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import BrowseSelect from "./BrowseSelect.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
-import { formatSetCountLabel, setCompletionRarity, setDisplayName } from "../utils/format";
+import {
+  formatSetCountLabel,
+  setCompletionPercent,
+  setCompletionRarity,
+  setDisplayName,
+} from "../utils/format";
 import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 
 const props = defineProps({
   sets: { type: Array, default: () => [] },
   activeSetCode: { type: String, default: "" },
+  activeArtStyle: { type: String, default: "" },
   showFavorites: { type: Boolean, default: false },
   manageSets: { type: Boolean, default: false },
   showReloadCatalog: { type: Boolean, default: true },
@@ -59,6 +65,52 @@ function countLabel(set) {
 function completionRarityClass(set) {
   const rarity = setCompletionRarity(set);
   return rarity ? `set-gallery-rarity--${rarity}` : "";
+}
+
+function isActiveSet(set) {
+  return set?.setCode && set.setCode === props.activeSetCode;
+}
+
+function missingCount(set) {
+  if (set?.ownedCount == null || set?.catalogCount == null) {
+    return null;
+  }
+  return Math.max(0, set.catalogCount - set.ownedCount);
+}
+
+function flooredCompletionPercent(set) {
+  const percent = setCompletionPercent(set);
+  if (percent == null) {
+    return null;
+  }
+  return Math.floor(percent);
+}
+
+function activeTitleLine(set) {
+  const name = setDisplayName(set);
+  if (!name || name === set.setCode) {
+    return set.setCode;
+  }
+  return `${set.setCode} · ${name}`;
+}
+
+function activeStatsLine(set) {
+  const parts = [];
+  if (set.ownedCount != null && set.catalogCount != null) {
+    parts.push(`${set.ownedCount}/${set.catalogCount}`);
+  }
+  const floored = flooredCompletionPercent(set);
+  if (floored != null) {
+    parts.push(`${floored}%`);
+  }
+  const missing = missingCount(set);
+  if (missing != null && missing > 0) {
+    parts.push(`${missing} missing`);
+  }
+  if (props.activeArtStyle && isActiveSet(set)) {
+    parts.push(props.activeArtStyle);
+  }
+  return parts.join(" · ");
 }
 
 function canDelete(set) {
@@ -142,86 +194,7 @@ onMounted(positionActiveSet);
 </script>
 
 <template>
-  <div class="set-gallery-shell">
-    <div ref="galleryRef" class="set-gallery set-gallery-scroll" aria-label="Sets">
-      <div
-        v-for="set in visibleSets"
-        :key="set.setCode"
-        class="set-gallery-card"
-        :class="{
-          active: set.setCode === activeSetCode,
-          'has-delete-action': canDelete(set),
-        }"
-        role="button"
-        tabindex="0"
-        :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
-        @click="onSelect(set.setCode)"
-        @keydown="onCardKeydown($event, set.setCode)"
-      >
-        <button
-          v-if="showFavorites && set.setCode !== 'All'"
-          type="button"
-          class="set-gallery-favorite set-gallery-favorite--left"
-          :class="{ 'is-favorite': set.favorite }"
-          :aria-pressed="set.favorite ? 'true' : 'false'"
-          :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
-          :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
-          @click.stop="onToggleFavorite($event, set)"
-        >
-          {{ set.favorite ? "★" : "☆" }}
-        </button>
-
-        <button
-          v-if="canReload(set)"
-          type="button"
-          class="set-gallery-reload"
-          :class="{ 'is-loading': isReloading(set) }"
-          :aria-label="`Reload ${set.setCode} catalog from Scryfall`"
-          :aria-busy="isReloading(set) ? 'true' : 'false'"
-          title="Reload catalog from Scryfall"
-          @click.stop="onReload($event, set)"
-        >
-          <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
-          <span v-else aria-hidden="true">↻</span>
-        </button>
-
-        <button
-          v-if="canDelete(set)"
-          type="button"
-          class="set-gallery-delete"
-          :class="{ 'is-loading': isDeleting(set) }"
-          :aria-label="`Remove set ${set.setCode}`"
-          :aria-busy="isDeleting(set) ? 'true' : 'false'"
-          title="Remove set (catalog is kept)"
-          @click.stop="onRemove($event, set)"
-        >
-          <span v-if="isDeleting(set)" class="loading-spinner set-gallery-delete-spinner" aria-hidden="true" />
-          <span v-else aria-hidden="true">×</span>
-        </button>
-
-        <div class="set-gallery-icon-wrap">
-          <img
-            v-if="setIconUri(set)"
-            :src="setIconUri(set)"
-            :alt="`${set.setCode} set icon`"
-            class="set-gallery-icon"
-            loading="lazy"
-            @error="onSetIconError($event, set)"
-          >
-          <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
-            All
-          </div>
-        </div>
-
-        <div class="set-gallery-meta">
-          <span class="set-gallery-code" :class="completionRarityClass(set)">
-            {{ set.setCode === "All" ? "All" : set.setCode }}
-          </span>
-          <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
-        </div>
-      </div>
-    </div>
-
+  <div ref="galleryRef" class="set-gallery" aria-label="Sets">
     <div
       v-if="manageSets"
       class="set-gallery-add-slot"
@@ -242,8 +215,100 @@ onMounted(positionActiveSet);
         empty-icon-label="+"
         placeholder="Add"
         aria-label="Add set"
+        portal-panel
         @update:model-value="onAddSetSelect"
       />
+    </div>
+
+    <div
+      v-for="set in visibleSets"
+      :key="set.setCode"
+      class="set-gallery-card"
+      :class="{
+        active: isActiveSet(set),
+        'has-delete-action': canDelete(set),
+        'set-gallery-card--expanded': isActiveSet(set) && set.setCode !== 'All',
+      }"
+      role="button"
+      tabindex="0"
+      :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
+      :aria-current="isActiveSet(set) ? 'true' : undefined"
+      @click="onSelect(set.setCode)"
+      @keydown="onCardKeydown($event, set.setCode)"
+    >
+      <button
+        v-if="showFavorites && set.setCode !== 'All'"
+        type="button"
+        class="set-gallery-favorite set-gallery-favorite--left"
+        :class="{ 'is-favorite': set.favorite }"
+        :aria-pressed="set.favorite ? 'true' : 'false'"
+        :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
+        :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
+        @click.stop="onToggleFavorite($event, set)"
+      >
+        {{ set.favorite ? "★" : "☆" }}
+      </button>
+
+      <button
+        v-if="canReload(set)"
+        type="button"
+        class="set-gallery-reload"
+        :class="{ 'is-loading': isReloading(set) }"
+        :aria-label="`Reload ${set.setCode} catalog from Scryfall`"
+        :aria-busy="isReloading(set) ? 'true' : 'false'"
+        title="Reload catalog from Scryfall"
+        @click.stop="onReload($event, set)"
+      >
+        <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
+        <span v-else aria-hidden="true">↻</span>
+      </button>
+
+      <button
+        v-if="canDelete(set)"
+        type="button"
+        class="set-gallery-delete"
+        :class="{ 'is-loading': isDeleting(set) }"
+        :aria-label="`Remove set ${set.setCode}`"
+        :aria-busy="isDeleting(set) ? 'true' : 'false'"
+        title="Remove set (catalog is kept)"
+        @click.stop="onRemove($event, set)"
+      >
+        <span v-if="isDeleting(set)" class="loading-spinner set-gallery-delete-spinner" aria-hidden="true" />
+        <span v-else aria-hidden="true">×</span>
+      </button>
+
+      <div class="set-gallery-icon-wrap">
+        <img
+          v-if="setIconUri(set)"
+          :src="setIconUri(set)"
+          :alt="`${set.setCode} set icon`"
+          class="set-gallery-icon"
+          loading="lazy"
+          @error="onSetIconError($event, set)"
+        >
+        <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
+          All
+        </div>
+      </div>
+
+      <div class="set-gallery-meta">
+        <template v-if="isActiveSet(set) && set.setCode !== 'All'">
+          <span
+            class="set-gallery-title"
+            :class="completionRarityClass(set)"
+            :title="activeTitleLine(set)"
+          >
+            {{ activeTitleLine(set) }}
+          </span>
+          <span v-if="activeStatsLine(set)" class="set-gallery-stats">{{ activeStatsLine(set) }}</span>
+        </template>
+        <template v-else>
+          <span class="set-gallery-code" :class="completionRarityClass(set)">
+            {{ set.setCode === "All" ? "All" : set.setCode }}
+          </span>
+          <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
+        </template>
+      </div>
     </div>
   </div>
 </template>

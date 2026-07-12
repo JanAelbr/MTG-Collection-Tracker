@@ -1050,6 +1050,45 @@ def rename_deck(conn: sqlite3.Connection, *, deck_id: str, name: str) -> dict:
     return {"deck": deck}
 
 
+def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
+    from api.cache import bump_cache_epoch
+    from api.services.settings_service import get_default_storage_location
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, slug FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    deck_location = f"deck:{str(deck_row[1]).lower()}"
+    default_location = get_default_storage_location(conn)
+    conn.execute(
+        """
+        UPDATE card_instances
+        SET location_slug = ?
+        WHERE location_slug = ?
+        """,
+        (default_location, deck_location),
+    )
+    conn.execute("DELETE FROM deck_cards WHERE deck_id = ?", (deck_key,))
+    conn.execute("DELETE FROM decks WHERE deck_id = ?", (deck_key,))
+    conn.execute(
+        "DELETE FROM storage_locations WHERE location_slug = ?",
+        (deck_location,),
+    )
+    conn.commit()
+    bump_cache_epoch()
+    return {"deletedDeckId": str(deck_key)}
+
+
 def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -> dict:
     from util.deck_helpers import cheapest_owned_printing_by_name
 
@@ -1111,4 +1150,112 @@ def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -
         "losers": stats.get("losers"),
         "cards": serialized_cards,
     }
+
+
+def bulk_add_cards_to_deck(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    cards: list[dict],
+    replace_main: bool = False,
+) -> dict:
+    from api.cache import bump_cache_epoch
+    from util.card_finishes import normalize_finish
+    from util.deck_helpers import resolve_deck_row
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, name FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    if replace_main:
+        conn.execute(
+            "DELETE FROM deck_cards WHERE deck_id = ? AND section = 'main'",
+            (deck_key,),
+        )
+
+    cursor = conn.cursor()
+    added = 0
+    sort_order_row = cursor.execute(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM deck_cards WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    sort_order = int(sort_order_row[0]) if sort_order_row else 0
+
+    for card in cards:
+        section = str(card.get("section") or "main").strip().lower()
+        if section not in {"commander", "main", "sideboard"}:
+            section = "main"
+        owned_flag = card.get("owned")
+        if owned_flag is None:
+            owned_flag = card.get("suggested") is False
+
+        resolved = resolve_deck_row(
+            cursor,
+            {
+                "set_code": card.get("set_code") or card.get("setCode") or "",
+                "collector_number": card.get("collector_number") or card.get("collectorNumber") or "",
+                "card_name": card.get("card_name") or card.get("cardName") or card.get("name") or "",
+                "finish": normalize_finish(card.get("finish") or 0),
+                "qty": int(card.get("qty") or 1),
+                "section": section,
+                "owned_qty": 1 if owned_flag else 0,
+                "sort_order": sort_order,
+            },
+        )
+        if not resolved.get("card_name"):
+            continue
+        qty = max(1, min(int(card.get("qty") or 1), 99))
+        owned_qty = min(qty, 1) if owned_flag else 0
+        cursor.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish, qty, owned_qty,
+                section, sort_order, in_catalog
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                deck_key,
+                resolved["card_name"],
+                resolved.get("set_code") or "",
+                resolved.get("collector_number") or "",
+                resolved.get("finish") or 0,
+                qty,
+                owned_qty,
+                section,
+                sort_order,
+                resolved.get("in_catalog") or 0,
+            ),
+        )
+        sort_order += 1
+        added += 1
+
+    conn.commit()
+    bump_cache_epoch()
+    return {
+        "deckId": str(deck_key),
+        "deckName": deck_row[1],
+        "added": added,
+        "replaceMain": replace_main,
+    }
+
+
+def load_deck_power(conn: sqlite3.Connection, deck_id: str) -> dict:
+    from api.services.deck_power_service import assess_deck_power_by_id
+
+    try:
+        return assess_deck_power_by_id(conn, deck_id)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message == "Deck not found" else 500
+        raise DeckError(message, status_code=status_code) from exc
 

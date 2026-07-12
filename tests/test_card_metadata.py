@@ -76,30 +76,37 @@ class CardMetadataTests(unittest.TestCase):
         self.assertEqual(primary_card_type("Artifact Creature — Construct"), "creature")
         self.assertEqual(primary_card_type("Land Creature — Forest Dryad"), "land")
 
+    def test_card_metadata_snake_handles_nan_basic_land(self):
+        import pandas as pd
+
+        row = pd.Series({
+            "colors": '["G"]',
+            "type_line": "Creature — Elf",
+            "card_type": "creature",
+            "is_basic_land": float("nan"),
+            "cmc": float("nan"),
+        })
+        meta = card_metadata_snake(row)
+        self.assertFalse(meta["is_basic_land"])
+        self.assertEqual(meta["cmc"], 0.0)
+
     def test_card_metadata_api_fields(self):
         row = {
             "colors": '["B"]',
             "type_line": "Creature — Human Wizard",
             "card_type": "creature",
         }
-        self.assertEqual(
-            card_metadata_api(row),
-            {
-                "colors": ["B"],
-                "typeLine": "Creature — Human Wizard",
-                "cardType": "creature",
-                "cardTypes": ["creature"],
-            },
-        )
-        self.assertEqual(
-            card_metadata_snake(row),
-            {
-                "colors": ["B"],
-                "type_line": "Creature — Human Wizard",
-                "card_type": "creature",
-                "card_types": ["creature"],
-            },
-        )
+        api_meta = card_metadata_api(row)
+        self.assertEqual(api_meta["colors"], ["B"])
+        self.assertEqual(api_meta["typeLine"], "Creature — Human Wizard")
+        self.assertEqual(api_meta["cardType"], "creature")
+        self.assertEqual(api_meta["cardTypes"], ["creature"])
+        meta = card_metadata_snake(row)
+        self.assertEqual(meta["colors"], ["B"])
+        self.assertEqual(meta["type_line"], "Creature — Human Wizard")
+        self.assertEqual(meta["card_type"], "creature")
+        self.assertEqual(meta["card_types"], ["creature"])
+        self.assertFalse(meta["is_basic_land"])
 
 
 if __name__ == "__main__":

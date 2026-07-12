@@ -6,6 +6,7 @@ import CollectionView from "./views/CollectionView.vue";
 import CollectionSearchView from "./views/CollectionSearchView.vue";
 import StatsView from "./views/StatsView.vue";
 import DecksView from "./views/DecksView.vue";
+import DeckBuilderView from "./views/DeckBuilderView.vue";
 import CardDetailView from "./views/CardDetailView.vue";
 import HomeView from "./views/HomeView.vue";
 
@@ -71,6 +72,12 @@ const router = createRouter({
     },
     { path: "/decks/browse", redirect: "/decks" },
     { path: "/decks/stats", redirect: "/decks" },
+    {
+      path: "/decks/build",
+      name: "deck-builder",
+      component: DeckBuilderView,
+      meta: { title: "Deck Builder" },
+    },
     {
       path: "/decks",
       name: "decks",

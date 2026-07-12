@@ -62,6 +62,20 @@ class PricingServiceEtchedTests(unittest.TestCase):
         self.assertEqual(grouped["foil"]["avg"], 3.1)
 
     @patch("api.services.pricing_service._load_guide")
+    def test_price_from_strategy_prefers_stored_value_over_guide_outlier(self, load_guide):
+        load_guide.return_value = {
+            718040: {"trend": 527.88, "low": 800},
+            718047: {"trend": 0, "trend-foil": 2204.09},
+        }
+        value = price_from_strategy(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=718047",
+            0,
+            "trend",
+            market_value=2.22,
+        )
+        self.assertEqual(value, 2.22)
+
+    @patch("api.services.pricing_service._load_guide")
     def test_price_from_strategy_etched_uses_stored_value_only(self, load_guide):
         load_guide.return_value = {
             123: {"trend": 2.42, "trend-foil": 5.54},

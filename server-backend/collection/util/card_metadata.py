@@ -1,4 +1,5 @@
 import json
+import re
 
 import pandas as pd
 
@@ -122,6 +123,125 @@ def parse_card_colors(raw) -> list[str]:
     return normalize_card_colors(part.strip() for part in text.split(",") if part.strip())
 
 
+def parse_card_legalities(raw) -> dict:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw).strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    return {}
+
+
+def card_matches_color_identity(card_identity: list[str], allowed_identity: list[str]) -> bool:
+    if not card_identity:
+        return True
+    allowed = set(allowed_identity or [])
+    return all(color in allowed for color in card_identity)
+
+
+def is_commander_format_legal(legalities: dict) -> bool:
+    status = str((legalities or {}).get("commander") or "").lower()
+    return status in {"legal", "restricted"}
+
+
+def is_legendary_commander_candidate(type_line: str) -> bool:
+    normalized = str(type_line or "").lower()
+    if "legendary" not in normalized:
+        return False
+    return "creature" in normalized or "planeswalker" in normalized
+
+
+def cmc_from_mana_cost(mana_cost: str) -> float:
+    if not str(mana_cost or "").strip():
+        return 0.0
+    total = 0.0
+    for face in str(mana_cost).split("//"):
+        for symbol in re.findall(r"\{([^}]+)\}", face):
+            token = symbol.strip().upper()
+            if token in {"X", "Y", "Z"}:
+                continue
+            if token.isdigit():
+                total += float(token)
+                continue
+            if "/" in token:
+                total += 1.0
+                continue
+            try:
+                total += float(token)
+            except ValueError:
+                total += 1.0
+    return total
+
+
+def card_row_needs_power_metadata(
+    row,
+    *,
+    section_key: str = "section",
+    in_catalog_key: str = "in_catalog",
+) -> bool:
+    """True when a main-deck catalog card still lacks CMC/mana data worth fetching from Scryfall."""
+    if str(row.get(section_key) or "main") != "main":
+        return False
+    if not int(row.get(in_catalog_key) or 0):
+        return False
+    is_basic_land = row.get("is_basic_land")
+    if is_basic_land is not None and not (isinstance(is_basic_land, float) and pd.isna(is_basic_land)):
+        if int(is_basic_land):
+            return False
+    card_type = row.get("card_type")
+    if card_type is None or (isinstance(card_type, float) and pd.isna(card_type)):
+        card_type = ""
+    else:
+        card_type = str(card_type).lower()
+    if card_type == "land":
+        return False
+    type_line = row.get("type_line")
+    if type_line is None or (isinstance(type_line, float) and pd.isna(type_line)):
+        type_line = ""
+    else:
+        type_line = str(type_line)
+    if not card_type and type_line and primary_card_type(type_line) == "land":
+        return False
+    cmc = row.get("cmc")
+    if cmc is not None and not pd.isna(cmc):
+        try:
+            if float(cmc) > 0:
+                return False
+        except (TypeError, ValueError):
+            pass
+    mana_cost = row.get("mana_cost")
+    if mana_cost is None or (isinstance(mana_cost, float) and pd.isna(mana_cost)):
+        return True
+    return not str(mana_cost).strip()
+
+
+def resolve_card_cmc(card: dict) -> float:
+    raw = card.get("cmc")
+    if raw is not None and str(raw).strip():
+        try:
+            value = float(raw)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    mana_cost = card.get("mana_cost") or card.get("manaCost") or ""
+    parsed = cmc_from_mana_cost(str(mana_cost))
+    if parsed > 0:
+        return parsed
+    card_type = str(card.get("card_type") or card.get("cardType") or "").lower()
+    if card_type == "land" or bool(card.get("is_basic_land") or card.get("isBasicLand")):
+        return 0.0
+    return 0.0
+
+
 def card_types_from_type_line(type_line: str) -> list[str]:
     if not type_line:
         return []
@@ -155,18 +275,53 @@ def _read_metadata_field(row, field: str):
     return getattr(row, field, None)
 
 
+def _nullable_int_flag(value) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, float) and pd.isna(value):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _nullable_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, float) and pd.isna(value):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def card_metadata_snake(row) -> dict:
     colors_raw = _read_metadata_field(row, "colors")
+    identity_raw = _read_metadata_field(row, "color_identity")
     type_raw = _read_metadata_field(row, "type_line")
     card_type_raw = _read_metadata_field(row, "card_type")
+    oracle_raw = _read_metadata_field(row, "oracle_text")
+    mana_cost_raw = _read_metadata_field(row, "mana_cost")
+    cmc_raw = _read_metadata_field(row, "cmc")
+    legalities_raw = _read_metadata_field(row, "legalities")
+    basic_land_raw = _read_metadata_field(row, "is_basic_land")
     type_line = str_or_empty(type_raw)
     card_types = card_types_from_type_line(type_line)
     card_type = str_or_empty(card_type_raw) or primary_card_type(type_line)
+    cmc = _nullable_float(cmc_raw)
     return {
         "colors": parse_card_colors(colors_raw),
+        "color_identity": parse_card_colors(identity_raw),
         "type_line": type_line,
         "card_type": card_type,
         "card_types": card_types,
+        "oracle_text": str_or_empty(oracle_raw),
+        "mana_cost": str_or_empty(mana_cost_raw),
+        "cmc": cmc,
+        "legalities": parse_card_legalities(legalities_raw),
+        "is_basic_land": bool(_nullable_int_flag(basic_land_raw)),
     }
 
 
@@ -174,7 +329,13 @@ def card_metadata_api(row) -> dict:
     meta = card_metadata_snake(row)
     return {
         "colors": meta["colors"],
+        "colorIdentity": meta["color_identity"],
         "typeLine": meta["type_line"],
         "cardType": meta["card_type"],
         "cardTypes": meta["card_types"],
+        "oracleText": meta["oracle_text"],
+        "manaCost": meta["mana_cost"],
+        "cmc": meta["cmc"],
+        "legalities": meta["legalities"],
+        "isBasicLand": meta["is_basic_land"],
     }

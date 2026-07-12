@@ -10,7 +10,15 @@ from api.deps import get_db
 
 from api.http_cache import serve_cached_json, with_price_strategy
 
-from api.schemas import DeckCardAdd, DeckCardOwnedUpdate, DeckCardQtyAdjust, DeckCardRemove, DeckCreate, DeckRename
+from api.schemas import (
+    DeckBulkCardsAdd,
+    DeckCardAdd,
+    DeckCardOwnedUpdate,
+    DeckCardQtyAdjust,
+    DeckCardRemove,
+    DeckCreate,
+    DeckRename,
+)
 
 from api.services import decks_service
 
@@ -153,6 +161,53 @@ def deck_browse(
 
 
 
+@router.get("/{deck_id}/power")
+def deck_power(
+    deck_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return serve_cached_json(
+            request,
+            namespace="decks.power",
+            params={"deckId": deck_id},
+            ttl=60,
+            loader=lambda: decks_service.load_deck_power(conn, deck_id),
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/cards/bulk")
+def bulk_add_deck_cards(
+    deck_id: str,
+    body: DeckBulkCardsAdd,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.bulk_add_cards_to_deck(
+            conn,
+            deck_id=deck_id,
+            cards=[
+                {
+                    "setCode": card.setCode,
+                    "collectorNumber": card.collectorNumber,
+                    "finish": card.finish,
+                    "section": card.section,
+                    "qty": card.qty,
+                    "owned": card.owned,
+                    "cardName": card.cardName,
+                    "suggested": not card.owned if card.owned is not None else None,
+                }
+                for card in body.cards
+            ],
+            replace_main=body.replaceMain,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
 @router.post("/{deck_id}/cards")
 
 def add_deck_card(
@@ -258,6 +313,17 @@ def rename_deck(
 ):
     try:
         return decks_service.rename_deck(conn, deck_id=deck_id, name=body.name)
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.delete("/{deck_id}")
+def delete_deck(
+    deck_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.delete_deck(conn, deck_id=deck_id)
     except DeckError as exc:
         raise _deck_error(exc) from exc
 

@@ -430,6 +430,58 @@ class DecksApiServiceTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 400)
 
+    def test_delete_deck_removes_cards_and_moves_instances(self):
+        result = decks_service.create_deck(
+            self.conn,
+            deck_format="commander",
+            name="Delete Me",
+            commanders=[
+                {
+                    "set_code": "LTC",
+                    "collector_number": "284",
+                    "finish": 0,
+                }
+            ],
+        )
+        deck_id = result["deck"]["id"]
+        deck_slug = result["deck"]["slug"].lower()
+        deck_location = f"deck:{deck_slug}"
+
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (set_code, collector_number, finish, location_slug, purchase_value)
+            VALUES ('LTC', '284', 0, ?, 1.0)
+            """,
+            (deck_location,),
+        )
+        self.conn.commit()
+
+        deleted = decks_service.delete_deck(self.conn, deck_id=str(deck_id))
+        self.assertEqual(deleted["deletedDeckId"], str(deck_id))
+
+        row = self.conn.execute(
+            "SELECT 1 FROM decks WHERE deck_id = ?",
+            (deck_id,),
+        ).fetchone()
+        self.assertIsNone(row)
+
+        card_count = self.conn.execute(
+            "SELECT COUNT(*) FROM deck_cards WHERE deck_id = ?",
+            (deck_id,),
+        ).fetchone()[0]
+        self.assertEqual(card_count, 0)
+
+        location = self.conn.execute(
+            "SELECT location_slug FROM card_instances WHERE set_code = 'LTC' AND collector_number = '284'"
+        ).fetchone()[0]
+        self.assertEqual(location, "storage:general")
+
+        storage_row = self.conn.execute(
+            "SELECT 1 FROM storage_locations WHERE location_slug = ?",
+            (deck_location,),
+        ).fetchone()
+        self.assertIsNone(storage_row)
+
     def test_create_deck_with_commanders(self):
         result = decks_service.create_deck(
             self.conn,

@@ -6,11 +6,13 @@ from lib.art_styles import ensure_art_style_rules_table
 from util.app_tables import ensure_app_tables
 from util.card_prices import ensure_card_prices_table
 from util.db_migrate import (
+    backfill_basic_land_flags,
     backfill_card_types,
     ensure_card_columns,
     ensure_card_indexes,
     ensure_purchase_unique_index,
     ensure_set_code_aliases,
+    mark_complete_catalog_sets,
 )
 from util.deck_tables import ensure_deck_tables
 from util.set_catalog import backfill_missing_set_icon_uris, ensure_sets_columns, ensure_sets_table
@@ -84,6 +86,8 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_card_columns(conn)
         prune_alchemy_cards(conn)
         backfill_card_types(conn)
+        backfill_basic_land_flags(conn)
+        mark_complete_catalog_sets(conn)
         ensure_card_indexes(conn)
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
