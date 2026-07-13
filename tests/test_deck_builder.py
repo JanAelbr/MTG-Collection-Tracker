@@ -362,9 +362,29 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
         self.assertIn("Sol Ring", names)
         self.assertIn("Cultivate", names)
         self.assertGreaterEqual(proposal["stats"]["ownedCount"], 2)
-        self.assertGreaterEqual(proposal["stats"]["totalCards"], 3)
+        self.assertEqual(proposal["stats"]["basicLandCount"], 36)
+        self.assertGreaterEqual(proposal["stats"]["totalCards"], 36)
         owned_cards = [card for card in proposal["cards"] if not card.get("suggested")]
         self.assertTrue(any(card["name"] == "Sol Ring" for card in owned_cards))
+
+    def test_generate_deck_assumes_infinite_basic_lands(self):
+        proposal = generate_deck_proposal(
+            self.conn,
+            commanders=[{"setCode": "LTR", "collectorNumber": "1", "finish": 0}],
+            location_slugs=["storage:general"],
+            land_count=38,
+        )
+        basics = [card for card in proposal["cards"] if card.get("infiniteBasic")]
+        self.assertTrue(basics)
+        self.assertEqual(
+            sum(int(card.get("qty") or 1) for card in basics),
+            38,
+        )
+        self.assertTrue(all(not card.get("suggested") for card in basics))
+        self.assertTrue(all(card.get("isBasicLand") for card in basics))
+        self.assertEqual(proposal["stats"]["basicLandCount"], 38)
+        self.assertGreaterEqual(proposal["stats"]["totalCards"], 38)
+        self.assertNotIn("Forest", {card["name"] for card in proposal["cards"] if card.get("suggested")})
 
 
 if __name__ == "__main__":

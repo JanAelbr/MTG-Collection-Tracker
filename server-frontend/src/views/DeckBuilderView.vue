@@ -122,8 +122,8 @@ async function applyProposal() {
         collectorNumber: card.collectorNumber || "",
         finish: cardFinish(card),
         section: "main",
-        qty: 1,
-        owned: !card.suggested,
+        qty: card.qty || 1,
+        owned: !card.suggested && !card.infiniteBasic,
         cardName: card.name,
       })),
     });

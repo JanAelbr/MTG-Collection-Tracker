@@ -36,7 +36,7 @@ class CardmarketUrlTests(unittest.TestCase):
             None,
             {
                 "foil": True,
-                "finishes": ["foil"],
+                "finishes": ["nonfoil", "foil"],
                 "purchase_uris": {"cardmarket": "https://example.com/?idProduct=738287"},
             },
         )
@@ -372,6 +372,114 @@ class CardmarketUrlTests(unittest.TestCase):
         )
         self.assertIn("718047", foil or "")
         self.assertIsNone(nonfoil)
+
+    def test_merge_prefers_scryfall_for_underpriced_ltc_ring_urls(self):
+        guide = {
+            737043: {"trend": 1.08, "low": 0.5},
+            718037: {"trend": 1957.52, "low": 2999},
+            718038: {"trend": 481.87, "low": 680},
+            718040: {"trend": 527.88, "low": 800},
+        }
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=737043",
+            None,
+            {
+                "foil": False,
+                "finishes": ["nonfoil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=718037",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIn("718037", nonfoil or "")
+        self.assertIsNone(foil)
+
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=737043",
+            None,
+            {
+                "foil": False,
+                "finishes": ["nonfoil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=718040",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIn("718040", nonfoil or "")
+
+    def test_merge_moves_serialized_ring_url_to_foil_column(self):
+        guide = {
+            718040: {"trend": 527.88},
+            718045: {"trend": 0, "trend-foil": 5716.97},
+        }
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=718040",
+            None,
+            {
+                "foil": True,
+                "finishes": ["foil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=718045",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIsNone(nonfoil)
+        self.assertIn("718045", foil or "")
+
+    def test_backfill_restores_ltc_rings_of_power_product_ids(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        rows = [
+            ("LTC", "408", "https://www.cardmarket.com/en/Magic/Products?idProduct=737043", None, 1, 0, 0),
+            ("LTC", "409", "https://www.cardmarket.com/en/Magic/Products?idProduct=737043", None, 1, 0, 0),
+            ("LTC", "410", "https://www.cardmarket.com/en/Magic/Products?idProduct=737043", None, 1, 0, 0),
+            ("LTC", "408z", "https://www.cardmarket.com/en/Magic/Products?idProduct=718040", None, 0, 1, 0),
+        ]
+        conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        guide = {
+            737043: {"trend": 1.08},
+            718037: {"trend": 1957.52},
+            718038: {"trend": 481.87},
+            718040: {"trend": 527.88},
+            718045: {"trend": 0, "trend-foil": 5716.97},
+        }
+        updated = backfill_cardmarket_urls(conn, guide)
+        row408 = conn.execute(
+            "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '408'"
+        ).fetchone()
+        row408z = conn.execute(
+            "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '408z'"
+        ).fetchone()
+        conn.close()
+        self.assertGreaterEqual(updated, 4)
+        self.assertIn("718037", row408[0] or "")
+        self.assertIn("718045", row408z[1] or "")
+        self.assertIsNone(row408z[0])
 
 
 if __name__ == "__main__":

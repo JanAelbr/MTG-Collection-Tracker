@@ -78,14 +78,19 @@ export function powerCardRoute(card, deckId = "") {
 export function groupProposalCards(cards = []) {
   const owned = [];
   const suggested = [];
+  const basicLands = [];
   for (const card of cards) {
+    if (card.infiniteBasic) {
+      basicLands.push(card);
+      continue;
+    }
     if (card.suggested) {
       suggested.push(card);
     } else {
       owned.push(card);
     }
   }
-  return { owned, suggested };
+  return { owned, suggested, basicLands };
 }
 
 export function slotLabel(slot) {

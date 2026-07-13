@@ -67,6 +67,16 @@ function cardPrice(card) {
       </div>
 
       <div class="deck-builder-preview-columns">
+        <section v-if="grouped.basicLands.length">
+          <h4>Basic lands ({{ proposal.stats?.basicLandCount || 0 }}, included)</h4>
+          <ul class="deck-builder-card-list">
+            <li v-for="card in grouped.basicLands" :key="`b-${card.name}`">
+              <span>{{ card.name }} ×{{ card.qty || 1 }}</span>
+              <span class="deck-builder-card-meta">{{ slotLabel(card.slot) }}</span>
+            </li>
+          </ul>
+        </section>
+
         <section>
           <h4>Owned ({{ grouped.owned.length }})</h4>
           <ul class="deck-builder-card-list">

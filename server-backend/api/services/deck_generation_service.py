@@ -115,57 +115,65 @@ def _pick_for_slot(
     return best_card
 
 
+def _is_basic_land_card(card: dict) -> bool:
+    return bool(card.get("isBasicLand") or card.get("is_basic_land"))
+
+
+def _is_utility_land_card(card: dict) -> bool:
+    card_type = str(card.get("cardType") or card.get("card_type") or "").lower()
+    return card_type == "land" and not _is_basic_land_card(card)
+
+
+def _identity_basic_colors(allowed_identity: list[str]) -> list[str]:
+    colors = [color for color in allowed_identity if color in BASIC_LAND_NAMES]
+    return colors or ["C"]
+
+
+def _make_infinite_basic_land(name: str, qty: int) -> dict:
+    return {
+        "name": name,
+        "setCode": "",
+        "collectorNumber": "",
+        "finish": 0,
+        "owned": False,
+        "cardType": "land",
+        "isBasicLand": True,
+        "slot": "lands",
+        "suggested": False,
+        "infiniteBasic": True,
+        "qty": qty,
+        "section": "main",
+    }
+
+
 def _fill_basic_lands(
     chosen: list[dict],
     *,
     allowed_identity: list[str],
     land_target: int,
-    catalog_by_name: dict[str, dict],
-    used_names: set[str],
 ) -> list[dict]:
-    current_lands = sum(
-        1 for card in chosen
-        if card.get("isBasicLand") or card.get("cardType") == "land"
-    )
-    needed = max(0, land_target - current_lands)
-    if needed == 0:
-        return chosen
+    spell_cards = [
+        card for card in chosen
+        if not _is_basic_land_card(card) and not _is_utility_land_card(card)
+    ]
+    utility_lands = [card for card in chosen if _is_utility_land_card(card)]
+    utility_land_count = sum(int(card.get("qty") or 1) for card in utility_lands)
+    needed_basics = max(0, land_target - utility_land_count)
+    if needed_basics == 0:
+        return spell_cards + utility_lands
 
-    colors = allowed_identity or ["C"]
-    if colors == ["C"] or not colors:
-        colors = ["C"]
-
-    per_color = max(1, needed // max(1, len(colors)))
-    for color in colors:
+    colors = _identity_basic_colors(allowed_identity)
+    counts_by_name: dict[str, int] = {}
+    for index in range(needed_basics):
+        color = colors[index % len(colors)]
         basic_name = BASIC_LAND_NAMES.get(color, "Wastes")
-        for _ in range(per_color):
-            if len([c for c in chosen if c.get("cardType") == "land" or c.get("isBasicLand")]) >= land_target:
-                break
-            if basic_name in used_names:
-                continue
-            card = catalog_by_name.get(basic_name)
-            if card is None:
-                card = {
-                    "name": basic_name,
-                    "setCode": "",
-                    "collectorNumber": "",
-                    "finish": 0,
-                    "owned": False,
-                    "cardType": "land",
-                    "isBasicLand": True,
-                    "slot": "lands",
-                    "suggested": True,
-                }
-            else:
-                card = {
-                    **card,
-                    "owned": bool(card.get("owned")),
-                    "slot": "lands",
-                    "suggested": not card.get("owned"),
-                }
-            chosen.append(card)
-            used_names.add(basic_name)
-    return chosen
+        counts_by_name[basic_name] = counts_by_name.get(basic_name, 0) + 1
+
+    basic_entries = [
+        _make_infinite_basic_land(name, qty)
+        for name, qty in sorted(counts_by_name.items())
+    ]
+    return spell_cards + utility_lands + basic_entries
 
 
 def generate_deck_proposal(
@@ -215,7 +223,7 @@ def generate_deck_proposal(
     warnings: list[str] = []
     budget_remaining = budget_cap
 
-    slot_order = ["ramp", "draw", "removal", "protection", "synergy", "lands", "flex"]
+    slot_order = ["ramp", "draw", "removal", "protection", "synergy", "flex"]
     for slot in slot_order:
         target = int(counts.get(slot, 0))
         for _ in range(target):
@@ -242,15 +250,8 @@ def generate_deck_proposal(
             if entry["suggested"] and budget_remaining is not None:
                 budget_remaining -= _finish_value(card)
 
-    chosen = _fill_basic_lands(
-        chosen,
-        allowed_identity=allowed_identity,
-        land_target=counts["lands"],
-        catalog_by_name=combined_candidates,
-        used_names=used_names,
-    )
-
-    while len(chosen) < 99:
+    spell_target = 99 - counts["lands"]
+    while sum(int(card.get("qty") or 1) for card in chosen) < spell_target:
         card = _pick_for_slot(
             combined_candidates,
             slot="flex",
@@ -260,7 +261,7 @@ def generate_deck_proposal(
             budget_remaining=budget_remaining,
         )
         if card is None:
-            warnings.append("Could not reach 99 maindeck cards from catalog.")
+            warnings.append("Could not reach target spell count from catalog.")
             break
         entry = {
             **card,
@@ -274,17 +275,37 @@ def generate_deck_proposal(
         if entry["suggested"] and budget_remaining is not None:
             budget_remaining -= _finish_value(card)
 
-    owned_count = sum(1 for card in chosen if not card.get("suggested"))
-    suggested_count = len(chosen) - owned_count
+    chosen = _fill_basic_lands(
+        chosen,
+        allowed_identity=allowed_identity,
+        land_target=counts["lands"],
+    )
+
+    tracked_cards = [card for card in chosen if not card.get("infiniteBasic")]
+    owned_count = sum(
+        int(card.get("qty") or 1)
+        for card in tracked_cards
+        if not card.get("suggested")
+    )
+    suggested_count = sum(
+        int(card.get("qty") or 1)
+        for card in tracked_cards
+        if card.get("suggested")
+    )
     estimated_cost = round(
-        sum(_finish_value(card) for card in chosen if card.get("suggested")),
+        sum(
+            _finish_value(card) * int(card.get("qty") or 1)
+            for card in tracked_cards
+            if card.get("suggested")
+        ),
         2,
     )
+    total_cards = sum(int(card.get("qty") or 1) for card in chosen)
 
     validation = validate_commander_deck(
         chosen,
         commanders=commander_rows,
-        min_maindeck=len(chosen),
+        min_maindeck=99,
     )
     warnings.extend(validation.get("warnings") or [])
 
@@ -295,7 +316,12 @@ def generate_deck_proposal(
         "stats": {
             "ownedCount": owned_count,
             "suggestedCount": suggested_count,
-            "totalCards": len(chosen),
+            "totalCards": total_cards,
+            "basicLandCount": sum(
+                int(card.get("qty") or 1)
+                for card in chosen
+                if card.get("infiniteBasic")
+            ),
             "estimatedCost": estimated_cost,
         },
         "warnings": warnings,

@@ -166,6 +166,7 @@ watch(
             :value="landCount"
             @input="emit('update:landCount', Number($event.target.value) || 38)"
           />
+          <span class="deck-builder-field-hint">Basic lands are included automatically.</span>
         </label>
 
         <label class="deck-builder-field">

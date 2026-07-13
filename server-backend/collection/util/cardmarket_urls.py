@@ -24,6 +24,21 @@ SPLIT_BLOCK_FOIL_OFFSET = 20
 # Scroll showcase and other sparse guides can leave gaps between paired products.
 MAX_PAIR_SEARCH_DISTANCE = 7
 PLAUSIBLE_NONFOIL_TREND_CAP = 150.0
+# LTC "Rings of Power" Sol Ring promos each have their own Cardmarket product.
+LTC_RINGS_OF_POWER_COLLECTORS = frozenset({"408", "409", "410"})
+LTC_RINGS_OF_POWER_PRODUCTS = frozenset({718037, 718038, 718040})
+LTC_SERIALIZED_RING_COLLECTORS = frozenset({"408z", "409z", "410z"})
+LTC_SERIALIZED_RING_PRODUCTS = frozenset({718045, 718046, 718047})
+KNOWN_LTC_RING_NONFOIL_PRODUCTS = {
+    "408": 718037,
+    "409": 718038,
+    "410": 718040,
+}
+KNOWN_LTC_SERIALIZED_RING_PRODUCTS = {
+    "408z": 718045,
+    "409z": 718046,
+    "410z": 718047,
+}
 
 CARDMARKET_PRODUCT_URL = "https://www.cardmarket.com/en/Magic/Products?idProduct={product_id}"
 
@@ -147,6 +162,19 @@ def _normalized_nonfoil_product_id(
     return parse_id_product(normalized)
 
 
+def _scryfall_nonfoil_product_id(
+    scryfall: str | None,
+    guide: dict[int, dict],
+) -> int | None:
+    new_id = _normalized_nonfoil_product_id(scryfall, guide)
+    if new_id is None:
+        return None
+    entry = guide.get(new_id)
+    if entry and _entry_has_nonfoil_prices(entry):
+        return new_id
+    return None
+
+
 def _should_apply_scryfall_nonfoil_url(
     existing: str | None,
     scryfall: str | None,
@@ -154,14 +182,46 @@ def _should_apply_scryfall_nonfoil_url(
 ) -> bool:
     if not scryfall:
         return False
-    if not existing:
-        new_id = _normalized_nonfoil_product_id(scryfall, guide)
-        return new_id is None or _is_plausible_nonfoil_product(new_id, guide)
-    existing_id = parse_id_product(existing)
-    if existing_id is not None and _is_plausible_nonfoil_product(existing_id, guide):
+    new_id = _scryfall_nonfoil_product_id(scryfall, guide)
+    if new_id is None:
         return False
-    new_id = _normalized_nonfoil_product_id(scryfall, guide)
-    return new_id is not None and _is_plausible_nonfoil_product(new_id, guide)
+    if not existing:
+        return True
+    existing_id = parse_id_product(existing)
+    if existing_id == new_id:
+        return False
+    new_trend = _guide_primary_trend(guide.get(new_id))
+    existing_trend = _guide_primary_trend(guide.get(existing_id or -1))
+    if existing_id is not None and _is_plausible_nonfoil_product(existing_id, guide):
+        if new_trend and existing_trend and new_trend > max(
+            PLAUSIBLE_NONFOIL_TREND_CAP,
+            existing_trend * 3,
+        ):
+            return True
+        return False
+    if _is_plausible_nonfoil_product(new_id, guide):
+        return True
+    return False
+
+
+def _should_apply_scryfall_foil_url(
+    existing_foil: str | None,
+    existing_nonfoil: str | None,
+    scryfall: str | None,
+    guide: dict[int, dict],
+) -> bool:
+    if not scryfall:
+        return False
+    new_id = parse_id_product(scryfall)
+    if new_id is None:
+        return False
+    entry = guide.get(new_id)
+    if not entry or not _entry_has_foil_prices(entry):
+        return False
+    if not existing_foil and not existing_nonfoil:
+        return True
+    existing_id = parse_id_product(existing_foil) or parse_id_product(existing_nonfoil)
+    return existing_id != new_id
 
 
 def find_paired_product_id(
@@ -330,13 +390,21 @@ def merge_cardmarket_urls(
         guide = load_price_guide_index()
     for finish_id, url in scryfall_url_targets(card).items():
         if finish_id == FINISH_FOIL:
-            if not foil_url:
+            if _should_apply_scryfall_foil_url(foil_url, nonfoil_url, url, guide):
                 foil_url = url
         elif _should_apply_scryfall_nonfoil_url(nonfoil_url, url, guide):
             nonfoil_url = url
     has_nonfoil, has_foil, has_etched = card_finish_flags(card)
     if has_nonfoil and not has_foil and not has_etched and foil_url and not nonfoil_url:
         nonfoil_url, foil_url = foil_url, None
+    elif not has_nonfoil and has_foil and not has_etched:
+        if nonfoil_url and not foil_url:
+            foil_url = nonfoil_url
+            nonfoil_url = None
+        elif nonfoil_url and foil_url and parse_id_product(nonfoil_url) == parse_id_product(foil_url):
+            nonfoil_url = None
+        elif nonfoil_url and foil_url:
+            nonfoil_url = None
     return nonfoil_url, foil_url
 
 
@@ -526,6 +594,75 @@ def _needs_nonfoil_url_repair(
     return True
 
 
+def _repair_known_ltc_ring_urls(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+) -> int:
+    updated = 0
+    for collector_number, product_id in KNOWN_LTC_RING_NONFOIL_PRODUCTS.items():
+        entry = guide.get(product_id)
+        if not entry or not _entry_has_nonfoil_prices(entry):
+            continue
+        repaired = (build_product_url(product_id), None)
+        row = conn.execute(
+            """
+            SELECT cardmarket_url, cardmarket_url_foil
+            FROM cards
+            WHERE set_code = 'LTC' AND collector_number = ?
+            """,
+            (collector_number,),
+        ).fetchone()
+        if not row:
+            continue
+        current = (
+            (row[0] or "").strip() or None,
+            (row[1] or "").strip() or None,
+        )
+        if current == repaired:
+            continue
+        conn.execute(
+            """
+            UPDATE cards
+            SET cardmarket_url = ?, cardmarket_url_foil = ?
+            WHERE set_code = 'LTC' AND collector_number = ?
+            """,
+            (repaired[0], repaired[1], collector_number),
+        )
+        updated += 1
+
+    for collector_number, product_id in KNOWN_LTC_SERIALIZED_RING_PRODUCTS.items():
+        entry = guide.get(product_id)
+        if not entry or not _entry_has_foil_prices(entry):
+            continue
+        repaired = (None, build_product_url(product_id))
+        row = conn.execute(
+            """
+            SELECT cardmarket_url, cardmarket_url_foil
+            FROM cards
+            WHERE set_code = 'LTC' AND collector_number = ?
+            """,
+            (collector_number,),
+        ).fetchone()
+        if not row:
+            continue
+        current = (
+            (row[0] or "").strip() or None,
+            (row[1] or "").strip() or None,
+        )
+        if current == repaired:
+            continue
+        conn.execute(
+            """
+            UPDATE cards
+            SET cardmarket_url = ?, cardmarket_url_foil = ?
+            WHERE set_code = 'LTC' AND collector_number = ?
+            """,
+            (repaired[0], repaired[1], collector_number),
+        )
+        updated += 1
+    return updated
+
+
 def repair_mislinked_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -> int:
     card_columns = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
     if "has_nonfoil" in card_columns:
@@ -549,6 +686,13 @@ def repair_mislinked_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, 
     for set_code, set_rows in by_set.items():
         points = _nonfoil_product_points(set_rows, guide)
         for collector_number, cardmarket_url, cardmarket_url_foil, has_nonfoil, has_foil, _has_etched in set_rows:
+            if (
+                set_code.upper() == "LTC"
+                and collector_number in LTC_RINGS_OF_POWER_COLLECTORS
+                and parse_id_product(cardmarket_url)
+                == KNOWN_LTC_RING_NONFOIL_PRODUCTS.get(collector_number)
+            ):
+                continue
             if not _needs_nonfoil_url_repair(
                 has_nonfoil=has_nonfoil,
                 has_foil=has_foil,
@@ -637,5 +781,6 @@ def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -
             (normalized[0], normalized[1], set_code, collector_number),
         )
         updated += 1
+    updated += _repair_known_ltc_ring_urls(conn, guide)
     updated += repair_mislinked_cardmarket_urls(conn, guide)
     return updated

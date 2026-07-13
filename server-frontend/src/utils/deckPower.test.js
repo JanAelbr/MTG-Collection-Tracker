@@ -21,13 +21,15 @@ describe("deckPower helpers", () => {
     expect(componentScoreClass(20)).toBe("power-score-low");
   });
 
-  it("groups owned and suggested proposal cards", () => {
+  it("groups owned, suggested, and infinite basic lands", () => {
     const grouped = groupProposalCards([
       { name: "A", suggested: false },
       { name: "B", suggested: true },
+      { name: "Island", infiniteBasic: true, qty: 12 },
     ]);
     expect(grouped.owned).toHaveLength(1);
     expect(grouped.suggested).toHaveLength(1);
+    expect(grouped.basicLands).toHaveLength(1);
   });
 
   it("labels generation slots", () => {

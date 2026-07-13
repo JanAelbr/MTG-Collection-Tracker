@@ -7896,6 +7896,11 @@ button.card-variant {
   border-radius: 8px;
 }
 
+.deck-builder-field-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
 .deck-builder-name-field {
   margin-bottom: 12px;
 }
