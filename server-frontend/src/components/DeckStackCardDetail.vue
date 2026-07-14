@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
 import ManaSymbols from "./ManaSymbols.vue";
@@ -10,7 +11,7 @@ import {
   isDeckCardFullyOwned,
   ownershipRevision,
 } from "../composables/cardContextMenu";
-import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { cardTypeGroup, deckTypeLabel } from "../utils/deckCards";
 
 const props = defineProps({
@@ -74,6 +75,7 @@ function ownedLabel(card) {
 
     <div v-else class="deck-stacks-detail-panel">
       <div class="deck-stacks-detail-image-wrap">
+        <CardFinishBadge :card="card" variant="overlay" compact />
         <RouterLink
           v-if="card.imageUri && cardRoute(card)"
           :to="cardRoute(card)"
@@ -102,11 +104,12 @@ function ownedLabel(card) {
             :to="cardRoute(card)"
             class="deck-stacks-expanded-name"
           >
-            {{ cardDisplayName(card) }}
+            {{ card.cardName }}
           </RouterLink>
           <span v-else class="deck-stacks-expanded-name is-plain">
-            {{ cardDisplayName(card) }}
+            {{ card.cardName }}
           </span>
+          <CardFinishBadge :card="card" compact />
         </div>
 
         <p v-if="card.typeLine" class="deck-stacks-expanded-type">{{ card.typeLine }}</p>

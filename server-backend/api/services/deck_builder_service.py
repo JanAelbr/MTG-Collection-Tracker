@@ -32,3 +32,18 @@ def preview_pool(
         location_slugs,
         include_deck_storage=include_deck_storage,
     )
+
+
+def assess_builder_proposal(
+    conn: sqlite3.Connection,
+    *,
+    commanders: list[dict],
+    cards: list[dict],
+) -> dict:
+    from api.services.deck_power_service import assess_deck_power
+    from report.builder_queries import resolve_commander_rows
+
+    commander_rows = resolve_commander_rows(conn, commanders)
+    if not commander_rows:
+        raise DeckBuilderError("Commander not found in catalog", status_code=400)
+    return assess_deck_power(cards, commanders=commander_rows)

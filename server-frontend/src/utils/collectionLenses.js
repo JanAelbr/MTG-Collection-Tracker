@@ -3,7 +3,6 @@ export const COLLECTION_LENSES = [
   { id: "missing", label: "Missing", ownedFilter: "unowned", foilFilter: "all" },
   { id: "foils", label: "Foils", ownedFilter: "all", foilFilter: "foil" },
   { id: "high-value", label: "High value", ownedFilter: "owned", foilFilter: "all", sort: "value", sortDir: "desc" },
-  { id: "gainers", label: "Gainers", ownedFilter: "all", foilFilter: "all", sort: "changePct", sortDir: "desc" },
   { id: "completion", label: "Completion", ownedFilter: "all", foilFilter: "all", sort: "number", sortDir: "asc" },
 ];
 

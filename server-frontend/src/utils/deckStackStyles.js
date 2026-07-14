@@ -45,3 +45,21 @@ export function deckStackRowStyle(card) {
   const key = colors[0];
   return { ...(STACK_COLOR_STYLES[key] || STACK_COLOR_STYLES.C) };
 }
+
+export function parseManaCostSymbols(manaCost) {
+  if (!manaCost || !String(manaCost).trim()) {
+    return [];
+  }
+  const symbols = [];
+  const pattern = /\{([^}]+)\}/g;
+  let match = pattern.exec(String(manaCost));
+  while (match) {
+    symbols.push(match[1]);
+    match = pattern.exec(String(manaCost));
+  }
+  return symbols;
+}
+
+export function manaSymbolUrl(symbol) {
+  return `https://svgs.scryfall.io/card-symbols/${encodeURIComponent(symbol)}.svg`;
+}

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { api } from "../api";
 import DeckPowerCategorySection from "./DeckPowerCategorySection.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
@@ -13,36 +13,48 @@ import {
 const props = defineProps({
   deckId: { type: [String, Number], default: "" },
   refreshKey: { type: [String, Number], default: "" },
+  powerPayload: { type: Object, default: null },
 });
 
-const payload = ref(null);
+const displayPayload = ref(null);
 const loading = ref(false);
 const error = ref("");
 
-const bracket = computed(() => payload.value?.bracket || 1);
-const components = computed(() => payload.value?.components || {});
-const counts = computed(() => payload.value?.counts || {});
-const categoryCards = computed(() => payload.value?.categoryCards || {});
+const bracket = computed(() => displayPayload.value?.bracket || 1);
+const components = computed(() => displayPayload.value?.components || {});
+const counts = computed(() => displayPayload.value?.counts || {});
+const categoryCards = computed(() => displayPayload.value?.categoryCards || {});
 
 async function loadPower() {
+  if (props.powerPayload) {
+    displayPayload.value = props.powerPayload;
+    loading.value = false;
+    error.value = "";
+    return;
+  }
   if (!props.deckId) {
-    payload.value = null;
+    displayPayload.value = null;
+    loading.value = false;
+    error.value = "";
     return;
   }
   loading.value = true;
   error.value = "";
   try {
-    payload.value = await api.getDeckPower(props.deckId);
+    displayPayload.value = await api.getDeckPower(props.deckId);
   } catch (err) {
     error.value = err?.message || "Could not load power assessment.";
-    payload.value = null;
+    displayPayload.value = null;
   } finally {
     loading.value = false;
   }
 }
 
-onMounted(loadPower);
-watch(() => [props.deckId, props.refreshKey], loadPower);
+watch(
+  () => [props.deckId, props.refreshKey, props.powerPayload],
+  loadPower,
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -53,7 +65,11 @@ watch(() => [props.deckId, props.refreshKey], loadPower);
 
     <p v-else-if="error" class="deck-power-error">{{ error }}</p>
 
-    <template v-else-if="payload">
+    <p v-else-if="!displayPayload" class="deck-power-empty">
+      Power analysis is not available for this proposal yet.
+    </p>
+
+    <template v-else>
       <header class="deck-power-hero">
         <div class="deck-power-hero-main">
           <span class="deck-power-bracket-value">{{ bracket }}</span>
@@ -63,16 +79,16 @@ watch(() => [props.deckId, props.refreshKey], loadPower);
           </div>
         </div>
         <div class="deck-power-hero-meta">
-          <span class="deck-power-confidence">{{ confidenceLabel(payload.confidence) }}</span>
-          <span v-if="payload.powerSignal != null" class="deck-power-signal">
-            Signal {{ payload.powerSignal }}
+          <span class="deck-power-confidence">{{ confidenceLabel(displayPayload.confidence) }}</span>
+          <span v-if="displayPayload.powerSignal != null" class="deck-power-signal">
+            Signal {{ displayPayload.powerSignal }}
           </span>
         </div>
       </header>
 
-      <div v-if="payload.highlights?.length" class="deck-power-chip-row">
+      <div v-if="displayPayload.highlights?.length" class="deck-power-chip-row">
         <span
-          v-for="item in payload.highlights"
+          v-for="item in displayPayload.highlights"
           :key="item"
           class="deck-power-chip deck-power-chip--highlight"
         >
@@ -80,9 +96,9 @@ watch(() => [props.deckId, props.refreshKey], loadPower);
         </span>
       </div>
 
-      <div v-if="payload.warnings?.length" class="deck-power-chip-row">
+      <div v-if="displayPayload.warnings?.length" class="deck-power-chip-row">
         <span
-          v-for="item in payload.warnings"
+          v-for="item in displayPayload.warnings"
           :key="item"
           class="deck-power-chip deck-power-chip--warning"
         >

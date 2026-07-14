@@ -29,6 +29,7 @@ SELECT
     c.market_value_etched,
     c.image_uri,
     c.cardmarket_url,
+    c.cardmarket_url_foil,
     c.colors,
     c.type_line,
     c.card_type,
@@ -153,7 +154,10 @@ def enrich_deck_cards_df(
         lambda value: str(value) if value is not None and not pd.isna(value) else None
     )
 
-    in_catalog = enriched["in_catalog"].fillna(0).astype(int) == 1
+    catalog_matched = enriched["catalog_name"].notna()
+    flagged_in_catalog = enriched["in_catalog"].fillna(0).astype(int) == 1
+    in_catalog = flagged_in_catalog | catalog_matched
+    enriched["in_catalog"] = in_catalog.astype(int)
     finish = enriched["finish"].fillna(0).astype(int)
     unit_value = pd.Series(pd.NA, index=enriched.index, dtype="Float64")
     unit_value.loc[in_catalog & (finish == 0)] = pd.to_numeric(
@@ -171,29 +175,10 @@ def enrich_deck_cards_df(
     enriched["unit_value"] = unit_value.astype(object).where(unit_value.notna(), None)
 
     purchase_value = pd.to_numeric(enriched["purchase_value"], errors="coerce")
-    csv_owned_qty = pd.to_numeric(enriched["owned_qty"], errors="coerce").fillna(0).astype(int)
-    csv_owned_qty = csv_owned_qty.clip(lower=0)
-    csv_owned_qty = pd.concat([csv_owned_qty, enriched["qty"].astype(int)], axis=1).min(axis=1)
-
-    if conn is not None:
-        collection_counts = load_owned_count_by_print(conn)
-
-        def collection_owned_for_row(row) -> int:
-            if pd.isna(row["set_code"]) or pd.isna(row["collector_number"]):
-                return 0
-            key = (
-                str(row["set_code"]).upper(),
-                str(row["collector_number"]).strip(),
-                int(row["finish"] if pd.notna(row["finish"]) else 0),
-            )
-            return collection_counts.get(key, 0)
-
-        collection_owned_qty = enriched.apply(collection_owned_for_row, axis=1).astype(int)
-        merged_owned_qty = pd.concat([csv_owned_qty, collection_owned_qty], axis=1).max(axis=1)
-        merged_owned_qty = pd.concat([merged_owned_qty, enriched["qty"].astype(int)], axis=1).min(axis=1)
-        enriched["owned_qty"] = merged_owned_qty.astype(int)
-    else:
-        enriched["owned_qty"] = csv_owned_qty.astype(int)
+    owned_qty = pd.to_numeric(enriched["owned_qty"], errors="coerce").fillna(0).astype(int)
+    owned_qty = owned_qty.clip(lower=0)
+    owned_qty = pd.concat([owned_qty, enriched["qty"].astype(int)], axis=1).min(axis=1)
+    enriched["owned_qty"] = owned_qty.astype(int)
 
     owned_mask = enriched["owned_qty"] > 0
     current_value = unit_value.astype("float64") * enriched["qty"].astype("float64")

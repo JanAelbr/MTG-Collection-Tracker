@@ -2,9 +2,10 @@
 import { computed } from "vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { getTopValueCards } from "../utils/deckBrowse";
-import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { cardFinish, cardRouteQuery } from "../utils/finishes";
 
 const TOP_CARD_LIMIT = 10;
 
@@ -43,10 +44,13 @@ function cardRoute(card) {
         :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
         class="deck-top-card"
       >
-        <RouterLink v-if="cardRoute(card)" :to="cardRoute(card)" class="deck-top-card-image-link">
-          <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
-        </RouterLink>
-        <img v-else :src="card.imageUri" :alt="card.cardName" loading="lazy">
+        <div class="deck-top-card-image-wrap">
+          <CardFinishBadge :card="card" variant="overlay" compact />
+          <RouterLink v-if="cardRoute(card)" :to="cardRoute(card)" class="deck-top-card-image-link">
+            <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
+          </RouterLink>
+          <img v-else :src="card.imageUri" :alt="card.cardName" loading="lazy">
+        </div>
 
         <figcaption class="deck-top-card-caption">
           <span class="top-card-rank">#{{ index + 1 }}</span>
@@ -58,9 +62,9 @@ function cardRoute(card) {
               :to="cardRoute(card)"
               class="deck-top-card-name"
             >
-              {{ cardDisplayName(card) }}
+              {{ card.cardName }}
             </RouterLink>
-            <span v-else class="deck-top-card-name is-plain">{{ cardDisplayName(card) }}</span>
+            <span v-else class="deck-top-card-name is-plain">{{ card.cardName }}</span>
           </span>
 
           <div v-if="card.qty > 1" class="deck-top-card-meta">
@@ -76,7 +80,6 @@ function cardRoute(card) {
           <p v-if="card.setCode" class="deck-top-card-print">
             <CollectionSetLink :set-code="card.setCode" />
             #{{ card.collectorNumber }}
-            <span v-if="card.finish != null"> · {{ finishLabel(card.finish ?? card.foil ?? 0) }}</span>
           </p>
         </figcaption>
       </figure>

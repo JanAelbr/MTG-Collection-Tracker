@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import DeckAddCardModal from "./DeckAddCardModal.vue";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckStackCardDetail from "./DeckStackCardDetail.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
 import {
@@ -139,6 +140,7 @@ function closeAddModal() {
                 @keydown.space.prevent="selectCard(card)"
               >
                 <div class="deck-stacks-card-face">
+                  <CardFinishBadge :card="card" variant="overlay" compact />
                   <img
                     v-if="card.imageUri"
                     :src="card.imageUri"
@@ -151,6 +153,11 @@ function closeAddModal() {
                   <span v-if="card.qty > 1" class="deck-stacks-qty">{{ card.qty }}</span>
                 </div>
               </article>
+              <div
+                v-if="!isCommanderColumn(group)"
+                class="deck-stacks-pile-spacer"
+                aria-hidden="true"
+              />
             </div>
 
             <button

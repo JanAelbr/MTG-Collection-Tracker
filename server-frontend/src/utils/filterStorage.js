@@ -14,11 +14,11 @@ export function storeFoilFilter(value) {
 
 export const ALL_CARDS_SORT_KEY = "collectionAllCardsSort";
 
-const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "changeEuro", "changePct"]);
+const ALL_CARDS_SORT_FIELDS = new Set(["number", "value"]);
 
 function normalizeAllCardsSort(sort) {
-  if (sort === "change") {
-    return "changeEuro";
+  if (sort === "change" || sort === "changeEuro" || sort === "changePct") {
+    return "value";
   }
   return ALL_CARDS_SORT_FIELDS.has(sort) ? sort : "number";
 }

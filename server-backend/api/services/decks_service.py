@@ -133,14 +133,6 @@ def create_deck(
     seed_storage_locations(conn)
 
     for resolved in resolved_commanders:
-        owned_row = conn.execute(
-            """
-            SELECT 1 FROM purchases
-            WHERE set_code = ? AND collector_number = ? AND finish = ?
-            """,
-            (resolved["set_code"], resolved["collector_number"], resolved["finish"]),
-        ).fetchone()
-        owned_default = 1 if owned_row else 0
         conn.execute(
             """
             INSERT INTO deck_cards (
@@ -155,7 +147,7 @@ def create_deck(
                 resolved["collector_number"],
                 resolved["finish"],
                 1,
-                owned_default,
+                0,
                 "commander",
                 resolved["sort_order"],
                 resolved["in_catalog"],
@@ -399,14 +391,7 @@ def add_card_to_deck(
     if not resolved.get("set_code") or not resolved.get("collector_number"):
         raise DeckError("Card print is required", status_code=400)
 
-    owned_row = conn.execute(
-        """
-        SELECT 1 FROM purchases
-        WHERE set_code = ? AND collector_number = ? AND finish = ?
-        """,
-        (resolved["set_code"], resolved["collector_number"], resolved["finish"]),
-    ).fetchone()
-    owned_default = min(add_qty, 1) if owned_row else 0
+    owned_default = 0
 
     existing = conn.execute(
         """
@@ -1116,6 +1101,8 @@ def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -
             "typeLine": card.get("type_line") or "",
             "cardType": card.get("card_type") or "",
             "cardTypes": card.get("card_types") or [],
+            "manaCost": card.get("mana_cost") or "",
+            "cmc": card.get("cmc"),
             "cardmarketUrl": card.get("cardmarket_url"),
             "inCatalog": card.get("in_catalog"),
         }
@@ -1246,6 +1233,228 @@ def bulk_add_cards_to_deck(
         "deckName": deck_row[1],
         "added": added,
         "replaceMain": replace_main,
+    }
+
+
+def preview_deck_csv_import(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    csv: str,
+    mode: str = "merge",
+    section: str = "main",
+) -> dict:
+    from util.deck_csv_import import build_csv_import_plan
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, name FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    plan = build_csv_import_plan(
+        conn,
+        deck_id=deck_key,
+        csv=csv,
+        mode=mode,
+        section=section,
+    )
+    return {
+        "deckId": str(deck_key),
+        "deckName": deck_row[1],
+        **plan,
+    }
+
+
+def apply_deck_csv_import(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    csv: str,
+    mode: str = "merge",
+    section: str = "main",
+) -> dict:
+    from api.cache import bump_cache_epoch
+    from util.deck_csv_import import build_csv_import_plan
+    from util.deck_tables import ensure_deck_tables
+
+    preview = preview_deck_csv_import(
+        conn,
+        deck_id=deck_id,
+        csv=csv,
+        mode=mode,
+        section=section,
+    )
+    if preview.get("errors"):
+        raise DeckError("Fix CSV errors before applying", status_code=400)
+    if not preview.get("changes"):
+        raise DeckError("No deck changes to apply", status_code=400)
+
+    ensure_deck_tables(conn)
+    deck_key = int(deck_id)
+
+    applied = {"add": 0, "update": 0, "remove": 0}
+
+    for change in preview["changes"]:
+        action = change["action"]
+        set_code = change["setCode"]
+        collector_number = change["collectorNumber"]
+        finish = change["finish"]
+        section_name = change["section"]
+        current_qty = int(change["currentQty"])
+        new_qty = int(change["newQty"])
+
+        if action == "add":
+            add_card_to_deck(
+                conn,
+                deck_id=deck_id,
+                set_code=set_code,
+                collector_number=collector_number,
+                finish=finish,
+                section=section_name,
+                qty=new_qty,
+            )
+            applied["add"] += 1
+            continue
+
+        if action == "remove":
+            remove_card_from_deck(
+                conn,
+                deck_id=deck_id,
+                set_code=set_code,
+                collector_number=collector_number,
+                finish=finish,
+                section=section_name,
+                qty=current_qty,
+            )
+            applied["remove"] += 1
+            continue
+
+        delta = new_qty - current_qty
+        if delta > 0:
+            add_card_to_deck(
+                conn,
+                deck_id=deck_id,
+                set_code=set_code,
+                collector_number=collector_number,
+                finish=finish,
+                section=section_name,
+                qty=delta,
+            )
+        elif delta < 0:
+            remove_card_from_deck(
+                conn,
+                deck_id=deck_id,
+                set_code=set_code,
+                collector_number=collector_number,
+                finish=finish,
+                section=section_name,
+                qty=-delta,
+            )
+        applied["update"] += 1
+
+    bump_cache_epoch()
+    return {
+        "deckId": str(deck_key),
+        "deckName": preview["deckName"],
+        "mode": preview["mode"],
+        "section": preview["section"],
+        "applied": applied,
+        "summary": preview["summary"],
+    }
+
+
+def refresh_deck_unpriced_metadata(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+) -> dict:
+    from api.cache import bump_cache_epoch
+    from lib.config import normalize_set_code
+    from report.deck_queries import deck_scope
+    from util.deck_tables import ensure_deck_tables
+    from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, name FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    _, deck_df = _load_strategy_deck_df(conn)
+    scoped = deck_scope(deck_df, deck_key)
+    unknown = scoped[scoped["current_value"].isna()] if not scoped.empty else scoped
+    set_codes = sorted(
+        {
+            normalized
+            for normalized in (
+                normalize_set_code(str(code))
+                for code in unknown["set_code"].dropna()
+                if str(code).strip()
+            )
+            if normalized
+        }
+    )
+
+    synced: list[dict] = []
+    errors: list[dict] = []
+    for set_code in set_codes:
+        try:
+            catalog_count = import_set_catalog_from_scryfall(conn, set_code)
+            synced.append({"setCode": set_code, "catalogCount": catalog_count})
+        except ValueError as exc:
+            errors.append({"setCode": set_code, "message": str(exc)})
+        except Exception as exc:
+            errors.append({"setCode": set_code, "message": str(exc)})
+
+    from util.deck_helpers import sync_deck_cards_in_catalog
+
+    catalog_flags_updated = sync_deck_cards_in_catalog(
+        conn,
+        deck_id=deck_key,
+        set_codes=set_codes or None,
+    )
+
+    conn.commit()
+    bump_cache_epoch()
+
+    if not set_codes:
+        message = "No unpriced cards with set codes to refresh."
+    elif synced and not errors:
+        message = (
+            f"Refreshed metadata for {len(synced)} set"
+            f"{'' if len(synced) == 1 else 's'}."
+        )
+    elif synced:
+        message = (
+            f"Refreshed {len(synced)} set{'s' if len(synced) != 1 else ''}; "
+            f"{len(errors)} failed."
+        )
+    else:
+        message = f"Could not refresh metadata for {len(errors)} set{'s' if len(errors) != 1 else ''}."
+
+    return {
+        "deckId": str(deck_key),
+        "deckName": deck_row[1],
+        "setCodes": set_codes,
+        "synced": synced,
+        "errors": errors,
+        "message": message,
     }
 
 

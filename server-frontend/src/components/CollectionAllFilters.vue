@@ -185,8 +185,6 @@ const emit = defineEmits([
           <select :value="allCardsSort" @change="emit('update-sort', $event)">
             <option value="number">Collector number</option>
             <option value="value">Value</option>
-            <option value="changePct">Price change (%)</option>
-            <option value="changeEuro">Price change (€)</option>
           </select>
           <button
             type="button"

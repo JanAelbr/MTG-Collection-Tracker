@@ -1,6 +1,8 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
+const router = useRouter();
 const visible = ref(false);
 const imageUrl = ref("");
 const tooltipStyle = ref({ left: "0px", top: "0px" });
@@ -64,16 +66,33 @@ function onMouseOut(event) {
   hideTooltip();
 }
 
+function onMouseDown() {
+  if (visible.value) {
+    hideTooltip();
+  }
+}
+
+watch(
+  () => router.currentRoute.value.fullPath,
+  () => {
+    hideTooltip();
+  },
+);
+
 onMounted(() => {
   document.addEventListener("mouseover", onMouseOver);
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("mouseout", onMouseOut);
+  document.addEventListener("mousedown", onMouseDown);
+  document.addEventListener("scroll", hideTooltip, true);
 });
 
 onUnmounted(() => {
   document.removeEventListener("mouseover", onMouseOver);
   document.removeEventListener("mousemove", onMouseMove);
   document.removeEventListener("mouseout", onMouseOut);
+  document.removeEventListener("mousedown", onMouseDown);
+  document.removeEventListener("scroll", hideTooltip, true);
 });
 </script>
 

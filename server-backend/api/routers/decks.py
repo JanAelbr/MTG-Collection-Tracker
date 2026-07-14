@@ -17,6 +17,7 @@ from api.schemas import (
     DeckCardQtyAdjust,
     DeckCardRemove,
     DeckCreate,
+    DeckCsvImport,
     DeckRename,
 )
 
@@ -203,6 +204,56 @@ def bulk_add_deck_cards(
                 for card in body.cards
             ],
             replace_main=body.replaceMain,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/metadata/refresh-unpriced")
+def refresh_deck_unpriced_metadata(
+    deck_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.refresh_deck_unpriced_metadata(
+            conn,
+            deck_id=deck_id,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/cards/csv/preview")
+def preview_deck_csv_import(
+    deck_id: str,
+    body: DeckCsvImport,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.preview_deck_csv_import(
+            conn,
+            deck_id=deck_id,
+            csv=body.csv,
+            mode=body.mode,
+            section=body.section,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/cards/csv/apply")
+def apply_deck_csv_import(
+    deck_id: str,
+    body: DeckCsvImport,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.apply_deck_csv_import(
+            conn,
+            deck_id=deck_id,
+            csv=body.csv,
+            mode=body.mode,
+            section=body.section,
         )
     except DeckError as exc:
         raise _deck_error(exc) from exc

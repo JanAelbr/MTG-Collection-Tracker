@@ -140,6 +140,14 @@ const resolvedActiveLens = computed(() => detectActiveLens({
   colorFilters: colorFilters.value,
   searchQuery: searchQuery.value,
 }));
+const hasAllCardsQuickFilters = computed(() => Boolean(
+  searchQuery.value.trim()
+  || resolvedActiveLens.value
+  || typeFilter.value !== "all"
+  || colorFilters.value.length
+  || ownedFilter.value !== "owned"
+  || foilFilter.value !== "all",
+));
 const strategyCards = computed(() => {
   pricingSettings.value?.priceStrategy;
   return applyStrategyToCards(cards.value, pricingSettings.value?.priceStrategy || "trend");
@@ -279,37 +287,6 @@ function compareCollectorNumbers(left, right) {
   return 0;
 }
 
-function priceChangePercent(card) {
-  const change = card.priceChange;
-  const previous = card.previousValue;
-  if (change == null || previous == null || previous === 0) {
-    return null;
-  }
-  return (change / previous) * 100;
-}
-
-function compareNullableNumber(leftValue, rightValue, ascending) {
-  if (leftValue == null && rightValue == null) {
-    return 0;
-  }
-  if (leftValue == null) {
-    return 1;
-  }
-  if (rightValue == null) {
-    return -1;
-  }
-  const order = leftValue - rightValue;
-  return ascending ? order : -order;
-}
-
-function comparePriceChange(left, right, ascending) {
-  return compareNullableNumber(left.priceChange, right.priceChange, ascending);
-}
-
-function comparePriceChangePercent(left, right, ascending) {
-  return compareNullableNumber(priceChangePercent(left), priceChangePercent(right), ascending);
-}
-
 function compareAllCardsTieBreak(left, right) {
   const numberOrder = compareCollectorNumbers(left.collectorNumber, right.collectorNumber);
   if (numberOrder !== 0) {
@@ -331,10 +308,6 @@ const sortedAllCards = computed(() => {
       const leftValue = left.currentValue ?? Number.NEGATIVE_INFINITY;
       const rightValue = right.currentValue ?? Number.NEGATIVE_INFINITY;
       primary = ascending ? leftValue - rightValue : rightValue - leftValue;
-    } else if (allCardsSort.value === "changeEuro") {
-      primary = comparePriceChange(left, right, ascending);
-    } else if (allCardsSort.value === "changePct") {
-      primary = comparePriceChangePercent(left, right, ascending);
     } else {
       primary = compareCollectorNumbers(left.collectorNumber, right.collectorNumber);
       if (primary !== 0) {
@@ -746,7 +719,27 @@ function updateSearchQuery(value) {
   }, 250);
 }
 
+function clearAllCardsQuickFilters() {
+  ownedFilter.value = "owned";
+  foilFilter.value = "all";
+  storeFoilFilter("all");
+  typeFilter.value = "all";
+  colorFilters.value = [];
+  searchQuery.value = "";
+  activeLens.value = "";
+  allCardsSort.value = "value";
+  allCardsSortDir.value = "desc";
+  storeAllCardsSort("value", "desc");
+  resetAllCardsPage();
+  focusedIndex.value = -1;
+  pushCollectionRoute();
+}
+
 function applyCollectionLens(lensId) {
+  if (resolvedActiveLens.value === lensId) {
+    clearAllCardsQuickFilters();
+    return;
+  }
   const lens = lensDefinition(lensId);
   if (!lens) {
     return;
@@ -1203,12 +1196,8 @@ onUnmounted(stopPolling);
           Showing {{ displayCards.length }} of {{ cardsPayload?.totalMatches ?? 0 }} matches
         </p>
 
-        <div v-if="loadingCards && !cards.length" class="storage-empty">
+        <div v-if="loadingCards && isAllView && !collectionHydrated" class="storage-empty">
           <LoadingIndicator label="Loading cards…" />
-        </div>
-
-        <div v-else-if="(isAllView ? !sortedAllCards.length : !cards.length)" class="storage-empty">
-          No cards match these filters.
         </div>
 
         <div v-else-if="isAllView" class="table-panel cards-panel reports-cards-panel collection-gallery-panel">
@@ -1238,14 +1227,24 @@ onUnmounted(stopPolling);
               Sync now
             </button>
           </p>
-          <GalleryLoadingOverlay :loading="loadingCards" label="Updating cards…">
+          <div v-if="!sortedAllCards.length" class="storage-empty collection-gallery-empty">
+            <p>No cards match these filters.</p>
+            <button
+              v-if="hasAllCardsQuickFilters"
+              type="button"
+              class="btn btn-secondary btn-small"
+              @click="clearAllCardsQuickFilters"
+            >
+              Clear filters
+            </button>
+          </div>
+          <GalleryLoadingOverlay v-else :loading="loadingCards" label="Updating cards…">
             <VirtualizedCollectionCardGrid
               ref="virtualGridRef"
               :cards="sortedAllCards"
               :show-unowned-badge="ownedFilter === 'all'"
               :show-finish-badge="true"
               :card-scale="collectionCardScale"
-              :price-change-mode="allCardsSort === 'changeEuro' || allCardsSort === 'changePct' ? allCardsSort : ''"
               :selectable="bulkSelectMode"
               :selected-keys="selectedKeys"
               :focused-index="focusedIndex"
@@ -1255,6 +1254,14 @@ onUnmounted(stopPolling);
               @ownership-changed="onGalleryOwnershipChanged"
             />
           </GalleryLoadingOverlay>
+        </div>
+
+        <div v-else-if="loadingCards && !cards.length" class="storage-empty">
+          <LoadingIndicator label="Loading cards…" />
+        </div>
+
+        <div v-else-if="!cards.length" class="storage-empty">
+          No cards match these filters.
         </div>
 
         <div v-else class="table-panel cards-panel reports-cards-panel">

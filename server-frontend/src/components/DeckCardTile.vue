@@ -5,7 +5,7 @@ import { computed } from "vue";
 import ManaSymbols from "./ManaSymbols.vue";
 
 import CardInteractiveImage from "./CardInteractiveImage.vue";
-
+import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 
@@ -19,7 +19,7 @@ import {
 
 } from "../composables/cardContextMenu";
 
-import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
+import { cardFinish, cardRouteQuery } from "../utils/finishes";
 
 
 
@@ -170,6 +170,7 @@ function ownedLabel(card) {
 
 
     <div class="deck-card-grid-image-wrap">
+      <CardFinishBadge :card="card" variant="overlay" compact />
 
       <RouterLink
 
@@ -251,11 +252,11 @@ function ownedLabel(card) {
 
         >
 
-          {{ cardDisplayName(card) }}
+          {{ card.cardName }}
 
         </RouterLink>
 
-        <span v-else class="deck-card-grid-name">{{ cardDisplayName(card) }}</span>
+        <span v-else class="deck-card-grid-name">{{ card.cardName }}</span>
 
       </span>
 

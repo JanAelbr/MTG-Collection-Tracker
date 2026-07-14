@@ -7,7 +7,6 @@ const props = defineProps({
   cardScale: { type: Number, default: 100 },
   showUnownedBadge: { type: Boolean, default: false },
   showFinishBadge: { type: Boolean, default: false },
-  priceChangeMode: { type: String, default: "" },
   selectable: { type: Boolean, default: false },
   selectedKeys: { type: Object, default: null },
   focusedIndex: { type: Number, default: -1 },
@@ -94,15 +93,6 @@ function scrollToIndex(index) {
 }
 
 watch(
-  () => props.focusedIndex,
-  (index) => {
-    if (index >= 0) {
-      nextTick(() => scrollToIndex(index));
-    }
-  },
-);
-
-watch(
   () => [props.cards.length, props.cardScale],
   () => {
     nextTick(measureLayout);
@@ -148,7 +138,6 @@ defineExpose({ scrollToIndex, rootRef });
           :show-unowned-badge="showUnownedBadge"
           :show-finish-badge="showFinishBadge"
           :card-scale="cardScale"
-          :price-change-mode="priceChangeMode"
           :selectable="selectable"
           :selected-keys="selectedKeys"
           :focused-index="focusedIndex >= 0 ? focusedIndex - visibleRange.start : -1"

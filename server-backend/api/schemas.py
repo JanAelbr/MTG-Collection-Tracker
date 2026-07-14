@@ -302,6 +302,11 @@ class BuilderGenerateRequest(BaseModel):
     excludeCategories: list[str] = Field(default_factory=list)
 
 
+class BuilderAssessPowerRequest(BaseModel):
+    commanders: list[BuilderCommanderPrint] = Field(min_length=1, max_length=4)
+    cards: list[dict] = Field(min_length=1)
+
+
 class DeckBulkCardItem(BaseModel):
     setCode: str = Field(min_length=0, max_length=16)
     collectorNumber: str = Field(min_length=0, max_length=32)
@@ -325,3 +330,15 @@ class DeckBulkCardItem(BaseModel):
 class DeckBulkCardsAdd(BaseModel):
     cards: list[DeckBulkCardItem] = Field(min_length=1)
     replaceMain: bool = False
+
+
+class DeckCsvImport(BaseModel):
+    csv: str = Field(default="")
+    mode: str = Field(default="merge", pattern="^(merge|set|replace)$")
+    section: str = Field(default="main", min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_csv(self):
+        if self.mode != "replace" and not str(self.csv or "").strip():
+            raise ValueError("CSV is required unless using replace mode")
+        return self

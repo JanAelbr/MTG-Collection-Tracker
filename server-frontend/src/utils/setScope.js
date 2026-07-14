@@ -21,7 +21,7 @@ export function collectionScopeFromRoute(route) {
   };
 }
 
-const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "changeEuro", "changePct"]);
+const ALL_CARDS_SORT_FIELDS = new Set(["number", "value"]);
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";

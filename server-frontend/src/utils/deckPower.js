@@ -1,3 +1,6 @@
+import { COLLECTION_TYPE_ORDER } from "./collectionTypes";
+import { cardTypeGroup } from "./deckCards";
+
 export const POWER_COMPONENTS = [
   { id: "ramp", label: "Ramp", showCount: true },
   { id: "draw", label: "Card draw", showCount: true },
@@ -91,6 +94,107 @@ export function groupProposalCards(cards = []) {
     }
   }
   return { owned, suggested, basicLands };
+}
+
+export const PROPOSAL_SLOT_ORDER = [
+  "lands",
+  "ramp",
+  "draw",
+  "removal",
+  "protection",
+  "synergy",
+  "flex",
+];
+
+function sortProposalCardsByName(cards) {
+  return [...cards].sort((left, right) =>
+    String(left.name || "").localeCompare(String(right.name || "")),
+  );
+}
+
+function splitProposalCards(cards = []) {
+  const basicLandSummary = [];
+  const tracked = [];
+  for (const card of cards) {
+    if (card.infiniteBasic) {
+      basicLandSummary.push({ name: card.name, qty: card.qty || 1 });
+      continue;
+    }
+    tracked.push(card);
+  }
+  return { basicLandSummary, tracked };
+}
+
+export function groupProposalBySlot(cards = []) {
+  const { basicLandSummary, tracked } = splitProposalCards(cards);
+  const groups = new Map();
+
+  for (const card of tracked) {
+    const slot = card.slot || "flex";
+    if (!groups.has(slot)) {
+      groups.set(slot, []);
+    }
+    groups.get(slot).push(card);
+  }
+
+  const slotGroups = [];
+  for (const slot of PROPOSAL_SLOT_ORDER) {
+    const slotCards = groups.get(slot);
+    if (!slotCards?.length) {
+      continue;
+    }
+    slotGroups.push({ slot, cards: sortProposalCardsByName(slotCards) });
+    groups.delete(slot);
+  }
+  for (const [slot, slotCards] of groups) {
+    slotGroups.push({ slot, cards: sortProposalCardsByName(slotCards) });
+  }
+
+  return { slotGroups, basicLandSummary };
+}
+
+export function groupProposalByType(cards = []) {
+  const { basicLandSummary, tracked } = splitProposalCards(cards);
+  const groups = new Map();
+
+  for (const card of tracked) {
+    const type = cardTypeGroup(card) || "unknown";
+    if (!groups.has(type)) {
+      groups.set(type, []);
+    }
+    groups.get(type).push(card);
+  }
+
+  const typeGroups = [];
+  for (const type of COLLECTION_TYPE_ORDER) {
+    const typeCards = groups.get(type);
+    if (!typeCards?.length) {
+      continue;
+    }
+    typeGroups.push({ type, cards: sortProposalCardsByName(typeCards) });
+    groups.delete(type);
+  }
+  if (groups.has("unknown")) {
+    typeGroups.push({
+      type: "unknown",
+      cards: sortProposalCardsByName(groups.get("unknown")),
+    });
+    groups.delete("unknown");
+  }
+  for (const [type, typeCards] of groups) {
+    typeGroups.push({ type, cards: sortProposalCardsByName(typeCards) });
+  }
+
+  return { typeGroups, basicLandSummary };
+}
+
+export function formatBasicLandSummary(basicLandSummary = []) {
+  if (!basicLandSummary.length) {
+    return "";
+  }
+  const parts = basicLandSummary.map(({ name, qty }) => `${name} ×${qty}`);
+  const total = basicLandSummary.reduce((sum, item) => sum + (item.qty || 1), 0);
+  return `${parts.join(", ")} (${total} total)`;
 }
 
 export function slotLabel(slot) {

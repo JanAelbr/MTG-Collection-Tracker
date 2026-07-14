@@ -2,8 +2,8 @@
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { buildManaCurveChartData, filterCardsByManaBucket, manaBucketLabel } from "../utils/manaCurve";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import { powerCardRoute } from "../utils/deckPower";
-import { cardDisplayName } from "../utils/finishes";
 
 const props = defineProps({
   cards: { type: Array, default: () => [] },
@@ -205,29 +205,32 @@ watch(
             :key="`${selectedBucket}-${card.setCode}-${card.collectorNumber}-${card.finish}-${index}`"
             class="deck-power-card"
           >
-            <RouterLink
-              v-if="powerCardRoute(card, deckId)"
-              :to="powerCardRoute(card, deckId)"
-              class="deck-power-card-image-link"
-            >
-              <img
-                v-if="card.imageUri"
-                :src="card.imageUri"
-                :alt="card.cardName"
-                class="deck-power-card-image"
-                loading="lazy"
+            <div class="deck-power-card-image-wrap">
+              <CardFinishBadge :card="card" variant="overlay" compact />
+              <RouterLink
+                v-if="powerCardRoute(card, deckId)"
+                :to="powerCardRoute(card, deckId)"
+                class="deck-power-card-image-link"
               >
-              <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-            </RouterLink>
-            <div v-else class="deck-power-card-image-wrap">
-              <img
-                v-if="card.imageUri"
-                :src="card.imageUri"
-                :alt="card.cardName"
-                class="deck-power-card-image"
-                loading="lazy"
-              >
-              <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+                <img
+                  v-if="card.imageUri"
+                  :src="card.imageUri"
+                  :alt="card.cardName"
+                  class="deck-power-card-image"
+                  loading="lazy"
+                >
+                <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+              </RouterLink>
+              <template v-else>
+                <img
+                  v-if="card.imageUri"
+                  :src="card.imageUri"
+                  :alt="card.cardName"
+                  class="deck-power-card-image"
+                  loading="lazy"
+                >
+                <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+              </template>
             </div>
 
             <figcaption class="deck-power-card-caption">
@@ -236,9 +239,9 @@ watch(
                 :to="powerCardRoute(card, deckId)"
                 class="deck-power-card-name"
               >
-                {{ cardDisplayName(card) }}
+                {{ card.cardName }}
               </RouterLink>
-              <span v-else class="deck-power-card-name is-plain">{{ cardDisplayName(card) }}</span>
+              <span v-else class="deck-power-card-name is-plain">{{ card.cardName }}</span>
               <span class="deck-power-card-meta">CMC {{ card.cmc }}</span>
               <span v-if="card.qty > 1" class="deck-power-card-meta">×{{ card.qty }}</span>
             </figcaption>

@@ -23,6 +23,7 @@ const props = defineProps({
   availableSetOptions: { type: Array, default: () => [] },
   loadingAvailableSets: { type: Boolean, default: false },
   addingSetCode: { type: String, default: "" },
+  collapsed: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set", "reload-catalog"]);
@@ -189,12 +190,18 @@ watch(
   () => visibleSets.value.map((set) => set.setCode).join("|"),
   positionActiveSet,
 );
+watch(() => props.collapsed, positionActiveSet);
 
 onMounted(positionActiveSet);
 </script>
 
 <template>
-  <div ref="galleryRef" class="set-gallery" aria-label="Sets">
+  <div
+    ref="galleryRef"
+    class="set-gallery"
+    :class="{ 'set-gallery--collapsed': collapsed }"
+    aria-label="Sets"
+  >
     <div
       v-if="manageSets"
       class="set-gallery-add-slot"
@@ -227,11 +234,11 @@ onMounted(positionActiveSet);
       :class="{
         active: isActiveSet(set),
         'has-delete-action': canDelete(set),
-        'set-gallery-card--expanded': isActiveSet(set) && set.setCode !== 'All',
       }"
       role="button"
       tabindex="0"
       :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
+      :title="collapsed && !isActiveSet(set) ? (activeTitleLine(set) || set.setCode) : undefined"
       :aria-current="isActiveSet(set) ? 'true' : undefined"
       @click="onSelect(set.setCode)"
       @keydown="onCardKeydown($event, set.setCode)"
@@ -291,8 +298,16 @@ onMounted(positionActiveSet);
         </div>
       </div>
 
-      <div class="set-gallery-meta">
-        <template v-if="isActiveSet(set) && set.setCode !== 'All'">
+      <div v-if="!collapsed || isActiveSet(set)" class="set-gallery-meta">
+        <template v-if="isActiveSet(set) && collapsed">
+          <span class="set-gallery-code" :class="completionRarityClass(set)">
+            {{ set.setCode === "All" ? "All" : set.setCode }}
+          </span>
+          <span v-if="set.setCode !== 'All' && activeStatsLine(set)" class="set-gallery-stats">
+            {{ activeStatsLine(set) }}
+          </span>
+        </template>
+        <template v-else-if="isActiveSet(set) && set.setCode !== 'All'">
           <span
             class="set-gallery-title"
             :class="completionRarityClass(set)"

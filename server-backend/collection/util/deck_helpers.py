@@ -148,6 +148,37 @@ def _market_value_for_owned_finish(row, finish: int) -> float | None:
     return float(value) if value is not None else None
 
 
+def sync_deck_cards_in_catalog(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: int | None = None,
+    set_codes: list[str] | None = None,
+) -> int:
+    query = """
+        UPDATE deck_cards
+        SET in_catalog = 1
+        WHERE in_catalog = 0
+          AND set_code IS NOT NULL
+          AND collector_number IS NOT NULL
+          AND EXISTS (
+              SELECT 1
+              FROM cards c
+              WHERE c.set_code = deck_cards.set_code
+                AND c.collector_number = deck_cards.collector_number
+          )
+    """
+    params: list[object] = []
+    if deck_id is not None:
+        query += " AND deck_id = ?"
+        params.append(deck_id)
+    if set_codes:
+        placeholders = ",".join("?" * len(set_codes))
+        query += f" AND UPPER(set_code) IN ({placeholders})"
+        params.extend(code.upper() for code in set_codes)
+    cursor = conn.execute(query, params)
+    return int(cursor.rowcount)
+
+
 def cheapest_owned_printing_by_name(
     conn: sqlite3.Connection,
     card_name: str,

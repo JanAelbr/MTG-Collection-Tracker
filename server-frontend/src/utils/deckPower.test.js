@@ -3,7 +3,10 @@ import {
   bracketDescription,
   bracketLabel,
   componentScoreClass,
+  formatBasicLandSummary,
   formatComponentCount,
+  groupProposalBySlot,
+  groupProposalByType,
   groupProposalCards,
   powerCardRoute,
   slotLabel,
@@ -30,6 +33,34 @@ describe("deckPower helpers", () => {
     expect(grouped.owned).toHaveLength(1);
     expect(grouped.suggested).toHaveLength(1);
     expect(grouped.basicLands).toHaveLength(1);
+  });
+
+  it("groups proposal cards by slot and summarizes basics", () => {
+    const { slotGroups, basicLandSummary } = groupProposalBySlot([
+      { name: "Ramp Rock", slot: "ramp", suggested: false },
+      { name: "Read Card", slot: "draw", suggested: true },
+      { name: "Island", infiniteBasic: true, qty: 10 },
+      { name: "Plains", infiniteBasic: true, qty: 8 },
+    ]);
+    expect(slotGroups.map((group) => group.slot)).toEqual(["ramp", "draw"]);
+    expect(slotGroups[0].cards).toHaveLength(1);
+    expect(basicLandSummary).toEqual([
+      { name: "Island", qty: 10 },
+      { name: "Plains", qty: 8 },
+    ]);
+    expect(formatBasicLandSummary(basicLandSummary)).toBe("Island ×10, Plains ×8 (18 total)");
+  });
+
+  it("groups proposal cards by card type", () => {
+    const { typeGroups } = groupProposalByType([
+      { name: "Birds", cardType: "creature", suggested: false },
+      { name: "Counterspell", cardType: "instant", suggested: true },
+      { name: "Command Tower", cardType: "land", suggested: false },
+      { name: "Island", infiniteBasic: true, qty: 10 },
+    ]);
+    expect(typeGroups.map((group) => group.type)).toEqual(["creature", "instant", "land"]);
+    expect(typeGroups[0].cards).toHaveLength(1);
+    expect(typeGroups[1].cards[0].name).toBe("Counterspell");
   });
 
   it("labels generation slots", () => {

@@ -5,7 +5,7 @@ import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
 import { cardSelectionKey } from "../utils/collectionScopeStats";
-import { formatPriceChangeEuroBracket, formatPriceChangePercentBracket, formatProfitBracket } from "../utils/format";
+import { formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 
 const props = defineProps({
@@ -17,7 +17,6 @@ const props = defineProps({
   browseNames: { type: Boolean, default: false },
   selectedName: { type: String, default: "" },
   cardScale: { type: Number, default: 100 },
-  priceChangeMode: { type: String, default: "" },
   selectable: { type: Boolean, default: false },
   selectedKeys: { type: Object, default: null },
   focusedIndex: { type: Number, default: -1 },
@@ -65,24 +64,6 @@ function gainClass(card) {
   return card.profitLoss >= 0 ? "reports-gain" : "reports-loss";
 }
 
-function priceChangeBracket(card) {
-  if (props.priceChangeMode === "changeEuro") {
-    return formatPriceChangeEuroBracket(card.priceChange);
-  }
-  if (props.priceChangeMode === "changePct") {
-    return formatPriceChangePercentBracket(card.priceChange, card.previousValue);
-  }
-  return null;
-}
-
-function priceChangeClass(card) {
-  const change = card.priceChange;
-  if (change == null || change === 0) {
-    return "";
-  }
-  return change > 0 ? "reports-change-up" : "reports-change-down";
-}
-
 function setLabel(card) {
   if (!props.showSetLabel) {
     return "";
@@ -112,17 +93,25 @@ function isFocused(index) {
   return props.focusedIndex === index;
 }
 
+function onTileMouseDown(event) {
+  if (props.selectable) {
+    event.preventDefault();
+  }
+}
+
 function onTileClick(card, index, event) {
   if (props.selectable) {
     event?.preventDefault();
     emit("toggle-select", card);
-    emit("focus-index", props.startIndex + index);
     return;
   }
   emit("focus-index", props.startIndex + index);
 }
 
 function onTileFocus(index) {
+  if (props.selectable) {
+    return;
+  }
   emit("focus-index", props.startIndex + index);
 }
 </script>
@@ -139,7 +128,8 @@ function onTileFocus(index) {
         'is-focused': isFocused(index),
         'is-selectable': selectable,
       }"
-      :tabindex="selectable || focusedIndex === startIndex + index ? 0 : -1"
+      :tabindex="!selectable && focusedIndex === startIndex + index ? 0 : -1"
+      @mousedown="onTileMouseDown"
       @click="onTileClick(card, index, $event)"
       @focus="onTileFocus(index)"
     >
@@ -180,7 +170,8 @@ function onTileFocus(index) {
         <RouterLink
           :to="cardRoute(card)"
           class="collection-card-grid-name"
-          @click="onCardActivate(card, $event)"
+          @mousedown="onTileMouseDown"
+          @click="selectable ? onTileClick(card, index, $event) : onCardActivate(card, $event)"
           @focus="onTileFocus(index)"
         >
           #{{ String(card.collectorNumber).padStart(3, "0") }} · {{ cardDisplayName(card) }}
@@ -206,11 +197,6 @@ function onTileFocus(index) {
             class="collection-card-grid-gain"
             :class="gainClass(card)"
           >{{ gainBracket(card) }}</span>
-          <span
-            v-if="priceChangeBracket(card)"
-            class="collection-card-grid-change"
-            :class="priceChangeClass(card)"
-          >{{ priceChangeBracket(card) }}</span>
         </span>
         <span v-if="showUnownedBadge && !cardIsOwned(card)" class="reports-unowned-badge">
           Not owned

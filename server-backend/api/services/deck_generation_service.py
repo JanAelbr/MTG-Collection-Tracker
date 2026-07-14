@@ -309,6 +309,10 @@ def generate_deck_proposal(
     )
     warnings.extend(validation.get("warnings") or [])
 
+    from api.services.deck_power_service import assess_deck_power
+
+    power = assess_deck_power(chosen, commanders=commander_rows)
+
     return {
         "commanders": commander_rows,
         "cards": chosen,
@@ -326,4 +330,5 @@ def generate_deck_proposal(
         },
         "warnings": warnings,
         "validation": validation,
+        "power": power,
     }

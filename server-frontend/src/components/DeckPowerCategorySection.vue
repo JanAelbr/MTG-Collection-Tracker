@@ -2,13 +2,13 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import DeckManaCurveChart from "./DeckManaCurveChart.vue";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import {
   componentScoreClass,
   formatComponentCount,
   powerCardRoute,
 } from "../utils/deckPower";
 import { buildManaCurveChartData } from "../utils/manaCurve";
-import { cardDisplayName } from "../utils/finishes";
 
 const props = defineProps({
   component: { type: Object, required: true },
@@ -68,29 +68,32 @@ const countLabel = computed(() => {
         :key="`${component.id}-${card.setCode}-${card.collectorNumber}-${card.finish}-${index}`"
         class="deck-power-card"
       >
-        <RouterLink
-          v-if="powerCardRoute(card, deckId)"
-          :to="powerCardRoute(card, deckId)"
-          class="deck-power-card-image-link"
-        >
-          <img
-            v-if="card.imageUri"
-            :src="card.imageUri"
-            :alt="card.cardName"
-            class="deck-power-card-image"
-            loading="lazy"
+        <div class="deck-power-card-image-wrap">
+          <CardFinishBadge :card="card" variant="overlay" compact />
+          <RouterLink
+            v-if="powerCardRoute(card, deckId)"
+            :to="powerCardRoute(card, deckId)"
+            class="deck-power-card-image-link"
           >
-          <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-        </RouterLink>
-        <div v-else class="deck-power-card-image-wrap">
-          <img
-            v-if="card.imageUri"
-            :src="card.imageUri"
-            :alt="card.cardName"
-            class="deck-power-card-image"
-            loading="lazy"
-          >
-          <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+            <img
+              v-if="card.imageUri"
+              :src="card.imageUri"
+              :alt="card.cardName"
+              class="deck-power-card-image"
+              loading="lazy"
+            >
+            <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+          </RouterLink>
+          <template v-else>
+            <img
+              v-if="card.imageUri"
+              :src="card.imageUri"
+              :alt="card.cardName"
+              class="deck-power-card-image"
+              loading="lazy"
+            >
+            <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
+          </template>
         </div>
 
         <figcaption class="deck-power-card-caption">
@@ -99,9 +102,9 @@ const countLabel = computed(() => {
             :to="powerCardRoute(card, deckId)"
             class="deck-power-card-name"
           >
-            {{ cardDisplayName(card) }}
+            {{ card.cardName }}
           </RouterLink>
-          <span v-else class="deck-power-card-name is-plain">{{ cardDisplayName(card) }}</span>
+          <span v-else class="deck-power-card-name is-plain">{{ card.cardName }}</span>
           <span v-if="component.id === 'curve' && card.cmc != null" class="deck-power-card-meta">
             CMC {{ card.cmc }}
           </span>

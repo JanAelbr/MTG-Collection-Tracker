@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.deps import get_db
 from api.http_cache import serve_cached_json
-from api.schemas import BuilderGenerateRequest, BuilderPoolPreview
+from api.schemas import BuilderAssessPowerRequest, BuilderGenerateRequest, BuilderPoolPreview
 from api.services import deck_builder_service
 from api.services.deck_builder_service import DeckBuilderError
 from api.services.deck_generation_service import generate_deck_proposal
@@ -68,6 +68,25 @@ def generate_deck(body: BuilderGenerateRequest, conn: sqlite3.Connection = Depen
             land_count=body.landCount,
             budget_cap=body.budgetCap,
             exclude_categories=body.excludeCategories,
+        )
+    except DeckBuilderError as exc:
+        raise _builder_error(exc) from exc
+
+
+@router.post("/assess-power")
+def assess_builder_power(body: BuilderAssessPowerRequest, conn: sqlite3.Connection = Depends(get_db)):
+    try:
+        return deck_builder_service.assess_builder_proposal(
+            conn,
+            commanders=[
+                {
+                    "setCode": commander.setCode,
+                    "collectorNumber": commander.collectorNumber,
+                    "finish": commander.finish,
+                }
+                for commander in body.commanders
+            ],
+            cards=body.cards,
         )
     except DeckBuilderError as exc:
         raise _builder_error(exc) from exc

@@ -102,22 +102,6 @@ export function formatPercentChange(change, previousValue) {
   return " (0.0%)";
 }
 
-export function formatPriceChangeEuroBracket(change) {
-  if (change == null || Number.isNaN(change)) {
-    return null;
-  }
-  if (change === 0) {
-    return "(0)";
-  }
-  const formatted = formatEuro(Math.abs(change));
-  const prefix = change >= 0 ? "+" : "−";
-  return `(${prefix}${formatted})`;
-}
-
-export function formatPriceChangePercentBracket(change, previousValue) {
-  const suffix = formatPercentChange(change, previousValue);
-  return suffix ? suffix.trim() : null;
-}
 
 export function formatPriceChange(value, previousValue) {
   if (value == null || Number.isNaN(value)) {

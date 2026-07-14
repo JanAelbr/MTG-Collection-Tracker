@@ -596,6 +596,11 @@ export const api = {
 
     apiRequest(`/decks/${encodeURIComponent(deckId)}/browse`),
 
+  refreshDeckUnpricedMetadata: (deckId) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/metadata/refresh-unpriced`, {
+      method: "POST",
+    }),
+
   getDeckBrowseIndex: () => apiRequest("/decks/browse-index"),
 
   addCardToDeck: (deckId, body) =>
@@ -660,8 +665,26 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  assessBuilderPower: (body) =>
+    apiRequest("/builder/assess-power", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   bulkAddDeckCards: (deckId, body) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/bulk`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  previewDeckCsvImport: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/csv/preview`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  applyDeckCsvImport: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/csv/apply`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

@@ -9,11 +9,14 @@ import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
 import DeckTopCards from "../components/DeckTopCards.vue";
 import DeckAddCardModal from "../components/DeckAddCardModal.vue";
+import DeckCsvImportModal from "../components/DeckCsvImportModal.vue";
+import CardFinishBadge from "../components/CardFinishBadge.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
+import CardPreview from "../components/CardPreview.vue";
 import { api, clearClientCache } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
@@ -63,7 +66,11 @@ const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
 const emptyDeckAddOpen = ref(false);
+const csvImportOpen = ref(false);
 const ownedToggleBusy = ref("");
+const refreshingUnpricedMetadata = ref(false);
+const unpricedMetadataMessage = ref("");
+const unpricedMetadataError = ref("");
 
 const { loading: loadingBrowse, run: runBrowseLoad } = useAsyncLoad();
 
@@ -151,6 +158,14 @@ function openEmptyDeckAdd() {
 
 function closeEmptyDeckAdd() {
   emptyDeckAddOpen.value = false;
+}
+
+function openCsvImport() {
+  csvImportOpen.value = true;
+}
+
+function closeCsvImport() {
+  csvImportOpen.value = false;
 }
 
 function toggleColorFilter(color) {
@@ -410,6 +425,25 @@ function unknownCardName(card) {
   return card.cardName || card.card_name || "Unknown";
 }
 
+async function refreshUnpricedMetadata() {
+  if (!deckId.value || refreshingUnpricedMetadata.value) {
+    return;
+  }
+  unpricedMetadataMessage.value = "";
+  unpricedMetadataError.value = "";
+  refreshingUnpricedMetadata.value = true;
+  try {
+    const result = await api.refreshDeckUnpricedMetadata(deckId.value);
+    clearClientCache();
+    unpricedMetadataMessage.value = result.message || "Set metadata refreshed.";
+    await Promise.all([refreshDeckPage(), loadBrowseIndex()]);
+  } catch (error) {
+    unpricedMetadataError.value = error?.message || "Could not refresh set metadata.";
+  } finally {
+    refreshingUnpricedMetadata.value = false;
+  }
+}
+
 function syncDeckIdFromRoute() {
   if (typeof route.query.deck === "string") {
     deckId.value = route.query.deck;
@@ -595,12 +629,25 @@ onMounted(async () => {
           class="table-panel deck-unknown-panel"
           aria-label="Unpriced cards"
         >
-          <h2>Unpriced cards</h2>
+          <div class="deck-unknown-head">
+            <h2>Unpriced cards</h2>
+            <button
+              type="button"
+              class="btn btn-secondary btn-small"
+              :disabled="refreshingUnpricedMetadata"
+              @click="refreshUnpricedMetadata"
+            >
+              {{ refreshingUnpricedMetadata ? "Refreshing…" : "Refresh set metadata" }}
+            </button>
+          </div>
           <p class="deck-unknown-intro">
             {{ browseStats.unknownCount }}
             {{ browseStats.unknownCount === 1 ? "card has" : "cards have" }}
             no current market price in this deck list.
+            Re-import Scryfall catalog data for the affected sets, then run a price sync if needed.
           </p>
+          <p v-if="unpricedMetadataMessage" class="deck-unknown-status">{{ unpricedMetadataMessage }}</p>
+          <p v-if="unpricedMetadataError" class="deck-unknown-status error">{{ unpricedMetadataError }}</p>
           <table class="reports-table deck-unknown-table">
             <thead>
               <tr>
@@ -685,6 +732,13 @@ onMounted(async () => {
                   Power
                 </button>
               </div>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small deck-csv-import-trigger"
+                @click="openCsvImport"
+              >
+                Quick import
+              </button>
               </div>
             </div>
 
@@ -888,16 +942,23 @@ onMounted(async () => {
                         v-if="group.kind === 'section' && !group.cards?.length"
                         class="deck-cards-group-row deck-cards-section-row"
                       >
-                        <td colspan="6" class="deck-type-heading">
-                          <DeckTypeIcon :type="deckTypeIconType(group)" />
-                          <span>{{ formatDeckGroupHeading(group) }}</span>
+                        <td colspan="6">
+                          <div class="deck-cards-group-heading">
+                            <DeckTypeIcon :type="deckTypeIconType(group)" />
+                            <span>{{ formatDeckGroupHeading(group) }}</span>
+                          </div>
                         </td>
                       </tr>
                       <template v-else-if="group.cards?.length">
-                        <tr class="deck-cards-group-row">
-                          <td colspan="6" class="deck-type-heading">
-                            <DeckTypeIcon :type="deckTypeIconType(group)" />
-                            <span>{{ formatDeckGroupHeading(group) }}</span>
+                        <tr
+                          class="deck-cards-group-row"
+                          :class="{ 'deck-cards-type-group-row': group.kind === 'type' }"
+                        >
+                          <td colspan="6">
+                            <div class="deck-cards-group-heading">
+                              <DeckTypeIcon :type="deckTypeIconType(group)" />
+                              <span>{{ formatDeckGroupHeading(group) }}</span>
+                            </div>
                           </td>
                         </tr>
                         <tr
@@ -907,16 +968,19 @@ onMounted(async () => {
                           :class="deckCardOwnershipClass(card)"
                         >
                           <td><ManaSymbols :colors="card.colors" :size="18" /></td>
-                          <td>{{ card.qty > 1 ? card.qty : "" }}</td>
+                          <td class="deck-cards-qty">{{ card.qty }}</td>
                           <td>
-                            <RouterLink
-                              v-if="cardRoute(card)"
-                              :to="cardRoute(card)"
-                              class="reports-card-link"
-                            >
-                              {{ card.cardName }}
-                            </RouterLink>
-                            <span v-else>{{ card.cardName }}</span>
+                            <CardPreview :image-uri="card.imageUri">
+                              <RouterLink
+                                v-if="cardRoute(card)"
+                                :to="cardRoute(card)"
+                                class="reports-card-link"
+                              >
+                                {{ card.cardName }}
+                              </RouterLink>
+                              <span v-else>{{ card.cardName }}</span>
+                            </CardPreview>
+                            <CardFinishBadge :card="card" compact />
                             <p
                               v-if="card.cheapestOwnedAlternative"
                               class="deck-cheapest-alternative"
@@ -950,7 +1014,7 @@ onMounted(async () => {
                                 type="checkbox"
                                 :checked="isDeckCardFullyOwned(card)"
                                 :disabled="ownedToggleBusy === deckOwnedToggleKey(card)"
-                                :aria-label="`Mark ${card.cardName} as owned`"
+                                :aria-label="`Mark ${card.cardName} as owned in deck`"
                                 @change="toggleDeckOwned(card, $event.target.checked)"
                               />
                               <span
@@ -981,6 +1045,16 @@ onMounted(async () => {
       section="main"
       @close="closeEmptyDeckAdd"
       @added="onDeckCardAdded"
+    />
+
+    <DeckCsvImportModal
+      v-if="deckId"
+      :open="csvImportOpen"
+      :deck-id="deckId"
+      :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+      :deck-cards="browseStats?.cards || []"
+      @close="closeCsvImport"
+      @applied="onDeckCardAdded"
     />
 
     <CreateDeckModal

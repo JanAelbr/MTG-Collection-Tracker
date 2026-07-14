@@ -366,6 +366,9 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(proposal["stats"]["totalCards"], 36)
         owned_cards = [card for card in proposal["cards"] if not card.get("suggested")]
         self.assertTrue(any(card["name"] == "Sol Ring" for card in owned_cards))
+        self.assertIn("power", proposal)
+        self.assertIn("bracket", proposal["power"])
+        self.assertIn("components", proposal["power"])
 
     def test_generate_deck_assumes_infinite_basic_lands(self):
         proposal = generate_deck_proposal(

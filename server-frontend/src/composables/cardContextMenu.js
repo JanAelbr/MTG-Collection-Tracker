@@ -17,6 +17,14 @@ export function ownershipPrintKey(setCode, collectorNumber, finish) {
   return `${String(setCode).toUpperCase()}|${String(collectorNumber).trim()}|${cardFinish({ finish })}`;
 }
 
+export function isDeckScopeCard(card) {
+  const section = String(card?.section || "").toLowerCase();
+  if (!["commander", "main", "sideboard"].includes(section)) {
+    return false;
+  }
+  return card?.deckId != null || card?.deck_id != null;
+}
+
 export function clearOwnershipPatches() {
   ownershipPatches.value = new Map();
 }
@@ -118,6 +126,9 @@ export function effectiveDeckOwnedQty(card) {
   if (patch?.ownedCount != null) {
     return patch.ownedCount;
   }
+  if (isDeckScopeCard(card)) {
+    return Number(card.ownedQty) || 0;
+  }
   const finishCount = finishOwnedCount(finishDataForCard(card));
   if (finishCount != null) {
     return finishCount;
@@ -192,12 +203,14 @@ export function reconcileOwnershipPatches(cards) {
       continue;
     }
     const finishInfo = finishDataForCard(card);
-    const serverOwned = card?.owned != null
-      ? Boolean(card.owned)
-      : finishInfo
-        ? isFinishDataOwned(finishInfo)
-        : (Array.isArray(card?.locations) && card.locations.length > 0)
-          || card?.purchaseValue != null;
+    const serverOwned = isDeckScopeCard(card)
+      ? (Number(card?.ownedQty) || 0) > 0
+      : card?.owned != null
+        ? Boolean(card.owned)
+        : finishInfo
+          ? isFinishDataOwned(finishInfo)
+          : (Array.isArray(card?.locations) && card.locations.length > 0)
+            || card?.purchaseValue != null;
     if (serverOwned === patch.owned) {
       next.delete(ownershipPrintKey(card.setCode, card.collectorNumber, cardFinish(card)));
     }

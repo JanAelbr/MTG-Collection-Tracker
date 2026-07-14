@@ -38,12 +38,6 @@ const activeOption = computed(() => {
 
 const activeLabel = computed(() => activeOption.value?.label || props.placeholder);
 
-const canGoPrev = computed(() => !props.disabled && activeIndex.value > 0);
-
-const canGoNext = computed(
-  () => !props.disabled && activeIndex.value >= 0 && activeIndex.value < optionValues.value.length - 1,
-);
-
 const filteredOptions = computed(() => {
   const query = filter.value.trim().toLowerCase();
   if (!query) {
@@ -61,6 +55,19 @@ const filteredOptions = computed(() => {
     return haystack.includes(query);
   });
 });
+
+const filterBlocksSelection = computed(
+  () => Boolean(filter.value.trim()) && filteredOptions.value.length === 0,
+);
+
+const canGoPrev = computed(() => !props.disabled && !filterBlocksSelection.value && activeIndex.value > 0);
+
+const canGoNext = computed(
+  () => !props.disabled
+    && !filterBlocksSelection.value
+    && activeIndex.value >= 0
+    && activeIndex.value < optionValues.value.length - 1,
+);
 
 function select(value) {
   emit("update:modelValue", value);

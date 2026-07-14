@@ -7,6 +7,7 @@ import { useAvailableManagerSets } from "../composables/availableSets";
 import { usePricingSettings } from "../composables/pricingSettings";
 import { formatSetFilterLabel, formatSetCountLabel, setDisplayName, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
+import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 
 const props = defineProps({
   sets: { type: Array, default: () => [] },
@@ -26,6 +27,7 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "toggleFavorite", "sets-changed"]);
 
 const { settings } = usePricingSettings();
+const { setGalleryCollapsed } = useSetGalleryFilter();
 
 const useBrowser = computed(() => settings.value?.setPickerMode === "browser");
 const showFavoriteStars = computed(() => useBrowser.value && props.showFavorites);
@@ -203,25 +205,39 @@ onMounted(() => {
   <div
     v-if="layout === 'banner' && useBrowser"
     class="set-gallery-wrap"
+    :class="{ 'set-gallery-wrap--collapsed': setGalleryCollapsed }"
   >
-    <SetGallery
-      :sets="sets"
-      :active-set-code="modelValue"
-      :active-art-style="activeArtStyle"
-      :show-favorites="showFavoriteStars"
-      :manage-sets="manageSets"
-      :show-reload-catalog="showReloadCatalog"
-      :deleting-set-code="deletingSetCode"
-      :reloading-set-code="reloadingSetCode"
-      :available-set-options="addSetOptions"
-      :loading-available-sets="loadingAvailableSets"
-      :adding-set-code="addingSetCode"
-      @select="onSelect"
-      @toggle-favorite="onFavoriteClick"
-      @add-set="addSet"
-      @remove-set="removeSet"
-      @reload-catalog="reloadCatalog"
-    />
+    <div class="set-gallery-row">
+      <SetGallery
+        :sets="sets"
+        :active-set-code="modelValue"
+        :active-art-style="activeArtStyle"
+        :show-favorites="showFavoriteStars"
+        :manage-sets="manageSets"
+        :show-reload-catalog="showReloadCatalog"
+        :deleting-set-code="deletingSetCode"
+        :reloading-set-code="reloadingSetCode"
+        :available-set-options="addSetOptions"
+        :loading-available-sets="loadingAvailableSets"
+        :adding-set-code="addingSetCode"
+        :collapsed="setGalleryCollapsed"
+        @select="onSelect"
+        @toggle-favorite="onFavoriteClick"
+        @add-set="addSet"
+        @remove-set="removeSet"
+        @reload-catalog="reloadCatalog"
+      />
+      <button
+        type="button"
+        class="set-gallery-collapse-btn"
+        :aria-label="setGalleryCollapsed ? 'Show set labels' : 'Show icons only'"
+        :title="setGalleryCollapsed ? 'Show set labels' : 'Show icons only'"
+        :aria-pressed="setGalleryCollapsed ? 'true' : 'false'"
+        @click="setGalleryCollapsed = !setGalleryCollapsed"
+      >
+        {{ setGalleryCollapsed ? "▾" : "▴" }}
+      </button>
+    </div>
     <p v-if="addSetError" class="collection-sync-message error set-gallery-add-error">
       {{ addSetError }}
     </p>
