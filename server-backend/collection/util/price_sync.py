@@ -25,8 +25,11 @@ from util.scryfall_card import (
     card_legalities_json,
     card_mana_cost,
     card_oracle_text,
+    card_power,
     card_primary_type,
+    card_rarity,
     card_scryfall_id,
+    card_toughness,
     card_type_line,
 )
 from util.alchemy_cards import is_alchemy_scryfall_card
@@ -40,8 +43,9 @@ INSERT OR REPLACE INTO cards (
     id, set_code, collector_number, name, art_style,
     market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
     image_uri, cardmarket_url, cardmarket_url_foil, colors, type_line, card_type,
-    color_identity, oracle_text, mana_cost, cmc, legalities, is_basic_land, scryfall_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    color_identity, oracle_text, mana_cost, cmc, legalities, is_basic_land, scryfall_id,
+    power, toughness, rarity
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 log = get_logger(__name__)
@@ -51,8 +55,11 @@ SELECT COUNT(*) FROM cards
 WHERE set_code = ?
   AND COALESCE(is_basic_land, 0) = 0
   AND COALESCE(card_type, '') != 'land'
-  AND (mana_cost IS NULL OR TRIM(mana_cost) = '')
-  AND (cmc IS NULL OR cmc = 0)
+  AND (
+    (mana_cost IS NULL OR TRIM(mana_cost) = '')
+    AND (cmc IS NULL OR cmc = 0)
+  )
+  AND (rarity IS NULL OR TRIM(rarity) = '')
 """
 
 
@@ -166,6 +173,9 @@ def upsert_card(
     legalities = card_legalities_json(card)
     is_basic_land = card_is_basic_land(card)
     scryfall_id = card_scryfall_id(card)
+    power = card_power(card)
+    toughness = card_toughness(card)
+    rarity = card_rarity(card)
     cursor.execute(
         INSERT_CARD_SQL,
         (
@@ -193,6 +203,9 @@ def upsert_card(
             legalities,
             is_basic_land,
             scryfall_id,
+            power,
+            toughness,
+            rarity,
         ),
     )
     if owned_set_codes is None or set_code.upper() in owned_set_codes:

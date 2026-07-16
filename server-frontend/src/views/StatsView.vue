@@ -289,66 +289,73 @@ onMounted(() => {
         </div>
       </div>
 
-      <section
-        class="table-panel"
-        :class="hasUnknownCards ? 'stats-unknown-panel' : 'stats-healthy-panel'"
-        :aria-label="hasUnknownCards ? 'Unknown value' : 'Pricing status'"
+      <details
+        v-if="hasUnknownCards"
+        class="table-panel stats-unknown-panel"
+        aria-label="Unknown value"
       >
-        <h2 v-if="hasUnknownCards">Unknown value</h2>
-        <template v-if="hasUnknownCards">
-          <p class="stats-unknown-intro">
-            These owned cards have no current market price.
-            Total invested: {{ formatEuro(stats.unknownInvested) }}.
-          </p>
-          <table class="reports-table">
-          <thead>
-            <tr>
-              <th>Set</th>
-              <th>#</th>
-              <th>Name</th>
-              <th>Art style</th>
-              <th>Finish</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(card, index) in unknownCards"
-              :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
-            >
-              <td>
-                <div class="stats-set-drill">
-                  <button
-                    type="button"
-                    class="stats-set-drill-icon"
-                    :aria-label="`Filter stats to ${setRowLabel(unknownCardSetCode(card))}`"
-                    @click="selectSet(unknownCardSetCode(card))"
+        <summary class="stats-unknown-summary">
+          <h2>Unknown value ({{ stats.unknownCount }})</h2>
+        </summary>
+        <p class="stats-unknown-intro">
+          These owned cards have no current market price.
+          Total invested: {{ formatEuro(stats.unknownInvested) }}.
+        </p>
+        <table class="reports-table">
+        <thead>
+          <tr>
+            <th>Set</th>
+            <th>#</th>
+            <th>Name</th>
+            <th>Art style</th>
+            <th>Finish</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(card, index) in unknownCards"
+            :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
+          >
+            <td>
+              <div class="stats-set-drill">
+                <button
+                  type="button"
+                  class="stats-set-drill-icon"
+                  :aria-label="`Filter stats to ${setRowLabel(unknownCardSetCode(card))}`"
+                  @click="selectSet(unknownCardSetCode(card))"
+                >
+                  <img
+                    v-if="setIconForCode(unknownCardSetCode(card))"
+                    :src="setIconForCode(unknownCardSetCode(card))"
+                    alt=""
+                    class="stats-set-icon"
                   >
-                    <img
-                      v-if="setIconForCode(unknownCardSetCode(card))"
-                      :src="setIconForCode(unknownCardSetCode(card))"
-                      alt=""
-                      class="stats-set-icon"
-                    >
-                  </button>
-                  <CollectionSetLink
-                    :set-code="unknownCardSetCode(card)"
-                    :label="setRowLabel(unknownCardSetCode(card))"
-                  />
-                </div>
-              </td>
-              <td>{{ unknownCardNumber(card) }}</td>
-              <td>
-                <RouterLink :to="cardDetailLink(card)" class="stats-art-drill">
-                  {{ card.name || "Unknown" }}
-                </RouterLink>
-              </td>
-              <td>{{ card.artStyle || card.art_style || "—" }}</td>
-              <td>{{ finishLabel(unknownCardFinish(card)) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        </template>
-        <div v-else class="stats-healthy-state">
+                </button>
+                <CollectionSetLink
+                  :set-code="unknownCardSetCode(card)"
+                  :label="setRowLabel(unknownCardSetCode(card))"
+                />
+              </div>
+            </td>
+            <td>{{ unknownCardNumber(card) }}</td>
+            <td>
+              <RouterLink :to="cardDetailLink(card)" class="stats-art-drill">
+                {{ card.name || "Unknown" }}
+              </RouterLink>
+            </td>
+            <td>{{ card.artStyle || card.art_style || "—" }}</td>
+            <td>{{ finishLabel(unknownCardFinish(card)) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      </details>
+
+      <section
+        v-else
+        class="table-panel stats-healthy-panel"
+        aria-label="Pricing status"
+      >
+        <div class="stats-healthy-state">
           <span class="stats-health-check" aria-hidden="true">✓</span>
           <p>
             Every owned card

@@ -1,11 +1,19 @@
 <script setup>
+import { computed, onMounted, ref } from "vue";
+import { api } from "../api";
 import ArtStylePicker from "./ArtStylePicker.vue";
 import ManaSymbols from "./ManaSymbols.vue";
+import StorageLocationIcon from "./StorageLocationIcon.vue";
 import { DECK_COLOR_ORDER } from "../utils/deckCards";
+import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_TYPE_ORDER,
 } from "../utils/collectionTypes";
+import {
+  COLLECTION_RARITY_LABELS,
+  COLLECTION_RARITY_ORDER,
+} from "../utils/collectionRarities";
 
 defineProps({
   isAllView: { type: Boolean, default: true },
@@ -18,8 +26,16 @@ defineProps({
   foilFilter: { type: String, default: "all" },
   typeFilter: { type: String, default: "all" },
   colorFilters: { type: Array, default: () => [] },
+  storageFilters: { type: Array, default: () => [] },
+  rarityFilter: { type: String, default: "all" },
+  cmcMin: { type: String, default: "" },
+  cmcMax: { type: String, default: "" },
+  powerMin: { type: String, default: "" },
+  toughnessMin: { type: String, default: "" },
   allCardsSort: { type: String, default: "value" },
   allCardsSortDir: { type: String, default: "desc" },
+  showSort: { type: Boolean, default: true },
+  showStorageFilter: { type: Boolean, default: true },
 });
 
 const emit = defineEmits([
@@ -29,9 +45,38 @@ const emit = defineEmits([
   "type-filter-change",
   "toggle-color-filter",
   "clear-color-filters",
+  "toggle-storage-filter",
+  "clear-storage-filters",
+  "rarity-filter-change",
+  "update:cmcMin",
+  "update:cmcMax",
+  "update:powerMin",
+  "update:toughnessMin",
   "update-sort",
   "toggle-sort-dir",
 ]);
+
+const storageLocations = ref([]);
+const storageLoading = ref(false);
+
+const sectionedStorageLocations = computed(() =>
+  STORAGE_LOCATION_SECTIONS.map((section) => ({
+    ...section,
+    locations: storageLocations.value.filter(
+      (location) => location.locationType === section.type,
+    ),
+  })).filter((section) => section.locations.length),
+);
+
+onMounted(async () => {
+  storageLoading.value = true;
+  try {
+    const payload = await api.listStorageLocations();
+    storageLocations.value = payload.locations || payload || [];
+  } finally {
+    storageLoading.value = false;
+  }
+});
 </script>
 
 <template>
@@ -143,6 +188,39 @@ const emit = defineEmits([
       </div>
     </div>
 
+    <div v-if="isAllView && showStorageFilter" class="filter-sidebar-section">
+      <div class="filter-sidebar-label-row">
+        <p class="filter-sidebar-label">Storage</p>
+        <button
+          v-if="storageFilters.length"
+          type="button"
+          class="filter-button collection-storage-filter-clear"
+          @click="emit('clear-storage-filters')"
+        >
+          Clear
+        </button>
+      </div>
+      <p v-if="storageLoading" class="collection-storage-filter-status">Loading…</p>
+      <div v-else class="collection-storage-filter-list">
+        <template v-for="section in sectionedStorageLocations" :key="section.type">
+          <p class="collection-storage-filter-section">{{ section.label }}</p>
+          <label
+            v-for="location in section.locations"
+            :key="location.slug"
+            class="collection-storage-filter-item"
+          >
+            <input
+              type="checkbox"
+              :checked="storageFilters.includes(location.slug)"
+              @change="emit('toggle-storage-filter', location.slug)"
+            >
+            <StorageLocationIcon :location-type="location.locationType" />
+            <span class="collection-storage-filter-label">{{ location.label }}</span>
+          </label>
+        </template>
+      </div>
+    </div>
+
     <div v-if="isAllView" class="filter-sidebar-section">
       <p class="filter-sidebar-label">Type</p>
       <label class="manager-filter collection-type-filter">
@@ -179,6 +257,74 @@ const emit = defineEmits([
     </div>
 
     <div v-if="isAllView" class="filter-sidebar-section">
+      <p class="filter-sidebar-label">Rarity</p>
+      <label class="manager-filter collection-type-filter">
+        <select :value="rarityFilter" @change="emit('rarity-filter-change', $event)">
+          <option value="all">All rarities</option>
+          <option v-for="rarity in COLLECTION_RARITY_ORDER" :key="rarity" :value="rarity">
+            {{ COLLECTION_RARITY_LABELS[rarity] }}
+          </option>
+        </select>
+      </label>
+
+      <p class="filter-sidebar-label">Mana value</p>
+      <div class="collection-detail-filter-grid">
+        <label class="manager-filter">
+          <span>Min CMC</span>
+          <input
+            :value="cmcMin"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            placeholder="Any"
+            @input="emit('update:cmcMin', $event.target.value)"
+          >
+        </label>
+        <label class="manager-filter">
+          <span>Max CMC</span>
+          <input
+            :value="cmcMax"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            placeholder="Any"
+            @input="emit('update:cmcMax', $event.target.value)"
+          >
+        </label>
+      </div>
+
+      <p class="filter-sidebar-label">Power / toughness</p>
+      <div class="collection-detail-filter-grid">
+        <label class="manager-filter">
+          <span>Min power</span>
+          <input
+            :value="powerMin"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            placeholder="Any"
+            @input="emit('update:powerMin', $event.target.value)"
+          >
+        </label>
+        <label class="manager-filter">
+          <span>Min toughness</span>
+          <input
+            :value="toughnessMin"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            placeholder="Any"
+            @input="emit('update:toughnessMin', $event.target.value)"
+          >
+        </label>
+      </div>
+    </div>
+
+    <div v-if="isAllView && showSort" class="filter-sidebar-section">
       <label class="manager-filter">
         <span>Sort by</span>
         <div class="collection-sort-row">

@@ -3,7 +3,6 @@ const DEFAULT_TTL_MS = 60_000;
 const TTL_BY_PREFIX = [
   ["/meta", 30_000],
   ["/prices/sync/status", 0],
-  ["/reports/search/random", 0],
   ["/settings", 60_000],
   ["/stats/", 120_000],
   ["/decks/", 120_000],

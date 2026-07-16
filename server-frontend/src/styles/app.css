@@ -2044,6 +2044,39 @@ body {
   background: #fffaf3;
 }
 
+.stats-unknown-summary {
+  list-style: none;
+  cursor: pointer;
+  position: relative;
+  padding-right: 28px;
+}
+
+.stats-unknown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.stats-unknown-summary::after {
+  content: "▾";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #90a4ae;
+  transition: transform 0.15s ease;
+}
+
+.stats-unknown-panel[open] .stats-unknown-summary::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.stats-unknown-summary h2 {
+  margin: 0;
+}
+
+.stats-unknown-panel[open] .stats-unknown-intro {
+  margin-top: 12px;
+}
+
 .stats-healthy-panel {
   border-color: #a5d6a7;
   background: #f9fdf7;
@@ -2534,6 +2567,109 @@ body {
   margin-bottom: 14px;
 }
 
+.collection-search-page-form {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.collection-search-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.collection-search-page-form .collection-search-page-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.collection-search-page-form .collection-search-page-submit,
+.collection-search-page-form .collection-search-page-filters-btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.collection-search-page-layout .collection-search-filters-sidebar {
+  --filter-sidebar-width: 240px;
+  order: 2;
+}
+
+.collection-search-page-layout .collection-search-main {
+  order: 1;
+}
+
+.collection-storage-filter-list {
+  display: grid;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.collection-storage-filter-section {
+  margin: 8px 0 2px;
+  color: #666;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.collection-storage-filter-section:first-child {
+  margin-top: 0;
+}
+
+.collection-storage-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.collection-storage-filter-item input {
+  flex: 0 0 auto;
+}
+
+.collection-storage-filter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-storage-filter-clear {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.collection-storage-filter-status {
+  margin: 0;
+  color: #666;
+  font-size: 12px;
+}
+
+.collection-search-page-input {
+  flex: 1 1 360px;
+}
+
+.collection-search-load-more-status {
+  margin: 8px 0 0;
+  padding: 0 4px;
+}
+
 .collection-search-body {
   display: flex;
   gap: 16px;
@@ -2560,16 +2696,56 @@ body {
   overflow-y: auto;
 }
 
+.collection-search-detail-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: 24px;
+}
+
 .collection-search-art-panel--sidebar {
   padding: 14px 16px;
 }
 
 .collection-search-art-panel--sidebar .collection-search-art-header {
+  justify-content: center;
   margin-bottom: 12px;
+}
+
+.collection-search-art-panel--sidebar .collection-search-art-heading {
+  align-items: center;
+  width: 100%;
+}
+
+.collection-search-art-panel--sidebar .collection-search-art-title-row {
+  justify-content: center;
+  align-items: center;
+}
+
+.collection-search-art-panel--sidebar .collection-search-art-heading-text {
+  flex: 0 1 auto;
+  text-align: center;
 }
 
 .collection-search-art-panel--sidebar .collection-search-art-title {
   font-size: 18px;
+  text-align: center;
+}
+
+.collection-search-art-panel--sidebar .collection-search-art-meta {
+  text-align: center;
+}
+
+.collection-search-art-panel--sidebar .card-detail-ownership-panel {
+  width: 100%;
+}
+
+.collection-search-art-detail-loading {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 0;
+  padding: 16px 0;
 }
 
 .collection-search-art-panel--sidebar .collection-search-art-selected {
@@ -2621,10 +2797,6 @@ body {
   color: #444;
   font-size: 14px;
   font-weight: 600;
-}
-
-.collection-search-random-btn {
-  margin-left: auto;
 }
 
 .collection-search-form {
@@ -2704,6 +2876,59 @@ body {
   margin-bottom: 14px;
 }
 
+.collection-search-art-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.collection-search-art-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.collection-search-art-heading-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: center;
+}
+
+.collection-search-art-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.collection-search-art-nav-btn:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.collection-search-art-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.collection-search-art-nav-btn:focus-visible {
+  outline: 2px solid #2e7d32;
+  outline-offset: 2px;
+}
+
 .collection-search-art-title {
   margin: 0;
   font-size: 20px;
@@ -2772,6 +2997,7 @@ body {
   margin: 4px 0 0;
   color: #666;
   font-size: 13px;
+  text-align: center;
 }
 
 .collection-search-art-actions {
@@ -3024,11 +3250,40 @@ body {
   font: inherit;
 }
 
+.collection-page .collection-card-grid-item.is-selected .collection-card-grid-select {
+  background: #ececec;
+  border-radius: 12px;
+  padding: 8px;
+}
+
 .collection-page .collection-card-grid-item.is-selected .collection-card-grid-image,
-.collection-page .collection-card-grid-item.is-selected .card-interactive-image {
-  outline: 3px solid #333;
+.collection-page .collection-card-grid-item.is-selected .card-interactive-image,
+.collection-page .collection-card-grid-item.is-selected .collection-card-grid-select .card-interactive-image {
+  outline: 3px solid #1b5e20;
   outline-offset: 2px;
-  border-radius: 9px;
+  box-shadow:
+    0 0 0 4px rgba(27, 94, 32, 0.16),
+    0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+.collection-page .collection-card-grid-item.is-selected .collection-card-grid-select .collection-card-grid-name {
+  color: #1b5e20;
+}
+
+.collection-card-grid-browse-selected-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1b5e20;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 .collection-page .collection-card-grid-select .collection-card-grid-name {
@@ -4749,16 +5004,44 @@ body {
   margin-bottom: 16px;
 }
 
+.decks-page .deck-unknown-summary {
+  list-style: none;
+  cursor: pointer;
+  position: relative;
+  padding-right: 28px;
+}
+
+.decks-page .deck-unknown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.decks-page .deck-unknown-summary::after {
+  content: "▾";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #90a4ae;
+  transition: transform 0.15s ease;
+}
+
+.decks-page .deck-unknown-panel[open] .deck-unknown-summary::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
 .decks-page .deck-unknown-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
 }
 
 .decks-page .deck-unknown-head h2 {
   margin: 0;
+}
+
+.decks-page .deck-unknown-panel[open] .deck-unknown-intro {
+  margin-top: 12px;
 }
 
 .decks-page .deck-unknown-intro {
@@ -7927,6 +8210,10 @@ button.card-variant {
     flex-direction: column;
   }
 
+  .collection-search-page-layout .collection-search-filters-sidebar {
+    display: none;
+  }
+
   .collection-search-detail {
     position: static;
     flex: 1 1 auto;
@@ -8302,6 +8589,18 @@ button.card-variant {
   .collection-all-filters-btn {
     display: inline-flex;
   }
+}
+
+.collection-detail-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.collection-detail-filter-grid .manager-filter input {
+  padding: 8px 10px;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
 }
 
 .deck-builder-page {

@@ -19,7 +19,10 @@ from util.card_metadata import (  # noqa: E402
 from util.scryfall_card import (  # noqa: E402
     card_colors,
     card_colors_json,
+    card_power,
     card_primary_type,
+    card_rarity,
+    card_toughness,
     card_type_line,
 )
 
@@ -95,18 +98,49 @@ class CardMetadataTests(unittest.TestCase):
             "colors": '["B"]',
             "type_line": "Creature — Human Wizard",
             "card_type": "creature",
+            "oracle_text": "Draw a card.",
+            "mana_cost": "{2}{U}",
+            "cmc": 3.0,
+            "power": "2",
+            "toughness": "3",
+            "rarity": "rare",
         }
         api_meta = card_metadata_api(row)
         self.assertEqual(api_meta["colors"], ["B"])
         self.assertEqual(api_meta["typeLine"], "Creature — Human Wizard")
         self.assertEqual(api_meta["cardType"], "creature")
         self.assertEqual(api_meta["cardTypes"], ["creature"])
+        self.assertEqual(api_meta["oracleText"], "Draw a card.")
+        self.assertEqual(api_meta["manaCost"], "{2}{U}")
+        self.assertEqual(api_meta["cmc"], 3.0)
+        self.assertEqual(api_meta["power"], "2")
+        self.assertEqual(api_meta["toughness"], "3")
+        self.assertEqual(api_meta["rarity"], "rare")
         meta = card_metadata_snake(row)
         self.assertEqual(meta["colors"], ["B"])
         self.assertEqual(meta["type_line"], "Creature — Human Wizard")
         self.assertEqual(meta["card_type"], "creature")
         self.assertEqual(meta["card_types"], ["creature"])
         self.assertFalse(meta["is_basic_land"])
+
+    def test_scryfall_card_detail_extractors(self):
+        creature = {
+            "power": "4",
+            "toughness": "4",
+            "rarity": "Mythic",
+        }
+        self.assertEqual(card_power(creature), "4")
+        self.assertEqual(card_toughness(creature), "4")
+        self.assertEqual(card_rarity(creature), "mythic")
+
+        double_faced = {
+            "card_faces": [
+                {"power": "2", "toughness": "1"},
+                {"power": "3", "toughness": "3"},
+            ],
+        }
+        self.assertEqual(card_power(double_faced), "2")
+        self.assertEqual(card_toughness(double_faced), "1")
 
 
 if __name__ == "__main__":

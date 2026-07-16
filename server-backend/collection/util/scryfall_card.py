@@ -128,3 +128,26 @@ def card_scryfall_id(card: dict) -> str | None:
     if scryfall_id:
         return str(scryfall_id)
     return None
+
+
+def _face_stat(card: dict, field: str) -> str | None:
+    value = card.get(field)
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    for face in card.get("card_faces") or []:
+        face_value = face.get(field)
+        if face_value is not None and str(face_value).strip():
+            return str(face_value).strip()
+    return None
+
+
+def card_power(card: dict) -> str | None:
+    return _face_stat(card, "power")
+
+
+def card_toughness(card: dict) -> str | None:
+    return _face_stat(card, "toughness")
+
+
+def card_rarity(card: dict) -> str:
+    return str(card.get("rarity") or "").strip().lower()

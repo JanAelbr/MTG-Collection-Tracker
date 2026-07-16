@@ -2,7 +2,10 @@ import sqlite3
 from datetime import date
 
 from lib.config import SET_CODE_ALIASES
+from lib.run_log import get_logger
 from util.card_prices import ensure_card_prices_table
+
+log = get_logger(__name__)
 
 CARD_COLUMNS = {
     "image_uri": "TEXT",
@@ -22,6 +25,9 @@ CARD_COLUMNS = {
     "legalities": "TEXT",
     "is_basic_land": "INTEGER",
     "scryfall_id": "TEXT",
+    "power": "TEXT",
+    "toughness": "TEXT",
+    "rarity": "TEXT",
 }
 
 
@@ -114,6 +120,81 @@ def backfill_card_types(conn: sqlite3.Connection) -> int:
         ],
     )
     return len(rows)
+
+
+def list_top_set_codes_by_collection_size(
+    conn: sqlite3.Connection,
+    limit: int = 15,
+) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT set_code, COUNT(*) AS owned_count
+        FROM purchases
+        GROUP BY set_code
+        ORDER BY owned_count DESC, set_code ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    codes = [str(row[0]).upper() for row in rows if row[0]]
+    if len(codes) >= limit:
+        return codes[:limit]
+
+    tracked_rows = conn.execute(
+        "SELECT set_code FROM tracked_sets ORDER BY set_code ASC"
+    ).fetchall()
+    seen = set(codes)
+    for row in tracked_rows:
+        code = str(row[0]).upper()
+        if not code or code in seen:
+            continue
+        codes.append(code)
+        seen.add(code)
+        if len(codes) >= limit:
+            break
+    return codes[:limit]
+
+
+def reload_top_set_catalogs(conn: sqlite3.Connection, limit: int = 15) -> list[str]:
+    from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
+
+    reloaded: list[str] = []
+    for set_code in list_top_set_codes_by_collection_size(conn, limit=limit):
+        try:
+            import_set_catalog_from_scryfall(conn, set_code, force_scryfall=True)
+            reloaded.append(set_code)
+            log.info("Reloaded Scryfall catalog for %s", set_code)
+        except Exception as exc:
+            log.warning("Could not reload Scryfall catalog for %s: %s", set_code, exc)
+    if reloaded:
+        conn.commit()
+    return reloaded
+
+
+def ensure_card_detail_metadata(conn: sqlite3.Connection) -> None:
+    ensure_card_columns(conn)
+    row = conn.execute(
+        "SELECT value FROM user_settings WHERE key = ?",
+        ("card_detail_metadata_reload_v1",),
+    ).fetchone()
+    if row and row[0] == "done":
+        return
+    reloaded = reload_top_set_catalogs(conn, limit=15)
+    conn.execute(
+        """
+        INSERT INTO user_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        ("card_detail_metadata_reload_v1", "done"),
+    )
+    conn.commit()
+    if reloaded:
+        log.info(
+            "Card detail metadata reload finished for %s set(s): %s",
+            len(reloaded),
+            ", ".join(reloaded),
+        )
 
 
 # Add missing card columns without recreating the database.

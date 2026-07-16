@@ -20,7 +20,7 @@ import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, store
 import { formatEuro, formatPriceChange, formatProfit } from "../utils/format";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
-import { filterCollectionCards } from "../utils/collectionFilters";
+import { filterCollectionCards, parseOptionalNumber } from "../utils/collectionFilters";
 import { detectActiveLens, lensDefinition } from "../utils/collectionLenses";
 import { computeCollectionScopeStats } from "../utils/collectionScopeStats";
 import {
@@ -54,7 +54,13 @@ const ownedFilter = ref("owned");
 const foilFilter = ref("all");
 const typeFilter = ref("all");
 const colorFilters = ref([]);
+const storageFilters = ref([]);
 const searchQuery = ref("");
+const rarityFilter = ref("all");
+const cmcMin = ref("");
+const cmcMax = ref("");
+const powerMin = ref("");
+const toughnessMin = ref("");
 const activeLens = ref("");
 const mobileFiltersOpen = ref(false);
 const virtualGridRef = ref(null);
@@ -99,18 +105,27 @@ const selectableSets = computed(() => {
 });
 const artStyles = computed(() => cardsPayload.value?.artStyles || []);
 const managerArtStylesEditorLink = computed(() => managerArtStylesEditorRoute(setCode.value));
+function allCardsFilterParams() {
+  return {
+    setCode: setCode.value,
+    artStyle: isAllSetsView.value ? "" : artStyle.value,
+    ownedFilter: ownedFilter.value,
+    foilFilter: foilFilter.value,
+    typeFilter: typeFilter.value,
+    colorFilters: colorFilters.value,
+    storageFilters: storageFilters.value,
+    searchQuery: searchQuery.value,
+    rarityFilter: rarityFilter.value,
+    cmcMin: parseOptionalNumber(cmcMin.value),
+    cmcMax: parseOptionalNumber(cmcMax.value),
+    powerMin: parseOptionalNumber(powerMin.value),
+    toughnessMin: parseOptionalNumber(toughnessMin.value),
+  };
+}
 const cards = computed(() => {
   if (isAllView.value) {
     ownershipRevision.value;
-    return filterCollectionCards(allViewScopeCards.value, {
-      setCode: setCode.value,
-      artStyle: isAllSetsView.value ? "" : artStyle.value,
-      ownedFilter: ownedFilter.value,
-      foilFilter: foilFilter.value,
-      typeFilter: typeFilter.value,
-      colorFilters: colorFilters.value,
-      searchQuery: searchQuery.value,
-    });
+    return filterCollectionCards(allViewScopeCards.value, allCardsFilterParams());
   }
   return cardsPayload.value?.cards || [];
 });
@@ -139,12 +154,23 @@ const resolvedActiveLens = computed(() => detectActiveLens({
   typeFilter: typeFilter.value,
   colorFilters: colorFilters.value,
   searchQuery: searchQuery.value,
+  rarityFilter: rarityFilter.value,
+  cmcMin: parseOptionalNumber(cmcMin.value),
+  cmcMax: parseOptionalNumber(cmcMax.value),
+  powerMin: parseOptionalNumber(powerMin.value),
+  toughnessMin: parseOptionalNumber(toughnessMin.value),
 }));
 const hasAllCardsQuickFilters = computed(() => Boolean(
   searchQuery.value.trim()
   || resolvedActiveLens.value
   || typeFilter.value !== "all"
   || colorFilters.value.length
+  || storageFilters.value.length
+  || rarityFilter.value !== "all"
+  || cmcMin.value.trim()
+  || cmcMax.value.trim()
+  || powerMin.value.trim()
+  || toughnessMin.value.trim()
   || ownedFilter.value !== "owned"
   || foilFilter.value !== "all",
 ));
@@ -201,7 +227,13 @@ function applyServerFiltersFromRoute() {
   foilFilter.value = filters.foilFilter;
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...filters.colorFilters];
+  storageFilters.value = [...filters.storageFilters];
   searchQuery.value = filters.searchQuery;
+  rarityFilter.value = filters.rarityFilter;
+  cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
+  cmcMax.value = filters.cmcMax != null ? String(filters.cmcMax) : "";
+  powerMin.value = filters.powerMin != null ? String(filters.powerMin) : "";
+  toughnessMin.value = filters.toughnessMin != null ? String(filters.toughnessMin) : "";
   activeLens.value = filters.lens;
 }
 
@@ -558,10 +590,16 @@ function allCardsArtStyleLink(card) {
       foilFilter: foilFilter.value,
       typeFilter: typeFilter.value,
       colorFilters: colorFilters.value,
+      storageFilters: storageFilters.value,
       sort: allCardsSort.value,
       sortDir: allCardsSortDir.value,
       page: 1,
       searchQuery: searchQuery.value,
+      rarityFilter: rarityFilter.value,
+      cmcMin: parseOptionalNumber(cmcMin.value),
+      cmcMax: parseOptionalNumber(cmcMax.value),
+      powerMin: parseOptionalNumber(powerMin.value),
+      toughnessMin: parseOptionalNumber(toughnessMin.value),
       lens: resolvedActiveLens.value,
     }),
   };
@@ -590,10 +628,16 @@ function buildCollectionQuery() {
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    storageFilters: storageFilters.value,
     sort: allCardsSort.value,
     sortDir: allCardsSortDir.value,
     page: allCardsPage.value,
     searchQuery: searchQuery.value,
+    rarityFilter: rarityFilter.value,
+    cmcMin: parseOptionalNumber(cmcMin.value),
+    cmcMax: parseOptionalNumber(cmcMax.value),
+    powerMin: parseOptionalNumber(powerMin.value),
+    toughnessMin: parseOptionalNumber(toughnessMin.value),
     lens: resolvedActiveLens.value,
   });
 }
@@ -704,6 +748,44 @@ function clearColorFilters() {
   colorFilters.value = [];
 }
 
+function toggleStorageFilter(slug) {
+  if (storageFilters.value.includes(slug)) {
+    storageFilters.value = storageFilters.value.filter((item) => item !== slug);
+    return;
+  }
+  storageFilters.value = [...storageFilters.value, slug];
+}
+
+function clearStorageFilters() {
+  storageFilters.value = [];
+}
+
+function setRarityFilter(value) {
+  const next = value || "all";
+  if (rarityFilter.value === next) {
+    return;
+  }
+  rarityFilter.value = next;
+  activeLens.value = "";
+}
+
+function updateDetailFilter(field, value) {
+  const next = String(value ?? "");
+  if (field === "cmcMin" && cmcMin.value === next) return;
+  if (field === "cmcMax" && cmcMax.value === next) return;
+  if (field === "powerMin" && powerMin.value === next) return;
+  if (field === "toughnessMin" && toughnessMin.value === next) return;
+  if (field === "cmcMin") cmcMin.value = next;
+  if (field === "cmcMax") cmcMax.value = next;
+  if (field === "powerMin") powerMin.value = next;
+  if (field === "toughnessMin") toughnessMin.value = next;
+  activeLens.value = "";
+}
+
+function onRarityFilterChange(event) {
+  setRarityFilter(event.target.value);
+}
+
 function updateSearchQuery(value) {
   searchQuery.value = value;
   activeLens.value = "";
@@ -725,7 +807,13 @@ function clearAllCardsQuickFilters() {
   storeFoilFilter("all");
   typeFilter.value = "all";
   colorFilters.value = [];
+  storageFilters.value = [];
   searchQuery.value = "";
+  rarityFilter.value = "all";
+  cmcMin.value = "";
+  cmcMax.value = "";
+  powerMin.value = "";
+  toughnessMin.value = "";
   activeLens.value = "";
   allCardsSort.value = "value";
   allCardsSortDir.value = "desc";
@@ -904,7 +992,7 @@ watch(artStyle, () => {
   onCollectionScopeChange();
 });
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, powerMin, toughnessMin], () => {
   if (
     !routeSyncReady.value
     || applyingRouteQuery.value
@@ -1130,6 +1218,12 @@ onUnmounted(stopPolling);
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :storage-filters="storageFilters"
+          :rarity-filter="rarityFilter"
+          :cmc-min="cmcMin"
+          :cmc-max="cmcMax"
+          :power-min="powerMin"
+          :toughness-min="toughnessMin"
           :all-cards-sort="allCardsSort"
           :all-cards-sort-dir="allCardsSortDir"
           @update:art-style="artStyle = $event"
@@ -1138,6 +1232,13 @@ onUnmounted(stopPolling);
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @toggle-storage-filter="toggleStorageFilter"
+          @clear-storage-filters="clearStorageFilters"
+          @rarity-filter-change="onRarityFilterChange"
+          @update:cmc-min="updateDetailFilter('cmcMin', $event)"
+          @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+          @update:power-min="updateDetailFilter('powerMin', $event)"
+          @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
         />
@@ -1178,6 +1279,12 @@ onUnmounted(stopPolling);
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :storage-filters="storageFilters"
+          :rarity-filter="rarityFilter"
+          :cmc-min="cmcMin"
+          :cmc-max="cmcMax"
+          :power-min="powerMin"
+          :toughness-min="toughnessMin"
           :all-cards-sort="allCardsSort"
           :all-cards-sort-dir="allCardsSortDir"
           @update:art-style="artStyle = $event"
@@ -1186,6 +1293,13 @@ onUnmounted(stopPolling);
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @toggle-storage-filter="toggleStorageFilter"
+          @clear-storage-filters="clearStorageFilters"
+          @rarity-filter-change="onRarityFilterChange"
+          @update:cmc-min="updateDetailFilter('cmcMin', $event)"
+          @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+          @update:power-min="updateDetailFilter('powerMin', $event)"
+          @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
         />

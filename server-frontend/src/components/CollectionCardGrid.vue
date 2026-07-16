@@ -140,6 +140,12 @@ function onTileFocus(index) {
         @click="emit('browse-name', card.name)"
       >
         <div class="collection-card-grid-image-wrap">
+          <span
+            v-if="isCardSelected(card)"
+            class="collection-card-grid-browse-selected-badge"
+          >
+            Selected
+          </span>
           <CardInteractiveImage
             v-if="card.imageUri"
             :src="card.imageUri"

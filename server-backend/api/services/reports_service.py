@@ -18,6 +18,7 @@ from util.cardmarket_urls import cardmarket_url_for_finish
 from util.card_metadata import (
     COLLECTION_FILTER_TYPES,
     card_matches_collection_color_filter,
+    card_matches_collection_storage_filter,
     card_matches_collection_type_filter,
     card_metadata_api,
     parse_collection_color_filters,
@@ -414,6 +415,7 @@ def _apply_filters(
     foil_filter: str,
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    storage_filters: list[str] | None = None,
 ) -> list[dict]:
     result = cards
     if set_code and set_code != "All":
@@ -440,6 +442,11 @@ def _apply_filters(
         result = [
             card for card in result
             if card_matches_collection_color_filter(card, color_filters)
+        ]
+    if storage_filters:
+        result = [
+            card for card in result
+            if card_matches_collection_storage_filter(card, storage_filters)
         ]
     return result
 

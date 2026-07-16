@@ -1,10 +1,11 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { api } from "../api";
+import CardDetailOwnershipPanel from "./CardDetailOwnershipPanel.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
-import CardCopyControls from "./CardCopyControls.vue";
 import CardVariantGallery from "./CardVariantGallery.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
-import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
+import LoadingIndicator from "./LoadingIndicator.vue";
 import { usePricingSettings } from "../composables/pricingSettings";
 import { formatEuro } from "../utils/format";
 import { valueForStrategy } from "../utils/priceStrategies";
@@ -12,6 +13,7 @@ import {
   FINISH_ETCHED,
   FINISH_FOIL,
   FINISH_NONFOIL,
+  canManageFinish,
   cardFinish,
   cardRouteQuery,
   finishLabel,
@@ -23,26 +25,23 @@ const props = defineProps({
   variants: { type: Array, default: () => [] },
   selectedIndex: { type: Number, default: 0 },
   setLabelFor: { type: Function, default: null },
-  showRandom: { type: Boolean, default: true },
   compact: { type: Boolean, default: false },
   sidebar: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:selectedIndex", "random", "close", "ownership-changed"]);
+const emit = defineEmits(["update:selectedIndex", "close", "ownership-changed"]);
 
 const { settings: pricingSettings } = usePricingSettings();
 
 const panelRef = ref(null);
 const imageZoomOpen = ref(false);
+const cardDetail = ref(null);
+const detailLoading = ref(false);
+const activeFinish = ref(FINISH_NONFOIL);
+let detailLoadToken = 0;
 
 const selectedVariant = computed(() => props.variants[props.selectedIndex] || null);
 const useZoomPreview = computed(() => props.sidebar || props.compact);
-
-const selectedIsOwned = computed(() => {
-  ownershipRevision.value;
-  const card = selectedVariant.value;
-  return card ? isEffectivelyOwned(card) : false;
-});
 
 const selectedRoute = computed(() => {
   const card = selectedVariant.value;
@@ -52,7 +51,7 @@ const selectedRoute = computed(() => {
   return {
     name: "card",
     params: { setCode: card.setCode, collectorNumber: card.collectorNumber },
-    query: cardRouteQuery(cardFinish(card)),
+    query: cardRouteQuery(activeFinish.value ?? cardFinish(card)),
   };
 });
 
@@ -65,6 +64,35 @@ const availableFinishes = computed(() => {
   return [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => finishes.includes(finish));
 });
 
+const detailAvailableFinishes = computed(() =>
+  Array.from(
+    new Set(
+      Object.entries(cardDetail.value?.finishes || {})
+        .map(([key, item]) => normalizeFinish(item?.finish ?? key))
+        .filter((finish) => [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].includes(finish)),
+    ),
+  ).sort((left, right) => left - right),
+);
+
+const manageableFinishes = computed(() =>
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter(
+    (finish) => canManageFinish(cardDetail.value, finish) || detailAvailableFinishes.value.includes(finish),
+  ),
+);
+
+const menuCard = computed(() => {
+  if (!cardDetail.value) {
+    return null;
+  }
+  return {
+    ...cardDetail.value,
+    finish: activeFinish.value,
+    hasNonfoil: cardDetail.value.hasNonfoil ?? Boolean(selectedVariant.value?.hasNonfoil),
+    hasFoil: cardDetail.value.hasFoil ?? Boolean(selectedVariant.value?.hasFoil),
+    hasEtched: cardDetail.value.hasEtched ?? Boolean(selectedVariant.value?.hasEtched),
+  };
+});
+
 const galleryCards = computed(() =>
   props.variants.map((card, index) => ({
     ...card,
@@ -72,8 +100,24 @@ const galleryCards = computed(() =>
   })),
 );
 
-const showVariantGallery = computed(() => props.variants.length > 1);
-const selectedFinish = computed(() => cardFinish(selectedVariant.value || {}));
+const galleryFinish = computed(() => cardFinish(selectedVariant.value || {}));
+const showVariantGallery = computed(() => props.variants.length > 1 && !props.sidebar);
+const canGoPrevVariant = computed(() => props.selectedIndex > 0);
+const canGoNextVariant = computed(() => props.selectedIndex < props.variants.length - 1);
+
+function goPrevVariant() {
+  if (!canGoPrevVariant.value) {
+    return;
+  }
+  emit("update:selectedIndex", props.selectedIndex - 1);
+}
+
+function goNextVariant() {
+  if (!canGoNextVariant.value) {
+    return;
+  }
+  emit("update:selectedIndex", props.selectedIndex + 1);
+}
 
 function setLabel(code) {
   if (props.setLabelFor) {
@@ -97,6 +141,48 @@ function valueForFinish(card, finish) {
     return valueForStrategy(card, strategy);
   }
   return null;
+}
+
+async function loadCardDetail() {
+  const variant = selectedVariant.value;
+  if (!variant?.setCode || variant.collectorNumber == null) {
+    cardDetail.value = null;
+    return;
+  }
+  const token = ++detailLoadToken;
+  detailLoading.value = true;
+  cardDetail.value = null;
+  try {
+    const finishQuery = normalizeFinish(activeFinish.value ?? cardFinish(variant));
+    const next = await api.getCardDetail(
+      variant.setCode,
+      variant.collectorNumber,
+      { finish: finishQuery },
+    );
+    if (token !== detailLoadToken) {
+      return;
+    }
+    cardDetail.value = next;
+    activeFinish.value = normalizeFinish(next.selectedFinish ?? finishQuery);
+  } catch {
+    if (token !== detailLoadToken) {
+      return;
+    }
+    cardDetail.value = null;
+  } finally {
+    if (token === detailLoadToken) {
+      detailLoading.value = false;
+    }
+  }
+}
+
+async function onOwnershipChanged() {
+  await loadCardDetail();
+  emit("ownership-changed");
+}
+
+function onFinishSelected(finish) {
+  activeFinish.value = normalizeFinish(finish);
 }
 
 function onGallerySelect(card) {
@@ -129,6 +215,19 @@ function scrollPanelIntoView() {
     panelRef.value?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 }
+
+watch(
+  () => [
+    selectedVariant.value?.setCode,
+    selectedVariant.value?.collectorNumber,
+    props.selectedIndex,
+  ],
+  () => {
+    activeFinish.value = normalizeFinish(cardFinish(selectedVariant.value || {}));
+    loadCardDetail();
+  },
+  { immediate: true },
+);
 
 watch(
   () => [props.name, props.variants],
@@ -171,32 +270,52 @@ onBeforeUnmount(() => {
     }"
   >
     <div class="collection-search-art-header">
-      <div>
-        <h2 class="collection-search-art-title">
-          <RouterLink
-            v-if="selectedRoute"
-            :to="selectedRoute"
-            class="collection-search-art-title-link"
+      <div class="collection-search-art-heading">
+        <div class="collection-search-art-title-row">
+          <button
+            v-if="variants.length > 1"
+            type="button"
+            class="collection-search-art-nav-btn"
+            :disabled="!canGoPrevVariant"
+            aria-label="Previous version"
+            @click="goPrevVariant"
           >
-            {{ name }}
-          </RouterLink>
-          <span v-else>{{ name }}</span>
-        </h2>
+            ‹
+          </button>
+          <div class="collection-search-art-heading-text">
+            <h2 class="collection-search-art-title">
+              <RouterLink
+                v-if="selectedRoute"
+                :to="selectedRoute"
+                class="collection-search-art-title-link"
+              >
+                {{ name }}
+              </RouterLink>
+              <span v-else>{{ name }}</span>
+            </h2>
+          </div>
+          <button
+            v-if="variants.length > 1"
+            type="button"
+            class="collection-search-art-nav-btn"
+            :disabled="!canGoNextVariant"
+            aria-label="Next version"
+            @click="goNextVariant"
+          >
+            ›
+          </button>
+        </div>
         <p class="collection-search-art-meta">
-          {{ variants.length }} version{{ variants.length === 1 ? "" : "s" }} across sets
+          <template v-if="variants.length > 1">
+            Version {{ selectedIndex + 1 }} of {{ variants.length }}
+          </template>
+          <template v-else>
+            {{ variants.length }} version{{ variants.length === 1 ? "" : "s" }} across sets
+          </template>
         </p>
       </div>
-      <div v-if="showRandom || !sidebar" class="collection-search-art-actions">
+      <div v-if="!sidebar" class="collection-search-art-actions">
         <button
-          v-if="showRandom"
-          type="button"
-          class="btn btn-secondary btn-small"
-          @click="emit('random')"
-        >
-          Another random
-        </button>
-        <button
-          v-if="!sidebar"
           type="button"
           class="btn btn-secondary btn-small"
           @click="emit('close')"
@@ -229,7 +348,7 @@ onBeforeUnmount(() => {
           :card="selectedVariant"
           :show-details="false"
           img-class="collection-search-art-preview-image"
-          @ownership-changed="emit('ownership-changed')"
+          @ownership-changed="onOwnershipChanged"
         />
         <div v-else class="collection-search-art-preview-empty">No image</div>
       </div>
@@ -258,10 +377,6 @@ onBeforeUnmount(() => {
             <dt>Type</dt>
             <dd>{{ selectedVariant.typeLine }}</dd>
           </div>
-          <div class="collection-search-art-detail">
-            <dt>Owned</dt>
-            <dd>{{ selectedIsOwned ? "Yes" : "No" }}</dd>
-          </div>
           <div v-if="availableFinishes.length" class="collection-search-art-detail">
             <dt>Finishes</dt>
             <dd class="collection-search-art-finish-list">
@@ -275,11 +390,19 @@ onBeforeUnmount(() => {
             </dd>
           </div>
         </dl>
-        <CardCopyControls
-          :card="selectedVariant"
-          variant="panel"
-          :visible="true"
-          @ownership-changed="emit('ownership-changed')"
+        <CardDetailOwnershipPanel
+          v-if="menuCard"
+          :card="menuCard"
+          :manageable-finishes="manageableFinishes"
+          :loading="detailLoading"
+          @ownership-changed="onOwnershipChanged"
+          @finish-selected="onFinishSelected"
+        />
+        <LoadingIndicator
+          v-else-if="detailLoading"
+          compact
+          label="Loading card…"
+          class="collection-search-art-detail-loading"
         />
       </div>
     </div>
@@ -290,7 +413,7 @@ onBeforeUnmount(() => {
       title="Alternative versions"
       :cards="galleryCards"
       :current-index="selectedIndex"
-      :finish="selectedFinish"
+      :finish="galleryFinish"
       :centered="sidebar"
       selectable
       @select="onGallerySelect"

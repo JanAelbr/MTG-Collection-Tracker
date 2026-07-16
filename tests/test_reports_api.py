@@ -425,9 +425,45 @@ class ReportsApiServiceTests(unittest.TestCase):
         payload = search_service.search_cards(self.conn, search="")
         self.assertEqual(payload["totalMatches"], 0)
         self.assertEqual(payload["cards"], [])
+        payload_text = search_service.search_cards(self.conn, text_search="")
+        self.assertEqual(payload_text["totalMatches"], 0)
+        self.assertEqual(payload_text["cards"], [])
 
     @patch("api.services.search_service._load_enriched_report_cards")
-    def test_random_name_explore(self, load_enriched):
+    def test_search_matches_oracle_text(self, load_enriched):
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Lightning Bolt",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Instant",
+                    "oracleText": "Lightning Bolt deals 3 damage to any target.",
+                    "currentValue": 2.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "2",
+                    "name": "Shock",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": False,
+                    "typeLine": "Instant",
+                    "oracleText": "Shock deals 2 damage to any target.",
+                    "currentValue": 1.0,
+                },
+            ],
+            "2024-01-01",
+        )
+        payload = search_service.search_cards(self.conn, text_search="3 damage")
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
+
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_filters_by_storage(self, load_enriched):
         load_enriched.return_value = (
             [
                 {
@@ -437,28 +473,80 @@ class ReportsApiServiceTests(unittest.TestCase):
                     "artStyle": "01. Main set",
                     "finish": 0,
                     "owned": True,
-                    "typeLine": "",
+                    "typeLine": "Legendary Creature — Halfling Scout",
+                    "locations": [{"slug": "storage:general", "label": "General", "count": 2}],
                     "currentValue": 2.0,
-                    "imageUri": "https://example.com/frodo.jpg",
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
-                    "name": "Frodo Baggins",
+                    "collectorNumber": "2",
+                    "name": "Samwise Gamgee",
                     "artStyle": "01. Main set",
-                    "finish": 1,
-                    "owned": False,
-                    "typeLine": "",
-                    "currentValue": 4.0,
-                    "imageUri": "https://example.com/frodo.jpg",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Legendary Creature — Halfling Peasant",
+                    "locations": [{"slug": "binder:lotr", "label": "LOTR Binder", "count": 1}],
+                    "currentValue": 1.0,
                 },
             ],
-            None,
+            "2024-01-01",
         )
-        payload = search_service.random_name_explore(self.conn, owned_filter="all")
-        self.assertEqual(payload["name"], "Frodo Baggins")
-        self.assertEqual(payload["totalVariants"], 1)
-        self.assertEqual(len(payload["variants"][0]["availableFinishes"]), 2)
+        payload = search_service.search_cards(
+            self.conn,
+            search="",
+            text_search="",
+            type_filter="all",
+            storage_filters=["binder:lotr"],
+        )
+        self.assertEqual(payload["totalMatches"], 0)
+
+        payload = search_service.search_cards(
+            self.conn,
+            search="frodo",
+            storage_filters=["storage:general"],
+        )
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
+
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_filters_by_type(self, load_enriched):
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Lightning Bolt",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Instant",
+                    "cardType": "instant",
+                    "oracleText": "Lightning Bolt deals 3 damage to any target.",
+                    "currentValue": 2.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "2",
+                    "name": "Grizzly Bears",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Creature — Bear",
+                    "cardType": "creature",
+                    "oracleText": "",
+                    "currentValue": 0.1,
+                },
+            ],
+            "2024-01-01",
+        )
+        payload = search_service.search_cards(
+            self.conn,
+            search="",
+            text_search="damage",
+            type_filter="instant",
+        )
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_list_name_variants(self, load_enriched):
@@ -630,12 +718,6 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         load_ranked.assert_called_once()
         self.assertEqual(low_payload["cards"][0]["currentValue"], 1.5)
-
-    @patch("api.services.search_service._load_enriched_report_cards")
-    def test_random_card_empty_pool_returns_error(self, load_enriched):
-        load_enriched.return_value = ([], None)
-        with self.assertRaises(reports_service.ReportsError):
-            search_service.random_name_explore(self.conn, owned_filter="owned")
 
 
 if __name__ == "__main__":

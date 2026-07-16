@@ -29,8 +29,22 @@ export function detectActiveLens({
   typeFilter,
   colorFilters,
   searchQuery,
+  rarityFilter = "all",
+  cmcMin = null,
+  cmcMax = null,
+  powerMin = null,
+  toughnessMin = null,
 }) {
-  if (searchQuery?.trim() || typeFilter !== "all" || colorFilters?.length) {
+  if (
+    searchQuery?.trim()
+    || typeFilter !== "all"
+    || colorFilters?.length
+    || (rarityFilter && rarityFilter !== "all")
+    || cmcMin != null
+    || cmcMax != null
+    || powerMin != null
+    || toughnessMin != null
+  ) {
     return "";
   }
   if (lensId && LENS_BY_ID[lensId]) {

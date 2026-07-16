@@ -516,32 +516,38 @@ export const api = {
   searchCards: (params = {}) => {
     const query = new URLSearchParams();
     if (params.q) query.set("q", params.q);
+    if (params.text) query.set("text", params.text);
     if (params.setCode) query.set("setCode", params.setCode);
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
+    if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
+    if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
+    if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
+    if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
+    if (params.powerMin != null) query.set("powMin", String(params.powerMin));
+    if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
+    if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/reports/search${suffix}`);
   },
 
-  getRandomSearchExplore: (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.q) query.set("q", params.q);
-    if (params.setCode) query.set("setCode", params.setCode);
-    if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
-    if (params.foilFilter) query.set("foilFilter", params.foilFilter);
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    return apiRequest(`/reports/search/random${suffix}`);
-  },
-
   getSearchNameVariants: (params = {}) => {
     const query = new URLSearchParams();
     if (params.name) query.set("name", params.name);
-    if (params.q) query.set("q", params.q);
     if (params.setCode) query.set("setCode", params.setCode);
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
+    if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
+    if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
+    if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
+    if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
+    if (params.powerMin != null) query.set("powMin", String(params.powerMin));
+    if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
+    if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/reports/search/variants${suffix}`);
   },

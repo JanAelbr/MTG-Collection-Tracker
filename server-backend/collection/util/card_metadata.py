@@ -56,6 +56,15 @@ COLLECTION_FILTER_TYPES = frozenset({
     "tribal",
 })
 
+COLLECTION_RARITY_FILTERS = frozenset({
+    "common",
+    "uncommon",
+    "rare",
+    "mythic",
+    "special",
+    "bonus",
+})
+
 COLLECTION_TYPE_GROUPS = COLLECTION_FILTER_TYPES | {"others"}
 
 COLLECTION_COLOR_FILTERS = frozenset({"W", "U", "B", "R", "G", "C"})
@@ -100,6 +109,76 @@ def card_matches_collection_color_filter(card: dict, color_filters: list[str]) -
     if "C" in color_filters and not colors:
         return True
     return any(color in colors for color in color_filters if color != "C")
+
+
+def _card_field(card: dict, *keys: str):
+    for key in keys:
+        if key in card and card.get(key) not in (None, ""):
+            return card.get(key)
+    return None
+
+
+def _parse_numeric_stat(value) -> float | None:
+    text = str(value or "").strip()
+    if not text or text == "*":
+        return None
+    try:
+        parsed = float(text)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def card_matches_collection_rarity_filter(card: dict, rarity_filter: str) -> bool:
+    if not rarity_filter or rarity_filter == "all":
+        return True
+    rarity = str(_card_field(card, "rarity", "Rarity") or "").lower()
+    return rarity == str(rarity_filter).strip().lower()
+
+
+def card_matches_collection_cmc_filter(
+    card: dict,
+    *,
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+) -> bool:
+    cmc = resolve_card_cmc(card)
+    if cmc_min is not None and cmc < cmc_min:
+        return False
+    if cmc_max is not None and cmc > cmc_max:
+        return False
+    return True
+
+
+def card_matches_collection_stat_filter(
+    card: dict,
+    *,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+) -> bool:
+    if power_min is None and toughness_min is None:
+        return True
+    power = _parse_numeric_stat(_card_field(card, "power", "Power"))
+    toughness = _parse_numeric_stat(_card_field(card, "toughness", "Toughness"))
+    if power_min is not None and (power is None or power < power_min):
+        return False
+    if toughness_min is not None and (toughness is None or toughness < toughness_min):
+        return False
+    return True
+
+
+def card_matches_collection_storage_filter(card: dict, storage_filters: list[str]) -> bool:
+    if not storage_filters:
+        return True
+    locations = card.get("locations") or []
+    card_slugs = {
+        str(location.get("slug") or "").strip()
+        for location in locations
+        if location.get("slug")
+    }
+    if not card_slugs:
+        return False
+    return any(slug in card_slugs for slug in storage_filters)
 
 
 def encode_card_colors(colors: list[str]) -> str:
@@ -307,6 +386,9 @@ def card_metadata_snake(row) -> dict:
     cmc_raw = _read_metadata_field(row, "cmc")
     legalities_raw = _read_metadata_field(row, "legalities")
     basic_land_raw = _read_metadata_field(row, "is_basic_land")
+    power_raw = _read_metadata_field(row, "power")
+    toughness_raw = _read_metadata_field(row, "toughness")
+    rarity_raw = _read_metadata_field(row, "rarity")
     type_line = str_or_empty(type_raw)
     card_types = card_types_from_type_line(type_line)
     card_type = str_or_empty(card_type_raw) or primary_card_type(type_line)
@@ -322,6 +404,9 @@ def card_metadata_snake(row) -> dict:
         "cmc": cmc,
         "legalities": parse_card_legalities(legalities_raw),
         "is_basic_land": bool(_nullable_int_flag(basic_land_raw)),
+        "power": str_or_empty(power_raw) or None,
+        "toughness": str_or_empty(toughness_raw) or None,
+        "rarity": str_or_empty(rarity_raw).lower() or None,
     }
 
 
@@ -338,4 +423,7 @@ def card_metadata_api(row) -> dict:
         "cmc": meta["cmc"],
         "legalities": meta["legalities"],
         "isBasicLand": meta["is_basic_land"],
+        "power": meta["power"],
+        "toughness": meta["toughness"],
+        "rarity": meta["rarity"],
     }

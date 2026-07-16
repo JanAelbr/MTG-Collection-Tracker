@@ -41,6 +41,8 @@ const showSetGalleryFilter = computed(
   () => showCollectionSubnav.value && setPickerMode.value === "browser",
 );
 
+const showNavbarSearch = computed(() => route.path !== "/collection/search");
+
 const brandLink = computed(() => ({
   path: "/collection/all",
   query: collectionNavQuery(route, "/collection/all"),
@@ -111,7 +113,7 @@ onMounted(() => {
           </nav>
         </div>
 
-        <NavbarSearch class="app-topbar-search" />
+        <NavbarSearch v-if="showNavbarSearch" class="app-topbar-search" />
       </header>
 
       <nav

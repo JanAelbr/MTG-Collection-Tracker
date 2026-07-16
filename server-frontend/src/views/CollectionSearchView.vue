@@ -1,18 +1,21 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ignoreAborted } from "../api";
-import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import CollectionAllFilters from "../components/CollectionAllFilters.vue";
+import CollectionMobileFilterSheet from "../components/CollectionMobileFilterSheet.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SearchArtBrowser from "../components/SearchArtBrowser.vue";
+import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
-import PageControls from "../components/PageControls.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { formatSetDropdownLabel } from "../utils/format";
+import { parseOptionalNumber } from "../utils/collectionFilters";
+import { searchFiltersFromRoute, searchRouteQuery } from "../utils/setScope";
 
 const PAGE_SIZE = 25;
 const SEARCH_SET_CODE = "All";
@@ -21,30 +24,44 @@ const route = useRoute();
 const router = useRouter();
 
 const meta = ref(null);
-const resultsPayload = ref(null);
+const accumulatedCards = ref([]);
+const searchTotalMatches = ref(0);
+const loadedPages = ref(0);
+const loadingMore = ref(false);
 const artExplorer = ref(null);
+const artPanelLoading = ref(false);
+const selectedBrowseName = ref("");
 const artSelectedIndex = ref(0);
-const selectedCardName = ref("");
 const searchQuery = ref("");
+const textSearchQuery = ref("");
+const searchInput = ref("");
+const textSearchInput = ref("");
+const searchInputRef = ref(null);
 const ownedFilter = ref("all");
 const foilFilter = ref(getStoredFoilFilter());
-const page = ref(1);
-const randomLoading = ref(false);
+const typeFilter = ref("all");
+const colorFilters = ref([]);
+const storageFilters = ref([]);
+const rarityFilter = ref("all");
+const cmcMin = ref("");
+const cmcMax = ref("");
+const powerMin = ref("");
+const toughnessMin = ref("");
+const mobileFiltersOpen = ref(false);
 const routeSyncReady = ref(false);
+const virtualGridRef = ref(null);
 const { loading, run } = useAsyncLoad();
 const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
+let searchRequestToken = 0;
 
 const sets = computed(() => meta.value?.sets || []);
-const cards = computed(() => resultsPayload.value?.cards || []);
-const totalMatches = computed(() => resultsPayload.value?.totalMatches ?? 0);
-const totalPages = computed(() => resultsPayload.value?.totalPages ?? 1);
-const resultsRangeStart = computed(() => {
-  if (!totalMatches.value) {
-    return 0;
-  }
-  return (page.value - 1) * PAGE_SIZE + 1;
-});
-const resultsRangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalMatches.value));
+const cards = computed(() => accumulatedCards.value);
+const totalMatches = computed(() => searchTotalMatches.value);
+const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
+const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
+const hasActiveSearch = computed(() => Boolean(
+  searchQuery.value.trim() || textSearchQuery.value.trim(),
+));
 
 const setLabels = computed(() => {
   const labels = new Map();
@@ -54,40 +71,38 @@ const setLabels = computed(() => {
   return labels;
 });
 
-function searchRouteQuery() {
-  const query = {};
-  const trimmed = searchQuery.value.trim();
-  if (trimmed) {
-    query.q = trimmed;
-  }
-  if (ownedFilter.value !== "all") {
-    query.owned = ownedFilter.value;
-  }
-  if (foilFilter.value !== "all") {
-    query.finish = foilFilter.value;
-  }
-  if (page.value > 1) {
-    query.page = String(page.value);
-  }
-  return query;
+function searchApiParams() {
+  return {
+    setCode: SEARCH_SET_CODE,
+    ownedFilter: ownedFilter.value,
+    foilFilter: foilFilter.value,
+    typeFilter: typeFilter.value,
+    colorFilters: colorFilters.value,
+    storageFilters: storageFilters.value,
+    rarityFilter: rarityFilter.value,
+    cmcMin: parseOptionalNumber(cmcMin.value),
+    cmcMax: parseOptionalNumber(cmcMax.value),
+    powerMin: parseOptionalNumber(powerMin.value),
+    toughnessMin: parseOptionalNumber(toughnessMin.value),
+  };
 }
 
 function syncFiltersFromRoute() {
-  const owned = route.query.owned;
-  if (owned === "owned" || owned === "unowned") {
-    ownedFilter.value = owned;
-  } else {
-    ownedFilter.value = "all";
-  }
-  const finish = route.query.finish;
-  if (finish === "nonfoil" || finish === "foil" || finish === "etched") {
-    foilFilter.value = finish;
-  }
-  const q = route.query.q;
-  searchQuery.value = typeof q === "string" ? q : "";
-  const pageParam = route.query.page;
-  const parsedPage = Number(pageParam);
-  page.value = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const filters = searchFiltersFromRoute(route);
+  ownedFilter.value = filters.ownedFilter;
+  foilFilter.value = filters.foilFilter;
+  typeFilter.value = filters.typeFilter;
+  colorFilters.value = [...filters.colorFilters];
+  storageFilters.value = [...filters.storageFilters];
+  searchQuery.value = filters.searchQuery;
+  textSearchQuery.value = filters.textSearchQuery;
+  searchInput.value = filters.searchQuery;
+  textSearchInput.value = filters.textSearchQuery;
+  rarityFilter.value = filters.rarityFilter;
+  cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
+  cmcMax.value = filters.cmcMax != null ? String(filters.cmcMax) : "";
+  powerMin.value = filters.powerMin != null ? String(filters.powerMin) : "";
+  toughnessMin.value = filters.toughnessMin != null ? String(filters.toughnessMin) : "";
 }
 
 function setLabel(code) {
@@ -105,8 +120,56 @@ function stripSetScopeFromRoute() {
 function syncSearchRoute() {
   router.replace({
     path: route.path,
-    query: searchRouteQuery(),
+    query: searchRouteQuery({
+      ownedFilter: ownedFilter.value,
+      foilFilter: foilFilter.value,
+      typeFilter: typeFilter.value,
+      colorFilters: colorFilters.value,
+      storageFilters: storageFilters.value,
+      searchQuery: searchQuery.value.trim(),
+      textSearchQuery: textSearchQuery.value.trim(),
+      rarityFilter: rarityFilter.value,
+      cmcMin: parseOptionalNumber(cmcMin.value),
+      cmcMax: parseOptionalNumber(cmcMax.value),
+      powerMin: parseOptionalNumber(powerMin.value),
+      toughnessMin: parseOptionalNumber(toughnessMin.value),
+    }),
   });
+}
+
+function resetSearchResults() {
+  accumulatedCards.value = [];
+  searchTotalMatches.value = 0;
+  loadedPages.value = 0;
+}
+
+function applySearchPayload(payload, { append = false } = {}) {
+  const nextCards = payload?.cards || [];
+  searchTotalMatches.value = payload?.totalMatches ?? 0;
+  accumulatedCards.value = append
+    ? [...accumulatedCards.value, ...nextCards]
+    : nextCards;
+  loadedPages.value = payload?.page ?? 1;
+}
+
+async function fetchSearchPage(pageNum) {
+  const nameTerm = searchQuery.value.trim();
+  const textTerm = textSearchQuery.value.trim();
+  if (!nameTerm && !textTerm) {
+    return null;
+  }
+  const token = ++searchRequestToken;
+  const payload = await ignoreAborted(api.searchCards({
+    q: nameTerm,
+    text: textTerm,
+    ...searchApiParams(),
+    page: pageNum,
+    pageSize: PAGE_SIZE,
+  }));
+  if (!payload || token !== searchRequestToken) {
+    return null;
+  }
+  return payload;
 }
 
 async function loadMeta() {
@@ -117,31 +180,61 @@ async function loadMeta() {
 }
 
 async function loadResults({ autoSelectFirst = false } = {}) {
-  const trimmed = searchQuery.value.trim();
-  if (!trimmed) {
-    resultsPayload.value = null;
+  const nameTerm = searchQuery.value.trim();
+  const textTerm = textSearchQuery.value.trim();
+  if (!nameTerm && !textTerm) {
+    resetSearchResults();
     if (autoSelectFirst) {
       closeArtExplorer();
     }
     return;
   }
-  await run(async () => {
-    resultsPayload.value = await api.searchCards({
-      q: trimmed,
-      setCode: SEARCH_SET_CODE,
-      ownedFilter: ownedFilter.value,
-      foilFilter: foilFilter.value,
-      page: page.value,
-      pageSize: PAGE_SIZE,
-    });
+  await run(async (isCurrent) => {
+    resetSearchResults();
+    const payload = await fetchSearchPage(1);
+    if (!isCurrent() || !payload) {
+      return;
+    }
+    applySearchPayload(payload, { append: false });
   });
+  await fillVisibleResults();
   if (autoSelectFirst) {
     await autoSelectFirstResult();
   }
 }
 
+async function loadMoreResults() {
+  if (loadingMore.value || loading.value || !hasMoreResults.value) {
+    return;
+  }
+  loadingMore.value = true;
+  try {
+    const payload = await fetchSearchPage(loadedPages.value + 1);
+    if (payload) {
+      applySearchPayload(payload, { append: true });
+    }
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
+async function fillVisibleResults() {
+  await nextTick();
+  const root = virtualGridRef.value?.rootRef;
+  if (!root || !hasMoreResults.value || loadingMore.value || loading.value) {
+    return;
+  }
+  const scrollable = root.scrollHeight > root.clientHeight + 8;
+  if (!scrollable) {
+    await loadMoreResults();
+    if (hasMoreResults.value) {
+      await fillVisibleResults();
+    }
+  }
+}
+
 async function autoSelectFirstResult() {
-  const first = resultsPayload.value?.cards?.[0];
+  const first = accumulatedCards.value[0];
   if (!first?.name) {
     closeArtExplorer();
     return;
@@ -158,7 +251,6 @@ function setOwnedFilter(value) {
     return;
   }
   ownedFilter.value = value;
-  page.value = 1;
 }
 
 function setFoilFilter(value) {
@@ -167,46 +259,105 @@ function setFoilFilter(value) {
   }
   foilFilter.value = value;
   storeFoilFilter(value);
-  page.value = 1;
+}
+
+function onTypeFilterChange(event) {
+  const next = event.target.value || "all";
+  if (typeFilter.value === next) {
+    return;
+  }
+  typeFilter.value = next;
+}
+
+function toggleColorFilter(color) {
+  if (colorFilters.value.includes(color)) {
+    colorFilters.value = colorFilters.value.filter((item) => item !== color);
+  } else {
+    colorFilters.value = [...colorFilters.value, color];
+  }
+}
+
+function clearColorFilters() {
+  colorFilters.value = [];
+}
+
+function toggleStorageFilter(slug) {
+  if (storageFilters.value.includes(slug)) {
+    storageFilters.value = storageFilters.value.filter((item) => item !== slug);
+  } else {
+    storageFilters.value = [...storageFilters.value, slug];
+  }
+}
+
+function clearStorageFilters() {
+  storageFilters.value = [];
+}
+
+function onRarityFilterChange(event) {
+  const next = event.target.value || "all";
+  if (rarityFilter.value === next) {
+    return;
+  }
+  rarityFilter.value = next;
+}
+
+function updateDetailFilter(field, value) {
+  const next = String(value ?? "");
+  if (field === "cmcMin" && cmcMin.value === next) return;
+  if (field === "cmcMax" && cmcMax.value === next) return;
+  if (field === "powerMin" && powerMin.value === next) return;
+  if (field === "toughnessMin" && toughnessMin.value === next) return;
+  if (field === "cmcMin") cmcMin.value = next;
+  if (field === "cmcMax") cmcMax.value = next;
+  if (field === "powerMin") powerMin.value = next;
+  if (field === "toughnessMin") toughnessMin.value = next;
 }
 
 async function setCollectionCardScale(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
-function goToPage(nextPage) {
-  page.value = Math.max(1, Math.min(nextPage, totalPages.value));
+async function reloadLoadedSearchResults() {
+  const pagesToLoad = Math.max(loadedPages.value, 1);
+  resetSearchResults();
+  for (let pageNum = 1; pageNum <= pagesToLoad; pageNum += 1) {
+    const payload = await fetchSearchPage(pageNum);
+    if (!payload) {
+      break;
+    }
+    applySearchPayload(payload, { append: pageNum > 1 });
+    if (pageNum >= (payload.totalPages ?? 1)) {
+      break;
+    }
+  }
 }
 
-async function loadNameVariants(name) {
-  const payload = await api.getSearchNameVariants({
-    name,
-    q: searchQuery.value.trim(),
-    setCode: SEARCH_SET_CODE,
-    ownedFilter: ownedFilter.value,
-    foilFilter: foilFilter.value,
-  });
-  artExplorer.value = payload;
-  artSelectedIndex.value = 0;
-  selectedCardName.value = name;
-}
-
-async function openRandomCard() {
-  randomLoading.value = true;
+async function loadNameVariants(name, { preserveSelection = false } = {}) {
+  selectedBrowseName.value = name;
+  const current = preserveSelection ? artExplorer.value?.variants?.[artSelectedIndex.value] : null;
+  artPanelLoading.value = true;
+  if (!preserveSelection && artExplorer.value?.name !== name) {
+    artExplorer.value = null;
+  }
   try {
-    const payload = await api.getRandomSearchExplore({
-      q: searchQuery.value.trim(),
-      setCode: SEARCH_SET_CODE,
-      ownedFilter: ownedFilter.value,
-      foilFilter: foilFilter.value,
+    const payload = await api.getSearchNameVariants({
+      name,
+      ...searchApiParams(),
     });
     artExplorer.value = payload;
-    artSelectedIndex.value = 0;
-    selectedCardName.value = payload.name;
-  } catch (error) {
-    window.alert(error.message || "No cards match these filters.");
+    if (preserveSelection && current) {
+      const nextIndex = payload.variants.findIndex(
+        (variant) =>
+          variant.setCode === current.setCode
+          && String(variant.collectorNumber) === String(current.collectorNumber)
+          && (variant.artStyle || "") === (current.artStyle || ""),
+      );
+      artSelectedIndex.value = nextIndex >= 0 ? nextIndex : 0;
+    } else {
+      artSelectedIndex.value = 0;
+    }
   } finally {
-    randomLoading.value = false;
+    artPanelLoading.value = false;
   }
 }
 
@@ -221,52 +372,80 @@ async function browseCardName(name) {
 function closeArtExplorer() {
   artExplorer.value = null;
   artSelectedIndex.value = 0;
-  selectedCardName.value = "";
+  artPanelLoading.value = false;
+  selectedBrowseName.value = "";
+}
+
+async function submitSearch() {
+  const nextName = searchInput.value.trim();
+  const nextText = textSearchInput.value.trim();
+  const sameQuery = nextName === searchQuery.value.trim() && nextText === textSearchQuery.value.trim();
+  searchQuery.value = nextName;
+  textSearchQuery.value = nextText;
+  closeArtExplorer();
+  syncSearchRoute();
+  if (sameQuery && (nextName || nextText)) {
+    await loadResults({ autoSelectFirst: true });
+  }
 }
 
 async function onArtOwnershipChanged() {
-  if (!searchQuery.value.trim()) {
+  const activeName = artExplorer.value?.name;
+  if (activeName) {
+    try {
+      await loadNameVariants(activeName, { preserveSelection: true });
+    } catch {
+      // Keep the current explorer state if variant refresh fails.
+    }
+  }
+  if (!hasActiveSearch.value) {
     return;
   }
-  await loadResults();
+  await reloadLoadedSearchResults();
 }
 
-watch([ownedFilter, foilFilter], () => {
-  if (!routeSyncReady.value) {
-    return;
-  }
-  page.value = 1;
-  syncSearchRoute();
-  if (searchQuery.value.trim()) {
-    closeArtExplorer();
-    loadResults({ autoSelectFirst: true });
-  } else {
-    openRandomCard();
-  }
-});
-
-watch(page, () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, powerMin, toughnessMin], () => {
   if (!routeSyncReady.value) {
     return;
   }
   syncSearchRoute();
-  loadResults();
 });
 
 watch(
-  () => [route.query.q, route.query.owned, route.query.finish, route.query.page],
-  () => {
+  () => [
+    route.query.q,
+    route.query.text,
+    route.query.owned,
+    route.query.finish,
+    route.query.type,
+    route.query.colors,
+    route.query.storage,
+    route.query.rarity,
+    route.query.cmcMin,
+    route.query.cmcMax,
+    route.query.powMin,
+    route.query.tghMin,
+  ],
+  async (_value, _oldValue, onCleanup) => {
     if (!routeSyncReady.value) {
       return;
     }
-    const prevQuery = searchQuery.value;
+    const prevName = searchQuery.value;
+    const prevText = textSearchQuery.value;
     syncFiltersFromRoute();
-    if (searchQuery.value !== prevQuery) {
-      if (searchQuery.value.trim()) {
-        loadResults({ autoSelectFirst: true });
-      } else {
-        openRandomCard();
-      }
+    let cancelled = false;
+    onCleanup(() => {
+      cancelled = true;
+    });
+    if (!hasActiveSearch.value) {
+      closeArtExplorer();
+      resetSearchResults();
+      return;
+    }
+    const searchChanged = searchQuery.value !== prevName || textSearchQuery.value !== prevText;
+    await loadResults({ autoSelectFirst: searchChanged });
+    if (cancelled) {
+      return;
     }
   },
 );
@@ -276,115 +455,65 @@ onMounted(async () => {
   await Promise.all([fetchPricingSettings(), loadMeta()]);
   routeSyncReady.value = true;
   stripSetScopeFromRoute();
-  if (searchQuery.value.trim()) {
+  if (hasActiveSearch.value) {
     await loadResults({ autoSelectFirst: true });
-  } else {
-    await openRandomCard();
   }
+  await nextTick();
+  searchInputRef.value?.focus();
 });
 </script>
 
 <template>
   <div class="reports-page collection-page collection-search-page">
-    <div class="page-with-sidebar">
-      <FilterSidebar>
-        <div class="filter-sidebar-section filter-sidebar-section--compact-filters">
-          <div class="filter-sidebar-compact-filter">
-            <p class="filter-sidebar-label">Ownership</p>
-            <div class="button-group collection-ownership-group">
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: ownedFilter === 'owned' }"
-                @click="setOwnedFilter('owned')"
-              >
-                Owned
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: ownedFilter === 'all' }"
-                @click="setOwnedFilter('all')"
-              >
-                All
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: ownedFilter === 'unowned' }"
-                @click="setOwnedFilter('unowned')"
-              >
-                Unowned
-              </button>
-            </div>
-          </div>
-
-          <div class="filter-sidebar-compact-filter">
-            <p class="filter-sidebar-label">Finish</p>
-            <div class="button-group collection-finish-group">
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: foilFilter === 'all' }"
-                @click="setFoilFilter('all')"
-              >
-                All
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: foilFilter === 'nonfoil' }"
-                @click="setFoilFilter('nonfoil')"
-              >
-                Non-foil
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: foilFilter === 'foil' }"
-                @click="setFoilFilter('foil')"
-              >
-                Foil
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: foilFilter === 'etched' }"
-                @click="setFoilFilter('etched')"
-              >
-                Etched
-              </button>
-            </div>
-          </div>
-        </div>
-      </FilterSidebar>
-
+    <div class="page-with-sidebar collection-search-page-layout">
       <div class="page-with-sidebar-main collection-search-main">
-        <div class="collection-search-toolbar">
-          <p v-if="searchQuery.trim()" class="collection-search-toolbar-query">
-            Results for “{{ searchQuery.trim() }}”
-          </p>
-          <p v-else class="collection-search-toolbar-query collection-search-empty-prompt">
-            Use the search bar above to find cards by name, or browse a random one.
-          </p>
-          <button
-            type="button"
-            class="btn btn-secondary btn-small collection-search-random-btn"
-            :disabled="randomLoading"
-            title="Pick a random card name and browse its art on this page"
-            @click="openRandomCard"
-          >
-            {{ randomLoading ? "…" : "Random card" }}
-          </button>
-        </div>
+        <form
+          class="collection-search-form collection-search-page-form"
+          role="search"
+          @submit.prevent="submitSearch"
+        >
+          <div class="collection-search-toolbar-row">
+            <input
+              id="collection-search-page-input"
+              ref="searchInputRef"
+              v-model="searchInput"
+              type="search"
+              class="collection-search-input collection-search-page-input"
+              placeholder="Card name…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search cards by name"
+            >
+            <input
+              id="collection-search-page-text-input"
+              v-model="textSearchInput"
+              type="search"
+              class="collection-search-input collection-search-page-input"
+              placeholder="Card text…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search cards by oracle text"
+            >
+            <button type="submit" class="btn btn-primary collection-search-page-submit">
+              Search
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary collection-all-filters-btn collection-search-page-filters-btn"
+              @click="mobileFiltersOpen = true"
+            >
+              Filters
+            </button>
+          </div>
+        </form>
 
         <div class="collection-search-body">
           <div class="collection-search-results">
             <p
-              v-if="searchQuery.trim() && !loading && !totalMatches"
+              v-if="hasActiveSearch && !loading && !totalMatches"
               class="manager-stats collection-search-empty-prompt"
             >
-              No cards match “{{ searchQuery }}” with these filters.
+              No cards match your search with these filters.
             </p>
 
             <div v-if="loading && !cards.length" class="storage-empty">
@@ -392,20 +521,13 @@ onMounted(async () => {
             </div>
 
             <div
-              v-else-if="searchQuery.trim() && cards.length"
+              v-else-if="hasActiveSearch && cards.length"
               class="table-panel cards-panel reports-cards-panel collection-gallery-panel"
             >
               <div class="collection-gallery-toolbar">
                 <p class="collection-gallery-toolbar-stats">
-                  Showing {{ resultsRangeStart }}–{{ resultsRangeEnd }} of {{ totalMatches }} cards
+                  Showing {{ cards.length }} of {{ totalMatches }} cards
                 </p>
-                <PageControls
-                  v-if="totalPages > 1"
-                  :page="page"
-                  :total-pages="totalPages"
-                  class="collection-gallery-toolbar-pagination"
-                  @update:page="goToPage"
-                />
                 <CollectionGalleryScaleControl
                   class="collection-gallery-toolbar-scale"
                   :model-value="collectionCardScale"
@@ -413,43 +535,119 @@ onMounted(async () => {
                   @update:model-value="setCollectionCardScale"
                 />
               </div>
-              <GalleryLoadingOverlay :loading="loading" label="Searching cards…">
-                <CollectionCardGrid
+              <GalleryLoadingOverlay :loading="loading && !loadingMore" label="Searching cards…">
+                <VirtualizedCollectionCardGrid
+                  ref="virtualGridRef"
                   :cards="cards"
                   :show-unowned-badge="false"
                   :card-scale="collectionCardScale"
+                  :has-more="hasMoreResults"
                   browse-names
-                  :selected-name="selectedCardName"
+                  :selected-name="selectedBrowseName"
                   @browse-name="browseCardName"
+                  @load-more="loadMoreResults"
                   @ownership-changed="onArtOwnershipChanged"
                 />
               </GalleryLoadingOverlay>
+              <p v-if="loadingMore" class="collection-search-load-more-status">
+                <LoadingIndicator label="Loading more cards…" />
+              </p>
             </div>
 
             <p
-              v-else-if="!searchQuery.trim() && !artExplorer"
+              v-else-if="!hasActiveSearch"
               class="collection-search-results-hint collection-search-empty-prompt"
             >
-              Select a card from the list after searching, or use Random card.
+              Search for a card name or rules text to browse art versions across your collection.
             </p>
           </div>
 
-          <aside v-if="artExplorer" class="collection-search-detail">
+          <aside v-if="artExplorer || artPanelLoading" class="collection-search-detail">
+            <div
+              v-if="artPanelLoading && !artExplorer"
+              class="collection-search-detail-loading"
+            >
+              <LoadingIndicator label="Loading card…" />
+            </div>
             <SearchArtBrowser
+              v-else-if="artExplorer"
               sidebar
               :name="artExplorer.name"
               :variants="artExplorer.variants"
               :selected-index="artSelectedIndex"
               :set-label-for="setLabel"
-              :show-random="!searchQuery.trim()"
               @update:selected-index="artSelectedIndex = $event"
-              @random="openRandomCard"
               @close="closeArtExplorer"
               @ownership-changed="onArtOwnershipChanged"
             />
           </aside>
         </div>
       </div>
+
+      <FilterSidebar class="collection-desktop-filters collection-search-filters-sidebar">
+        <CollectionAllFilters
+          :is-all-view="true"
+          :is-all-sets-view="true"
+          :art-styles="[]"
+          :owned-filter="ownedFilter"
+          :foil-filter="foilFilter"
+          :type-filter="typeFilter"
+          :color-filters="colorFilters"
+          :storage-filters="storageFilters"
+          :rarity-filter="rarityFilter"
+          :cmc-min="cmcMin"
+          :cmc-max="cmcMax"
+          :power-min="powerMin"
+          :toughness-min="toughnessMin"
+          :show-sort="false"
+          @set-owned-filter="setOwnedFilter"
+          @set-foil-filter="setFoilFilter"
+          @type-filter-change="onTypeFilterChange"
+          @toggle-color-filter="toggleColorFilter"
+          @clear-color-filters="clearColorFilters"
+          @toggle-storage-filter="toggleStorageFilter"
+          @clear-storage-filters="clearStorageFilters"
+          @rarity-filter-change="onRarityFilterChange"
+          @update:cmc-min="updateDetailFilter('cmcMin', $event)"
+          @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+          @update:power-min="updateDetailFilter('powerMin', $event)"
+          @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
+        />
+      </FilterSidebar>
     </div>
+
+    <CollectionMobileFilterSheet
+      :open="mobileFiltersOpen"
+      @close="mobileFiltersOpen = false"
+    >
+      <CollectionAllFilters
+        :is-all-view="true"
+        :is-all-sets-view="true"
+        :art-styles="[]"
+        :owned-filter="ownedFilter"
+        :foil-filter="foilFilter"
+        :type-filter="typeFilter"
+        :color-filters="colorFilters"
+        :storage-filters="storageFilters"
+        :rarity-filter="rarityFilter"
+        :cmc-min="cmcMin"
+        :cmc-max="cmcMax"
+        :power-min="powerMin"
+        :toughness-min="toughnessMin"
+        :show-sort="false"
+        @set-owned-filter="setOwnedFilter"
+        @set-foil-filter="setFoilFilter"
+        @type-filter-change="onTypeFilterChange"
+        @toggle-color-filter="toggleColorFilter"
+        @clear-color-filters="clearColorFilters"
+        @toggle-storage-filter="toggleStorageFilter"
+        @clear-storage-filters="clearStorageFilters"
+        @rarity-filter-change="onRarityFilterChange"
+        @update:cmc-min="updateDetailFilter('cmcMin', $event)"
+        @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+        @update:power-min="updateDetailFilter('powerMin', $event)"
+        @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
+      />
+    </CollectionMobileFilterSheet>
   </div>
 </template>

@@ -7,12 +7,23 @@ const props = defineProps({
   cardScale: { type: Number, default: 100 },
   showUnownedBadge: { type: Boolean, default: false },
   showFinishBadge: { type: Boolean, default: false },
+  browseNames: { type: Boolean, default: false },
+  selectedName: { type: String, default: "" },
   selectable: { type: Boolean, default: false },
   selectedKeys: { type: Object, default: null },
   focusedIndex: { type: Number, default: -1 },
+  hasMore: { type: Boolean, default: false },
+  loadMoreThreshold: { type: Number, default: 240 },
 });
 
-const emit = defineEmits(["toggle-select", "focus-index", "keydown", "ownership-changed"]);
+const emit = defineEmits([
+  "toggle-select",
+  "focus-index",
+  "keydown",
+  "ownership-changed",
+  "browse-name",
+  "load-more",
+]);
 
 const rootRef = ref(null);
 const viewportHeight = ref(640);
@@ -76,7 +87,15 @@ function measureLayout() {
 }
 
 function onScroll(event) {
-  scrollTop.value = event.target.scrollTop;
+  const el = event.target;
+  scrollTop.value = el.scrollTop;
+  if (!props.hasMore) {
+    return;
+  }
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+  if (remaining <= props.loadMoreThreshold) {
+    emit("load-more");
+  }
 }
 
 function scrollToIndex(index) {
@@ -138,12 +157,15 @@ defineExpose({ scrollToIndex, rootRef });
           :show-unowned-badge="showUnownedBadge"
           :show-finish-badge="showFinishBadge"
           :card-scale="cardScale"
+          :browse-names="browseNames"
+          :selected-name="selectedName"
           :selectable="selectable"
           :selected-keys="selectedKeys"
           :focused-index="focusedIndex >= 0 ? focusedIndex - visibleRange.start : -1"
           :start-index="visibleRange.start"
           @toggle-select="emit('toggle-select', $event)"
           @focus-index="emit('focus-index', $event)"
+          @browse-name="emit('browse-name', $event)"
           @ownership-changed="emit('ownership-changed')"
         />
       </div>

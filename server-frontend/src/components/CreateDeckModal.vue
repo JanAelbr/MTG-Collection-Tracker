@@ -351,7 +351,6 @@ watch(
           :name="artExplorer.name"
           :variants="artExplorer.variants"
           :selected-index="artSelectedIndex"
-          :show-random="false"
           @update:selected-index="artSelectedIndex = $event"
           @close="closeArtExplorer"
         />

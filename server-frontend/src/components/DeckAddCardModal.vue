@@ -453,7 +453,6 @@ onUnmounted(() => {
           :variants="filteredVariants"
           :selected-index="artSelectedIndex"
           :set-label-for="setLabel"
-          :show-random="false"
           @update:selected-index="artSelectedIndex = $event"
           @close="closeArtExplorer"
         />

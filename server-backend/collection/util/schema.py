@@ -9,6 +9,7 @@ from util.db_migrate import (
     backfill_basic_land_flags,
     backfill_card_types,
     ensure_card_columns,
+    ensure_card_detail_metadata,
     ensure_card_indexes,
     ensure_purchase_unique_index,
     ensure_set_code_aliases,
@@ -92,6 +93,7 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
+        ensure_card_detail_metadata(conn)
         ensure_art_style_rules_table(conn)
         ensure_tracked_sets_ready(conn)
         if db_path:

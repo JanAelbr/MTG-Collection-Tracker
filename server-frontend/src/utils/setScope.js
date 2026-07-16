@@ -25,10 +25,24 @@ const ALL_CARDS_SORT_FIELDS = new Set(["number", "value"]);
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
+import { COLLECTION_RARITY_FILTER_VALUES } from "./collectionRarities";
 import { collectionLensFromRoute } from "./collectionLenses";
+import { parseOptionalNumber } from "./collectionFilters";
 
 const ALL_CARDS_TYPE_FILTERS = COLLECTION_TYPE_FILTER_VALUES;
 const ALL_CARDS_COLOR_FILTERS = new Set(["W", "U", "B", "R", "G", "C"]);
+const ALL_CARDS_RARITY_FILTERS = COLLECTION_RARITY_FILTER_VALUES;
+
+function parseStorageFiltersFromRoute(route) {
+  const storageParam = route.query?.storage;
+  if (typeof storageParam !== "string" || !storageParam.trim()) {
+    return [];
+  }
+  return storageParam
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 
 export function defaultAllCardsSortDirForField(sort) {
   return sort === "number" ? "asc" : "desc";
@@ -70,6 +84,18 @@ export function allCardsFiltersFromRoute(route) {
   const searchParam = route.query?.q;
   const searchQuery = typeof searchParam === "string" ? searchParam.trim() : "";
 
+  const rarityParam = route.query?.rarity;
+  const rarityFilter = typeof rarityParam === "string" && ALL_CARDS_RARITY_FILTERS.has(rarityParam)
+    ? rarityParam
+    : "all";
+
+  const cmcMin = parseOptionalNumber(route.query?.cmcMin);
+  const cmcMax = parseOptionalNumber(route.query?.cmcMax);
+  const powerMin = parseOptionalNumber(route.query?.powMin);
+  const toughnessMin = parseOptionalNumber(route.query?.tghMin);
+
+  const storageFilters = parseStorageFiltersFromRoute(route);
+
   const lens = collectionLensFromRoute(route);
 
   return {
@@ -81,6 +107,12 @@ export function allCardsFiltersFromRoute(route) {
     typeFilter,
     colorFilters,
     searchQuery,
+    rarityFilter,
+    cmcMin,
+    cmcMax,
+    powerMin,
+    toughnessMin,
+    storageFilters,
     lens,
   };
 }
@@ -96,6 +128,12 @@ export function allCardsRouteQuery({
   sortDir = "desc",
   page = 1,
   searchQuery = "",
+  rarityFilter = "all",
+  cmcMin = null,
+  cmcMax = null,
+  powerMin = null,
+  toughnessMin = null,
+  storageFilters = [],
   lens = "",
 } = {}) {
   const query = collectionScopeToQuery(setCode, artStyle);
@@ -113,6 +151,24 @@ export function allCardsRouteQuery({
   }
   if (searchQuery) {
     query.q = searchQuery;
+  }
+  if (rarityFilter !== "all") {
+    query.rarity = rarityFilter;
+  }
+  if (cmcMin != null) {
+    query.cmcMin = String(cmcMin);
+  }
+  if (cmcMax != null) {
+    query.cmcMax = String(cmcMax);
+  }
+  if (powerMin != null) {
+    query.powMin = String(powerMin);
+  }
+  if (toughnessMin != null) {
+    query.tghMin = String(toughnessMin);
+  }
+  if (storageFilters.length) {
+    query.storage = storageFilters.join(",");
   }
   if (lens) {
     query.lens = lens;
@@ -156,19 +212,127 @@ export function collectionRouteForSet(setCode, artStyle = "") {
   };
 }
 
-export function searchNavQuery(route) {
+export function searchFiltersFromRoute(route) {
+  const owned = route.query?.owned;
+  const ownedFilter = ALL_CARDS_OWNED_FILTERS.has(owned) ? owned : "all";
+
+  const finish = route.query?.finish;
+  const foilFilter = ALL_CARDS_FINISH_FILTERS.has(finish) ? finish : "all";
+
+  const pageParam = Number(route.query?.page);
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+  const typeParam = route.query?.type;
+  const typeFilter = typeof typeParam === "string" && ALL_CARDS_TYPE_FILTERS.has(typeParam)
+    ? typeParam
+    : "all";
+
+  const colorsParam = route.query?.colors;
+  const colorFilters = typeof colorsParam === "string"
+    ? colorsParam
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
+    : [];
+
+  const nameParam = route.query?.q;
+  const searchQuery = typeof nameParam === "string" ? nameParam.trim() : "";
+
+  const textParam = route.query?.text;
+  const textSearchQuery = typeof textParam === "string" ? textParam.trim() : "";
+
+  const rarityParam = route.query?.rarity;
+  const rarityFilter = typeof rarityParam === "string" && ALL_CARDS_RARITY_FILTERS.has(rarityParam)
+    ? rarityParam
+    : "all";
+
+  const cmcMin = parseOptionalNumber(route.query?.cmcMin);
+  const cmcMax = parseOptionalNumber(route.query?.cmcMax);
+  const powerMin = parseOptionalNumber(route.query?.powMin);
+  const toughnessMin = parseOptionalNumber(route.query?.tghMin);
+
+  const storageFilters = parseStorageFiltersFromRoute(route);
+
+  return {
+    ownedFilter,
+    foilFilter,
+    page,
+    typeFilter,
+    colorFilters,
+    searchQuery,
+    textSearchQuery,
+    rarityFilter,
+    cmcMin,
+    cmcMax,
+    powerMin,
+    toughnessMin,
+    storageFilters,
+  };
+}
+
+export function searchRouteQuery({
+  ownedFilter = "all",
+  foilFilter = "all",
+  typeFilter = "all",
+  colorFilters = [],
+  searchQuery = "",
+  textSearchQuery = "",
+  rarityFilter = "all",
+  cmcMin = null,
+  cmcMax = null,
+  powerMin = null,
+  toughnessMin = null,
+  storageFilters = [],
+  page = 1,
+} = {}) {
   const query = {};
-  if (route.path === "/collection/search") {
-    const q = route.query?.q;
-    if (typeof q === "string" && q.trim()) {
-      query.q = q.trim();
-    }
-    const page = route.query?.page;
-    const parsedPage = Number(page);
-    if (Number.isFinite(parsedPage) && parsedPage > 1) {
-      query.page = String(parsedPage);
-    }
+  if (searchQuery) {
+    query.q = searchQuery;
   }
+  if (textSearchQuery) {
+    query.text = textSearchQuery;
+  }
+  if (ownedFilter !== "all") {
+    query.owned = ownedFilter;
+  }
+  if (foilFilter !== "all") {
+    query.finish = foilFilter;
+  }
+  if (typeFilter !== "all") {
+    query.type = typeFilter;
+  }
+  if (colorFilters.length) {
+    query.colors = colorFilters.join(",");
+  }
+  if (rarityFilter !== "all") {
+    query.rarity = rarityFilter;
+  }
+  if (cmcMin != null) {
+    query.cmcMin = String(cmcMin);
+  }
+  if (cmcMax != null) {
+    query.cmcMax = String(cmcMax);
+  }
+  if (powerMin != null) {
+    query.powMin = String(powerMin);
+  }
+  if (toughnessMin != null) {
+    query.tghMin = String(toughnessMin);
+  }
+  if (storageFilters.length) {
+    query.storage = storageFilters.join(",");
+  }
+  if (page > 1) {
+    query.page = String(page);
+  }
+  return query;
+}
+
+export function searchNavQuery(route) {
+  if (route.path === "/collection/search") {
+    return searchRouteQuery(searchFiltersFromRoute(route));
+  }
+  const query = {};
   const owned = route.query?.owned;
   if (owned === "owned" || owned === "unowned") {
     query.owned = owned;

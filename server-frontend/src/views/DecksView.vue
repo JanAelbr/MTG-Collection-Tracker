@@ -83,6 +83,13 @@ const activeBrowseDeck = computed(
 
 const unknownCards = computed(() => browseStats.value?.unknownCards || []);
 const hasUnknownCards = computed(() => (browseStats.value?.unknownCount ?? 0) > 0);
+const unpricedCardCount = computed(() => {
+  const qty = Number(browseStats.value?.unknownQty);
+  if (Number.isFinite(qty) && qty > 0) {
+    return qty;
+  }
+  return Number(browseStats.value?.unknownCount) || 0;
+});
 
 const commanderCards = computed(() => {
   const { commanders } = splitCommanderCards(browseStats.value?.cards || []);
@@ -624,26 +631,26 @@ onMounted(async () => {
       >
         <DeckHero :deck="activeBrowseDeck" :stats="browseStats" :deck-id="deckId" />
 
-        <section
+        <details
           v-if="hasUnknownCards"
           class="table-panel deck-unknown-panel"
           aria-label="Unpriced cards"
         >
-          <div class="deck-unknown-head">
-            <h2>Unpriced cards</h2>
-            <button
-              type="button"
-              class="btn btn-secondary btn-small"
-              :disabled="refreshingUnpricedMetadata"
-              @click="refreshUnpricedMetadata"
-            >
-              {{ refreshingUnpricedMetadata ? "Refreshing…" : "Refresh set metadata" }}
-            </button>
-          </div>
+          <summary class="deck-unknown-summary">
+            <div class="deck-unknown-head">
+              <h2>Unpriced cards ({{ unpricedCardCount }})</h2>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                :disabled="refreshingUnpricedMetadata"
+                @click.stop="refreshUnpricedMetadata"
+              >
+                {{ refreshingUnpricedMetadata ? "Refreshing…" : "Refresh set metadata" }}
+              </button>
+            </div>
+          </summary>
           <p class="deck-unknown-intro">
-            {{ browseStats.unknownCount }}
-            {{ browseStats.unknownCount === 1 ? "card has" : "cards have" }}
-            no current market price in this deck list.
+            These deck cards have no current market price.
             Re-import Scryfall catalog data for the affected sets, then run a price sync if needed.
           </p>
           <p v-if="unpricedMetadataMessage" class="deck-unknown-status">{{ unpricedMetadataMessage }}</p>
@@ -684,7 +691,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </section>
+        </details>
 
         <section class="table-panel deck-cards-panel">
           <div class="deck-cards-sticky">

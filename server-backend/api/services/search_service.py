@@ -1,4 +1,3 @@
-import random
 import sqlite3
 
 from report.card_detail_data import collector_sort_key
@@ -13,6 +12,11 @@ from api.services.reports_service import (
 )
 from api.services import settings_service
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
+from util.card_metadata import (
+    card_matches_collection_cmc_filter,
+    card_matches_collection_rarity_filter,
+    card_matches_collection_stat_filter,
+)
 from util.set_catalog import load_sets_catalog
 
 SEARCH_PAGE_SIZE = 25
@@ -51,9 +55,50 @@ def _newest_first_key(card: dict, release_dates: dict[str, str]) -> tuple:
     )
 
 
-def _card_matches_term(card: dict, term: str) -> bool:
-    name = (card.get("name") or "").lower()
-    return term in name
+def _parse_optional_float(value) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = float(text)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _parse_color_filters(colors: str | list[str] | None) -> list[str]:
+    if not colors:
+        return []
+    if isinstance(colors, list):
+        items = colors
+    else:
+        items = str(colors).split(",")
+    allowed = {"W", "U", "B", "R", "G", "C"}
+    return [
+        item.strip().upper()
+        for item in items
+        if item.strip().upper() in allowed
+    ]
+
+
+def _card_matches_name(card: dict, term: str) -> bool:
+    return term in (card.get("name") or "").lower()
+
+
+def _card_matches_oracle_text(card: dict, term: str) -> bool:
+    return term in (card.get("oracleText") or "").lower()
+
+
+def _parse_storage_filters(storage: str | list[str] | None) -> list[str]:
+    if not storage:
+        return []
+    if isinstance(storage, list):
+        items = storage
+    else:
+        items = str(storage).split(",")
+    return [item.strip() for item in items if item.strip()]
 
 
 def _filtered_pool(
@@ -62,11 +107,20 @@ def _filtered_pool(
     set_code: str,
     owned_filter: str,
     foil_filter: str,
-    search: str = "",
+    name_search: str = "",
+    text_search: str = "",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
 ) -> list[dict]:
     settings = settings_service.get_settings(conn)
-    term = search.strip()
-    set_codes = _resolve_set_codes(conn, set_code=set_code, search_term=term or None)
+    name_term = name_search.strip()
+    set_codes = _resolve_set_codes(conn, set_code=set_code, search_term=name_term or None)
     cards, _compare_date = _load_enriched_report_cards(
         conn,
         set_codes=set_codes,
@@ -79,11 +133,34 @@ def _filtered_pool(
         art_style="",
         owned_filter=owned_filter,
         foil_filter=foil_filter,
+        type_filter=type_filter,
+        color_filters=color_filters or [],
+        storage_filters=storage_filters or [],
     )
-    if not term:
-        return filtered
-    lowered = term.lower()
-    return [card for card in filtered if _card_matches_term(card, lowered)]
+    filtered = [
+        card for card in filtered
+        if card_matches_collection_rarity_filter(card, rarity_filter)
+    ]
+    filtered = [
+        card for card in filtered
+        if card_matches_collection_cmc_filter(card, cmc_min=cmc_min, cmc_max=cmc_max)
+    ]
+    filtered = [
+        card for card in filtered
+        if card_matches_collection_stat_filter(
+            card,
+            power_min=power_min,
+            toughness_min=toughness_min,
+        )
+    ]
+    if name_term:
+        lowered = name_term.lower()
+        filtered = [card for card in filtered if _card_matches_name(card, lowered)]
+    text_term = text_search.strip()
+    if text_term:
+        lowered = text_term.lower()
+        filtered = [card for card in filtered if _card_matches_oracle_text(card, lowered)]
+    return filtered
 
 
 def _print_key(card: dict) -> tuple:
@@ -366,10 +443,17 @@ def list_name_variants(
     conn: sqlite3.Connection,
     *,
     name: str,
-    search: str = "",
     set_code: str = "All",
     owned_filter: str = "all",
     foil_filter: str = "all",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
 ) -> dict:
     normalized_owned = _normalize_owned_filter(owned_filter)
     normalized_foil = _normalize_foil_filter(foil_filter)
@@ -377,12 +461,22 @@ def list_name_variants(
     if not trimmed_name:
         raise ReportsError("Card name is required")
 
+    filter_kwargs = {
+        "type_filter": type_filter,
+        "color_filters": color_filters or [],
+        "rarity_filter": rarity_filter,
+        "cmc_min": cmc_min,
+        "cmc_max": cmc_max,
+        "power_min": power_min,
+        "toughness_min": toughness_min,
+        "storage_filters": storage_filters or [],
+    }
     pool = _filtered_pool(
         conn,
         set_code=set_code,
         owned_filter=normalized_owned,
         foil_filter=normalized_foil,
-        search=search,
+        **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
     variants = _build_variants(
@@ -399,7 +493,7 @@ def list_name_variants(
         set_code=set_code,
         owned_filter=normalized_owned,
         foil_filter="all",
-        search=search,
+        **filter_kwargs,
     )
     print_flags = _load_print_finish_flags(conn, trimmed_name)
     finish_catalog = _finish_catalog_for_name(
@@ -411,7 +505,6 @@ def list_name_variants(
 
     return {
         "name": trimmed_name,
-        "search": search.strip(),
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
@@ -424,34 +517,58 @@ def search_cards(
     conn: sqlite3.Connection,
     *,
     search: str = "",
+    text_search: str = "",
     set_code: str = "All",
     owned_filter: str = "all",
     foil_filter: str = "all",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
     page: int = 1,
     page_size: int = SEARCH_PAGE_SIZE,
 ) -> dict:
     normalized_owned = _normalize_owned_filter(owned_filter)
     normalized_foil = _normalize_foil_filter(foil_filter)
-    term = search.strip()
-    if not term:
-        return {
-            "search": "",
-            "setCode": set_code,
-            "ownedFilter": normalized_owned,
-            "foilFilter": normalized_foil,
-            "page": 1,
-            "pageSize": max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE)),
-            "totalMatches": 0,
-            "totalPages": 1,
-            "cards": [],
-        }
+    name_term = search.strip()
+    text_term = text_search.strip()
+    empty_payload = {
+        "search": name_term,
+        "textSearch": text_term,
+        "setCode": set_code,
+        "ownedFilter": normalized_owned,
+        "foilFilter": normalized_foil,
+        "page": 1,
+        "pageSize": max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE)),
+        "totalMatches": 0,
+        "totalPages": 1,
+        "cards": [],
+    }
+    if not name_term and not text_term:
+        return empty_payload
 
+    filter_kwargs = {
+        "type_filter": type_filter,
+        "color_filters": color_filters or [],
+        "rarity_filter": rarity_filter,
+        "cmc_min": cmc_min,
+        "cmc_max": cmc_max,
+        "power_min": power_min,
+        "toughness_min": toughness_min,
+        "storage_filters": storage_filters or [],
+    }
     pool = _filtered_pool(
         conn,
         set_code=set_code,
         owned_filter=normalized_owned,
         foil_filter=normalized_foil,
-        search=term,
+        name_search=name_term,
+        text_search=text_term,
+        **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
     ranked = sorted(
@@ -468,7 +585,8 @@ def search_cards(
     total_pages = max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1
 
     return {
-        "search": term,
+        "search": name_term,
+        "textSearch": text_term,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
@@ -477,80 +595,4 @@ def search_cards(
         "totalMatches": total,
         "totalPages": total_pages,
         "cards": page_cards,
-    }
-
-
-def random_name_explore(
-    conn: sqlite3.Connection,
-    *,
-    search: str = "",
-    set_code: str = "All",
-    owned_filter: str = "all",
-    foil_filter: str = "all",
-) -> dict:
-    normalized_owned = _normalize_owned_filter(owned_filter)
-    normalized_foil = _normalize_foil_filter(foil_filter)
-    pool = _filtered_pool(
-        conn,
-        set_code=set_code,
-        owned_filter=normalized_owned,
-        foil_filter=normalized_foil,
-        search=search,
-    )
-    names = _unique_names(pool)
-    if not names:
-        raise ReportsError("No cards match these filters", status_code=404)
-    name = random.choice(names)
-    release_dates = _load_set_release_dates(conn)
-    variants = _build_variants(conn, name, pool, release_dates=release_dates)
-    print_flags = _load_print_finish_flags(conn, name)
-    finish_catalog = _finish_catalog_for_name(
-        _filtered_pool(
-            conn,
-            set_code=set_code,
-            owned_filter=normalized_owned,
-            foil_filter="all",
-            search=search,
-        ),
-        name,
-        print_flags=print_flags,
-    )
-    _merge_variant_finishes(variants, finish_catalog, print_flags=print_flags)
-    return {
-        "name": name,
-        "search": search.strip(),
-        "setCode": set_code,
-        "ownedFilter": normalized_owned,
-        "foilFilter": normalized_foil,
-        "variants": variants,
-        "selectedIndex": 0,
-        "totalVariants": len(variants),
-    }
-
-
-def random_card(
-    conn: sqlite3.Connection,
-    *,
-    search: str = "",
-    set_code: str = "All",
-    owned_filter: str = "all",
-    foil_filter: str = "all",
-) -> dict:
-    normalized_owned = _normalize_owned_filter(owned_filter)
-    normalized_foil = _normalize_foil_filter(foil_filter)
-    pool = _filtered_pool(
-        conn,
-        set_code=set_code,
-        owned_filter=normalized_owned,
-        foil_filter=normalized_foil,
-        search=search,
-    )
-    if not pool:
-        raise ReportsError("No cards match these filters", status_code=404)
-    return {
-        "search": search.strip(),
-        "setCode": set_code,
-        "ownedFilter": normalized_owned,
-        "foilFilter": normalized_foil,
-        "card": random.choice(pool),
     }

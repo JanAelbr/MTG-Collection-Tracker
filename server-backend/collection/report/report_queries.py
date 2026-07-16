@@ -6,6 +6,15 @@ _EXCLUDE_ALCHEMY = (
     f"AND {exclude_alchemy_art_style_sql('c.art_style')}"
 )
 
+_CARD_DETAIL_SELECT = """
+    c.color_identity,
+    c.oracle_text,
+    c.mana_cost,
+    c.cmc,
+    c.power,
+    c.toughness,
+    c.rarity,"""
+
 OWNED_CARDS_QUERY = f"""
 SELECT
     c.set_code,
@@ -18,6 +27,7 @@ SELECT
     c.colors,
     c.type_line,
     c.card_type,
+{_CARD_DETAIL_SELECT}
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -61,6 +71,7 @@ SELECT
     c.colors,
     c.type_line,
     c.card_type,
+{_CARD_DETAIL_SELECT}
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -105,6 +116,7 @@ SELECT
     c.colors,
     c.type_line,
     c.card_type,
+{_CARD_DETAIL_SELECT}
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -154,6 +166,7 @@ SELECT
     c.colors,
     c.type_line,
     c.card_type,
+{_CARD_DETAIL_SELECT}
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
