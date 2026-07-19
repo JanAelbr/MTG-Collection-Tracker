@@ -12,7 +12,12 @@ import ReportTopCardsHero from "../components/ReportTopCardsHero.vue";
 import CardPreview from "../components/CardPreview.vue";
 import SetPicker from "../components/SetPicker.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
+import ManagerSetTable from "../components/ManagerSetTable.vue";
+import ManagerCardStorageModal from "../components/ManagerCardStorageModal.vue";
+import ArtStyleRulesPanel from "../components/ArtStyleRulesPanel.vue";
 import { useCollectionBulkSelect } from "../composables/useCollectionBulkSelect";
+import { useManagerSetTable } from "../composables/useManagerSetTable";
+import { fetchCardCopyState } from "../composables/cardContextMenu";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { applyStrategyToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
@@ -28,7 +33,8 @@ import {
   allCardsRouteQuery,
   collectionScopeFromRoute,
   collectionScopeToQuery,
-  managerArtStylesEditorRoute,
+  collectionViewModeFromRoute,
+  shouldOpenManagerArtStyleEditor,
 } from "../utils/setScope";
 import {
   applySetCountPatchesToSets,
@@ -77,8 +83,12 @@ const routeSyncReady = ref(false);
 const applyingRouteQuery = ref(false);
 const routeQuerySyncInFlight = ref(false);
 const collectionHydrated = ref(false);
+const collectionViewMode = ref("gallery");
+const artStyleRulesOpen = ref(false);
+const priceIssuesOnly = ref(false);
 let suppressPageRouteRead = false;
 let searchDebounceTimer = null;
+let tableSearchDebounceTimer = null;
 
 const {
   bulkSelectMode,
@@ -104,7 +114,33 @@ const selectableSets = computed(() => {
   return patchedSets.value.filter((set) => !isAllSetsCode(set.setCode));
 });
 const artStyles = computed(() => cardsPayload.value?.artStyles || []);
-const managerArtStylesEditorLink = computed(() => managerArtStylesEditorRoute(setCode.value));
+const tableModeAvailable = computed(() => isAllView.value && !isAllSetsView.value);
+const isTableView = computed(() =>
+  tableModeAvailable.value && collectionViewMode.value === "table",
+);
+
+const managerTable = useManagerSetTable(() => ({
+  setCode: isTableView.value ? setCode.value : "",
+  artStyle: artStyle.value,
+  search: searchQuery.value.trim(),
+  foilFilter: foilFilter.value,
+  priceIssuesOnly: priceIssuesOnly.value,
+  pageSize: pageSize.value,
+  sort: allCardsSort.value,
+  sortDir: allCardsSortDir.value,
+  priceStrategy: pricingSettings.value?.priceStrategy || "trend",
+}));
+
+const storageModalOpen = ref(false);
+const storageModalCard = ref(null);
+const storageModalFinish = ref(0);
+
+const displayArtStyles = computed(() => {
+  if (isTableView.value && managerTable.artStyles.value.length) {
+    return managerTable.artStyles.value;
+  }
+  return artStyles.value;
+});
 function allCardsFilterParams() {
   return {
     setCode: setCode.value,
@@ -246,8 +282,12 @@ function applyClientQueryFromRoute() {
   try {
     allCardsSort.value = filters.sort;
     allCardsSortDir.value = filters.sortDir;
+    collectionViewMode.value = filters.viewMode;
     if ("page" in route.query) {
       allCardsPage.value = filters.page;
+    }
+    if (filters.openArtStyleEditor) {
+      artStyleRulesOpen.value = true;
     }
   } finally {
     applyingRouteQuery.value = false;
@@ -340,6 +380,18 @@ const sortedAllCards = computed(() => {
       const leftValue = left.currentValue ?? Number.NEGATIVE_INFINITY;
       const rightValue = right.currentValue ?? Number.NEGATIVE_INFINITY;
       primary = ascending ? leftValue - rightValue : rightValue - leftValue;
+    } else if (allCardsSort.value === "name") {
+      primary = String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" });
+      if (primary !== 0) {
+        return ascending ? primary : -primary;
+      }
+      return compareAllCardsTieBreak(left, right);
+    } else if (allCardsSort.value === "artStyle") {
+      primary = String(left.artStyle || "").localeCompare(String(right.artStyle || ""), undefined, { sensitivity: "base" });
+      if (primary !== 0) {
+        return ascending ? primary : -primary;
+      }
+      return compareAllCardsTieBreak(left, right);
     } else {
       primary = compareCollectorNumbers(left.collectorNumber, right.collectorNumber);
       if (primary !== 0) {
@@ -440,12 +492,145 @@ async function onSetsChanged(event) {
     invalidateAllViewScope();
     if (isAllView.value || event.setCode === setCode.value) {
       await loadCards();
+      if (isTableView.value) {
+        await managerTable.loadCards();
+      }
     }
     return;
   }
   if (isAllView.value) {
     await loadCards();
+    if (isTableView.value) {
+      await managerTable.loadCards();
+    }
   }
+}
+
+async function reloadManagerTable() {
+  if (!isTableView.value) {
+    managerTable.resetTableState();
+    return;
+  }
+  await managerTable.loadCards();
+}
+
+function setCollectionViewMode(mode) {
+  if (mode === "table" && !tableModeAvailable.value) {
+    return;
+  }
+  if (collectionViewMode.value === mode) {
+    return;
+  }
+  collectionViewMode.value = mode;
+  if (bulkSelectMode.value) {
+    toggleBulkMode();
+  }
+  pushCollectionRoute();
+  if (mode === "table") {
+    reloadManagerTable();
+  }
+}
+
+function openArtStyleEditor() {
+  artStyleRulesOpen.value = true;
+  pushCollectionRoute();
+}
+
+function setPriceIssuesOnly(value) {
+  if (priceIssuesOnly.value === value) {
+    return;
+  }
+  priceIssuesOnly.value = value;
+  if (isTableView.value) {
+    reloadManagerTable();
+  }
+}
+
+async function onArtStyleRulesSaved(result) {
+  clearClientCache();
+  if (result?.artStyles) {
+    managerTable.updateArtStyles(result.artStyles);
+    if (cardsPayload.value) {
+      cardsPayload.value = {
+        ...cardsPayload.value,
+        artStyles: result.artStyles,
+      };
+    }
+  }
+  artStyle.value = "";
+  invalidateAllViewScope();
+  await loadCards();
+  if (isTableView.value) {
+    await managerTable.loadCards();
+  }
+}
+
+async function onTableSetCopyCount(card, finish, value) {
+  try {
+    await managerTable.setCopyCount(setCode.value, card, finish, value);
+    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
+    reconcileOwnershipPatches(allViewScopeCards.value);
+  } catch (error) {
+    window.alert(error.message || "Failed to update copy count.");
+  }
+}
+
+async function onTableUpdateSingleStorage(card, finish, locationSlug) {
+  try {
+    await managerTable.updateSingleStorage(setCode.value, card, finish, locationSlug);
+    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
+    reconcileOwnershipPatches(allViewScopeCards.value);
+  } catch (error) {
+    window.alert(error.message || "Failed to update storage.");
+  }
+}
+
+function onTableOpenStorageModal(card, finish) {
+  storageModalCard.value = card;
+  storageModalFinish.value = finish;
+  storageModalOpen.value = true;
+}
+
+async function onTableStorageModalSaved() {
+  if (!storageModalCard.value) {
+    return;
+  }
+  try {
+    const finishCard = {
+      ...storageModalCard.value,
+      finish: storageModalFinish.value,
+      foil: storageModalFinish.value,
+    };
+    const payload = await fetchCardCopyState(finishCard);
+    if (payload?.state) {
+      await managerTable.applyStorageModalState(
+        storageModalCard.value,
+        storageModalFinish.value,
+        payload.state,
+      );
+    }
+    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
+    reconcileOwnershipPatches(allViewScopeCards.value);
+  } catch (error) {
+    window.alert(error.message || "Failed to refresh storage.");
+  }
+}
+
+function onTableStorageModalClose() {
+  storageModalOpen.value = false;
+  storageModalCard.value = null;
+}
+
+async function onTableAssignStorage(locationSlug) {
+  await managerTable.assignSelectedToStorage(locationSlug);
+}
+
+async function onTableSelectAll(checked) {
+  if (checked) {
+    await managerTable.selectAllRows();
+    return;
+  }
+  managerTable.clearRowSelection();
 }
 
 async function loadAppMeta() {
@@ -639,6 +824,8 @@ function buildCollectionQuery() {
     powerMin: parseOptionalNumber(powerMin.value),
     toughnessMin: parseOptionalNumber(toughnessMin.value),
     lens: resolvedActiveLens.value,
+    viewMode: collectionViewMode.value,
+    editArtStyles: artStyleRulesOpen.value,
   });
 }
 
@@ -709,6 +896,17 @@ function toggleAllCardsSortDir() {
   pushCollectionRoute();
 }
 
+function onTableSort(field) {
+  if (allCardsSort.value === field) {
+    allCardsSortDir.value = allCardsSortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    allCardsSort.value = field;
+    allCardsSortDir.value = defaultAllCardsSortDir(field);
+  }
+  storeAllCardsSort(allCardsSort.value, allCardsSortDir.value);
+  pushCollectionRoute();
+}
+
 function setOwnedFilter(value) {
   if (ownedFilter.value === value) {
     return;
@@ -722,6 +920,9 @@ function setFoilFilter(value) {
   }
   foilFilter.value = value;
   storeFoilFilter(value);
+  if (isTableView.value) {
+    reloadManagerTable();
+  }
 }
 
 function setTypeFilter(value) {
@@ -795,10 +996,18 @@ function updateSearchQuery(value) {
     clearTimeout(searchDebounceTimer);
   }
   searchDebounceTimer = setTimeout(() => {
-    if (routeSyncReady.value && !applyingRouteQuery.value && isAllView.value) {
+    if (routeSyncReady.value && !applyingRouteQuery.value && isAllView.value && !isTableView.value) {
       pushCollectionRoute();
     }
   }, 250);
+  if (tableSearchDebounceTimer) {
+    clearTimeout(tableSearchDebounceTimer);
+  }
+  tableSearchDebounceTimer = setTimeout(() => {
+    if (routeSyncReady.value && isTableView.value) {
+      reloadManagerTable();
+    }
+  }, 300);
 }
 
 function clearAllCardsQuickFilters() {
@@ -1154,12 +1363,69 @@ watch(
   },
 );
 
+watch(
+  () => route.query.view,
+  () => {
+    if (!routeSyncReady.value || !isAllView.value || routeQuerySyncInFlight.value) {
+      return;
+    }
+    const nextMode = collectionViewModeFromRoute(route);
+    if (collectionViewMode.value === nextMode) {
+      return;
+    }
+    collectionViewMode.value = nextMode;
+    if (nextMode === "table") {
+      reloadManagerTable();
+    }
+  },
+);
+
+watch(
+  () => route.query.editArtStyles,
+  () => {
+    if (!routeSyncReady.value || !isAllView.value) {
+      return;
+    }
+    artStyleRulesOpen.value = shouldOpenManagerArtStyleEditor(route);
+  },
+);
+
+watch(isAllSetsView, (allSets) => {
+  if (!allSets || collectionViewMode.value !== "table") {
+    return;
+  }
+  collectionViewMode.value = "gallery";
+  if (routeSyncReady.value && isAllView.value) {
+    pushCollectionRoute();
+  }
+});
+
+watch(artStyleRulesOpen, (open, wasOpen) => {
+  if (!routeSyncReady.value || !isAllView.value || applyingRouteQuery.value || open === wasOpen) {
+    return;
+  }
+  pushCollectionRoute();
+});
+
+watch([isTableView, artStyle, pageSize], () => {
+  if (!collectionHydrated.value || !routeSyncReady.value) {
+    return;
+  }
+  reloadManagerTable();
+});
+
 onMounted(async () => {
   syncViewFromRoute();
   await Promise.all([fetchPricingSettings(), loadMeta(), loadAppMeta(), refreshSyncStatus()]);
   hydrateCollectionFromRoute();
+  if (shouldOpenManagerArtStyleEditor(route)) {
+    artStyleRulesOpen.value = true;
+  }
   routeSyncReady.value = true;
   await loadCards();
+  if (isTableView.value) {
+    await managerTable.loadCards();
+  }
   collectionHydrated.value = true;
   if (syncStatus.value?.status === "running") {
     startPolling();
@@ -1210,10 +1476,10 @@ onUnmounted(stopPolling);
           v-if="isAllView"
           :is-all-view="isAllView"
           :is-all-sets-view="isAllSetsView"
-          :art-styles="artStyles"
+          :is-table-view="isTableView"
+          :art-styles="displayArtStyles"
           :set-code="setCode"
           :art-style="artStyle"
-          :manager-art-styles-editor-link="managerArtStylesEditorLink"
           :owned-filter="ownedFilter"
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
@@ -1226,6 +1492,9 @@ onUnmounted(stopPolling);
           :toughness-min="toughnessMin"
           :all-cards-sort="allCardsSort"
           :all-cards-sort-dir="allCardsSortDir"
+          :price-issues-only="priceIssuesOnly"
+          :price-issue-count="managerTable.priceIssueCount.value"
+          :show-price-health="tableModeAvailable"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
@@ -1241,6 +1510,8 @@ onUnmounted(stopPolling);
           @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
+          @update:price-issues-only="setPriceIssuesOnly"
+          @open-art-style-editor="openArtStyleEditor"
         />
         <template v-else>
           <div class="filter-sidebar-section">
@@ -1271,10 +1542,10 @@ onUnmounted(stopPolling);
           v-if="isAllView"
           :is-all-view="isAllView"
           :is-all-sets-view="isAllSetsView"
-          :art-styles="artStyles"
+          :is-table-view="isTableView"
+          :art-styles="displayArtStyles"
           :set-code="setCode"
           :art-style="artStyle"
-          :manager-art-styles-editor-link="managerArtStylesEditorLink"
           :owned-filter="ownedFilter"
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
@@ -1287,6 +1558,9 @@ onUnmounted(stopPolling);
           :toughness-min="toughnessMin"
           :all-cards-sort="allCardsSort"
           :all-cards-sort-dir="allCardsSortDir"
+          :price-issues-only="priceIssuesOnly"
+          :price-issue-count="managerTable.priceIssueCount.value"
+          :show-price-health="tableModeAvailable"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
@@ -1302,6 +1576,8 @@ onUnmounted(stopPolling);
           @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
+          @update:price-issues-only="setPriceIssuesOnly"
+          @open-art-style-editor="openArtStyleEditor"
         />
       </CollectionMobileFilterSheet>
 
@@ -1327,7 +1603,10 @@ onUnmounted(stopPolling);
             :card-scale="collectionCardScale"
             :scale-options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
             :mobile-filters-open="mobileFiltersOpen"
+            :view-mode="collectionViewMode"
+            :table-mode-available="tableModeAvailable"
             @update:search-query="updateSearchQuery"
+            @update:view-mode="setCollectionViewMode"
             @select-lens="applyCollectionLens"
             @toggle-bulk-mode="toggleBulkMode"
             @bulk-mark-owned="bulkMarkSelectedOwned"
@@ -1335,12 +1614,41 @@ onUnmounted(stopPolling);
             @open-mobile-filters="mobileFiltersOpen = true"
             @update:card-scale="setCollectionCardScale"
           />
-          <p v-if="showSyncHint" class="collection-sync-hint">
+          <ArtStyleRulesPanel
+            v-if="tableModeAvailable"
+            v-model:open="artStyleRulesOpen"
+            :set-code="setCode"
+            @saved="onArtStyleRulesSaved"
+          />
+          <p v-if="showSyncHint && !isTableView" class="collection-sync-hint">
             Prices may be outdated.
             <button type="button" class="collection-sync-hint-btn" @click="triggerPriceSync">
               Sync now
             </button>
           </p>
+          <ManagerSetTable
+            v-if="isTableView"
+            :set-code="setCode"
+            :finish-rows="managerTable.finishRows.value"
+            :loading="managerTable.loadingCards.value"
+            :loading-more="managerTable.loadingMore.value"
+            :has-more="managerTable.hasMoreCards.value"
+            :total-matches="managerTable.totalMatches.value"
+            :all-visible-selected="managerTable.allVisibleSelected.value"
+            :is-row-selected="managerTable.isRowSelected"
+            :sort-field="allCardsSort"
+            :sort-dir="allCardsSortDir"
+            :price-strategy="pricingSettings?.priceStrategy || 'trend'"
+            @update:all-visible-selected="onTableSelectAll"
+            @toggle-row="managerTable.toggleRow"
+            @set-copy-count="onTableSetCopyCount"
+            @update-single-storage="onTableUpdateSingleStorage"
+            @open-storage-modal="onTableOpenStorageModal"
+            @assign-storage="onTableAssignStorage"
+            @load-more="managerTable.loadMoreCards"
+            @sort="onTableSort"
+          />
+          <template v-else>
           <div v-if="!sortedAllCards.length" class="storage-empty collection-gallery-empty">
             <p>No cards match these filters.</p>
             <button
@@ -1368,6 +1676,7 @@ onUnmounted(stopPolling);
               @ownership-changed="onGalleryOwnershipChanged"
             />
           </GalleryLoadingOverlay>
+          </template>
         </div>
 
         <div v-else-if="loadingCards && !cards.length" class="storage-empty">
@@ -1397,7 +1706,10 @@ onUnmounted(stopPolling);
               <tr v-for="(card, index) in displayCards" :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`">
                 <td>{{ index + 1 }}</td>
                 <td>
-                  <CardPreview :image-uri="card.imageUri">
+                  <CardPreview
+                    :image-uri="card.imageUri"
+                    :image-uri-back="card.imageUriBack || ''"
+                  >
                     <RouterLink
                       :to="{
                         name: 'card',
@@ -1457,5 +1769,13 @@ onUnmounted(stopPolling);
         </div>
       </div>
     </div>
+
+    <ManagerCardStorageModal
+      :open="storageModalOpen"
+      :card="storageModalCard"
+      :finish="storageModalFinish"
+      @saved="onTableStorageModalSaved"
+      @close="onTableStorageModalClose"
+    />
   </div>
 </template>

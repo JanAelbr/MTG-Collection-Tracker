@@ -63,6 +63,7 @@ SELECT
     c.name,
     c.art_style,
     c.image_uri,
+    c.image_uri_back,
     c.colors,
     c.type_line,
     c.card_type,
@@ -99,6 +100,65 @@ def _mapping_row(row) -> dict:
     return {key: row[key] for key in row.keys()}
 
 
+def load_locations_for_set(
+    conn: sqlite3.Connection,
+    set_code: str,
+) -> dict[str, dict[int, list[dict]]]:
+    table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
+    ).fetchone()
+    if not table:
+        return {}
+
+    rows = conn.execute(
+        """
+        SELECT
+            ci.collector_number,
+            ci.finish,
+            ci.location_slug,
+            sl.label,
+            COUNT(*) AS copy_count
+        FROM card_instances ci
+        JOIN storage_locations sl ON sl.location_slug = ci.location_slug
+        WHERE ci.set_code = ?
+        GROUP BY ci.collector_number, ci.finish, ci.location_slug
+        ORDER BY sl.sort_order, sl.label
+        """,
+        (set_code.upper(),),
+    ).fetchall()
+
+    locations: dict[str, dict[int, list[dict]]] = {}
+    for collector_number, finish, slug, label, copy_count in rows:
+        print_key = str(collector_number)
+        finish_key = int(finish)
+        locations.setdefault(print_key, {}).setdefault(finish_key, []).append({
+            "slug": slug,
+            "label": label,
+            "count": int(copy_count),
+        })
+    return locations
+
+
+def attach_locations_to_manager_cards(
+    cards: list[dict],
+    locations_by_print: dict[str, dict[int, list[dict]]],
+) -> None:
+    for card in cards:
+        print_locations = locations_by_print.get(str(card["collector_number"]), {})
+        card["locations_nonfoil"] = print_locations.get(FINISH_NONFOIL, [])
+        card["locations_foil"] = print_locations.get(FINISH_FOIL, [])
+        card["locations_etched"] = print_locations.get(FINISH_ETCHED, [])
+
+
+def _owned_copy_count(data, finish_suffix: str) -> int:
+    instance = int(data.get(f"instance_count_{finish_suffix}") or 0)
+    if instance > 0:
+        return instance
+    if data.get(f"purchase_value_{finish_suffix}") is not None:
+        return 1
+    return 0
+
+
 def _serialize_manager_card(row) -> dict:
     data = _mapping_row(row)
     owned_nonfoil = (
@@ -123,6 +183,7 @@ def _serialize_manager_card(row) -> dict:
         "name": deck_card_display_name(data),
         "art_style": str_or_empty(data["art_style"]),
         "image_uri": str_or_empty(data["image_uri"]),
+        "image_uri_back": str_or_empty(data.get("image_uri_back")),
         **card_metadata_snake(data),
         "market_value": _float_or_none(data["market_value"]),
         "market_value_foil": _float_or_none(data["market_value_foil"]),
@@ -133,6 +194,12 @@ def _serialize_manager_card(row) -> dict:
         "owned_nonfoil": owned_nonfoil,
         "owned_foil": owned_foil,
         "owned_etched": owned_etched,
+        "instance_count_nonfoil": int(data.get("instance_count_nonfoil") or 0),
+        "instance_count_foil": int(data.get("instance_count_foil") or 0),
+        "instance_count_etched": int(data.get("instance_count_etched") or 0),
+        "owned_count_nonfoil": _owned_copy_count(data, "nonfoil"),
+        "owned_count_foil": _owned_copy_count(data, "foil"),
+        "owned_count_etched": _owned_copy_count(data, "etched"),
         "purchase_value_nonfoil": _float_or_none(data["purchase_value_nonfoil"]),
         "purchase_value_foil": _float_or_none(data["purchase_value_foil"]),
         "purchase_value_etched": _float_or_none(data["purchase_value_etched"]),

@@ -8,7 +8,7 @@ from report.builder_queries import (
     load_owned_pool,
     resolve_commander_rows,
 )
-from util.card_role_seed import SLOT_ROLES, card_bracket_weight, card_has_excluded_role, card_roles
+from util.card_role_seed import SLOT_ROLES, card_has_excluded_role_for, card_roles_for
 from util.commander_rules import validate_commander_deck
 
 DEFAULT_SLOT_COUNTS = {
@@ -46,8 +46,8 @@ def _finish_value(card: dict) -> float:
     return float(card.get("marketValue") or 0)
 
 
-def _slot_role_score(card_name: str, slot: str) -> int:
-    roles = set(card_roles(card_name))
+def _slot_role_score(card: dict, slot: str) -> int:
+    roles = set(card_roles_for(card))
     target_roles = SLOT_ROLES.get(slot) or set()
     if not target_roles:
         return 1
@@ -73,8 +73,7 @@ def _cmc_penalty(card: dict, slot: str) -> int:
 
 
 def _score_candidate(card: dict, *, slot: str, keywords: set[str]) -> int:
-    name = card.get("name") or ""
-    score = _slot_role_score(name, slot)
+    score = _slot_role_score(card, slot)
     score += _keyword_score(card, keywords)
     score -= _cmc_penalty(card, slot)
     if card.get("owned"):
@@ -98,7 +97,7 @@ def _pick_for_slot(
     for name, card in candidates.items():
         if name in used_names:
             continue
-        if card_has_excluded_role(name, excluded_roles):
+        if card_has_excluded_role_for(card, excluded_roles):
             continue
         if slot != "lands" and (card.get("isBasicLand") or card.get("cardType") == "land"):
             continue

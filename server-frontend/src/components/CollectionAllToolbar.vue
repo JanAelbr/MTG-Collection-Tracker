@@ -16,10 +16,13 @@ const props = defineProps({
   cardScale: { type: Number, default: 100 },
   scaleOptions: { type: Array, default: () => [75, 100, 125, 150] },
   mobileFiltersOpen: { type: Boolean, default: false },
+  viewMode: { type: String, default: "gallery" },
+  tableModeAvailable: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "update:searchQuery",
+  "update:viewMode",
   "select-lens",
   "toggle-bulk-mode",
   "bulk-mark-owned",
@@ -28,7 +31,12 @@ const emit = defineEmits([
   "update:cardScale",
 ]);
 
+const isTableView = computed(() => props.viewMode === "table");
+
 const matchSummary = computed(() => {
+  if (isTableView.value) {
+    return null;
+  }
   if (!props.scopeCount) {
     return "No cards in scope";
   }
@@ -40,9 +48,21 @@ const matchSummary = computed(() => {
 });
 
 const missingValueLabel = computed(() => {
+  if (isTableView.value) {
+    return "";
+  }
   const value = props.scopeStats?.missingValue ?? 0;
   return value > 0 ? formatEuro(value) : "";
 });
+
+function setViewMode(mode) {
+  if (mode === "table" && !props.tableModeAvailable) {
+    return;
+  }
+  if (props.viewMode !== mode) {
+    emit("update:viewMode", mode);
+  }
+}
 </script>
 
 <template>
@@ -53,11 +73,35 @@ const missingValueLabel = computed(() => {
         <input
           :value="searchQuery"
           type="search"
-          placeholder="Search name or #…"
+          :placeholder="isTableView ? 'Search cards…' : 'Search name or #…'"
           autocomplete="off"
           @input="emit('update:searchQuery', $event.target.value)"
         >
       </label>
+      <div
+        class="button-group collection-view-mode-group"
+        role="group"
+        aria-label="View mode"
+      >
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: viewMode === 'gallery' }"
+          @click="setViewMode('gallery')"
+        >
+          Gallery
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: viewMode === 'table' }"
+          :disabled="!tableModeAvailable"
+          :title="tableModeAvailable ? 'Table view' : 'Select a specific set for table view'"
+          @click="setViewMode('table')"
+        >
+          Table
+        </button>
+      </div>
       <button
         type="button"
         class="btn btn-secondary btn-small collection-all-filters-btn"
@@ -67,6 +111,7 @@ const missingValueLabel = computed(() => {
         Filters
       </button>
       <button
+        v-if="!isTableView"
         type="button"
         class="btn btn-secondary btn-small"
         :class="{ 'is-active': bulkSelectMode }"
@@ -75,6 +120,7 @@ const missingValueLabel = computed(() => {
         {{ bulkSelectMode ? "Done" : "Select" }}
       </button>
       <CollectionGalleryScaleControl
+        v-if="!isTableView"
         class="collection-gallery-toolbar-scale"
         :model-value="cardScale"
         :options="scaleOptions"
@@ -82,7 +128,7 @@ const missingValueLabel = computed(() => {
       />
     </div>
 
-    <div class="collection-all-toolbar-row collection-all-lenses">
+    <div v-if="!isTableView" class="collection-all-toolbar-row collection-all-lenses">
       <button
         v-for="lens in COLLECTION_LENSES"
         :key="lens.id"
@@ -95,14 +141,14 @@ const missingValueLabel = computed(() => {
       </button>
     </div>
 
-    <div class="collection-all-toolbar-row collection-all-summary">
+    <div v-if="matchSummary" class="collection-all-toolbar-row collection-all-summary">
       <p class="collection-gallery-toolbar-stats">{{ matchSummary }}</p>
       <p v-if="missingValueLabel" class="collection-all-missing-value">
         Missing value: {{ missingValueLabel }}
       </p>
     </div>
 
-    <div v-if="bulkSelectMode && selectedCount" class="collection-bulk-bar">
+    <div v-if="!isTableView && bulkSelectMode && selectedCount" class="collection-bulk-bar">
       <span>{{ selectedCount }} selected</span>
       <button
         type="button"

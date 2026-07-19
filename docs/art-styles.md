@@ -6,7 +6,7 @@ Art-style labels split a set into collector-number groups (e.g. LTR main set vs 
 
 - On first run, bundled defaults from `server-backend/collection/lib/art_style_seed.py` are seeded for sets with custom groupings.
 - Other sets default to a single `"All"` group.
-- Edit rules in **Set Manager** or via the art-style link on the collection filter sidebar.
+- Edit rules from **All cards** (art-style filter ✎ icon or table view).
 - Legacy `data/art_styles/*.json` files are imported once on upgrade if still present.
 - Custom rules are included in **Settings → Backup & restore** exports (`art_styles/{set}.json` inside the ZIP).
 
@@ -14,7 +14,7 @@ Art-style labels split a set into collector-number groups (e.g. LTR main set vs 
 
 When you tune art-style rules locally and want fresh installs to get the same defaults:
 
-1. Edit rules in the app (Set Manager).
+1. Edit rules in the app (All cards → art-style filter ✎ or table view).
 2. Regenerate the bundled seed from your local database:
 
    ```powershell

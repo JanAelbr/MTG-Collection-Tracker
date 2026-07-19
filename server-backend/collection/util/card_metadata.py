@@ -351,6 +351,11 @@ def _read_metadata_field(row, field: str):
         return row.get(field)
     if isinstance(row, pd.Series):
         return row[field] if field in row.index else None
+    # sqlite3.Row and similar mapping rows support key access, not attribute access.
+    try:
+        return row[field]
+    except (KeyError, IndexError, TypeError):
+        pass
     return getattr(row, field, None)
 
 
@@ -426,4 +431,11 @@ def card_metadata_api(row) -> dict:
         "power": meta["power"],
         "toughness": meta["toughness"],
         "rarity": meta["rarity"],
+    }
+
+
+def card_image_fields(row) -> dict:
+    return {
+        "imageUri": str_or_empty(_read_metadata_field(row, "image_uri")),
+        "imageUriBack": str_or_empty(_read_metadata_field(row, "image_uri_back")),
     }

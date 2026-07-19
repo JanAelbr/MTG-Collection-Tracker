@@ -517,6 +517,7 @@ export const api = {
     const query = new URLSearchParams();
     if (params.q) query.set("q", params.q);
     if (params.text) query.set("text", params.text);
+    if (params.creatureType) query.set("creatureType", params.creatureType);
     if (params.setCode) query.set("setCode", params.setCode);
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);

@@ -11,8 +11,10 @@ from lib.config import EXCLUDED_SET_CODES, normalize_set_code
 from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
 from lib.card_locations import sync_card_instances
 from report.manager_data import (
+    attach_locations_to_manager_cards,
     count_manager_cards_for_set,
     count_manager_price_issues_for_set,
+    load_locations_for_set,
     load_manager_cards_for_set,
     query_manager_cards_for_set,
 )
@@ -218,6 +220,8 @@ def list_set_cards(
         offset=start,
         limit=safe_page_size,
     )
+    locations_by_print = load_locations_for_set(conn, normalized)
+    attach_locations_to_manager_cards(page_cards, locations_by_print)
 
     return {
         "setCode": normalized,
@@ -1350,6 +1354,7 @@ def _serialize_manager_card(card: dict) -> dict:
         "name": card["name"],
         "artStyle": card.get("art_style") or "",
         "imageUri": card.get("image_uri") or "",
+        "imageUriBack": card.get("image_uri_back") or "",
         **card_metadata_api(card),
         "marketValue": card.get("market_value"),
         "marketValueFoil": card.get("market_value_foil"),
@@ -1360,6 +1365,12 @@ def _serialize_manager_card(card: dict) -> dict:
         "ownedNonfoil": bool(card.get("owned_nonfoil")),
         "ownedFoil": bool(card.get("owned_foil")),
         "ownedEtched": bool(card.get("owned_etched")),
+        "ownedCountNonfoil": int(card.get("owned_count_nonfoil") or 0),
+        "ownedCountFoil": int(card.get("owned_count_foil") or 0),
+        "ownedCountEtched": int(card.get("owned_count_etched") or 0),
+        "locationsNonfoil": card.get("locations_nonfoil") or [],
+        "locationsFoil": card.get("locations_foil") or [],
+        "locationsEtched": card.get("locations_etched") or [],
         "purchaseValueNonfoil": card.get("purchase_value_nonfoil"),
         "purchaseValueFoil": card.get("purchase_value_foil"),
         "purchaseValueEtched": card.get("purchase_value_etched"),

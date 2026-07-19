@@ -346,6 +346,7 @@ def _enrich_card(
         "previousValue": previous_value,
         "previousDate": compare_date,
         "imageUri": card.get("image_uri") or "",
+        "imageUriBack": card.get("image_uri_back") or "",
         "cardmarketUrl": cardmarket_url_for_finish(card, finish) or "",
         "marketValue": card.get("market_value"),
         "marketValueFoil": card.get("market_value_foil"),

@@ -5,7 +5,7 @@ from api.cache import bump_cache_epoch
 from api.services.pricing_service import price_from_strategy
 from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
-from util.card_metadata import card_metadata_api
+from util.card_metadata import card_image_fields, card_metadata_api
 from util.db_migrate import ensure_card_columns
 
 LOCATIONS_QUERY = """
@@ -34,6 +34,7 @@ SELECT
     c.name,
     c.art_style,
     c.image_uri,
+    c.image_uri_back,
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -190,8 +191,7 @@ def list_location_cards(
                     "collector_number": row["collector_number"],
                 }),
                 "artStyle": str_or_empty(row["art_style"]),
-                "imageUri": str_or_empty(row["image_uri"]),
-                **card_metadata_api(row),
+                **card_image_fields(row),
                 "currentValue": price_from_strategy(
                     row["cardmarket_url"],
                     finish,

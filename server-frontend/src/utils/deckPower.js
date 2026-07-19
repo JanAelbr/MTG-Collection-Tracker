@@ -9,8 +9,44 @@ export const POWER_COMPONENTS = [
   { id: "fastMana", label: "Fast mana", showCount: true },
   { id: "gameChangers", label: "Game changers", showCount: true },
   { id: "comboDensity", label: "Combo pieces", showCount: true },
-  { id: "curve", label: "Mana curve", showCount: false },
 ];
+
+/** Snake_case role ids from the API → short table labels. */
+export const CARD_ROLE_LABELS = {
+  ramp: "Ramp",
+  draw: "Draw",
+  removal: "Removal",
+  interaction: "Interaction",
+  protection: "Protection",
+  tutor: "Tutor",
+  fast_mana: "Fast mana",
+  game_changer: "Game changer",
+  combo_piece: "Combo",
+  synergy: "Synergy",
+  recursion: "Recursion",
+  equipment: "Equipment",
+  graveyard_hate: "GY hate",
+  extra_turn: "Extra turn",
+  mass_land_destruction: "MLD",
+};
+
+const HIDDEN_TABLE_ROLES = new Set(["land"]);
+
+export function formatCardRoleLabel(role) {
+  const key = String(role || "").trim();
+  if (!key) {
+    return "";
+  }
+  return CARD_ROLE_LABELS[key] || key.replace(/_/g, " ");
+}
+
+/** Roles shown in the deck cards table (skip redundant land). */
+export function formatCardRoles(roles = []) {
+  return (roles || [])
+    .filter((role) => role && !HIDDEN_TABLE_ROLES.has(String(role)))
+    .map(formatCardRoleLabel)
+    .filter(Boolean);
+}
 
 export const EXCLUDE_CATEGORY_OPTIONS = [
   { id: "extra_turn", label: "Extra turns" },
@@ -50,9 +86,6 @@ export function componentScoreClass(score) {
 }
 
 export function formatComponentCount(componentId, counts = {}) {
-  if (componentId === "curve") {
-    return "";
-  }
   const value = Number(counts[componentId]) || 0;
   return value === 1 ? "1 card" : `${value} cards`;
 }

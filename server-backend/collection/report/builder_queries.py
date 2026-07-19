@@ -2,7 +2,6 @@ import sqlite3
 
 from util.alchemy_cards import exclude_alchemy_sql
 from util.card_metadata import card_metadata_api, is_legendary_commander_candidate, parse_card_colors
-from util.card_role_seed import card_roles
 from util.commander_rules import card_is_legal_for_deck, commander_color_identity
 
 OWNED_PRINTS_QUERY = """
@@ -22,6 +21,7 @@ SELECT
     c.legalities,
     c.is_basic_land,
     c.image_uri,
+    c.image_uri_back,
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -53,6 +53,7 @@ SELECT
     c.legalities,
     c.is_basic_land,
     c.image_uri,
+    c.image_uri_back,
     c.market_value,
     c.market_value_foil,
     c.market_value_etched,
@@ -86,6 +87,7 @@ def _row_to_card(row, *, owned: bool = False, finish: int | None = None) -> dict
         ("market_value_foil", "marketValueFoil"),
         ("market_value_etched", "marketValueEtched"),
         ("image_uri", "imageUri"),
+        ("image_uri_back", "imageUriBack"),
     ):
         if payload.get(field) is not None:
             card[api_field] = payload[field]
@@ -147,6 +149,7 @@ def load_owned_commanders(
         c.legalities,
         c.is_basic_land,
         c.image_uri,
+        c.image_uri_back,
         c.market_value,
         c.market_value_foil,
         c.market_value_etched

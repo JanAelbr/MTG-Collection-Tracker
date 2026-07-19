@@ -9,6 +9,7 @@ log = get_logger(__name__)
 
 CARD_COLUMNS = {
     "image_uri": "TEXT",
+    "image_uri_back": "TEXT",
     "cardmarket_url": "TEXT",
     "cardmarket_url_foil": "TEXT",
     "has_nonfoil": "INTEGER",

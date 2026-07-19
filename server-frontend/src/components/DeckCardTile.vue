@@ -2,7 +2,7 @@
 
 import { computed } from "vue";
 
-import ManaSymbols from "./ManaSymbols.vue";
+import ManaCost from "./ManaCost.vue";
 
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
@@ -240,7 +240,7 @@ function ownedLabel(card) {
 
       <span class="deck-card-grid-name-row">
 
-        <ManaSymbols :colors="card.colors" :size="16" />
+        <ManaCost :mana-cost="card.manaCost || ''" :size="16" />
 
         <RouterLink
 

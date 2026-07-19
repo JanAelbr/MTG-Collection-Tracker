@@ -463,6 +463,37 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
 
     @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_matches_creature_type(self, load_enriched):
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Frodo Baggins",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Legendary Creature — Halfling Scout",
+                    "currentValue": 2.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "2",
+                    "name": "Lightning Bolt",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Instant",
+                    "currentValue": 1.0,
+                },
+            ],
+            "2024-01-01",
+        )
+        payload = search_service.search_cards(self.conn, creature_type_search="halfling")
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
+
+    @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_filters_by_storage(self, load_enriched):
         load_enriched.return_value = (
             [

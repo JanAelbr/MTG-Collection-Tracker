@@ -309,7 +309,7 @@ onUnmounted(stopPolling);
       <h2>Pricing &amp; display</h2>
       <p class="home-intro">
         Price strategy and compare date apply across Collection, Stats, Storage, Decks, and card detail pages.
-        Rows per page applies to Collection and Set Manager lists.
+        Rows per page applies to Collection gallery and table lists.
       </p>
       <div class="home-pricing-panel">
         <label class="manager-filter">

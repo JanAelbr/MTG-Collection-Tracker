@@ -19,7 +19,7 @@ from util.card_metadata import (  # noqa: E402
     is_commander_format_legal,
     is_legendary_commander_candidate,
 )
-from util.card_role_seed import card_has_role, card_roles, load_card_role_seed  # noqa: E402
+from util.card_role_seed import card_roles_for, load_card_role_seed  # noqa: E402
 from util.commander_rules import card_is_legal_for_deck, validate_commander_deck  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables, seed_storage_locations  # noqa: E402
@@ -29,9 +29,20 @@ from util.tracked_sets import ensure_tracked_sets_ready  # noqa: E402
 class DeckBuilderUnitTests(unittest.TestCase):
     def test_seed_loads(self):
         seed = load_card_role_seed()
-        self.assertGreater(len(seed), 50)
-        self.assertIn("ramp", card_roles("Sol Ring"))
-        self.assertTrue(card_has_role("Demonic Tutor", "tutor"))
+        self.assertGreater(len(seed), 40)
+        sol_ring = {
+            "name": "Sol Ring",
+            "type_line": "Artifact",
+            "oracle_text": "{T}: Add {C}{C}.",
+        }
+        tutor = {
+            "name": "Demonic Tutor",
+            "type_line": "Sorcery",
+            "oracle_text": "Search your library for a card, put that card into your hand, then shuffle.",
+        }
+        self.assertIn("ramp", card_roles_for(sol_ring))
+        self.assertIn("fast_mana", card_roles_for(sol_ring))
+        self.assertIn("tutor", card_roles_for(tutor))
 
     def test_color_identity_subset(self):
         self.assertTrue(card_matches_color_identity(["U", "B"], ["U", "B", "R"]))
@@ -75,10 +86,49 @@ class DeckBuilderUnitTests(unittest.TestCase):
 
     def test_assess_power_returns_bracket_and_components(self):
         cards = [
-            {"name": "Sol Ring", "section": "main", "qty": 1, "cmc": 1, "card_type": "artifact"},
-            {"name": "Rhystic Study", "section": "main", "qty": 1, "cmc": 3, "card_type": "enchantment"},
-            {"name": "Cultivate", "section": "main", "qty": 1, "cmc": 3, "card_type": "sorcery"},
-            {"name": "Island", "section": "main", "qty": 10, "cmc": 0, "card_type": "land", "is_basic_land": True},
+            {
+                "name": "Sol Ring",
+                "section": "main",
+                "qty": 1,
+                "cmc": 1,
+                "card_type": "artifact",
+                "type_line": "Artifact",
+                "oracle_text": "{T}: Add {C}{C}.",
+            },
+            {
+                "name": "Rhystic Study",
+                "section": "main",
+                "qty": 1,
+                "cmc": 3,
+                "card_type": "enchantment",
+                "type_line": "Enchantment",
+                "oracle_text": (
+                    "Whenever an opponent casts a spell, you may draw a card unless that "
+                    "player pays {1}."
+                ),
+            },
+            {
+                "name": "Cultivate",
+                "section": "main",
+                "qty": 1,
+                "cmc": 3,
+                "card_type": "sorcery",
+                "type_line": "Sorcery",
+                "oracle_text": (
+                    "Search your library for up to two basic land cards, reveal those cards, "
+                    "put one onto the battlefield tapped and the other into your hand, then shuffle."
+                ),
+            },
+            {
+                "name": "Island",
+                "section": "main",
+                "qty": 10,
+                "cmc": 0,
+                "card_type": "land",
+                "is_basic_land": True,
+                "type_line": "Basic Land — Island",
+                "oracle_text": "({T}: Add {U}.)",
+            },
         ]
         result = assess_deck_power(cards, commanders=[])
         self.assertIn("bracket", result)
@@ -94,7 +144,10 @@ class DeckBuilderUnitTests(unittest.TestCase):
         self.assertEqual(result["categoryCards"]["tutors"], [])
         ramp_names = [card["cardName"] for card in result["categoryCards"]["ramp"]]
         self.assertIn("Sol Ring", ramp_names)
+        self.assertIn("Cultivate", ramp_names)
         self.assertIn("Sol Ring", [card["cardName"] for card in result["categoryCards"]["fastMana"]])
+        draw_names = [card["cardName"] for card in result["categoryCards"]["draw"]]
+        self.assertIn("Rhystic Study", draw_names)
         self.assertEqual(result["powerSignal"], 9.0)
         self.assertEqual(result["bracket"], 2)
         self.assertTrue(any("avg cmc 2.3" in item for item in result["highlights"]))
@@ -287,6 +340,7 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
                 has_foil INTEGER,
                 has_etched INTEGER,
                 image_uri TEXT,
+                image_uri_back TEXT,
                 cardmarket_url TEXT,
                 colors TEXT,
                 type_line TEXT,
@@ -321,7 +375,10 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
             "LTR", "3", "Cultivate",
             type_line="Sorcery",
             color_identity='["G"]',
-            oracle_text="Search your library for up to two basic land cards.",
+            oracle_text=(
+                "Search your library for up to two basic land cards, reveal those cards, "
+                "put one onto the battlefield tapped and the other into your hand, then shuffle."
+            ),
             cmc=3,
             card_type="sorcery",
             market_value=1.0,

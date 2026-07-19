@@ -8,7 +8,7 @@ The application:
 
 - stores everything in a **SQLite** database (`collection.db`)
 - syncs card catalogs via the Scryfall API and EUR prices via Cardmarket
-- tracks sets in **`tracked_sets`**; add/remove sets from the Set Manager UI
+- tracks sets in **`tracked_sets`**; add/remove sets from the All cards set picker
 - tracks commander deck contents and ownership in **`decks`** / **`deck_cards`** / **`purchases`**
 - stores card **colors**, **type line**, and **primary card type** for filtering
 - calculates market value and profit/loss per card, art style, and deck
@@ -105,7 +105,7 @@ The database is created automatically on first API start. Use **Settings → Bac
 
 ## Workflow
 
-Start the app, register sets in **Set Manager** (imports the Scryfall catalog), mark ownership, and use **Settings → Sync prices** for Cardmarket updates.
+Start the app, register sets from **All cards** (imports the Scryfall catalog), mark ownership, and use **Settings → Sync prices** for Cardmarket updates.
 
 ### Interactive web app
 
@@ -146,7 +146,6 @@ The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db`
 |---------|---------------|----------------|
 | **Collection** | `/collection/all` | All cards, Top owned, Search, Stats |
 | **Storage** | `/storage` | — |
-| **Set Manager** | `/manager` | — |
 | **Decks** | `/decks` | — |
 | **Settings** | `/settings` | — |
 
@@ -166,7 +165,7 @@ When prices are older than today, Collection also shows a **Sync prices** banner
 
 #### Set favourites
 
-In **Set Manager**, star a set to favourite it. Favourited sets sort first in all set dropdowns and show a ★ prefix in the label.
+In **All cards**, star a set in the set picker to favourite it. Favourited sets sort first in all set dropdowns and show a ★ prefix in the label.
 
 ---
 
@@ -183,7 +182,6 @@ In **Set Manager**, star a set to favourite it. Favourited sets sort first in al
 | **Collection — search** | `/collection/search` |
 | **Collection stats** | `/stats` |
 | **Storage** | `/storage` |
-| **Set Manager** | `/manager` |
 | **Decks** | `/decks` |
 | **Card detail** | `/card/:setCode/:collectorNumber` |
 | **Settings** | `/settings` |
@@ -192,23 +190,30 @@ Default landing page: **`/collection/all`**. Old `/reports/*` and `/collection/r
 
 ### Filters and behaviour
 
-- **Filter sidebar** on Collection, Search, Manager, and Stats (collapsible; width toggle on wide screens)
+- **Filter sidebar** on Collection, Search, and Stats (collapsible; width toggle on wide screens)
 - **Set filter** — URL query (`?set=LTR`); full set name in sidebar when using set browser; favourited sets sort first with ★
-- **Art style** — per-set list filter; edit link (✎) on All cards opens Set Manager art-style rules
-- **All cards** — ownership, finish, type, colour, and sort filters; paginated gallery with zoom control
+- **Art style** — per-set list filter; edit link (✎) on All cards opens the inline art-style rules editor
+- **All cards** — Gallery/Table toggle; gallery has ownership, finish, type, colour, and sort filters with a virtualized card grid; table mode (single set only) has per-finish ownership checkboxes, price health, bulk storage assign, and infinite scroll
 - **Price change** sort columns use the **compare date** from Settings
 - Collection filter changes are cached in memory on the server for fast repeat loads (~50 ms after warm-up)
+
+Old `/manager` URLs redirect to `/collection/all?view=table`.
 
 ### Set completion
 
 Owned/catalog counts per set use **distinct base collector numbers**. Serialized prints (collector number ending in `Z`) are excluded. `014` and `14` count as one slot. See `server-backend/collection/util/set_completion.py` and [docs/frontend.md](docs/frontend.md).
 
-### Set Manager
+### All cards — table mode
 
-- One set at a time; checkboxes for non-foil / foil / etched where the print exists
-- **Art style rules** — define collector-number groups for filters and stats
-- **Favourite** sets (★) to pin them to the top of set lists
-- Register new sets and import their Scryfall catalog from the UI
+When a specific set is selected on **All cards**, switch to **Table** view to:
+
+- Toggle non-foil / foil / etched ownership with checkboxes per print
+- Filter owned cards with URL/price issues
+- Bulk-assign storage to selected owned rows
+- Edit **art style rules** inline (collector-number groups for filters and stats)
+- Add/remove sets and reload Scryfall catalogs from the set picker
+
+`/manager?set=CODE` redirects to `/collection/all?set=CODE&view=table`.
 
 ### Card detail
 
@@ -229,13 +234,13 @@ Each card in the API includes metadata from Scryfall (when the set has been sync
 | `cardType` | `creature` | Primary category for filters (land, instant, sorcery, …) |
 | `cardTypes` | `["artifact","creature"]` | All types when a card has multiple |
 
-Available on Collection, Set Manager, Storage, Decks, and card detail responses.
+Available on Collection, Storage, Decks, and card detail responses.
 
 ### Decks
 
 - **Browse decks** — deck list with Detail / Overview toggle; per-deck hero gallery and card list with **Images / Table** toggle
 - **Deck stats** — aggregate or single-deck metrics, portfolio history chart, card table
-- **Owned** on a deck card requires a matching `purchases` row (mark ownership in Set Manager or Storage)
+- **Owned** on a deck card requires a matching `purchases` row (mark ownership in All cards table view or Storage)
 - Deck purchase price is stored on the deck row for invested / ROI figures
 
 ---
@@ -256,7 +261,7 @@ Daily price updates use the **Cardmarket price guide** (one JSON download per ru
 
 | Step | Source | When |
 |------|--------|------|
-| Catalog sync | Scryfall | Once per tracked set, when first added via Set Manager |
+| Catalog sync | Scryfall | Once per tracked set, when first added from All cards |
 | Metadata backfill | Scryfall | When `colors`, `type_line`, or `card_type` are missing for cards in a tracked set |
 | Set metadata | Scryfall | Once per set, when the set row is not yet in `collection.db` |
 | Price sync | Cardmarket price guide | Every run: owned cards; unowned only in qualifying sets |
@@ -265,7 +270,7 @@ Unowned prices in other sets are cleared and no longer updated.
 
 The **Settings → Sync prices** button in the web app runs **Cardmarket only** (no Scryfall, set metadata, or history restore). Bulk card updates use temp-table SQL for speed (typically 1–2 seconds for a full collection after the guide is cached).
 
-Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced from Set Manager. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
+Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced from All cards. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
 
 ---
 
@@ -379,11 +384,11 @@ If `type_line` is present but `card_type` is empty, it is derived automatically 
 
 ### `purchases`
 
-Owned finishes. Updated when you change ownership in Set Manager or Storage.
+Owned finishes. Updated when you change ownership in All cards or Storage.
 
 ### `tracked_sets`
 
-Set codes registered in Set Manager (`tracked_sets` table in `collection.db`).
+Set codes registered in All cards (`tracked_sets` table in `collection.db`).
 
 ### `decks` / `deck_cards`
 
@@ -393,7 +398,7 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 ## Art style mapping
 
-Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules in **Set Manager** or via the art-style link on the All cards filter. Legacy `data/art_styles/*.json` files are imported once on upgrade if present. See **[docs/art-styles.md](docs/art-styles.md)** for the seed generator workflow.
+Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules from **All cards** (✎ on the art-style filter or table view). Legacy `data/art_styles/*.json` files are imported once on upgrade if present. See **[docs/art-styles.md](docs/art-styles.md)** for the seed generator workflow.
 
 Set code **PLIST** is treated as an alias for **PLST** in the database and UI.
 

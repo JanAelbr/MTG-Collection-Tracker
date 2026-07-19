@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { APP_TITLE } from "./constants/app";
 import StorageView from "./views/StorageView.vue";
-import ManagerView from "./views/ManagerView.vue";
 import CollectionView from "./views/CollectionView.vue";
 import CollectionSearchView from "./views/CollectionSearchView.vue";
 import StatsView from "./views/StatsView.vue";
@@ -60,9 +59,14 @@ const router = createRouter({
     },
     {
       path: "/manager",
-      name: "manager",
-      component: ManagerView,
-      meta: { title: "Set Manager" },
+      redirect: (to) => ({
+        path: "/collection/all",
+        query: {
+          ...(typeof to.query.set === "string" ? { set: to.query.set } : {}),
+          ...(to.query.editArtStyles != null ? { editArtStyles: to.query.editArtStyles } : {}),
+          view: "table",
+        },
+      }),
     },
     {
       path: "/stats",

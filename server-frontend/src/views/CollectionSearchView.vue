@@ -7,6 +7,7 @@ import CollectionMobileFilterSheet from "../components/CollectionMobileFilterShe
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SearchArtBrowser from "../components/SearchArtBrowser.vue";
+import SearchResultsList from "../components/SearchResultsList.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
@@ -15,7 +16,7 @@ import FilterSidebar from "../components/FilterSidebar.vue";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
-import { searchFiltersFromRoute, searchRouteQuery } from "../utils/setScope";
+import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute } from "../utils/setScope";
 
 const PAGE_SIZE = 25;
 const SEARCH_SET_CODE = "All";
@@ -34,8 +35,10 @@ const selectedBrowseName = ref("");
 const artSelectedIndex = ref(0);
 const searchQuery = ref("");
 const textSearchQuery = ref("");
+const creatureTypeQuery = ref("");
 const searchInput = ref("");
 const textSearchInput = ref("");
+const creatureTypeInput = ref("");
 const searchInputRef = ref(null);
 const ownedFilter = ref("all");
 const foilFilter = ref(getStoredFoilFilter());
@@ -48,6 +51,7 @@ const cmcMax = ref("");
 const powerMin = ref("");
 const toughnessMin = ref("");
 const mobileFiltersOpen = ref(false);
+const searchViewMode = ref("gallery");
 const routeSyncReady = ref(false);
 const virtualGridRef = ref(null);
 const { loading, run } = useAsyncLoad();
@@ -60,8 +64,9 @@ const totalMatches = computed(() => searchTotalMatches.value);
 const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
 const hasActiveSearch = computed(() => Boolean(
-  searchQuery.value.trim() || textSearchQuery.value.trim(),
+  searchQuery.value.trim() || textSearchQuery.value.trim() || creatureTypeQuery.value.trim(),
 ));
+const isListView = computed(() => searchViewMode.value === "list");
 
 const setLabels = computed(() => {
   const labels = new Map();
@@ -96,13 +101,16 @@ function syncFiltersFromRoute() {
   storageFilters.value = [...filters.storageFilters];
   searchQuery.value = filters.searchQuery;
   textSearchQuery.value = filters.textSearchQuery;
+  creatureTypeQuery.value = filters.creatureTypeQuery;
   searchInput.value = filters.searchQuery;
   textSearchInput.value = filters.textSearchQuery;
+  creatureTypeInput.value = filters.creatureTypeQuery;
   rarityFilter.value = filters.rarityFilter;
   cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
   cmcMax.value = filters.cmcMax != null ? String(filters.cmcMax) : "";
   powerMin.value = filters.powerMin != null ? String(filters.powerMin) : "";
   toughnessMin.value = filters.toughnessMin != null ? String(filters.toughnessMin) : "";
+  searchViewMode.value = filters.viewMode;
 }
 
 function setLabel(code) {
@@ -128,13 +136,23 @@ function syncSearchRoute() {
       storageFilters: storageFilters.value,
       searchQuery: searchQuery.value.trim(),
       textSearchQuery: textSearchQuery.value.trim(),
+      creatureTypeQuery: creatureTypeQuery.value.trim(),
       rarityFilter: rarityFilter.value,
       cmcMin: parseOptionalNumber(cmcMin.value),
       cmcMax: parseOptionalNumber(cmcMax.value),
       powerMin: parseOptionalNumber(powerMin.value),
       toughnessMin: parseOptionalNumber(toughnessMin.value),
+      viewMode: searchViewMode.value,
     }),
   });
+}
+
+function setSearchViewMode(mode) {
+  if (searchViewMode.value === mode) {
+    return;
+  }
+  searchViewMode.value = mode;
+  syncSearchRoute();
 }
 
 function resetSearchResults() {
@@ -155,13 +173,15 @@ function applySearchPayload(payload, { append = false } = {}) {
 async function fetchSearchPage(pageNum) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
-  if (!nameTerm && !textTerm) {
+  const creatureTypeTerm = creatureTypeQuery.value.trim();
+  if (!nameTerm && !textTerm && !creatureTypeTerm) {
     return null;
   }
   const token = ++searchRequestToken;
   const payload = await ignoreAborted(api.searchCards({
     q: nameTerm,
     text: textTerm,
+    creatureType: creatureTypeTerm,
     ...searchApiParams(),
     page: pageNum,
     pageSize: PAGE_SIZE,
@@ -182,7 +202,8 @@ async function loadMeta() {
 async function loadResults({ autoSelectFirst = false } = {}) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
-  if (!nameTerm && !textTerm) {
+  const creatureTypeTerm = creatureTypeQuery.value.trim();
+  if (!nameTerm && !textTerm && !creatureTypeTerm) {
     resetSearchResults();
     if (autoSelectFirst) {
       closeArtExplorer();
@@ -197,7 +218,9 @@ async function loadResults({ autoSelectFirst = false } = {}) {
     }
     applySearchPayload(payload, { append: false });
   });
-  await fillVisibleResults();
+  if (!isListView.value) {
+    await fillVisibleResults();
+  }
   if (autoSelectFirst) {
     await autoSelectFirstResult();
   }
@@ -219,6 +242,9 @@ async function loadMoreResults() {
 }
 
 async function fillVisibleResults() {
+  if (isListView.value) {
+    return;
+  }
   await nextTick();
   const root = virtualGridRef.value?.rootRef;
   if (!root || !hasMoreResults.value || loadingMore.value || loading.value) {
@@ -379,12 +405,16 @@ function closeArtExplorer() {
 async function submitSearch() {
   const nextName = searchInput.value.trim();
   const nextText = textSearchInput.value.trim();
-  const sameQuery = nextName === searchQuery.value.trim() && nextText === textSearchQuery.value.trim();
+  const nextCreatureType = creatureTypeInput.value.trim();
+  const sameQuery = nextName === searchQuery.value.trim()
+    && nextText === textSearchQuery.value.trim()
+    && nextCreatureType === creatureTypeQuery.value.trim();
   searchQuery.value = nextName;
   textSearchQuery.value = nextText;
+  creatureTypeQuery.value = nextCreatureType;
   closeArtExplorer();
   syncSearchRoute();
-  if (sameQuery && (nextName || nextText)) {
+  if (sameQuery && (nextName || nextText || nextCreatureType)) {
     await loadResults({ autoSelectFirst: true });
   }
 }
@@ -404,7 +434,7 @@ async function onArtOwnershipChanged() {
   await reloadLoadedSearchResults();
 }
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, powerMin, toughnessMin], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, powerMin, toughnessMin, searchViewMode], () => {
   if (!routeSyncReady.value) {
     return;
   }
@@ -412,9 +442,24 @@ watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarity
 });
 
 watch(
+  () => route.query.view,
+  () => {
+    if (!routeSyncReady.value) {
+      return;
+    }
+    const nextMode = searchViewModeFromRoute(route);
+    if (searchViewMode.value === nextMode) {
+      return;
+    }
+    searchViewMode.value = nextMode;
+  },
+);
+
+watch(
   () => [
     route.query.q,
     route.query.text,
+    route.query.creature,
     route.query.owned,
     route.query.finish,
     route.query.type,
@@ -432,6 +477,7 @@ watch(
     }
     const prevName = searchQuery.value;
     const prevText = textSearchQuery.value;
+    const prevCreatureType = creatureTypeQuery.value;
     syncFiltersFromRoute();
     let cancelled = false;
     onCleanup(() => {
@@ -442,7 +488,9 @@ watch(
       resetSearchResults();
       return;
     }
-    const searchChanged = searchQuery.value !== prevName || textSearchQuery.value !== prevText;
+    const searchChanged = searchQuery.value !== prevName
+      || textSearchQuery.value !== prevText
+      || creatureTypeQuery.value !== prevCreatureType;
     await loadResults({ autoSelectFirst: searchChanged });
     if (cancelled) {
       return;
@@ -485,6 +533,16 @@ onMounted(async () => {
               aria-label="Search cards by name"
             >
             <input
+              id="collection-search-page-creature-input"
+              v-model="creatureTypeInput"
+              type="search"
+              class="collection-search-input collection-search-page-input"
+              placeholder="Creature type…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search cards by creature type"
+            >
+            <input
               id="collection-search-page-text-input"
               v-model="textSearchInput"
               type="search"
@@ -524,11 +582,34 @@ onMounted(async () => {
               v-else-if="hasActiveSearch && cards.length"
               class="table-panel cards-panel reports-cards-panel collection-gallery-panel"
             >
-              <div class="collection-gallery-toolbar">
+              <div class="collection-gallery-toolbar search-results-toolbar">
                 <p class="collection-gallery-toolbar-stats">
                   Showing {{ cards.length }} of {{ totalMatches }} cards
                 </p>
+                <div
+                  class="button-group collection-view-mode-group"
+                  role="group"
+                  aria-label="View mode"
+                >
+                  <button
+                    type="button"
+                    class="filter-button"
+                    :class="{ active: searchViewMode === 'gallery' }"
+                    @click="setSearchViewMode('gallery')"
+                  >
+                    Gallery
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    :class="{ active: searchViewMode === 'list' }"
+                    @click="setSearchViewMode('list')"
+                  >
+                    List
+                  </button>
+                </div>
                 <CollectionGalleryScaleControl
+                  v-if="!isListView"
                   class="collection-gallery-toolbar-scale"
                   :model-value="collectionCardScale"
                   :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
@@ -537,6 +618,7 @@ onMounted(async () => {
               </div>
               <GalleryLoadingOverlay :loading="loading && !loadingMore" label="Searching cards…">
                 <VirtualizedCollectionCardGrid
+                  v-if="!isListView"
                   ref="virtualGridRef"
                   :cards="cards"
                   :show-unowned-badge="false"
@@ -548,6 +630,16 @@ onMounted(async () => {
                   @load-more="loadMoreResults"
                   @ownership-changed="onArtOwnershipChanged"
                 />
+                <SearchResultsList
+                  v-else
+                  :cards="cards"
+                  :selected-name="selectedBrowseName"
+                  :set-label-for="setLabel"
+                  :loading-more="loadingMore"
+                  :has-more="hasMoreResults"
+                  @browse-name="browseCardName"
+                  @load-more="loadMoreResults"
+                />
               </GalleryLoadingOverlay>
               <p v-if="loadingMore" class="collection-search-load-more-status">
                 <LoadingIndicator label="Loading more cards…" />
@@ -558,7 +650,7 @@ onMounted(async () => {
               v-else-if="!hasActiveSearch"
               class="collection-search-results-hint collection-search-empty-prompt"
             >
-              Search for a card name or rules text to browse art versions across your collection.
+              Search for a card name, creature type, or rules text to browse art versions across your collection.
             </p>
           </div>
 

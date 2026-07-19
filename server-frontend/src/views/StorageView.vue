@@ -596,7 +596,10 @@ onMounted(async () => {
 
                 <td>
 
-                  <CardPreview :image-uri="card.imageUri">
+                  <CardPreview
+                    :image-uri="card.imageUri"
+                    :image-uri-back="card.imageUriBack || ''"
+                  >
 
                     <RouterLink :to="cardRoute(card)" class="reports-card-link">
 

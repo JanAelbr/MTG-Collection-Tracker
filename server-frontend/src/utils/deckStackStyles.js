@@ -60,6 +60,21 @@ export function parseManaCostSymbols(manaCost) {
   return symbols;
 }
 
+export function scryfallSymbolSlug(symbol) {
+  const token = String(symbol || "").trim();
+  if (!token) {
+    return "";
+  }
+  // Hybrid and Phyrexian tokens use slashes in oracle notation ({W/U}, {2/W}, {W/P}).
+  // Scryfall SVG paths concatenate the parts instead (WU, 2W, WP).
+  const slug = token.includes("/") ? token.replace(/\//g, "") : token;
+  return encodeURIComponent(slug);
+}
+
 export function manaSymbolUrl(symbol) {
-  return `https://svgs.scryfall.io/card-symbols/${encodeURIComponent(symbol)}.svg`;
+  const slug = scryfallSymbolSlug(symbol);
+  if (!slug) {
+    return "";
+  }
+  return `https://svgs.scryfall.io/card-symbols/${slug}.svg`;
 }

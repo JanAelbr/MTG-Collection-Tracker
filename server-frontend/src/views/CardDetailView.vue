@@ -87,6 +87,25 @@ const defaultDeckId = computed(() =>
 const activeDeckLabel = ref("");
 const deckCardSlot = ref(null);
 const imageZoomOpen = ref(false);
+const showBackFace = ref(false);
+
+const hasBackImage = computed(() => Boolean(card.value?.imageUriBack));
+const displayImageUri = computed(() => {
+  if (!card.value) {
+    return "";
+  }
+  if (showBackFace.value && card.value.imageUriBack) {
+    return card.value.imageUriBack;
+  }
+  return card.value.imageUri || "";
+});
+
+function toggleCardFace() {
+  if (!hasBackImage.value) {
+    return;
+  }
+  showBackFace.value = !showBackFace.value;
+}
 
 watch(
   defaultDeckId,
@@ -164,6 +183,7 @@ async function loadCard() {
       return;
     }
     card.value = nextCard;
+    showBackFace.value = false;
     selectedFinish.value = normalizeFinish(card.value.selectedFinish ?? FINISH_NONFOIL);
     priceStrategy.value = card.value.priceStrategy || "trend";
     deckCardSlot.value = null;
@@ -231,19 +251,27 @@ onUnmounted(() => {
     <section class="card-detail-panel card-detail-main">
       <div class="card-detail-image-wrap">
         <button
-          v-if="card.imageUri"
+          v-if="displayImageUri"
           type="button"
           class="card-detail-image-button"
           aria-label="View larger image"
           @click="imageZoomOpen = true"
         >
           <img
-            :src="card.imageUri"
+            :src="displayImageUri"
             :alt="card.name"
             class="card-detail-image"
           >
         </button>
         <div v-else class="card-detail-image card-detail-image-empty">No image</div>
+        <button
+          v-if="hasBackImage"
+          type="button"
+          class="btn btn-secondary btn-small card-detail-face-toggle"
+          @click="toggleCardFace"
+        >
+          {{ showBackFace ? "View front" : "View back" }}
+        </button>
       </div>
 
       <div class="card-detail-meta">
@@ -348,7 +376,7 @@ onUnmounted(() => {
 
     <Teleport to="body">
       <div
-        v-if="imageZoomOpen && card.imageUri"
+        v-if="imageZoomOpen && displayImageUri"
         class="card-image-zoom-backdrop"
         role="dialog"
         aria-modal="true"
@@ -363,8 +391,16 @@ onUnmounted(() => {
         >
           ×
         </button>
+        <button
+          v-if="hasBackImage"
+          type="button"
+          class="btn btn-secondary btn-small card-image-zoom-face-toggle"
+          @click.stop="toggleCardFace"
+        >
+          {{ showBackFace ? "View front" : "View back" }}
+        </button>
         <img
-          :src="card.imageUri"
+          :src="displayImageUri"
           :alt="card.name"
           class="card-image-zoom-image"
         >

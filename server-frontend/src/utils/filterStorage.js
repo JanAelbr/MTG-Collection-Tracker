@@ -14,7 +14,7 @@ export function storeFoilFilter(value) {
 
 export const ALL_CARDS_SORT_KEY = "collectionAllCardsSort";
 
-const ALL_CARDS_SORT_FIELDS = new Set(["number", "value"]);
+const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "name", "artStyle"]);
 
 function normalizeAllCardsSort(sort) {
   if (sort === "change" || sort === "changeEuro" || sort === "changePct") {

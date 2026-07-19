@@ -1,3 +1,4 @@
+import sqlite3
 import unittest
 
 import sys
@@ -9,6 +10,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from util.card_metadata import (  # noqa: E402
+    card_image_fields,
     card_metadata_api,
     card_metadata_snake,
     card_types_from_type_line,
@@ -19,6 +21,9 @@ from util.card_metadata import (  # noqa: E402
 from util.scryfall_card import (  # noqa: E402
     card_colors,
     card_colors_json,
+    card_image_uri,
+    card_image_uri_back,
+    card_image_uri_for_face,
     card_power,
     card_primary_type,
     card_rarity,
@@ -141,6 +146,67 @@ class CardMetadataTests(unittest.TestCase):
         }
         self.assertEqual(card_power(double_faced), "2")
         self.assertEqual(card_toughness(double_faced), "1")
+
+    def test_card_image_fields(self):
+        row = {
+            "image_uri": "https://example.com/front.jpg",
+            "image_uri_back": "https://example.com/back.jpg",
+        }
+        self.assertEqual(
+            card_image_fields(row),
+            {
+                "imageUri": "https://example.com/front.jpg",
+                "imageUriBack": "https://example.com/back.jpg",
+            },
+        )
+
+    def test_card_image_fields_from_sqlite_row(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "CREATE TABLE cards (image_uri TEXT, image_uri_back TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO cards VALUES (?, ?)",
+            ("https://example.com/front.jpg", "https://example.com/back.jpg"),
+        )
+        row = conn.execute("SELECT image_uri, image_uri_back FROM cards").fetchone()
+        conn.close()
+        self.assertEqual(
+            card_image_fields(row),
+            {
+                "imageUri": "https://example.com/front.jpg",
+                "imageUriBack": "https://example.com/back.jpg",
+            },
+        )
+
+    def test_card_image_uri_for_double_faced_card(self):
+        single_faced = {
+            "image_uris": {"normal": "https://example.com/front.jpg"},
+        }
+        self.assertEqual(card_image_uri(single_faced), "https://example.com/front.jpg")
+        self.assertIsNone(card_image_uri_back(single_faced))
+
+        double_faced = {
+            "card_faces": [
+                {"image_uris": {"normal": "https://example.com/day.jpg"}},
+                {"image_uris": {"normal": "https://example.com/night.jpg"}},
+            ],
+        }
+        self.assertEqual(card_image_uri_for_face(double_faced, 0), "https://example.com/day.jpg")
+        self.assertEqual(card_image_uri_for_face(double_faced, 1), "https://example.com/night.jpg")
+        self.assertEqual(card_image_uri(double_faced), "https://example.com/day.jpg")
+        self.assertEqual(card_image_uri_back(double_faced), "https://example.com/night.jpg")
+
+        adventure = {
+            "image_uris": {"normal": "https://example.com/adventure.jpg"},
+            "card_faces": [
+                {"name": "Creature Face"},
+                {"name": "Adventure Face"},
+            ],
+        }
+        self.assertEqual(card_image_uri(adventure), "https://example.com/adventure.jpg")
+        self.assertIsNone(card_image_uri_back(adventure))
 
 
 if __name__ == "__main__":

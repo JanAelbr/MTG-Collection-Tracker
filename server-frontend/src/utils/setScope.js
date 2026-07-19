@@ -21,7 +21,7 @@ export function collectionScopeFromRoute(route) {
   };
 }
 
-const ALL_CARDS_SORT_FIELDS = new Set(["number", "value"]);
+const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "name", "artStyle"]);
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
@@ -98,6 +98,12 @@ export function allCardsFiltersFromRoute(route) {
 
   const lens = collectionLensFromRoute(route);
 
+  const viewParam = route.query?.view;
+  const viewMode = viewParam === "table" ? "table" : "gallery";
+
+  const editArtStyles = route.query?.editArtStyles;
+  const openArtStyleEditor = editArtStyles === "1" || editArtStyles === "true" || editArtStyles === "";
+
   return {
     ownedFilter,
     foilFilter,
@@ -114,6 +120,8 @@ export function allCardsFiltersFromRoute(route) {
     toughnessMin,
     storageFilters,
     lens,
+    viewMode,
+    openArtStyleEditor,
   };
 }
 
@@ -135,6 +143,8 @@ export function allCardsRouteQuery({
   toughnessMin = null,
   storageFilters = [],
   lens = "",
+  viewMode = "gallery",
+  editArtStyles = false,
 } = {}) {
   const query = collectionScopeToQuery(setCode, artStyle);
   if (ownedFilter !== "owned") {
@@ -172,6 +182,12 @@ export function allCardsRouteQuery({
   }
   if (lens) {
     query.lens = lens;
+  }
+  if (viewMode === "table") {
+    query.view = "table";
+  }
+  if (editArtStyles) {
+    query.editArtStyles = "1";
   }
   if (sort !== "value") {
     query.sort = sort;
@@ -241,6 +257,9 @@ export function searchFiltersFromRoute(route) {
   const textParam = route.query?.text;
   const textSearchQuery = typeof textParam === "string" ? textParam.trim() : "";
 
+  const creatureParam = route.query?.creature;
+  const creatureTypeQuery = typeof creatureParam === "string" ? creatureParam.trim() : "";
+
   const rarityParam = route.query?.rarity;
   const rarityFilter = typeof rarityParam === "string" && ALL_CARDS_RARITY_FILTERS.has(rarityParam)
     ? rarityParam
@@ -253,6 +272,9 @@ export function searchFiltersFromRoute(route) {
 
   const storageFilters = parseStorageFiltersFromRoute(route);
 
+  const viewParam = route.query?.view;
+  const viewMode = viewParam === "list" ? "list" : "gallery";
+
   return {
     ownedFilter,
     foilFilter,
@@ -261,12 +283,14 @@ export function searchFiltersFromRoute(route) {
     colorFilters,
     searchQuery,
     textSearchQuery,
+    creatureTypeQuery,
     rarityFilter,
     cmcMin,
     cmcMax,
     powerMin,
     toughnessMin,
     storageFilters,
+    viewMode,
   };
 }
 
@@ -277,6 +301,7 @@ export function searchRouteQuery({
   colorFilters = [],
   searchQuery = "",
   textSearchQuery = "",
+  creatureTypeQuery = "",
   rarityFilter = "all",
   cmcMin = null,
   cmcMax = null,
@@ -284,6 +309,7 @@ export function searchRouteQuery({
   toughnessMin = null,
   storageFilters = [],
   page = 1,
+  viewMode = "gallery",
 } = {}) {
   const query = {};
   if (searchQuery) {
@@ -291,6 +317,9 @@ export function searchRouteQuery({
   }
   if (textSearchQuery) {
     query.text = textSearchQuery;
+  }
+  if (creatureTypeQuery) {
+    query.creature = creatureTypeQuery;
   }
   if (ownedFilter !== "all") {
     query.owned = ownedFilter;
@@ -325,7 +354,14 @@ export function searchRouteQuery({
   if (page > 1) {
     query.page = String(page);
   }
+  if (viewMode === "list") {
+    query.view = "list";
+  }
   return query;
+}
+
+export function searchViewModeFromRoute(route) {
+  return searchFiltersFromRoute(route).viewMode;
 }
 
 export function searchNavQuery(route) {
@@ -384,15 +420,18 @@ export function setScopeQueryFromRoute(route) {
 export function managerArtStylesEditorRoute(setCode) {
   const code = String(setCode || "").trim();
   if (!code || code.toLowerCase() === "all") {
-    return { path: "/manager" };
+    return { path: "/collection/all" };
   }
   return {
-    path: "/manager",
+    path: "/collection/all",
     query: { set: code, editArtStyles: "1" },
   };
 }
 
+export function collectionViewModeFromRoute(route) {
+  return allCardsFiltersFromRoute(route).viewMode;
+}
+
 export function shouldOpenManagerArtStyleEditor(route) {
-  const value = route.query?.editArtStyles;
-  return value === "1" || value === "true" || value === "";
+  return allCardsFiltersFromRoute(route).openArtStyleEditor;
 }

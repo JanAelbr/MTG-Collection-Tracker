@@ -6,7 +6,7 @@ import pandas as pd
 from report.deck_queries import deck_scope, load_deck_cards_df
 from report.serialize_helpers import is_missing, str_or_empty
 from util.card_metadata import _nullable_int_flag, card_row_needs_power_metadata, resolve_card_cmc
-from util.card_role_seed import card_bracket_weight, card_roles
+from util.card_role_seed import card_bracket_weight, card_roles_for
 from util.commander_rules import validate_commander_deck
 
 COMPONENT_TARGETS = {
@@ -76,6 +76,7 @@ def _serialize_power_card(card: dict) -> dict:
         "finish": int(card.get("finish") or card.get("foil") or 0),
         "qty": int(card.get("qty") or 1),
         "imageUri": str(card.get("image_uri") or card.get("imageUri") or ""),
+        "imageUriBack": str(card.get("image_uri_back") or card.get("imageUriBack") or ""),
         "cmc": resolve_card_cmc(card),
         "typeLine": str(card.get("type_line") or card.get("typeLine") or ""),
     }
@@ -103,8 +104,7 @@ def _build_category_data(cards: list[dict]) -> tuple[dict[str, int], dict[str, l
 
     for card in cards:
         qty = int(card.get("qty") or 1)
-        name = str(card.get("card_name") or card.get("name") or card.get("cardName") or "")
-        roles = set(card_roles(name))
+        roles = set(card_roles_for(card))
         serialized = _serialize_power_card(card)
 
         for category_id, role_set in CATEGORY_ROLE_MAP.items():
@@ -154,7 +154,7 @@ def _power_signal(cards: list[dict]) -> float:
     for card in cards:
         qty = int(card.get("qty") or 1)
         name = str(card.get("card_name") or card.get("name") or card.get("cardName") or "")
-        roles = set(card_roles(name))
+        roles = set(card_roles_for(card))
         if not roles & POWER_SIGNAL_ROLES:
             continue
         weight = card_bracket_weight(name)
@@ -218,9 +218,7 @@ def assess_deck_power(cards: list[dict], *, commanders: list[dict] | None = None
     counts["graveyardHate"] = sum(
         int(card.get("qty") or 1)
         for card in main_cards
-        if "graveyard_hate" in card_roles(
-            str(card.get("card_name") or card.get("name") or card.get("cardName") or "")
-        )
+        if "graveyard_hate" in card_roles_for(card)
     )
 
     components = {
@@ -322,6 +320,7 @@ def _cards_from_deck_df(deck_df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             "card_type": str_or_empty(payload.get("card_type")),
             "is_basic_land": is_basic_land,
             "type_line": str_or_empty(payload.get("type_line")),
+            "oracle_text": str_or_empty(payload.get("oracle_text")),
             "image_uri": str_or_empty(payload.get("image_uri")),
             "color_identity": None if is_missing(payload.get("color_identity")) else payload.get("color_identity"),
         }

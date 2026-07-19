@@ -11,6 +11,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import decks_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables, seed_storage_locations  # noqa: E402
 
@@ -69,6 +70,7 @@ class DecksApiServiceTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -136,6 +138,7 @@ class DecksApiServiceTests(unittest.TestCase):
         self.assertEqual(page["deckSize"], 1)
         self.assertEqual(len(page["cards"]), 1)
         self.assertEqual(page["cards"][0]["imageUri"], "https://example.test/sol-ring.jpg")
+        self.assertIn("fast_mana", page["cards"][0]["roles"])
 
     def test_add_card_to_deck_creates_and_increments(self):
         deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()

@@ -131,6 +131,8 @@ class CardApiServiceTests(unittest.TestCase):
         }
         payload = card_service.load_card_detail(self.conn, "LTR", "1")
         self.assertEqual(payload["setCode"], "LTR")
+        self.assertEqual(payload["imageUri"], "https://example.test/card.jpg")
+        self.assertEqual(payload["imageUriBack"], "")
         self.assertEqual(len(payload["guidePriceMatrix"]["rows"]), 6)
         self.assertEqual(payload["finishes"]["0"]["profitLoss"], 1.0)
         self.assertEqual(payload["finishes"]["0"]["locations"][0]["slug"], "storage:general")

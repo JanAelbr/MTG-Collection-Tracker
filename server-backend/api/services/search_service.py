@@ -91,6 +91,10 @@ def _card_matches_oracle_text(card: dict, term: str) -> bool:
     return term in (card.get("oracleText") or "").lower()
 
 
+def _card_matches_creature_type(card: dict, term: str) -> bool:
+    return term in (card.get("typeLine") or "").lower()
+
+
 def _parse_storage_filters(storage: str | list[str] | None) -> list[str]:
     if not storage:
         return []
@@ -109,6 +113,7 @@ def _filtered_pool(
     foil_filter: str,
     name_search: str = "",
     text_search: str = "",
+    creature_type_search: str = "",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
     rarity_filter: str = "all",
@@ -160,6 +165,10 @@ def _filtered_pool(
     if text_term:
         lowered = text_term.lower()
         filtered = [card for card in filtered if _card_matches_oracle_text(card, lowered)]
+    creature_type_term = creature_type_search.strip()
+    if creature_type_term:
+        lowered = creature_type_term.lower()
+        filtered = [card for card in filtered if _card_matches_creature_type(card, lowered)]
     return filtered
 
 
@@ -342,6 +351,7 @@ def _variant_from_catalog_row(row: sqlite3.Row, pool_card: dict | None) -> dict:
         "name": row["name"],
         "artStyle": row["art_style"] or "",
         "imageUri": row["image_uri"] or variant.get("imageUri") or "",
+        "imageUriBack": row["image_uri_back"] or variant.get("imageUriBack") or "",
         "typeLine": row["type_line"] or variant.get("typeLine") or "",
         "hasNonfoil": bool(row["has_nonfoil"]),
         "hasFoil": bool(row["has_foil"]),
@@ -371,6 +381,7 @@ def _catalog_variants_for_name(
             name,
             art_style,
             image_uri,
+            image_uri_back,
             market_value,
             market_value_foil,
             market_value_etched,
@@ -518,6 +529,7 @@ def search_cards(
     *,
     search: str = "",
     text_search: str = "",
+    creature_type_search: str = "",
     set_code: str = "All",
     owned_filter: str = "all",
     foil_filter: str = "all",
@@ -536,9 +548,11 @@ def search_cards(
     normalized_foil = _normalize_foil_filter(foil_filter)
     name_term = search.strip()
     text_term = text_search.strip()
+    creature_type_term = creature_type_search.strip()
     empty_payload = {
         "search": name_term,
         "textSearch": text_term,
+        "creatureTypeSearch": creature_type_term,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
@@ -548,7 +562,7 @@ def search_cards(
         "totalPages": 1,
         "cards": [],
     }
-    if not name_term and not text_term:
+    if not name_term and not text_term and not creature_type_term:
         return empty_payload
 
     filter_kwargs = {
@@ -568,6 +582,7 @@ def search_cards(
         foil_filter=normalized_foil,
         name_search=name_term,
         text_search=text_term,
+        creature_type_search=creature_type_term,
         **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
@@ -587,6 +602,7 @@ def search_cards(
     return {
         "search": name_term,
         "textSearch": text_term,
+        "creatureTypeSearch": creature_type_term,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,

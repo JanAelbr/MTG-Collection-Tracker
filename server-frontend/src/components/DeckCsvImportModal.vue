@@ -313,7 +313,10 @@ watch([mode, section, csvText], () => {
                   </span>
                 </td>
                 <td>
-                  <CardPreview :image-uri="change.imageUri">
+                  <CardPreview
+                    :image-uri="change.imageUri"
+                    :image-uri-back="change.imageUriBack || ''"
+                  >
                     <span>{{ change.cardName }}</span>
                   </CardPreview>
                 </td>

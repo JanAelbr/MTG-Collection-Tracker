@@ -70,7 +70,6 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 |---------|---------------|----------------|
 | **Collection** | `/collection/all` | All cards, Top owned, Search, Stats |
 | **Storage** | `/storage` | — |
-| **Set Manager** | `/manager` | — |
 | **Decks** | `/decks` | — |
 | **Settings** | `/settings` | — |
 
@@ -97,12 +96,13 @@ Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with 
 
 ## Collection filters
 
-Filter sidebar (collapsible) on **All cards**, **Search**, **Set Manager**, and **Stats**:
+Filter sidebar (collapsible) on **All cards**, **Search**, and **Stats**:
 
 - **Set** — scope; full name in sidebar when using set browser
-- **Art style** — list picker per set; pencil icon on All cards links to Set Manager art-style editor (`/manager?set=CODE&editArtStyles=1`)
-- **Ownership / Finish** — compact button groups (All cards & Search)
-- **Type / Colour / Sort** — All cards view only
+- **Art style** — list picker per set; pencil icon on All cards opens the inline art-style rules editor (`/collection/all?set=CODE&editArtStyles=1`)
+- **Ownership / Finish** — compact button groups (All cards gallery & Search)
+- **Type / Colour / Sort** — All cards gallery only
+- **Table view** — on All cards with a specific set selected (`?view=table`); per-finish ownership, price health, bulk storage assign
 
 Filter state is reflected in the URL query string where applicable (`?set=LTR&art=…&owned=…`).
 
@@ -132,7 +132,7 @@ server-frontend/
 ├── public/              # static assets + PWA icons
 ├── src/
 │   ├── components/      # SetPicker, SetGallery, FilterSidebar, …
-│   ├── views/           # CollectionView, ManagerView, …
+│   ├── views/           # CollectionView, StorageView, …
 │   ├── utils/           # format.js, setScope.js, mtgVectors.js, …
 │   └── styles/app.css
 └── vite.config.js       # Vite + PWA plugin

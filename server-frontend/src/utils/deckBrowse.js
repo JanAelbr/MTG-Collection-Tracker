@@ -12,7 +12,16 @@ export function getStoredGallerySort() {
 
 export function getStoredDeckCardsView() {
   const stored = localStorage.getItem(DECK_CARDS_VIEW_KEY);
-  if (stored === "table" || stored === "stacks" || stored === "top" || stored === "power") {
+  if (stored === "top") {
+    return "overview";
+  }
+  if (
+    stored === "table"
+    || stored === "stacks"
+    || stored === "overview"
+    || stored === "power"
+    || stored === "images"
+  ) {
     return stored;
   }
   return "images";

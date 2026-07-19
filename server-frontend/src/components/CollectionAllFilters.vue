@@ -21,7 +21,6 @@ defineProps({
   artStyles: { type: Array, default: () => [] },
   setCode: { type: String, default: "" },
   artStyle: { type: String, default: "" },
-  managerArtStylesEditorLink: { type: Object, default: null },
   ownedFilter: { type: String, default: "owned" },
   foilFilter: { type: String, default: "all" },
   typeFilter: { type: String, default: "all" },
@@ -36,6 +35,10 @@ defineProps({
   allCardsSortDir: { type: String, default: "desc" },
   showSort: { type: Boolean, default: true },
   showStorageFilter: { type: Boolean, default: true },
+  priceIssuesOnly: { type: Boolean, default: false },
+  priceIssueCount: { type: Number, default: 0 },
+  showPriceHealth: { type: Boolean, default: false },
+  isTableView: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -54,6 +57,8 @@ const emit = defineEmits([
   "update:toughnessMin",
   "update-sort",
   "toggle-sort-dir",
+  "update:priceIssuesOnly",
+  "open-art-style-editor",
 ]);
 
 const storageLocations = ref([]);
@@ -84,12 +89,13 @@ onMounted(async () => {
     <div v-if="!isAllSetsView && artStyles.length" class="filter-sidebar-section">
       <div class="filter-sidebar-label-row">
         <p class="filter-sidebar-label">Art style</p>
-        <RouterLink
-          v-if="isAllView && managerArtStylesEditorLink"
-          :to="managerArtStylesEditorLink"
+        <button
+          v-if="isAllView && !isAllSetsView"
+          type="button"
           class="filter-sidebar-edit-link"
           title="Edit art styles"
-          aria-label="Edit art styles in Set Manager"
+          aria-label="Edit art styles"
+          @click="emit('open-art-style-editor')"
         >
           <svg class="filter-sidebar-edit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path
@@ -107,7 +113,7 @@ onMounted(async () => {
               stroke-linecap="round"
             />
           </svg>
-        </RouterLink>
+        </button>
       </div>
       <ArtStylePicker
         :model-value="artStyle"
@@ -118,7 +124,7 @@ onMounted(async () => {
       />
     </div>
 
-    <div v-if="isAllView" class="filter-sidebar-section filter-sidebar-section--compact-filters">
+    <div v-if="isAllView && !isTableView" class="filter-sidebar-section filter-sidebar-section--compact-filters">
       <div class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Ownership</p>
         <div class="button-group collection-ownership-group">
@@ -188,7 +194,45 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView && showStorageFilter" class="filter-sidebar-section">
+    <div v-if="isAllView && isTableView" class="filter-sidebar-section">
+      <p class="filter-sidebar-label">Finish</p>
+      <div class="button-group collection-finish-group">
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: foilFilter === 'all' }"
+          @click="emit('set-foil-filter', 'all')"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: foilFilter === 'nonfoil' }"
+          @click="emit('set-foil-filter', 'nonfoil')"
+        >
+          Non-foil
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: foilFilter === 'foil' }"
+          @click="emit('set-foil-filter', 'foil')"
+        >
+          Foil
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: foilFilter === 'etched' }"
+          @click="emit('set-foil-filter', 'etched')"
+        >
+          Etched
+        </button>
+      </div>
+    </div>
+
+    <div v-if="isAllView && !isTableView && showStorageFilter" class="filter-sidebar-section">
       <div class="filter-sidebar-label-row">
         <p class="filter-sidebar-label">Storage</p>
         <button
@@ -221,7 +265,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView" class="filter-sidebar-section">
+    <div v-if="isAllView && !isTableView" class="filter-sidebar-section">
       <p class="filter-sidebar-label">Type</p>
       <label class="manager-filter collection-type-filter">
         <select :value="typeFilter" @change="emit('type-filter-change', $event)">
@@ -256,7 +300,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView" class="filter-sidebar-section">
+    <div v-if="isAllView && !isTableView" class="filter-sidebar-section">
       <p class="filter-sidebar-label">Rarity</p>
       <label class="manager-filter collection-type-filter">
         <select :value="rarityFilter" @change="emit('rarity-filter-change', $event)">
@@ -324,7 +368,24 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView && showSort" class="filter-sidebar-section">
+    <div v-if="isAllView && showPriceHealth" class="filter-sidebar-section">
+      <p class="filter-sidebar-label">Price health</p>
+      <label class="manager-price-health-toggle">
+        <input
+          type="checkbox"
+          :checked="priceIssuesOnly"
+          @change="emit('update:priceIssuesOnly', $event.target.checked)"
+        >
+        <span>Show owned cards with URL/price issues only</span>
+      </label>
+      <p v-if="priceIssueCount" class="manager-price-health-count">
+        {{ priceIssueCount }} owned
+        {{ priceIssueCount === 1 ? "card has" : "cards have" }}
+        pricing issues in this set.
+      </p>
+    </div>
+
+    <div v-if="isAllView && showSort && !isTableView" class="filter-sidebar-section">
       <label class="manager-filter">
         <span>Sort by</span>
         <div class="collection-sort-row">

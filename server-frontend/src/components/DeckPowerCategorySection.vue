@@ -1,14 +1,12 @@
 <script setup>
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import DeckManaCurveChart from "./DeckManaCurveChart.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import {
   componentScoreClass,
   formatComponentCount,
   powerCardRoute,
 } from "../utils/deckPower";
-import { buildManaCurveChartData } from "../utils/manaCurve";
 
 const props = defineProps({
   component: { type: Object, required: true },
@@ -18,26 +16,8 @@ const props = defineProps({
   deckId: { type: [String, Number], default: "" },
 });
 
-const isCurve = computed(() => props.component.id === "curve");
-const curveChart = computed(() => (
-  isCurve.value ? buildManaCurveChartData(props.cards) : null
-));
-const hasCards = computed(() => {
-  if (isCurve.value) {
-    return curveChart.value?.hasData || props.cards.length > 0;
-  }
-  return props.cards.length > 0;
-});
-const countLabel = computed(() => {
-  if (isCurve.value) {
-    const total = curveChart.value?.total || 0;
-    if (!total) {
-      return "No CMC data";
-    }
-    return total === 1 ? "1 spell" : `${total} spells`;
-  }
-  return formatComponentCount(props.component.id, props.counts);
-});
+const hasCards = computed(() => props.cards.length > 0);
+const countLabel = computed(() => formatComponentCount(props.component.id, props.counts));
 </script>
 
 <template>
@@ -56,13 +36,7 @@ const countLabel = computed(() => {
       </div>
     </summary>
 
-    <DeckManaCurveChart
-      v-if="isCurve"
-      :cards="cards"
-      :deck-id="deckId"
-    />
-
-    <div v-else-if="hasCards" class="deck-power-card-grid">
+    <div v-if="hasCards" class="deck-power-card-grid">
       <figure
         v-for="(card, index) in cards"
         :key="`${component.id}-${card.setCode}-${card.collectorNumber}-${card.finish}-${index}`"
@@ -105,15 +79,12 @@ const countLabel = computed(() => {
             {{ card.cardName }}
           </RouterLink>
           <span v-else class="deck-power-card-name is-plain">{{ card.cardName }}</span>
-          <span v-if="component.id === 'curve' && card.cmc != null" class="deck-power-card-meta">
-            CMC {{ card.cmc }}
-          </span>
-          <span v-else-if="card.qty > 1" class="deck-power-card-meta">×{{ card.qty }}</span>
+          <span v-if="card.qty > 1" class="deck-power-card-meta">×{{ card.qty }}</span>
         </figcaption>
       </figure>
     </div>
 
-    <p v-else-if="!isCurve" class="deck-power-category-empty">
+    <p v-else class="deck-power-category-empty">
       No tagged cards in this category yet.
     </p>
   </details>

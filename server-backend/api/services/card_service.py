@@ -23,7 +23,7 @@ from util.card_finishes import (
     finish_available,
     finish_has_pricing,
 )
-from util.card_metadata import card_metadata_api
+from util.card_metadata import card_image_fields, card_metadata_api
 from util.db_migrate import ensure_card_columns
 from util.set_catalog import load_sets_catalog
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql, is_alchemy_collector_number
@@ -35,6 +35,7 @@ SELECT
     name,
     art_style,
     image_uri,
+    image_uri_back,
     cardmarket_url,
     cardmarket_url_foil,
     market_value,
@@ -151,7 +152,7 @@ def load_card_detail(
             "collector_number": normalized_number,
         }),
         "artStyle": row["art_style"] or "",
-        "imageUri": row["image_uri"] or "",
+        **card_image_fields(row),
         "hasNonfoil": bool(row["has_nonfoil"]),
         "hasFoil": bool(row["has_foil"]),
         "hasEtched": bool(row["has_etched"]),
@@ -301,6 +302,7 @@ def _load_set_gallery(
             name,
             art_style,
             image_uri,
+            image_uri_back,
             cardmarket_url,
             cardmarket_url_foil,
             market_value,
@@ -344,6 +346,7 @@ def _load_variant_gallery(
             name,
             art_style,
             image_uri,
+            image_uri_back,
             cardmarket_url,
             cardmarket_url_foil,
             market_value,
@@ -417,7 +420,7 @@ def _serialize_gallery_card(
             "collector_number": row["collector_number"],
         }),
         "artStyle": row["art_style"] or "",
-        "imageUri": row["image_uri"] or "",
+        **card_image_fields(row),
         **card_metadata_api(row),
         "setLabel": format_set_option_label(row["set_code"], set_names),
         "currentValueNonfoil": nonfoil_value,

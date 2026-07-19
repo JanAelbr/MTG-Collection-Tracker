@@ -21,6 +21,7 @@ from util.scryfall_card import (
     card_color_identity_json,
     card_colors_json,
     card_image_uri,
+    card_image_uri_back,
     card_is_basic_land,
     card_legalities_json,
     card_mana_cost,
@@ -42,10 +43,10 @@ INSERT_CARD_SQL = """
 INSERT OR REPLACE INTO cards (
     id, set_code, collector_number, name, art_style,
     market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
-    image_uri, cardmarket_url, cardmarket_url_foil, colors, type_line, card_type,
+    image_uri, image_uri_back, cardmarket_url, cardmarket_url_foil, colors, type_line, card_type,
     color_identity, oracle_text, mana_cost, cmc, legalities, is_basic_land, scryfall_id,
     power, toughness, rarity
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 log = get_logger(__name__)
@@ -157,6 +158,7 @@ def upsert_card(
     art_style = get_art_style(cursor.connection, set_code, collector_number)
     name = card.get("name", "")
     image_uri = card_image_uri(card)
+    image_uri_back = card_image_uri_back(card)
     nonfoil_url, foil_url = merge_cardmarket_urls(
         existing_nonfoil_url,
         existing_foil_url,
@@ -191,6 +193,7 @@ def upsert_card(
             has_foil,
             has_etched,
             image_uri,
+            image_uri_back,
             nonfoil_url,
             foil_url,
             colors,

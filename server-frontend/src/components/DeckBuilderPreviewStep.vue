@@ -424,7 +424,10 @@ watch(
 
                 <span class="deck-builder-card-name">
 
-                  <CardPreview :image-uri="card.imageUri || ''">
+                  <CardPreview
+                    :image-uri="card.imageUri || ''"
+                    :image-uri-back="card.imageUriBack || ''"
+                  >
 
                     <span class="deck-builder-card-title">{{ card.name }}</span>
 

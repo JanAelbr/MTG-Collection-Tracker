@@ -120,6 +120,49 @@ class ManagerApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(filtered["total"], 0)
 
+    def test_list_set_cards_includes_location_aggregates(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description
+            ) VALUES ('storage:deckbox', 'Deck box', 'storage', 2, '')
+            """
+        )
+        self.conn.commit()
+        manager_service.set_copy_allocations(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            allocations=[
+                {"locationSlug": "storage:general", "count": 2},
+                {"locationSlug": "storage:deckbox", "count": 1},
+            ],
+        )
+
+        payload = manager_service.list_set_cards(self.conn, "LTR")
+        card = payload["cards"][0]
+        self.assertEqual(
+            sorted((item["slug"], item["count"]) for item in card["locationsNonfoil"]),
+            [("storage:deckbox", 1), ("storage:general", 2)],
+        )
+        self.assertEqual(card["locationsFoil"], [])
+        self.assertEqual(card["locationsEtched"], [])
+
+    def test_list_set_cards_includes_image_uri_back(self):
+        self.conn.execute(
+            """
+            UPDATE cards
+            SET image_uri_back = 'https://example.com/back.jpg'
+            WHERE set_code = 'LTR' AND collector_number = '1'
+            """
+        )
+        self.conn.commit()
+
+        payload = manager_service.list_set_cards(self.conn, "LTR")
+        card = payload["cards"][0]
+        self.assertEqual(card["imageUriBack"], "https://example.com/back.jpg")
+
     def test_list_set_cards_with_foil_filter(self):
         self.conn.execute(
             """

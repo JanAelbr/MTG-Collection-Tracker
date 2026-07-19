@@ -3,16 +3,31 @@ import json
 from util.card_metadata import encode_card_colors, normalize_card_colors, primary_card_type
 
 
+def _image_uri_from_uris(image_uris: dict | None) -> str | None:
+    if not image_uris:
+        return None
+    return image_uris.get("normal") or image_uris.get("large")
+
+
+def card_image_uri_for_face(card: dict, face_index: int = 0) -> str | None:
+    faces = card.get("card_faces") or []
+    if faces and 0 <= face_index < len(faces):
+        face_uri = _image_uri_from_uris(faces[face_index].get("image_uris"))
+        if face_uri:
+            return face_uri
+    # Adventure/split cards often have faces without per-face images.
+    if face_index == 0:
+        return _image_uri_from_uris(card.get("image_uris"))
+    return None
+
+
 # Extract a display image URL from a Scryfall card payload.
 def card_image_uri(card: dict) -> str | None:
-    image_uris = card.get("image_uris")
-    if image_uris:
-        return image_uris.get("normal") or image_uris.get("large")
-    for face in card.get("card_faces", []):
-        face_uris = face.get("image_uris")
-        if face_uris:
-            return face_uris.get("normal") or face_uris.get("large")
-    return None
+    return card_image_uri_for_face(card, 0)
+
+
+def card_image_uri_back(card: dict) -> str | None:
+    return card_image_uri_for_face(card, 1)
 
 
 # Extract the Cardmarket purchase URL from a Scryfall card payload.

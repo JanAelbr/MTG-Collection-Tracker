@@ -7,7 +7,7 @@ import DeckHero from "../components/DeckHero.vue";
 import DeckPowerPanel from "../components/DeckPowerPanel.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
-import DeckTopCards from "../components/DeckTopCards.vue";
+import DeckOverview from "../components/DeckOverview.vue";
 import DeckAddCardModal from "../components/DeckAddCardModal.vue";
 import DeckCsvImportModal from "../components/DeckCsvImportModal.vue";
 import CardFinishBadge from "../components/CardFinishBadge.vue";
@@ -16,6 +16,7 @@ import DeckTypeIcon from "../components/DeckTypeIcon.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
+import ManaCost from "../components/ManaCost.vue";
 import CardPreview from "../components/CardPreview.vue";
 import { api, clearClientCache } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
@@ -48,6 +49,7 @@ import {
   splitCommanderCards,
 } from "../utils/deckCards";
 import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { formatCardRoles } from "../utils/deckPower";
 import {
   formatEuro,
 } from "../utils/format";
@@ -120,8 +122,11 @@ const filteredAllDeckCards = computed(() =>
 );
 
 const activeFilteredCards = computed(() => {
-  if (deckCardsView.value === "stacks" || deckCardsView.value === "top") {
+  if (deckCardsView.value === "stacks") {
     return filteredAllDeckCards.value;
+  }
+  if (deckCardsView.value === "overview") {
+    return browseStats.value?.cards || [];
   }
   return filteredDeckCards.value;
 });
@@ -701,10 +706,10 @@ onMounted(async () => {
                 <button
                   type="button"
                   class="filter-button"
-                  :class="{ active: deckCardsView === 'top' }"
-                  @click="changeDeckCardsView('top')"
+                  :class="{ active: deckCardsView === 'overview' }"
+                  @click="changeDeckCardsView('overview')"
                 >
-                  Top
+                  Overview
                 </button>
                 <button
                   type="button"
@@ -749,7 +754,10 @@ onMounted(async () => {
               </div>
             </div>
 
-            <div v-if="deckCardsView !== 'power'" class="deck-cards-toolbar-compact">
+            <div
+              v-if="deckCardsView !== 'power' && deckCardsView !== 'overview'"
+              class="deck-cards-toolbar-compact"
+            >
               <label class="manager-filter deck-cards-type-filter">
                 <span class="deck-cards-filter-label">Type</span>
                 <select :value="deckTypeFilter" @change="deckTypeFilter = $event.target.value">
@@ -819,7 +827,7 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <div v-if="deckCardsView !== 'top' && deckCardsView !== 'power'" class="deck-cards-filter-group-compact">
+              <div class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Sort</span>
                 <div class="button-group deck-cards-filter-group">
                   <button
@@ -862,14 +870,14 @@ onMounted(async () => {
           <div
             class="deck-cards-layout"
             :class="{
-              'has-commander': commanderCards.length && !['stacks', 'top', 'power'].includes(deckCardsView),
+              'has-commander': commanderCards.length && !['stacks', 'overview', 'power'].includes(deckCardsView),
               'is-stacks-view': deckCardsView === 'stacks',
-              'is-top-view': deckCardsView === 'top',
+              'is-overview-view': deckCardsView === 'overview',
               'is-power-view': deckCardsView === 'power',
             }"
           >
               <DeckCommanderPane
-                v-if="!['stacks', 'top', 'power'].includes(deckCardsView)"
+                v-if="!['stacks', 'overview', 'power'].includes(deckCardsView)"
                 :cards="commanderCards"
                 :default-deck-id="deckId"
                 :show-deck-remove="true"
@@ -894,10 +902,11 @@ onMounted(async () => {
                   @deck-changed="onDeckCardChanged"
                 />
 
-                <DeckTopCards
-                  v-else-if="deckCardsView === 'top'"
-                  :cards="filteredAllDeckCards"
+                <DeckOverview
+                  v-else-if="deckCardsView === 'overview'"
+                  :cards="browseStats?.cards || []"
                   :deck-id="deckId"
+                  :refresh-key="powerRefreshKey"
                 />
 
                 <DeckCardStacks
@@ -921,17 +930,18 @@ onMounted(async () => {
                 <table v-else-if="deckCardsView === 'table'" class="reports-table deck-cards-table">
                   <thead>
                     <tr>
-                      <th>Color</th>
+                      <th>Mana</th>
                       <th>Qty</th>
                       <th>Card</th>
                       <th>Type</th>
+                      <th>Role</th>
                       <th>Value</th>
                       <th>Owned</th>
                     </tr>
                   </thead>
                   <tbody v-if="isDeckEmpty">
                     <tr class="deck-cards-empty-row">
-                      <td colspan="6">
+                      <td colspan="7">
                         <p class="storage-empty deck-cards-empty-message">This deck is empty.</p>
                         <button
                           type="button"
@@ -949,7 +959,7 @@ onMounted(async () => {
                         v-if="group.kind === 'section' && !group.cards?.length"
                         class="deck-cards-group-row deck-cards-section-row"
                       >
-                        <td colspan="6">
+                        <td colspan="7">
                           <div class="deck-cards-group-heading">
                             <DeckTypeIcon :type="deckTypeIconType(group)" />
                             <span>{{ formatDeckGroupHeading(group) }}</span>
@@ -961,7 +971,7 @@ onMounted(async () => {
                           class="deck-cards-group-row"
                           :class="{ 'deck-cards-type-group-row': group.kind === 'type' }"
                         >
-                          <td colspan="6">
+                          <td colspan="7">
                             <div class="deck-cards-group-heading">
                               <DeckTypeIcon :type="deckTypeIconType(group)" />
                               <span>{{ formatDeckGroupHeading(group) }}</span>
@@ -974,10 +984,13 @@ onMounted(async () => {
                           class="deck-cards-row"
                           :class="deckCardOwnershipClass(card)"
                         >
-                          <td><ManaSymbols :colors="card.colors" :size="18" /></td>
+                          <td><ManaCost :mana-cost="card.manaCost || ''" :size="18" /></td>
                           <td class="deck-cards-qty">{{ card.qty }}</td>
                           <td>
-                            <CardPreview :image-uri="card.imageUri">
+                            <CardPreview
+                              :image-uri="card.imageUri"
+                              :image-uri-back="card.imageUriBack || ''"
+                            >
                               <RouterLink
                                 v-if="cardRoute(card)"
                                 :to="cardRoute(card)"
@@ -988,11 +1001,12 @@ onMounted(async () => {
                               <span v-else>{{ card.cardName }}</span>
                             </CardPreview>
                             <CardFinishBadge :card="card" compact />
-                            <p
+                            <span
                               v-if="card.cheapestOwnedAlternative"
                               class="deck-cheapest-alternative"
+                              :title="`Cheapest owned: ${card.cheapestOwnedAlternative.setCode} #${card.cheapestOwnedAlternative.collectorNumber} (${formatEuro(card.cheapestOwnedAlternative.currentValue)})`"
                             >
-                              Cheapest owned:
+                              ·
                               <RouterLink
                                 :to="{
                                   name: 'card',
@@ -1007,12 +1021,21 @@ onMounted(async () => {
                                 {{ card.cheapestOwnedAlternative.setCode }}
                                 #{{ card.cheapestOwnedAlternative.collectorNumber }}
                               </RouterLink>
-                              ({{ formatEuro(card.cheapestOwnedAlternative.currentValue) }})
-                            </p>
+                            </span>
                           </td>
                           <td class="deck-type-label">
                             <DeckTypeIcon :type="cardTypeGroup(card)" />
                             <span>{{ deckTypeLabel(cardTypeGroup(card)) }}</span>
+                          </td>
+                          <td class="deck-roles-cell">
+                            <template v-if="formatCardRoles(card.roles).length">
+                              <span
+                                v-for="label in formatCardRoles(card.roles)"
+                                :key="`${card.cardName}-${label}`"
+                                class="deck-role-chip"
+                              >{{ label }}</span>
+                            </template>
+                            <span v-else class="deck-roles-empty">—</span>
                           </td>
                           <td>{{ formatEuro(card.currentValue) }}</td>
                           <td class="manager-checkbox-cell deck-owned-cell">

@@ -4,7 +4,7 @@ import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
-import ManaSymbols from "./ManaSymbols.vue";
+import ManaCost from "./ManaCost.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import {
   effectiveDeckOwnedQty,
@@ -98,7 +98,7 @@ function ownedLabel(card) {
 
       <div class="deck-stacks-detail-meta">
         <div class="deck-stacks-expanded-name-row">
-          <ManaSymbols :colors="card.colors" :size="16" />
+          <ManaCost :mana-cost="card.manaCost || ''" :size="16" />
           <RouterLink
             v-if="cardRoute(card)"
             :to="cardRoute(card)"

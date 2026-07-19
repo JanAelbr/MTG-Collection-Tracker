@@ -1075,6 +1075,7 @@ def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
 
 
 def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -> dict:
+    from util.card_role_seed import card_roles_for
     from util.deck_helpers import cheapest_owned_printing_by_name
 
     serialized_cards = []
@@ -1097,12 +1098,14 @@ def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -
             "invested": card.get("invested"),
             "profitLoss": card.get("profit_loss"),
             "imageUri": card.get("image_uri"),
+            "imageUriBack": card.get("image_uri_back") or "",
             "colors": card.get("colors") or [],
             "typeLine": card.get("type_line") or "",
             "cardType": card.get("card_type") or "",
             "cardTypes": card.get("card_types") or [],
             "manaCost": card.get("mana_cost") or "",
             "cmc": card.get("cmc"),
+            "roles": card_roles_for(card),
             "cardmarketUrl": card.get("cardmarket_url"),
             "inCatalog": card.get("in_catalog"),
         }

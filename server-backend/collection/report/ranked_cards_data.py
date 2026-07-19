@@ -151,6 +151,7 @@ def serialize_ranked_cards(cards_df: pd.DataFrame) -> list[dict]:
             "has_foil": _int_flag(row.has_foil),
             "has_etched": _int_flag(row.has_etched),
             "image_uri": str_or_empty(row.image_uri),
+            "image_uri_back": str_or_empty(getattr(row, "image_uri_back", "")),
             "cardmarket_url": str_or_empty(row.cardmarket_url),
             "cardmarket_url_foil": str_or_empty(row.cardmarket_url_foil),
             **card_metadata_snake(row),

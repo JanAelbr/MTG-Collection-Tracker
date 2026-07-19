@@ -28,7 +28,6 @@ const navItems = [
     subnav: collectionSubnav,
   },
   { to: "/storage", label: "Storage", matchPrefix: false },
-  { to: "/manager", label: "Set Manager", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
   { to: "/settings", label: "Settings", matchPrefix: false },
 ];

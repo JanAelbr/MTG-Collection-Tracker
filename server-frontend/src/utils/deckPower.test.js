@@ -4,6 +4,7 @@ import {
   bracketLabel,
   componentScoreClass,
   formatBasicLandSummary,
+  formatCardRoles,
   formatComponentCount,
   groupProposalBySlot,
   groupProposalByType,
@@ -16,6 +17,14 @@ describe("deckPower helpers", () => {
   it("labels brackets and descriptions", () => {
     expect(bracketLabel(3)).toBe("Bracket 3");
     expect(bracketDescription(3)).toContain("Upgraded");
+  });
+
+  it("formats card roles for the deck table", () => {
+    expect(formatCardRoles(["fast_mana", "ramp", "land"])).toEqual([
+      "Fast mana",
+      "Ramp",
+    ]);
+    expect(formatCardRoles([])).toEqual([]);
   });
 
   it("maps component scores to classes", () => {
@@ -72,7 +81,7 @@ describe("deckPower helpers", () => {
     expect(formatComponentCount("tutors", { tutors: 0 })).toBe("0 cards");
     expect(formatComponentCount("tutors", { tutors: 1 })).toBe("1 card");
     expect(formatComponentCount("tutors", { tutors: 3 })).toBe("3 cards");
-    expect(formatComponentCount("curve", {})).toBe("");
+    expect(formatComponentCount("ramp", { ramp: 0 })).toBe("0 cards");
   });
 
   it("builds card detail routes for power previews", () => {

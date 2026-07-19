@@ -8,6 +8,12 @@ import { powerCardRoute } from "../utils/deckPower";
 const props = defineProps({
   cards: { type: Array, default: () => [] },
   deckId: { type: [String, Number], default: "" },
+  emptyMessage: {
+    type: String,
+    default:
+      "No mana-cost data for nonland spells yet. Missing CMC is fetched from Scryfall automatically on first load.",
+  },
+  showMeta: { type: Boolean, default: true },
 });
 
 const selectedBucket = ref(null);
@@ -79,12 +85,11 @@ watch(
 <template>
   <div class="deck-mana-curve-chart">
     <div v-if="!chart.hasData" class="deck-mana-curve-empty">
-      No mana-cost data for nonland spells yet. Open the Power tab again after a moment —
-      missing CMC is fetched from Scryfall automatically on first load.
+      {{ emptyMessage }}
     </div>
 
     <template v-else>
-      <div class="deck-mana-curve-meta">
+      <div v-if="showMeta" class="deck-mana-curve-meta">
         <span>{{ chart.total }} nonland spells charted</span>
         <span v-if="chart.averageCmc != null">Avg CMC {{ chart.averageCmc }}</span>
       </div>
