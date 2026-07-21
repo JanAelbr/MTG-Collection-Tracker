@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
@@ -19,6 +19,7 @@ import ManaSymbols from "../components/ManaSymbols.vue";
 import ManaCost from "../components/ManaCost.vue";
 import CardPreview from "../components/CardPreview.vue";
 import { api, clearClientCache } from "../api";
+import { cacheKeyFor, getCachedEntry } from "../apiCache";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import {
@@ -54,6 +55,8 @@ import {
   formatEuro,
 } from "../utils/format";
 
+defineOptions({ name: "DecksView" });
+
 const route = useRoute();
 const router = useRouter();
 
@@ -73,6 +76,8 @@ const ownedToggleBusy = ref("");
 const refreshingUnpricedMetadata = ref(false);
 const unpricedMetadataMessage = ref("");
 const unpricedMetadataError = ref("");
+const loadingDeckCards = ref(false);
+const hasMounted = ref(false);
 
 const { loading: loadingBrowse, run: runBrowseLoad } = useAsyncLoad();
 
@@ -94,7 +99,10 @@ const unpricedCardCount = computed(() => {
 });
 
 const commanderCards = computed(() => {
-  const { commanders } = splitCommanderCards(browseStats.value?.cards || []);
+  const source = Array.isArray(browseStats.value?.cards)
+    ? browseStats.value.cards
+    : (browseStats.value?.previewCards || []);
+  const { commanders } = splitCommanderCards(source);
   return sortDeckCards(commanders, "name");
 });
 
@@ -103,7 +111,19 @@ const mainDeckCards = computed(() => {
   return deckCards;
 });
 
-const isDeckEmpty = computed(() => mainDeckCards.value.length === 0);
+const deckCardsReady = computed(() => Array.isArray(browseStats.value?.cards));
+
+const isDeckEmpty = computed(() => {
+  if (!deckCardsReady.value) {
+    return Number(browseStats.value?.deckSize || 0) === 0;
+  }
+  return mainDeckCards.value.length === 0;
+});
+
+const showDeckCardsLoading = computed(() => (
+  Boolean(deckId.value)
+  && (loadingDeckCards.value || (!deckCardsReady.value && Number(browseStats.value?.deckSize || 0) > 0))
+));
 
 const filteredDeckCards = computed(() =>
   filterDeckCards(mainDeckCards.value, {
@@ -197,6 +217,39 @@ async function loadBrowseIndex() {
     browseIndex.value = await api.getDeckBrowseIndex();
     mergeOwnershipPatchesIntoPages(browseIndex.value?.pages);
   });
+}
+
+function browseIndexCacheFresh() {
+  return Boolean(getCachedEntry(cacheKeyFor("GET", "/decks/browse-index")));
+}
+
+function deckPageHasFullCards(deckKey = deckId.value) {
+  const page = browseIndex.value?.pages?.[String(deckKey)];
+  return Array.isArray(page?.cards);
+}
+
+const deckCardsLoadPromises = new Map();
+
+async function ensureActiveDeckCardsLoaded({ force = false } = {}) {
+  const key = String(deckId.value || "");
+  if (!key || !browseIndex.value) {
+    return;
+  }
+  if (!force && deckPageHasFullCards(key)) {
+    return;
+  }
+  if (!force && deckCardsLoadPromises.has(key)) {
+    return deckCardsLoadPromises.get(key);
+  }
+  loadingDeckCards.value = true;
+  const promise = refreshDeckPage(key).finally(() => {
+    deckCardsLoadPromises.delete(key);
+    if (String(deckId.value) === key) {
+      loadingDeckCards.value = false;
+    }
+  });
+  deckCardsLoadPromises.set(key, promise);
+  await promise;
 }
 
 function restoreScrollPosition(scrollY) {
@@ -448,7 +501,8 @@ async function refreshUnpricedMetadata() {
     const result = await api.refreshDeckUnpricedMetadata(deckId.value);
     clearClientCache();
     unpricedMetadataMessage.value = result.message || "Set metadata refreshed.";
-    await Promise.all([refreshDeckPage(), loadBrowseIndex()]);
+    await Promise.all([loadBrowseIndex(), refreshDeckPage()]);
+    await ensureActiveDeckCardsLoaded({ force: true });
   } catch (error) {
     unpricedMetadataError.value = error?.message || "Could not refresh set metadata.";
   } finally {
@@ -507,6 +561,7 @@ function selectBrowseDeck(nextDeckId) {
   syncDeckRoute();
   if (changed) {
     scrollAfterDeckSwitch();
+    void ensureActiveDeckCardsLoaded();
   }
 }
 
@@ -563,6 +618,10 @@ watch(
   },
 );
 
+watch(deckId, () => {
+  void ensureActiveDeckCardsLoaded();
+});
+
 watch(ownershipRevision, () => {
   mergeOwnershipPatchesIntoPages(browseIndex.value?.pages);
 });
@@ -573,6 +632,24 @@ onMounted(async () => {
   if (deckId.value && !route.query.deck) {
     syncDeckRoute();
   }
+  await ensureActiveDeckCardsLoaded();
+  hasMounted.value = true;
+});
+
+onActivated(async () => {
+  if (!hasMounted.value) {
+    return;
+  }
+  if (!browseIndex.value) {
+    await loadBrowseIndex();
+    syncDeckIdFromRoute();
+    await ensureActiveDeckCardsLoaded();
+    return;
+  }
+  if (!browseIndexCacheFresh()) {
+    await loadBrowseIndex();
+  }
+  await ensureActiveDeckCardsLoaded();
 });
 </script>
 
@@ -876,6 +953,10 @@ onMounted(async () => {
               'is-power-view': deckCardsView === 'power',
             }"
           >
+              <div v-if="showDeckCardsLoading" class="storage-empty deck-cards-loading">
+                <LoadingIndicator label="Loading deck cards…" />
+              </div>
+              <template v-else>
               <DeckCommanderPane
                 v-if="!['stacks', 'overview', 'power'].includes(deckCardsView)"
                 :cards="commanderCards"
@@ -1062,6 +1143,7 @@ onMounted(async () => {
                   </tbody>
                 </table>
               </div>
+              </template>
             </div>
         </section>
       </div>

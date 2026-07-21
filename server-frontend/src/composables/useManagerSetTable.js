@@ -6,6 +6,7 @@ import {
   FINISH_FOIL,
   FINISH_NONFOIL,
   canManageFinish,
+  normalizeFinish,
 } from "../utils/finishes";
 import { valueForStrategy } from "../utils/priceStrategies";
 
@@ -120,18 +121,16 @@ export function compareCollectorNumbers(left, right) {
   return 0;
 }
 
-export function managerCardPrice(card, strategyId = "trend") {
+export function managerCardPrice(card, strategyId = "trend", finish = FINISH_NONFOIL) {
   if (!card) {
     return null;
   }
-  return valueForStrategy(
-    {
-      ...card,
-      currentValue: card.marketValue ?? card.currentValue ?? null,
-      valuesByStrategy: card.valuesByStrategy,
-    },
-    strategyId,
-  );
+  const finishId = normalizeFinish(finish);
+  const byFinish = card.valuesByFinish?.[finishId] ?? card.valuesByFinish?.[String(finishId)];
+  if (byFinish) {
+    return valueForStrategy({ valuesByStrategy: byFinish }, strategyId);
+  }
+  return valueForStrategy(card, strategyId);
 }
 
 export function compareManagerCardPrices(left, right, strategyId = "trend") {

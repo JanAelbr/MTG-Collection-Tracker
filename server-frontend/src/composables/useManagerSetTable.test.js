@@ -53,25 +53,32 @@ describe("useManagerSetTable helpers", () => {
     expect(compareCollectorNumbers("10a", "2")).toBeGreaterThan(0);
   });
 
-  it("reads manager card prices from strategy values with market fallback", () => {
+  it("reads manager card prices from strategy maps only", () => {
     expect(managerCardPrice({
       marketValue: 1.5,
       valuesByStrategy: { trend: 2.25 },
     }, "trend")).toBe(2.25);
-    expect(managerCardPrice({ marketValue: 1.5 }, "trend")).toBe(1.5);
+    expect(managerCardPrice({
+      marketValue: 1.5,
+      valuesByFinish: {
+        0: { trend: 2.0 },
+        1: { trend: 4.0 },
+      },
+    }, "trend", FINISH_FOIL)).toBe(4.0);
+    expect(managerCardPrice({ marketValue: 1.5 }, "trend")).toBeNull();
     expect(managerCardPrice({ marketValue: null }, "trend")).toBeNull();
   });
 
   it("sorts unknown prices last regardless of direction", () => {
-    const priced = { marketValue: 5 };
-    const unknown = { marketValue: null };
+    const priced = { valuesByStrategy: { trend: 5 } };
+    const unknown = { valuesByStrategy: { trend: null } };
     expect(compareManagerCardPrices(priced, unknown, "trend")).toBeLessThan(0);
     expect(compareManagerCardPrices(unknown, priced, "trend")).toBeGreaterThan(0);
 
     const cards = [
-      { collectorNumber: "1", name: "Unknown", marketValue: null },
-      { collectorNumber: "2", name: "Cheap", marketValue: 1 },
-      { collectorNumber: "3", name: "Pricey", marketValue: 10 },
+      { collectorNumber: "1", name: "Unknown", valuesByStrategy: { trend: null } },
+      { collectorNumber: "2", name: "Cheap", valuesByStrategy: { trend: 1 } },
+      { collectorNumber: "3", name: "Pricey", valuesByStrategy: { trend: 10 } },
     ];
     const asc = sortManagerCards(cards, { sort: "value", sortDir: "asc", priceStrategy: "trend" });
     expect(asc.map((card) => card.name)).toEqual(["Cheap", "Pricey", "Unknown"]);

@@ -20,7 +20,7 @@ from report.manager_data import (
 )
 from util.card_metadata import card_metadata_api
 from api.services import settings_service
-from api.services.pricing_service import price_from_strategy
+from api.services.pricing_service import price_from_strategy, values_by_strategy_for_finish
 from report.report_data import (
     build_art_style_options_for_set,
     build_sorted_set_options,
@@ -1359,6 +1359,11 @@ def _serialize_manager_card(card: dict) -> dict:
         "marketValue": card.get("market_value"),
         "marketValueFoil": card.get("market_value_foil"),
         "marketValueEtched": card.get("market_value_etched"),
+        "valuesByFinish": {
+            str(FINISH_NONFOIL): values_by_strategy_for_finish(card, FINISH_NONFOIL),
+            str(FINISH_FOIL): values_by_strategy_for_finish(card, FINISH_FOIL),
+            str(FINISH_ETCHED): values_by_strategy_for_finish(card, FINISH_ETCHED),
+        },
         "hasNonfoil": bool(card.get("has_nonfoil")),
         "hasFoil": bool(card.get("has_foil")),
         "hasEtched": bool(card.get("has_etched")),

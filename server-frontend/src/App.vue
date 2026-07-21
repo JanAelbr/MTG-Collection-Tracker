@@ -9,7 +9,11 @@ const toastMessages = ref([]);
 
 <template>
   <AppLayout>
-    <RouterView />
+    <RouterView v-slot="{ Component }">
+      <KeepAlive :include="['DecksView']" :max="3">
+        <component :is="Component" />
+      </KeepAlive>
+    </RouterView>
   </AppLayout>
   <ToastContainer v-model:messages="toastMessages" />
   <CardImageTooltip />

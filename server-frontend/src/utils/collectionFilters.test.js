@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cardMatchesCollectionCmcFilter,
+  cardMatchesCollectionPriceFilter,
   cardMatchesCollectionRarityFilter,
   cardMatchesCollectionStorageFilter,
   cardMatchesSearchQuery,
@@ -17,6 +18,7 @@ const sampleCards = [
     cardType: "creature",
     rarity: "rare",
     cmc: 3,
+    currentValue: 4.5,
     power: "2",
     toughness: "2",
     oracleText: "When Frodo enters, scry 1.",
@@ -30,6 +32,7 @@ const sampleCards = [
     cardType: "instant",
     rarity: "uncommon",
     cmc: 2,
+    currentValue: 0.75,
     oracleText: "Counter target spell.",
   },
   {
@@ -41,6 +44,7 @@ const sampleCards = [
     cardType: "land",
     rarity: "common",
     cmc: 0,
+    currentValue: null,
   },
 ];
 
@@ -71,6 +75,17 @@ describe("collectionFilters search", () => {
     });
     expect(filtered).toHaveLength(1);
     expect(filtered[0].name).toBe("Counterspell");
+  });
+
+  it("filters by price range on currentValue", () => {
+    expect(cardMatchesCollectionPriceFilter(sampleCards[0], { priceMin: 4 })).toBe(true);
+    expect(cardMatchesCollectionPriceFilter(sampleCards[1], { priceMax: 1 })).toBe(true);
+    expect(cardMatchesCollectionPriceFilter(sampleCards[2], { priceMin: 0 })).toBe(false);
+    const filtered = filterCollectionCards(sampleCards, {
+      priceMin: 1,
+      priceMax: 5,
+    });
+    expect(filtered.map((card) => card.name)).toEqual(["Frodo"]);
   });
 
   it("filters by storage location", () => {

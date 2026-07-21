@@ -196,16 +196,16 @@ def _guide_price_matrix(
     stored_etched: float | None = None,
     price_strategy: str = "trend",
 ) -> dict:
+    del stored_etched, price_strategy
     rows = []
     for strategy in list_price_strategies():
         strategy_id = strategy["id"]
-        etched = stored_etched if stored_etched is not None and strategy_id == price_strategy else None
         rows.append({
             "strategyId": strategy_id,
             "label": strategy["label"],
             "nonfoil": guide_prices.get("nonfoil", {}).get(strategy_id),
             "foil": guide_prices.get("foil", {}).get(strategy_id),
-            "etched": etched,
+            "etched": guide_prices.get("etched", {}).get(strategy_id),
         })
     return {
         "strategies": list_price_strategies(),

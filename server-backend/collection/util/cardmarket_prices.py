@@ -327,32 +327,29 @@ def _nonfoil_low_is_reliable(entry: dict, low: float) -> bool:
     return True
 
 
-# Return the first positive price from a Cardmarket price guide entry.
+# Return the Cardmarket trend for a finish, or None when that exact field is missing.
+# Never cascades to avg/low or across finish key groups — missing trend means unknown.
 def price_from_guide_entry(entry: dict, finish: int | bool) -> float | None:
     finish_id = normalize_finish(finish)
     if finish_id == FINISH_ETCHED:
-        for use_foil_keys in (False, True):
-            price = _price_from_guide_keys(entry, use_foil_keys=use_foil_keys)
-            if price is not None:
-                return price
-        return None
+        # No dedicated etched metric. Only accept foil trend when the product has
+        # no nonfoil trend (etched-only Cardmarket product shape).
+        nonfoil_trend = entry.get("trend")
+        foil_trend = entry.get("trend-foil")
+        if nonfoil_trend not in (None, 0) and float(nonfoil_trend) > 0:
+            return None
+        if foil_trend is None or foil_trend <= 0:
+            return None
+        return float(foil_trend)
     return _price_from_guide_keys(entry, use_foil_keys=guide_uses_foil_keys(finish_id))
 
 
 def _price_from_guide_keys(entry: dict, *, use_foil_keys: bool) -> float | None:
-    keys = PRIMARY_FOIL_KEYS if use_foil_keys else PRIMARY_NONFOIL_KEYS
-    for key in keys:
-        value = entry.get(key)
-        if value is not None and value > 0:
-            return float(value)
-
-    low_key = "low-foil" if use_foil_keys else "low"
-    low = entry.get(low_key)
-    if low is None or low <= 0:
+    key = "trend-foil" if use_foil_keys else "trend"
+    value = entry.get(key)
+    if value is None or value <= 0:
         return None
-    if not use_foil_keys and not _nonfoil_low_is_reliable(entry, float(low)):
-        return None
-    return float(low)
+    return float(value)
 
 
 # Download the Cardmarket price guide when the cache is missing or stale.

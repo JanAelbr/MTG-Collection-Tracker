@@ -114,8 +114,8 @@ function onSortColumn(field) {
   emit("sort", field);
 }
 
-function cardPriceLabel(card) {
-  return formatEuro(managerCardPrice(card, props.priceStrategy));
+function cardPriceLabel(card, finish = 0) {
+  return formatEuro(managerCardPrice(card, props.priceStrategy, finish));
 }
 
 const visibleRowCount = computed(() => props.finishRows.length);
@@ -266,7 +266,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
               class="manager-table-grouped-cell manager-price-cell"
             >
               <div class="manager-price-value-row">
-                <span class="manager-price-value">{{ cardPriceLabel(row.card) }}</span>
+                <span class="manager-price-value">{{ cardPriceLabel(row.card, row.finish) }}</span>
                 <span
                   v-if="row.card.priceIssues?.length"
                   class="manager-price-health-badge"

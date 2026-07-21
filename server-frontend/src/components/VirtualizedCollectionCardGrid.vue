@@ -35,6 +35,8 @@ const overscanRows = 2;
 const BASE_COL_WIDTH = 118;
 const BASE_GAP = 16;
 const BASE_ROW_HEIGHT = 250;
+/** Matches `.collection-card-grid` horizontal padding (4px + 4px). */
+const GRID_PAD_X = 8;
 
 const gridStyle = computed(() => ({
   "--collection-card-scale": String(props.cardScale / 100),
@@ -79,11 +81,35 @@ function measureLayout() {
   if (!root) {
     return;
   }
+
+  const prevColumns = columnCount.value;
+  const prevRowHeight = rowHeight.value;
+  const prevScroll = root.scrollTop;
+  const firstIndex = prevColumns > 0
+    ? Math.floor(prevScroll / Math.max(prevRowHeight, 1)) * prevColumns
+    : 0;
+
   viewportHeight.value = root.clientHeight || 640;
   const width = root.clientWidth || 640;
-  const colWidth = (BASE_COL_WIDTH + BASE_GAP) * scaleFactor.value;
-  columnCount.value = Math.max(1, Math.floor((width + BASE_GAP * scaleFactor.value) / colWidth));
-  rowHeight.value = BASE_ROW_HEIGHT * scaleFactor.value;
+  const gap = BASE_GAP * scaleFactor.value;
+  const colWidth = BASE_COL_WIDTH * scaleFactor.value;
+  const usable = Math.max(colWidth, width - GRID_PAD_X);
+  const nextColumns = Math.max(1, Math.floor((usable + gap) / (colWidth + gap)));
+  const nextRowHeight = BASE_ROW_HEIGHT * scaleFactor.value;
+
+  columnCount.value = nextColumns;
+  rowHeight.value = nextRowHeight;
+
+  // Keep the same leading card visible when column count changes (e.g. scrollbar gutter).
+  if (prevColumns > 0 && (prevColumns !== nextColumns || prevRowHeight !== nextRowHeight)) {
+    const nextScroll = Math.floor(firstIndex / nextColumns) * nextRowHeight;
+    if (Math.abs(root.scrollTop - nextScroll) > 1) {
+      root.scrollTop = nextScroll;
+    }
+    scrollTop.value = root.scrollTop;
+  } else {
+    scrollTop.value = root.scrollTop;
+  }
 }
 
 function onScroll(event) {
@@ -154,6 +180,7 @@ defineExpose({ scrollToIndex, rootRef });
       >
         <CollectionCardGrid
           :cards="visibleCards"
+          :columns="columnCount"
           :show-unowned-badge="showUnownedBadge"
           :show-finish-badge="showFinishBadge"
           :card-scale="cardScale"

@@ -176,7 +176,11 @@ def create_deck(
 
 
 
-def _load_strategy_deck_df(conn: sqlite3.Connection) -> tuple[str, object]:
+def _load_strategy_deck_df(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str | int | None = None,
+) -> tuple[str, object]:
 
     settings = settings_service.get_settings(conn)
 
@@ -184,7 +188,7 @@ def _load_strategy_deck_df(conn: sqlite3.Connection) -> tuple[str, object]:
 
     deck_df = apply_strategy_to_deck_df(
 
-        enrich_deck_cards_df(load_deck_cards_df(conn), conn),
+        enrich_deck_cards_df(load_deck_cards_df(conn, deck_id=deck_id), conn),
 
         strategy,
 
@@ -269,6 +273,7 @@ def load_deck_browse_index(conn: sqlite3.Connection) -> dict:
 
             ),
             conn,
+            include_cards=False,
         )
 
         for deck in decks
@@ -309,7 +314,7 @@ def load_deck_browse(
 
 
 
-    strategy, deck_df = _load_strategy_deck_df(conn)
+    strategy, deck_df = _load_strategy_deck_df(conn, deck_id=deck_id)
 
     stats = compute_deck_stats_page(
 
@@ -1074,53 +1079,69 @@ def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
     return {"deletedDeckId": str(deck_key)}
 
 
-def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -> dict:
+def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, include_alternatives: bool = True) -> dict:
     from util.card_role_seed import card_roles_for
     from util.deck_helpers import cheapest_owned_printing_by_name
 
-    serialized_cards = []
-    for card in stats.get("cards") or []:
-        owned_qty = int(card.get("owned_qty") or 0)
-        qty = int(card.get("qty") or 0)
-        entry = {
-            "deckId": card.get("deck_id"),
-            "deckName": card.get("deck_name"),
-            "cardName": card.get("card_name"),
-            "setCode": card.get("set_code"),
-            "collectorNumber": card.get("collector_number"),
-            "finish": card.get("finish"),
-            "foil": card.get("finish"),
-            "qty": card.get("qty"),
-            "section": card.get("section"),
-            "ownedQty": card.get("owned_qty"),
-            "currentValue": card.get("current_value"),
-            "unitValue": card.get("unit_value"),
-            "invested": card.get("invested"),
-            "profitLoss": card.get("profit_loss"),
-            "imageUri": card.get("image_uri"),
-            "imageUriBack": card.get("image_uri_back") or "",
-            "colors": card.get("colors") or [],
-            "typeLine": card.get("type_line") or "",
-            "cardType": card.get("card_type") or "",
-            "cardTypes": card.get("card_types") or [],
-            "manaCost": card.get("mana_cost") or "",
-            "cmc": card.get("cmc"),
-            "roles": card_roles_for(card),
-            "cardmarketUrl": card.get("cardmarket_url"),
-            "inCatalog": card.get("in_catalog"),
-        }
-        if conn is not None and owned_qty < qty:
-            alternative = cheapest_owned_printing_by_name(conn, card.get("card_name"))
-            if alternative:
-                entry["cheapestOwnedAlternative"] = {
-                    "setCode": alternative["set_code"],
-                    "collectorNumber": alternative["collector_number"],
-                    "finish": alternative["finish"],
-                    "currentValue": alternative["current_value"],
-                }
-        serialized_cards.append(entry)
+    owned_qty = int(card.get("owned_qty") or 0)
+    qty = int(card.get("qty") or 0)
+    entry = {
+        "deckId": card.get("deck_id"),
+        "deckName": card.get("deck_name"),
+        "cardName": card.get("card_name"),
+        "setCode": card.get("set_code"),
+        "collectorNumber": card.get("collector_number"),
+        "finish": card.get("finish"),
+        "foil": card.get("finish"),
+        "qty": card.get("qty"),
+        "section": card.get("section"),
+        "ownedQty": card.get("owned_qty"),
+        "currentValue": card.get("current_value"),
+        "unitValue": card.get("unit_value"),
+        "invested": card.get("invested"),
+        "profitLoss": card.get("profit_loss"),
+        "imageUri": card.get("image_uri"),
+        "imageUriBack": card.get("image_uri_back") or "",
+        "colors": card.get("colors") or [],
+        "typeLine": card.get("type_line") or "",
+        "cardType": card.get("card_type") or "",
+        "cardTypes": card.get("card_types") or [],
+        "manaCost": card.get("mana_cost") or "",
+        "cmc": card.get("cmc"),
+        "roles": card_roles_for(card),
+        "cardmarketUrl": card.get("cardmarket_url"),
+        "inCatalog": card.get("in_catalog"),
+    }
+    if include_alternatives and conn is not None and owned_qty < qty:
+        alternative = cheapest_owned_printing_by_name(conn, card.get("card_name"))
+        if alternative:
+            entry["cheapestOwnedAlternative"] = {
+                "setCode": alternative["set_code"],
+                "collectorNumber": alternative["collector_number"],
+                "finish": alternative["finish"],
+                "currentValue": alternative["current_value"],
+            }
+    return entry
 
-    return {
+
+def _serialize_deck_preview_cards(stats: dict, *, limit: int = 2) -> list[dict]:
+    preview = []
+    for card in stats.get("cards") or []:
+        if str(card.get("section") or "") != "commander":
+            continue
+        preview.append(_serialize_deck_card(card, include_alternatives=False))
+        if len(preview) >= limit:
+            break
+    return preview
+
+
+def _serialize_deck_stats(
+    stats: dict,
+    conn: sqlite3.Connection | None = None,
+    *,
+    include_cards: bool = True,
+) -> dict:
+    payload = {
         "current": stats.get("current"),
         "ownedCurrent": stats.get("ownedCurrent"),
         "invested": stats.get("invested"),
@@ -1138,8 +1159,14 @@ def _serialize_deck_stats(stats: dict, conn: sqlite3.Connection | None = None) -
         "unknownCards": stats.get("unknownCards") or [],
         "winners": stats.get("winners"),
         "losers": stats.get("losers"),
-        "cards": serialized_cards,
+        "previewCards": _serialize_deck_preview_cards(stats),
     }
+    if include_cards:
+        payload["cards"] = [
+            _serialize_deck_card(card, conn)
+            for card in (stats.get("cards") or [])
+        ]
+    return payload
 
 
 def bulk_add_cards_to_deck(

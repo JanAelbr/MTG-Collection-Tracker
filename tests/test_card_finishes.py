@@ -91,9 +91,9 @@ class CardFinishesTests(unittest.TestCase):
         self.assertTrue(finish_has_pricing(row, FINISH_FOIL, guide))
         self.assertFalse(finish_has_pricing(row, FINISH_NONFOIL, guide))
 
-    def test_price_from_guide_entry_uses_nonfoil_keys_for_etched(self):
+    def test_price_from_guide_entry_does_not_use_nonfoil_keys_for_etched(self):
         entry = {"trend": 2.42, "trend-foil": 5.54}
-        self.assertEqual(price_from_guide_entry(entry, FINISH_ETCHED), 2.42)
+        self.assertIsNone(price_from_guide_entry(entry, FINISH_ETCHED))
 
     def test_price_from_guide_entry_uses_foil_keys_for_etched_only_product(self):
         entry = {"trend": 0, "trend-foil": 0.34, "avg-foil": 0.35}

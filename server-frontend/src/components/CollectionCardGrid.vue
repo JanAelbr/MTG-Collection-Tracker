@@ -17,6 +17,8 @@ const props = defineProps({
   browseNames: { type: Boolean, default: false },
   selectedName: { type: String, default: "" },
   cardScale: { type: Number, default: 100 },
+  /** When set, lock to this column count (needed for virtualized scrolling). */
+  columns: { type: Number, default: 0 },
   selectable: { type: Boolean, default: false },
   selectedKeys: { type: Object, default: null },
   focusedIndex: { type: Number, default: -1 },
@@ -25,9 +27,15 @@ const props = defineProps({
 
 const emit = defineEmits(["browse-name", "ownership-changed", "toggle-select", "focus-index"]);
 
-const gridStyle = computed(() => ({
-  "--collection-card-scale": String(props.cardScale / 100),
-}));
+const gridStyle = computed(() => {
+  const style = {
+    "--collection-card-scale": String(props.cardScale / 100),
+  };
+  if (props.columns > 0) {
+    style.gridTemplateColumns = `repeat(${props.columns}, minmax(0, 1fr))`;
+  }
+  return style;
+});
 
 // Re-render owned styling when ownership changes.
 const ownershipTick = computed(() => ownershipRevision.value);

@@ -14,6 +14,7 @@ from api.services import settings_service
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 from util.card_metadata import (
     card_matches_collection_cmc_filter,
+    card_matches_collection_price_filter,
     card_matches_collection_rarity_filter,
     card_matches_collection_stat_filter,
 )
@@ -119,6 +120,8 @@ def _filtered_pool(
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
     power_min: float | None = None,
     toughness_min: float | None = None,
     storage_filters: list[str] | None = None,
@@ -149,6 +152,10 @@ def _filtered_pool(
     filtered = [
         card for card in filtered
         if card_matches_collection_cmc_filter(card, cmc_min=cmc_min, cmc_max=cmc_max)
+    ]
+    filtered = [
+        card for card in filtered
+        if card_matches_collection_price_filter(card, price_min=price_min, price_max=price_max)
     ]
     filtered = [
         card for card in filtered
@@ -462,6 +469,8 @@ def list_name_variants(
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
     power_min: float | None = None,
     toughness_min: float | None = None,
     storage_filters: list[str] | None = None,
@@ -478,6 +487,8 @@ def list_name_variants(
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,
         "cmc_max": cmc_max,
+        "price_min": price_min,
+        "price_max": price_max,
         "power_min": power_min,
         "toughness_min": toughness_min,
         "storage_filters": storage_filters or [],
@@ -538,6 +549,8 @@ def search_cards(
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
     power_min: float | None = None,
     toughness_min: float | None = None,
     storage_filters: list[str] | None = None,
@@ -571,6 +584,8 @@ def search_cards(
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,
         "cmc_max": cmc_max,
+        "price_min": price_min,
+        "price_max": price_max,
         "power_min": power_min,
         "toughness_min": toughness_min,
         "storage_filters": storage_filters or [],

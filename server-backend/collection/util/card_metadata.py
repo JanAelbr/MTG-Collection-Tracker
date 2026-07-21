@@ -150,6 +150,28 @@ def card_matches_collection_cmc_filter(
     return True
 
 
+def card_matches_collection_price_filter(
+    card: dict,
+    *,
+    price_min: float | None = None,
+    price_max: float | None = None,
+) -> bool:
+    if price_min is None and price_max is None:
+        return True
+    raw = card.get("currentValue")
+    if raw is None:
+        raw = card.get("current_value")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return False
+    if price_min is not None and value < price_min:
+        return False
+    if price_max is not None and value > price_max:
+        return False
+    return True
+
+
 def card_matches_collection_stat_filter(
     card: dict,
     *,

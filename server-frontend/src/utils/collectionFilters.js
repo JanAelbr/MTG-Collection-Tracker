@@ -48,6 +48,27 @@ export function cardMatchesCollectionCmcFilter(card, { cmcMin = null, cmcMax = n
   return true;
 }
 
+export function cardMatchesCollectionPriceFilter(card, { priceMin = null, priceMax = null } = {}) {
+  if (priceMin == null && priceMax == null) {
+    return true;
+  }
+  const raw = card?.currentValue;
+  if (raw == null || raw === "") {
+    return false;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return false;
+  }
+  if (priceMin != null && value < priceMin) {
+    return false;
+  }
+  if (priceMax != null && value > priceMax) {
+    return false;
+  }
+  return true;
+}
+
 export function cardMatchesCollectionStatFilter(
   card,
   { powerMin = null, toughnessMin = null } = {},
@@ -114,6 +135,8 @@ export function filterCollectionCards(
     rarityFilter = "all",
     cmcMin = null,
     cmcMax = null,
+    priceMin = null,
+    priceMax = null,
     powerMin = null,
     toughnessMin = null,
     storageFilters = [],
@@ -151,6 +174,9 @@ export function filterCollectionCards(
   }
   if (cmcMin != null || cmcMax != null) {
     result = result.filter((card) => cardMatchesCollectionCmcFilter(card, { cmcMin, cmcMax }));
+  }
+  if (priceMin != null || priceMax != null) {
+    result = result.filter((card) => cardMatchesCollectionPriceFilter(card, { priceMin, priceMax }));
   }
   if (powerMin != null || toughnessMin != null) {
     result = result.filter((card) => cardMatchesCollectionStatFilter(card, { powerMin, toughnessMin }));

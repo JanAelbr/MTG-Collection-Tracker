@@ -9170,11 +9170,16 @@ button.card-variant {
   max-height: min(72vh, 980px);
   overflow: auto;
   outline: none;
+  /* Avoid width oscillation when the scrollbar appears/disappears. */
+  scrollbar-gutter: stable;
 }
 
 .collection-virtual-grid-spacer {
   position: relative;
   width: 100%;
+  /* Keep abspos card window from extending scrollHeight past the spacer.
+     Otherwise unmounting rows shrinks scrollHeight and the browser clamps scrollTop. */
+  overflow: hidden;
 }
 
 .collection-virtual-grid-window {

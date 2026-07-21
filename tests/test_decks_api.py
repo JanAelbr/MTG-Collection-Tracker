@@ -136,9 +136,20 @@ class DecksApiServiceTests(unittest.TestCase):
         self.assertIn(deck_id, payload["pages"])
         page = payload["pages"][deck_id]
         self.assertEqual(page["deckSize"], 1)
-        self.assertEqual(len(page["cards"]), 1)
-        self.assertEqual(page["cards"][0]["imageUri"], "https://example.test/sol-ring.jpg")
-        self.assertIn("fast_mana", page["cards"][0]["roles"])
+        self.assertNotIn("cards", page)
+        self.assertEqual(len(page["previewCards"]), 1)
+        self.assertEqual(page["previewCards"][0]["imageUri"], "https://example.test/sol-ring.jpg")
+        self.assertEqual(page["previewCards"][0]["section"], "commander")
+
+    def test_browse_deck_returns_full_cards(self):
+        payload = decks_service.load_deck_browse(self.conn, deck_id="1")
+        self.assertEqual(payload["deckId"], "1")
+        stats = payload["stats"]
+        self.assertEqual(stats["deckSize"], 1)
+        self.assertEqual(len(stats["cards"]), 1)
+        self.assertEqual(stats["cards"][0]["imageUri"], "https://example.test/sol-ring.jpg")
+        self.assertIn("fast_mana", stats["cards"][0]["roles"])
+        self.assertEqual(len(stats["previewCards"]), 1)
 
     def test_add_card_to_deck_creates_and_increments(self):
         deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()

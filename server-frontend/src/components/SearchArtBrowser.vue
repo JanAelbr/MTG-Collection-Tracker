@@ -128,14 +128,11 @@ function setLabel(code) {
 
 function valueForFinish(card, finish) {
   const strategy = pricingSettings.value?.priceStrategy || "trend";
-  const values = card.finishValues || {};
   const normalized = normalizeFinish(finish);
   const byStrategy = card.finishValuesByStrategy?.[normalized];
-  if (byStrategy?.[strategy] != null) {
-    return byStrategy[strategy];
-  }
-  if (values[normalized] != null) {
-    return values[normalized];
+  if (byStrategy && strategy in byStrategy) {
+    const value = byStrategy[strategy];
+    return value == null ? null : value;
   }
   if (normalizeFinish(card.finish ?? card.foil) === normalized) {
     return valueForStrategy(card, strategy);

@@ -48,6 +48,8 @@ const storageFilters = ref([]);
 const rarityFilter = ref("all");
 const cmcMin = ref("");
 const cmcMax = ref("");
+const priceMin = ref("");
+const priceMax = ref("");
 const powerMin = ref("");
 const toughnessMin = ref("");
 const mobileFiltersOpen = ref(false);
@@ -87,6 +89,8 @@ function searchApiParams() {
     rarityFilter: rarityFilter.value,
     cmcMin: parseOptionalNumber(cmcMin.value),
     cmcMax: parseOptionalNumber(cmcMax.value),
+    priceMin: parseOptionalNumber(priceMin.value),
+    priceMax: parseOptionalNumber(priceMax.value),
     powerMin: parseOptionalNumber(powerMin.value),
     toughnessMin: parseOptionalNumber(toughnessMin.value),
   };
@@ -108,6 +112,8 @@ function syncFiltersFromRoute() {
   rarityFilter.value = filters.rarityFilter;
   cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
   cmcMax.value = filters.cmcMax != null ? String(filters.cmcMax) : "";
+  priceMin.value = filters.priceMin != null ? String(filters.priceMin) : "";
+  priceMax.value = filters.priceMax != null ? String(filters.priceMax) : "";
   powerMin.value = filters.powerMin != null ? String(filters.powerMin) : "";
   toughnessMin.value = filters.toughnessMin != null ? String(filters.toughnessMin) : "";
   searchViewMode.value = filters.viewMode;
@@ -140,6 +146,8 @@ function syncSearchRoute() {
       rarityFilter: rarityFilter.value,
       cmcMin: parseOptionalNumber(cmcMin.value),
       cmcMax: parseOptionalNumber(cmcMax.value),
+      priceMin: parseOptionalNumber(priceMin.value),
+      priceMax: parseOptionalNumber(priceMax.value),
       powerMin: parseOptionalNumber(powerMin.value),
       toughnessMin: parseOptionalNumber(toughnessMin.value),
       viewMode: searchViewMode.value,
@@ -331,10 +339,14 @@ function updateDetailFilter(field, value) {
   const next = String(value ?? "");
   if (field === "cmcMin" && cmcMin.value === next) return;
   if (field === "cmcMax" && cmcMax.value === next) return;
+  if (field === "priceMin" && priceMin.value === next) return;
+  if (field === "priceMax" && priceMax.value === next) return;
   if (field === "powerMin" && powerMin.value === next) return;
   if (field === "toughnessMin" && toughnessMin.value === next) return;
   if (field === "cmcMin") cmcMin.value = next;
   if (field === "cmcMax") cmcMax.value = next;
+  if (field === "priceMin") priceMin.value = next;
+  if (field === "priceMax") priceMax.value = next;
   if (field === "powerMin") powerMin.value = next;
   if (field === "toughnessMin") toughnessMin.value = next;
 }
@@ -434,7 +446,7 @@ async function onArtOwnershipChanged() {
   await reloadLoadedSearchResults();
 }
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, powerMin, toughnessMin, searchViewMode], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode], () => {
   if (!routeSyncReady.value) {
     return;
   }
@@ -468,6 +480,8 @@ watch(
     route.query.rarity,
     route.query.cmcMin,
     route.query.cmcMax,
+    route.query.priceMin,
+    route.query.priceMax,
     route.query.powMin,
     route.query.tghMin,
   ],
@@ -689,6 +703,8 @@ onMounted(async () => {
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
           :cmc-max="cmcMax"
+          :price-min="priceMin"
+          :price-max="priceMax"
           :power-min="powerMin"
           :toughness-min="toughnessMin"
           :show-sort="false"
@@ -702,6 +718,8 @@ onMounted(async () => {
           @rarity-filter-change="onRarityFilterChange"
           @update:cmc-min="updateDetailFilter('cmcMin', $event)"
           @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+          @update:price-min="updateDetailFilter('priceMin', $event)"
+          @update:price-max="updateDetailFilter('priceMax', $event)"
           @update:power-min="updateDetailFilter('powerMin', $event)"
           @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
         />
@@ -724,6 +742,8 @@ onMounted(async () => {
         :rarity-filter="rarityFilter"
         :cmc-min="cmcMin"
         :cmc-max="cmcMax"
+        :price-min="priceMin"
+        :price-max="priceMax"
         :power-min="powerMin"
         :toughness-min="toughnessMin"
         :show-sort="false"
@@ -737,6 +757,8 @@ onMounted(async () => {
         @rarity-filter-change="onRarityFilterChange"
         @update:cmc-min="updateDetailFilter('cmcMin', $event)"
         @update:cmc-max="updateDetailFilter('cmcMax', $event)"
+        @update:price-min="updateDetailFilter('priceMin', $event)"
+        @update:price-max="updateDetailFilter('priceMax', $event)"
         @update:power-min="updateDetailFilter('powerMin', $event)"
         @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
       />

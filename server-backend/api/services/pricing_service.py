@@ -4,7 +4,11 @@ from util.cardmarket_prices import (
     load_price_guide_index,
     parse_id_product,
 )
-from util.cardmarket_urls import cardmarket_url_for_finish, coerce_cardmarket_url, normalize_cardmarket_url_columns
+from util.cardmarket_urls import (
+    cardmarket_url_for_finish,
+    coerce_cardmarket_url,
+    normalize_cardmarket_url_columns,
+)
 
 PRICE_STRATEGIES: list[dict[str, str]] = [
     {"id": "trend", "label": "Trend"},
@@ -148,21 +152,14 @@ def price_from_strategy(
 def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | None]:
     finish_id = int(finish)
     if finish_id == FINISH_ETCHED:
-        etched = card.get("market_value_etched") or card.get("marketValueEtched")
-        if etched is not None and not (isinstance(etched, float) and etched != etched):
-            etched_value = float(etched) if etched else None
-            return {strategy_id: etched_value for strategy_id in STRATEGY_KEY_MAP}
-
         guide_prices = all_guide_prices_for_card(
             coerce_cardmarket_url(card.get("cardmarket_url") or card.get("cardmarketUrl")),
             coerce_cardmarket_url(card.get("cardmarket_url_foil") or card.get("cardmarketUrlFoil")),
         )
+        # Cardmarket has no etched metrics. Etched-only prints are sold as foil
+        # products — use those real foil fields. Otherwise leave unknown.
         if is_etched_only_print(card):
-            strategy_values = dict(guide_prices.get("foil", {}))
-        else:
-            strategy_values = dict(guide_prices.get("etched", {}))
-        if any(value is not None for value in strategy_values.values()):
-            return strategy_values
+            return dict(guide_prices.get("foil", {}))
         return {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
 
     guide_prices = all_guide_prices_for_card(
@@ -170,61 +167,25 @@ def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | 
         coerce_cardmarket_url(card.get("cardmarket_url_foil") or card.get("cardmarketUrlFoil")),
     )
     group = GUIDE_PRICE_GROUPS.get(finish_id, "nonfoil")
-    strategy_values = dict(guide_prices.get(group, {}))
-
-    market_value = card.get("market_value") if card.get("market_value") is not None else card.get("marketValue")
-    market_value_foil = (
-        card.get("market_value_foil")
-        if card.get("market_value_foil") is not None
-        else card.get("marketValueFoil")
-    )
-    fallback = market_value_foil if finish_id == FINISH_FOIL else market_value
-
-    for strategy_id in STRATEGY_KEY_MAP:
-        if strategy_values.get(strategy_id) is None and fallback is not None:
-            strategy_values[strategy_id] = float(fallback) if fallback else None
-
-    return strategy_values
-
-
-MARKET_VALUE_OUTLIER_RATIO = 6.0
-MARKET_VALUE_OUTLIER_FLOOR = 150.0
-
-
-def _prefer_stored_value_over_outlier(
-    strategy_value: float | None,
-    stored_value: float | None,
-) -> float | None:
-    if strategy_value is None:
-        return stored_value
-    if stored_value is None or stored_value <= 0:
-        return strategy_value
-    if strategy_value > max(MARKET_VALUE_OUTLIER_FLOOR, stored_value * MARKET_VALUE_OUTLIER_RATIO):
-        return float(stored_value)
-    return strategy_value
+    return dict(guide_prices.get(group, {}))
 
 
 def value_from_strategy_map(
     values_by_strategy: dict[str, float | None],
     strategy: str,
     *,
-    finish: int,
+    finish: int | None = None,
     market_value: float | None = None,
     market_value_foil: float | None = None,
     market_value_etched: float | None = None,
 ) -> float | None:
-    normalized = normalize_strategy(strategy)
-    value = values_by_strategy.get(normalized)
-    finish_id = int(finish)
-    if finish_id == FINISH_ETCHED:
-        fallback = market_value_etched
-    elif finish_id == FINISH_FOIL:
-        fallback = market_value_foil
-    else:
-        fallback = market_value
-    if value is not None:
-        return _prefer_stored_value_over_outlier(value, fallback)
-    return fallback
+    """Return the exact strategy value, or None when Cardmarket has no real figure.
+
+    ``finish`` / ``market_value*`` are accepted for call-site compatibility and ignored —
+    stored DB prices are never used as a substitute for a missing guide field.
+    """
+    del finish, market_value, market_value_foil, market_value_etched
+    return values_by_strategy.get(normalize_strategy(strategy))
 
 
 def _value_from_entry(entry: dict, key: str, *, foil: bool) -> float | None:

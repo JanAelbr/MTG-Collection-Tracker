@@ -526,6 +526,8 @@ export const api = {
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
     if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
+    if (params.priceMin != null) query.set("priceMin", String(params.priceMin));
+    if (params.priceMax != null) query.set("priceMax", String(params.priceMax));
     if (params.powerMin != null) query.set("powMin", String(params.powerMin));
     if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
     if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
@@ -546,6 +548,8 @@ export const api = {
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
     if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
+    if (params.priceMin != null) query.set("priceMin", String(params.priceMin));
+    if (params.priceMax != null) query.set("priceMax", String(params.priceMax));
     if (params.powerMin != null) query.set("powMin", String(params.powerMin));
     if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
     if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));

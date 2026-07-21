@@ -80,11 +80,23 @@ def _float_or_none(value):
 
 
 # Load deck catalog rows joined to cards and purchases.
-def load_deck_cards_df(conn: sqlite3.Connection | None = None) -> pd.DataFrame:
+def load_deck_cards_df(
+    conn: sqlite3.Connection | None = None,
+    *,
+    deck_id: str | int | None = None,
+) -> pd.DataFrame:
+    query = DECK_CARDS_QUERY
+    params: tuple = ()
+    if deck_id is not None and str(deck_id).strip() and str(deck_id).lower() not in {"all"}:
+        query = DECK_CARDS_QUERY.replace(
+            f"WHERE dc.collector_number IS NULL\n   OR {exclude_alchemy_sql('dc.collector_number')}",
+            f"WHERE dc.deck_id = ?\n  AND (\n    dc.collector_number IS NULL\n    OR {exclude_alchemy_sql('dc.collector_number')}\n  )",
+        )
+        params = (int(deck_id),)
     if conn is None:
         with sqlite3.connect(DB_PATH) as connection:
-            return pd.read_sql_query(DECK_CARDS_QUERY, connection)
-    return pd.read_sql_query(DECK_CARDS_QUERY, conn)
+            return pd.read_sql_query(query, connection, params=params or None)
+    return pd.read_sql_query(query, conn, params=params or None)
 
 
 # Format one deck name for selectors and tables.

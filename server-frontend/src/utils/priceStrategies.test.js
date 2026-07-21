@@ -16,9 +16,10 @@ describe("priceStrategies", () => {
     },
   };
 
-  it("reads strategy-specific values", () => {
+  it("reads strategy-specific values without currentValue fallback", () => {
     expect(valueForStrategy(card, "avg")).toBe(1.8);
-    expect(valueForStrategy(card, "missing")).toBe(1.5);
+    expect(valueForStrategy(card, "missing")).toBeNull();
+    expect(valueForStrategy({ currentValue: 1.5 }, "trend")).toBeNull();
   });
 
   it("detects strategy price maps", () => {

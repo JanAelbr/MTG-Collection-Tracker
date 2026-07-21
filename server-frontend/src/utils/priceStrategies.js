@@ -15,11 +15,15 @@ export function valueForStrategy(card, strategyId) {
   if (!card) {
     return null;
   }
-  const values = card.valuesByStrategy;
-  if (values && strategyId in values && values[strategyId] != null) {
-    return values[strategyId];
+  const values = card.valuesByStrategy ?? card.values_by_strategy;
+  if (!values || typeof values !== "object") {
+    return null;
   }
-  return card.currentValue ?? card.current_value ?? null;
+  if (!(strategyId in values)) {
+    return null;
+  }
+  const value = values[strategyId];
+  return value == null ? null : value;
 }
 
 export function applyStrategyToCard(card, strategyId) {

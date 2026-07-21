@@ -29,6 +29,8 @@ defineProps({
   rarityFilter: { type: String, default: "all" },
   cmcMin: { type: String, default: "" },
   cmcMax: { type: String, default: "" },
+  priceMin: { type: String, default: "" },
+  priceMax: { type: String, default: "" },
   powerMin: { type: String, default: "" },
   toughnessMin: { type: String, default: "" },
   allCardsSort: { type: String, default: "value" },
@@ -53,6 +55,8 @@ const emit = defineEmits([
   "rarity-filter-change",
   "update:cmcMin",
   "update:cmcMax",
+  "update:priceMin",
+  "update:priceMax",
   "update:powerMin",
   "update:toughnessMin",
   "update-sort",
@@ -335,6 +339,34 @@ onMounted(async () => {
             inputmode="numeric"
             placeholder="Any"
             @input="emit('update:cmcMax', $event.target.value)"
+          >
+        </label>
+      </div>
+
+      <p class="filter-sidebar-label">Price (€)</p>
+      <div class="collection-detail-filter-grid">
+        <label class="manager-filter">
+          <span>≥ Min</span>
+          <input
+            :value="priceMin"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="Any"
+            @input="emit('update:priceMin', $event.target.value)"
+          >
+        </label>
+        <label class="manager-filter">
+          <span>≤ Max</span>
+          <input
+            :value="priceMax"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="Any"
+            @input="emit('update:priceMax', $event.target.value)"
           >
         </label>
       </div>

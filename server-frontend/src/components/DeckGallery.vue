@@ -74,7 +74,11 @@ function deckStats(deck) {
 }
 
 function deckCards(deck) {
-  return deckStats(deck).cards || [];
+  const stats = deckStats(deck);
+  if (Array.isArray(stats.cards) && stats.cards.length) {
+    return stats.cards;
+  }
+  return stats.previewCards || [];
 }
 
 function deckValueLabel(deck) {

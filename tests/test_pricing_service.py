@@ -62,7 +62,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
         self.assertEqual(grouped["foil"]["avg"], 3.1)
 
     @patch("api.services.pricing_service._load_guide")
-    def test_price_from_strategy_prefers_stored_value_over_guide_outlier(self, load_guide):
+    def test_price_from_strategy_returns_none_for_guide_outlier_without_fallback(self, load_guide):
         load_guide.return_value = {
             718040: {"trend": 527.88, "low": 800},
             718047: {"trend": 0, "trend-foil": 2204.09},
@@ -73,10 +73,10 @@ class PricingServiceEtchedTests(unittest.TestCase):
             "trend",
             market_value=2.22,
         )
-        self.assertEqual(value, 2.22)
+        self.assertIsNone(value)
 
     @patch("api.services.pricing_service._load_guide")
-    def test_price_from_strategy_etched_uses_stored_value_only(self, load_guide):
+    def test_price_from_strategy_etched_ignores_stored_value(self, load_guide):
         load_guide.return_value = {
             123: {"trend": 2.42, "trend-foil": 5.54},
         }
@@ -86,7 +86,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
             "trend",
             market_value_etched=9.99,
         )
-        self.assertEqual(value, 9.99)
+        self.assertIsNone(value)
 
     @patch("api.services.pricing_service._load_guide")
     def test_price_from_strategy_etched_ignores_nonfoil_guide(self, load_guide):
@@ -101,7 +101,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
         )
         self.assertIsNone(value)
 
-    def test_guide_price_matrix_shows_stored_etched_on_active_strategy_only(self):
+    def test_guide_price_matrix_does_not_inject_stored_etched(self):
         matrix = _guide_price_matrix(
             {"nonfoil": {"trend": 2.0}, "foil": {"trend": 4.0}},
             stored_etched=12.5,
@@ -109,7 +109,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
         )
         etched_by_strategy = {row["strategyId"]: row["etched"] for row in matrix["rows"]}
         self.assertIsNone(etched_by_strategy["trend"])
-        self.assertEqual(etched_by_strategy["avg7"], 12.5)
+        self.assertIsNone(etched_by_strategy["avg7"])
         self.assertIsNone(etched_by_strategy["low"])
 
     def test_values_by_strategy_for_finish_uses_foil_guide_for_etched_only(self):
@@ -143,7 +143,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
             values = values_by_strategy_for_finish(card, 1)
         self.assertEqual(values["trend"], 11.27)
 
-    def test_values_by_strategy_for_finish_treats_nan_cardmarket_url_as_missing(self):
+    def test_values_by_strategy_for_finish_does_not_fallback_to_stored_market_value(self):
         card = {
             "cardmarket_url": float("nan"),
             "cardmarket_url_foil": float("nan"),
@@ -151,9 +151,9 @@ class PricingServiceEtchedTests(unittest.TestCase):
             "market_value_foil": 3.0,
         }
         values = values_by_strategy_for_finish(card, 0)
-        self.assertEqual(values["trend"], 2.0)
+        self.assertIsNone(values.get("trend"))
 
-    def test_build_neutral_owned_df_treats_nan_cardmarket_url_as_missing(self):
+    def test_build_neutral_owned_df_does_not_fallback_to_stored_market_value(self):
         raw = pd.DataFrame([{
             "set_code": "LTR",
             "collector_number": "1",
@@ -171,7 +171,7 @@ class PricingServiceEtchedTests(unittest.TestCase):
             "cardmarket_url_foil": float("nan"),
         }])
         neutral = build_neutral_owned_df(raw)
-        self.assertEqual(neutral.iloc[0]["values_by_finish"][0]["trend"], 2.0)
+        self.assertIsNone(neutral.iloc[0]["values_by_finish"][0]["trend"])
 
 
 if __name__ == "__main__":

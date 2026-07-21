@@ -41,23 +41,22 @@ class CardmarketPriceTests(unittest.TestCase):
         url = "https://example.com/path?idProduct=42&foo=bar"
         self.assertEqual(parse_id_product(url), 42)
 
-    def test_price_from_guide_prefers_trend_over_low(self):
+    def test_price_from_guide_uses_trend_only(self):
         entry = {"trend": 12.5, "low": 500.0, "trend-foil": 588.0}
         self.assertEqual(price_from_guide_entry(entry, finish=0), 12.5)
 
     def test_nonfoil_low_rejected_when_near_foil_trend(self):
         entry = {"low": 548.0, "trend-foil": 588.79}
         self.assertFalse(_nonfoil_low_is_reliable(entry, 548.0))
+
+    def test_price_from_guide_does_not_cascade_to_low(self):
+        entry = {"low": 4.5}
         self.assertIsNone(price_from_guide_entry(entry, finish=0))
 
-    def test_nonfoil_low_allowed_without_foil_trend(self):
-        entry = {"low": 4.5}
-        self.assertTrue(_nonfoil_low_is_reliable(entry, 4.5))
-        self.assertEqual(price_from_guide_entry(entry, finish=0), 4.5)
-
-    def test_foil_price_uses_foil_keys(self):
-        entry = {"trend": 1.0, "trend-foil": 9.5, "low-foil": 8.0}
+    def test_foil_price_uses_foil_trend_only(self):
+        entry = {"trend": 1.0, "trend-foil": 9.5, "low-foil": 8.0, "avg-foil": 9.0}
         self.assertEqual(price_from_guide_entry(entry, finish=1), 9.5)
+        self.assertIsNone(price_from_guide_entry({"avg-foil": 9.0}, finish=1))
 
     def test_unowned_price_threshold_uses_smaller_of_fixed_or_fraction(self):
         self.assertEqual(unowned_price_threshold(400), 25)

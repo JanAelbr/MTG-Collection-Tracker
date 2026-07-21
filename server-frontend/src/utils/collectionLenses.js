@@ -32,6 +32,8 @@ export function detectActiveLens({
   rarityFilter = "all",
   cmcMin = null,
   cmcMax = null,
+  priceMin = null,
+  priceMax = null,
   powerMin = null,
   toughnessMin = null,
 }) {
@@ -42,6 +44,8 @@ export function detectActiveLens({
     || (rarityFilter && rarityFilter !== "all")
     || cmcMin != null
     || cmcMax != null
+    || priceMin != null
+    || priceMax != null
     || powerMin != null
     || toughnessMin != null
   ) {

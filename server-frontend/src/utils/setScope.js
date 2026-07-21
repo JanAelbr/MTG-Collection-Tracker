@@ -91,6 +91,8 @@ export function allCardsFiltersFromRoute(route) {
 
   const cmcMin = parseOptionalNumber(route.query?.cmcMin);
   const cmcMax = parseOptionalNumber(route.query?.cmcMax);
+  const priceMin = parseOptionalNumber(route.query?.priceMin);
+  const priceMax = parseOptionalNumber(route.query?.priceMax);
   const powerMin = parseOptionalNumber(route.query?.powMin);
   const toughnessMin = parseOptionalNumber(route.query?.tghMin);
 
@@ -116,6 +118,8 @@ export function allCardsFiltersFromRoute(route) {
     rarityFilter,
     cmcMin,
     cmcMax,
+    priceMin,
+    priceMax,
     powerMin,
     toughnessMin,
     storageFilters,
@@ -139,6 +143,8 @@ export function allCardsRouteQuery({
   rarityFilter = "all",
   cmcMin = null,
   cmcMax = null,
+  priceMin = null,
+  priceMax = null,
   powerMin = null,
   toughnessMin = null,
   storageFilters = [],
@@ -170,6 +176,12 @@ export function allCardsRouteQuery({
   }
   if (cmcMax != null) {
     query.cmcMax = String(cmcMax);
+  }
+  if (priceMin != null) {
+    query.priceMin = String(priceMin);
+  }
+  if (priceMax != null) {
+    query.priceMax = String(priceMax);
   }
   if (powerMin != null) {
     query.powMin = String(powerMin);
@@ -267,6 +279,8 @@ export function searchFiltersFromRoute(route) {
 
   const cmcMin = parseOptionalNumber(route.query?.cmcMin);
   const cmcMax = parseOptionalNumber(route.query?.cmcMax);
+  const priceMin = parseOptionalNumber(route.query?.priceMin);
+  const priceMax = parseOptionalNumber(route.query?.priceMax);
   const powerMin = parseOptionalNumber(route.query?.powMin);
   const toughnessMin = parseOptionalNumber(route.query?.tghMin);
 
@@ -287,6 +301,8 @@ export function searchFiltersFromRoute(route) {
     rarityFilter,
     cmcMin,
     cmcMax,
+    priceMin,
+    priceMax,
     powerMin,
     toughnessMin,
     storageFilters,
@@ -305,6 +321,8 @@ export function searchRouteQuery({
   rarityFilter = "all",
   cmcMin = null,
   cmcMax = null,
+  priceMin = null,
+  priceMax = null,
   powerMin = null,
   toughnessMin = null,
   storageFilters = [],
@@ -341,6 +359,12 @@ export function searchRouteQuery({
   }
   if (cmcMax != null) {
     query.cmcMax = String(cmcMax);
+  }
+  if (priceMin != null) {
+    query.priceMin = String(priceMin);
+  }
+  if (priceMax != null) {
+    query.priceMax = String(priceMax);
   }
   if (powerMin != null) {
     query.powMin = String(powerMin);
