@@ -94,12 +94,35 @@ export function artStyleRulesToApi(rows) {
 }
 
 export function moveArtStyleRule(rows, index, direction) {
-  const target = index + direction;
-  if (target < 0 || target >= rows.length) {
+  return reorderArtStyleRules(rows, index, index + direction);
+}
+
+export function reorderArtStyleRules(rows, fromIndex, toIndex) {
+  if (
+    fromIndex == null
+    || toIndex == null
+    || fromIndex === toIndex
+    || fromIndex < 0
+    || toIndex < 0
+    || fromIndex >= rows.length
+    || toIndex >= rows.length
+  ) {
     return rows;
   }
   const next = [...rows];
-  const [item] = next.splice(index, 1);
-  next.splice(target, 0, item);
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
   return next;
+}
+
+/** Next `NN. ` label prefix from existing numbered rule names. */
+export function nextArtStyleLabelPrefix(rows = []) {
+  let max = 0;
+  for (const row of rows) {
+    const match = String(row?.name || "").trim().match(/^(\d+)\./);
+    if (match) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  return `${String(max + 1).padStart(2, "0")}. `;
 }

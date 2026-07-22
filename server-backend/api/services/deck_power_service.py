@@ -60,7 +60,16 @@ def _power_intensity_score(count: int, scale: int) -> int:
 CATEGORY_ROLE_MAP = {
     "ramp": {"ramp"},
     "draw": {"draw"},
-    "interaction": {"removal", "interaction", "protection"},
+    "interaction": {
+        "removal",
+        "interaction",
+        "protection",
+        "counterspell",
+        "board_wipe",
+        "bounce",
+        "discard",
+        "land_destruction",
+    },
     "tutors": {"tutor"},
     "fastMana": {"fast_mana"},
     "gameChangers": {"game_changer"},

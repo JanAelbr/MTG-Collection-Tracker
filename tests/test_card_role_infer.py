@@ -75,8 +75,104 @@ class CardRoleInferTests(unittest.TestCase):
         counter_roles = set(infer_card_roles(counter))
         self.assertIn("removal", swords_roles)
         self.assertIn("interaction", swords_roles)
-        self.assertIn("protection", counter_roles)
+        self.assertIn("counterspell", counter_roles)
         self.assertIn("interaction", counter_roles)
+        self.assertNotIn("protection", counter_roles)
+
+    def test_board_wipe_bounce_and_mill(self):
+        wrath = {
+            "name": "Wrath of God",
+            "type_line": "Sorcery",
+            "oracle_text": "Destroy all creatures.",
+        }
+        unsummon = {
+            "name": "Unsummon",
+            "type_line": "Instant",
+            "oracle_text": "Return target creature to its owner's hand.",
+        }
+        millstone = {
+            "name": "Tasha's Hideous Laughter",
+            "type_line": "Sorcery",
+            "oracle_text": (
+                "Each opponent mills cards until they mill X nonland cards, "
+                "where X is the number of cards in your hand."
+            ),
+        }
+        thought_scour = {
+            "name": "Thought Scour",
+            "type_line": "Instant",
+            "oracle_text": "Target player mills two cards. Draw a card.",
+        }
+        wrath_roles = set(infer_card_roles(wrath))
+        self.assertIn("board_wipe", wrath_roles)
+        self.assertIn("removal", wrath_roles)
+        self.assertIn("bounce", infer_card_roles(unsummon))
+        self.assertIn("mill", infer_card_roles(thought_scour))
+        self.assertIn("mill", infer_card_roles(millstone))
+        self.assertIn("draw", infer_card_roles(thought_scour))
+
+    def test_discard_sac_outlet_aura_and_treasure_ramp(self):
+        thoughtseize = {
+            "name": "Thoughtseize",
+            "type_line": "Sorcery",
+            "oracle_text": (
+                "Target player reveals their hand. You choose a nonland card from it. "
+                "That player discards that card. You lose 2 life."
+            ),
+        }
+        # Thoughtseize uses "discards that card" - may not match "discards?"
+        # Fix: our pattern is "that player discards" - "That player discards that card" works
+        altar = {
+            "name": "Ashnod's Altar",
+            "type_line": "Artifact",
+            "oracle_text": "Sacrifice a creature: Add {C}{C}.",
+        }
+        aura = {
+            "name": "Curiosity",
+            "type_line": "Enchantment — Aura",
+            "oracle_text": (
+                "Enchant creature\n"
+                "Whenever enchanted creature deals damage to an opponent, you may draw a card."
+            ),
+        }
+        dockside = {
+            "name": "Dockside Extortionist",
+            "type_line": "Creature — Goblin Pirate",
+            "oracle_text": (
+                "When Dockside Extortionist enters, create X Treasure tokens, "
+                "where X is the number of artifacts and enchantments your opponents control."
+            ),
+        }
+        self.assertIn("discard", infer_card_roles(thoughtseize))
+        self.assertIn("interaction", infer_card_roles(thoughtseize))
+        altar_roles = set(infer_card_roles(altar))
+        self.assertIn("sac_outlet", altar_roles)
+        self.assertIn("ramp", altar_roles)
+        self.assertIn("aura", infer_card_roles(aura))
+        self.assertIn("draw", infer_card_roles(aura))
+        self.assertIn("ramp", infer_card_roles(dockside))
+
+    def test_reanimate_and_land_destruction(self):
+        reanimate = {
+            "name": "Reanimate",
+            "type_line": "Sorcery",
+            "oracle_text": (
+                "Put target creature card from a graveyard onto the battlefield "
+                "under your control. You lose life equal to its mana value."
+            ),
+        }
+        strip = {
+            "name": "Strip Mine",
+            "type_line": "Land",
+            "oracle_text": "{T}: Add {C}.\n{T}, Sacrifice Strip Mine: Destroy target land.",
+        }
+        roles = set(infer_card_roles(reanimate))
+        self.assertIn("reanimate", roles)
+        self.assertIn("recursion", roles)
+        strip_roles = set(infer_card_roles(strip))
+        self.assertIn("land_destruction", strip_roles)
+        self.assertIn("removal", strip_roles)
+        self.assertNotIn("ramp", strip_roles)
 
     def test_extra_turn_and_mld(self):
         time_warp = {

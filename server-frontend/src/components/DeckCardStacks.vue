@@ -44,12 +44,14 @@ watch(
     if (!selectedCard.value) {
       return;
     }
-    const stillPresent = stackColumns.value.some((group) =>
-      group.cards?.some((card) => cardKey(card) === cardKey(selectedCard.value)),
-    );
-    if (!stillPresent) {
-      selectedCard.value = null;
+    for (const group of stackColumns.value) {
+      const match = group.cards?.find((card) => cardKey(card) === cardKey(selectedCard.value));
+      if (match) {
+        selectedCard.value = match;
+        return;
+      }
     }
+    selectedCard.value = null;
   },
 );
 

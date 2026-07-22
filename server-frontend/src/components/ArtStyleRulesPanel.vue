@@ -8,7 +8,8 @@ import {
   artStyleRulesFromApi,
   artStyleRulesToApi,
   createEmptyArtStyleRuleRow,
-  moveArtStyleRule,
+  nextArtStyleLabelPrefix,
+  reorderArtStyleRules,
 } from "../utils/artStyleRules";
 
 const props = defineProps({
@@ -23,6 +24,8 @@ const saving = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 const rows = ref([]);
+const dragFromIndex = ref(null);
+const dragOverIndex = ref(null);
 
 const canSave = computed(() => Boolean(props.setCode) && rows.value.length > 0 && !saving.value);
 
@@ -53,12 +56,18 @@ function closePanel() {
 }
 
 function addRule() {
-  rows.value = [...rows.value, createEmptyArtStyleRuleRow()];
+  rows.value = [
+    ...rows.value,
+    createEmptyArtStyleRuleRow({
+      name: nextArtStyleLabelPrefix(rows.value),
+    }),
+  ];
 }
 
 function duplicateRule(index) {
   const source = rows.value[index];
   const copy = artStyleRuleFromApi(artStyleRuleToApiSafe(source));
+  copy.name = nextArtStyleLabelPrefix(rows.value);
   rows.value = [
     ...rows.value.slice(0, index + 1),
     copy,
@@ -88,8 +97,37 @@ function removeRule(index) {
   rows.value = rows.value.filter((_, rowIndex) => rowIndex !== index);
 }
 
-function moveRule(index, direction) {
-  rows.value = moveArtStyleRule(rows.value, index, direction);
+function onDragStart(index, event) {
+  dragFromIndex.value = index;
+  dragOverIndex.value = index;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(index));
+  if (event.dataTransfer.setDragImage && event.currentTarget?.closest) {
+    const row = event.currentTarget.closest("tr");
+    if (row) {
+      event.dataTransfer.setDragImage(row, 24, 16);
+    }
+  }
+}
+
+function onDragOver(index, event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  if (dragOverIndex.value !== index) {
+    dragOverIndex.value = index;
+  }
+}
+
+function onDrop(index, event) {
+  event.preventDefault();
+  const fromIndex = dragFromIndex.value;
+  rows.value = reorderArtStyleRules(rows.value, fromIndex, index);
+  clearDragState();
+}
+
+function clearDragState() {
+  dragFromIndex.value = null;
+  dragOverIndex.value = null;
 }
 
 async function saveRules() {
@@ -131,6 +169,7 @@ watch(
         <p class="art-style-rules-help">
           Group cards into art styles for filters and stats. Rules are checked top to bottom;
           put specific matches like prefixes or serialized suffixes before broad number ranges.
+          Drag rows to reorder.
         </p>
       </div>
       <button type="button" class="btn btn-secondary btn-small" @click="closePanel">
@@ -153,26 +192,37 @@ watch(
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, index) in rows" :key="row.id">
+            <tr
+              v-for="(row, index) in rows"
+              :key="row.id"
+              class="art-style-rules-row"
+              :class="{
+                'art-style-rules-row--dragging': dragFromIndex === index,
+                'art-style-rules-row--drop-target': dragOverIndex === index && dragFromIndex !== index,
+              }"
+              @dragover="onDragOver(index, $event)"
+              @drop="onDrop(index, $event)"
+              @dragend="clearDragState"
+            >
               <td class="art-style-rules-order">
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  :disabled="index === 0"
-                  aria-label="Move up"
-                  @click="moveRule(index, -1)"
+                <span
+                  class="art-style-rules-icon-btn art-style-rules-drag-handle"
+                  draggable="true"
+                  title="Drag to reorder"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Drag to reorder"
+                  @dragstart="onDragStart(index, $event)"
                 >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  :disabled="index === rows.length - 1"
-                  aria-label="Move down"
-                  @click="moveRule(index, 1)"
-                >
-                  ↓
-                </button>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <circle cx="9" cy="7" r="1.5" fill="currentColor" />
+                    <circle cx="15" cy="7" r="1.5" fill="currentColor" />
+                    <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+                    <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+                    <circle cx="9" cy="17" r="1.5" fill="currentColor" />
+                    <circle cx="15" cy="17" r="1.5" fill="currentColor" />
+                  </svg>
+                </span>
               </td>
               <td>
                 <input
@@ -198,63 +248,100 @@ watch(
                   Every card in this set
                 </div>
                 <div v-else-if="row.matchType === 'prefix'" class="art-style-rules-detail-fields">
-                  <label>
-                    Prefix
-                    <input
-                      v-model="row.prefix"
-                      type="text"
-                      class="art-style-rules-input"
-                      placeholder="A-"
-                    />
-                  </label>
+                  <input
+                    v-model="row.prefix"
+                    type="text"
+                    class="art-style-rules-input"
+                    placeholder="Prefix"
+                    aria-label="Prefix"
+                  />
                 </div>
                 <div v-else class="art-style-rules-detail-fields">
-                  <label>
-                    From
-                    <input
-                      v-model="row.firstNumber"
-                      type="number"
-                      class="art-style-rules-input art-style-rules-input--number"
-                      min="0"
-                    />
-                  </label>
-                  <label>
-                    To
-                    <input
-                      v-model="row.lastNumber"
-                      type="number"
-                      class="art-style-rules-input art-style-rules-input--number"
-                      min="0"
-                    />
-                  </label>
-                  <label v-if="row.matchType === 'range_suffix'">
-                    Suffix
-                    <input
-                      v-model="row.suffix"
-                      type="text"
-                      class="art-style-rules-input"
-                      placeholder="z"
-                    />
-                  </label>
+                  <input
+                    v-model="row.firstNumber"
+                    type="number"
+                    class="art-style-rules-input art-style-rules-input--number"
+                    min="0"
+                    placeholder="From"
+                    aria-label="From"
+                  />
+                  <input
+                    v-model="row.lastNumber"
+                    type="number"
+                    class="art-style-rules-input art-style-rules-input--number"
+                    min="0"
+                    placeholder="To"
+                    aria-label="To"
+                  />
+                  <input
+                    v-if="row.matchType === 'range_suffix'"
+                    v-model="row.suffix"
+                    type="text"
+                    class="art-style-rules-input art-style-rules-input--suffix"
+                    placeholder="Suffix"
+                    aria-label="Suffix"
+                  />
                 </div>
               </td>
               <td class="art-style-rules-actions">
                 <button
                   type="button"
-                  class="btn btn-secondary btn-small"
-                  aria-label="Duplicate rule"
+                  class="art-style-rules-icon-btn"
+                  title="Copy rule"
+                  aria-label="Copy rule"
                   @click="duplicateRule(index)"
                 >
-                  Copy
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect
+                      x="8"
+                      y="8"
+                      width="11"
+                      height="11"
+                      rx="2"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                    />
+                    <path
+                      d="M6 16V6a2 2 0 0 1 2-2h10"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  class="btn btn-secondary btn-small"
-                  :disabled="rows.length <= 1"
+                  class="art-style-rules-icon-btn art-style-rules-icon-btn--danger"
+                  title="Remove rule"
                   aria-label="Remove rule"
+                  :disabled="rows.length <= 1"
                   @click="removeRule(index)"
                 >
-                  Remove
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      d="M5 7h14"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M10 11v6M14 11v6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M8 7l1-2h6l1 2v12a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V7z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
                 </button>
               </td>
             </tr>
@@ -263,8 +350,23 @@ watch(
       </div>
 
       <div class="art-style-rules-footer">
-        <button type="button" class="btn btn-secondary" @click="addRule">
-          Add rule
+        <button
+          type="button"
+          class="art-style-rules-icon-btn art-style-rules-icon-btn--add"
+          title="Add rule"
+          aria-label="Add rule"
+          @click="addRule"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M12 5v14M5 12h14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>Add rule</span>
         </button>
         <div class="art-style-rules-footer-actions">
           <p

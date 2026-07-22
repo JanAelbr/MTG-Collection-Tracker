@@ -11,9 +11,18 @@ SLOT_ROLES = {
     "lands": {"land"},
     "ramp": {"ramp", "fast_mana"},
     "draw": {"draw"},
-    "removal": {"removal", "interaction"},
-    "protection": {"protection", "interaction"},
-    "synergy": {"synergy", "recursion", "equipment", "combo_piece"},
+    "removal": {"removal", "interaction", "board_wipe", "bounce", "land_destruction"},
+    "protection": {"protection", "interaction", "counterspell", "fog"},
+    "synergy": {
+        "synergy",
+        "recursion",
+        "reanimate",
+        "equipment",
+        "aura",
+        "combo_piece",
+        "sac_outlet",
+        "mill",
+    },
     "flex": set(),
 }
 

@@ -24,10 +24,20 @@ export const CARD_ROLE_LABELS = {
   combo_piece: "Combo",
   synergy: "Synergy",
   recursion: "Recursion",
+  reanimate: "Reanimate",
   equipment: "Equipment",
+  aura: "Aura",
   graveyard_hate: "GY hate",
   extra_turn: "Extra turn",
   mass_land_destruction: "MLD",
+  board_wipe: "Board wipe",
+  bounce: "Bounce",
+  counterspell: "Counter",
+  land_destruction: "LD",
+  mill: "Mill",
+  discard: "Discard",
+  sac_outlet: "Sac outlet",
+  fog: "Fog",
 };
 
 const HIDDEN_TABLE_ROLES = new Set(["land"]);

@@ -10,6 +10,8 @@ import DeckCardStacks from "../components/DeckCardStacks.vue";
 import DeckOverview from "../components/DeckOverview.vue";
 import DeckAddCardModal from "../components/DeckAddCardModal.vue";
 import DeckCsvImportModal from "../components/DeckCsvImportModal.vue";
+import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
+import DeckOwnedToggle from "../components/DeckOwnedToggle.vue";
 import CardFinishBadge from "../components/CardFinishBadge.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
@@ -27,13 +29,13 @@ import {
   isDeckCardFullyOwned,
   mergeOwnershipPatchesIntoPages,
   ownershipRevision,
-  setOwnershipPatch,
 } from "../composables/cardContextMenu";
 import {
   DECK_CARDS_VIEW_KEY,
   GALLERY_SORT_KEY,
   getStoredDeckCardsView,
   getStoredGallerySort,
+  sortDecksForGallery,
 } from "../utils/deckBrowse";
 import {
   buildDeckCardGroups,
@@ -71,8 +73,13 @@ const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
 const emptyDeckAddOpen = ref(false);
+const deckAddModal = ref({
+  open: false,
+  section: "main",
+  cardType: "",
+  typeLabel: "",
+});
 const csvImportOpen = ref(false);
-const ownedToggleBusy = ref("");
 const refreshingUnpricedMetadata = ref(false);
 const unpricedMetadataMessage = ref("");
 const unpricedMetadataError = ref("");
@@ -185,11 +192,28 @@ function deckTypeFilterLabel(type) {
 }
 
 function openEmptyDeckAdd() {
+  deckAddModal.value = {
+    open: true,
+    section: "main",
+    cardType: "",
+    typeLabel: "",
+  };
+  emptyDeckAddOpen.value = true;
+}
+
+function openTableTypeAdd(group) {
+  deckAddModal.value = {
+    open: true,
+    section: group.section || "main",
+    cardType: group.type || "",
+    typeLabel: group.label || "",
+  };
   emptyDeckAddOpen.value = true;
 }
 
 function closeEmptyDeckAdd() {
   emptyDeckAddOpen.value = false;
+  deckAddModal.value = { ...deckAddModal.value, open: false };
 }
 
 function openCsvImport() {
@@ -339,6 +363,7 @@ async function refreshDeckPage(deckKey = deckId.value) {
 
 async function onDeckCardAdded() {
   emptyDeckAddOpen.value = false;
+  deckAddModal.value = { ...deckAddModal.value, open: false };
   await refreshDeckPage();
 }
 
@@ -350,49 +375,6 @@ function onDeckCardRemoved(result) {
 function onDeckCardChanged(result) {
   patchDeckFromMutation(result);
   void refreshDeckPage(result?.deckId);
-}
-
-function deckOwnedToggleKey(card) {
-  return `${card.section}-${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`;
-}
-
-function deckCardCanMarkOwned(card) {
-  return Boolean(card?.setCode && card?.collectorNumber != null && String(card.collectorNumber).trim());
-}
-
-async function toggleDeckOwned(card, owned) {
-  if (!deckId.value || !deckCardCanMarkOwned(card)) {
-    return;
-  }
-  const busyKey = deckOwnedToggleKey(card);
-  ownedToggleBusy.value = busyKey;
-  try {
-    const result = await api.setDeckCardOwned(deckId.value, {
-      setCode: card.setCode,
-      collectorNumber: card.collectorNumber,
-      finish: cardFinish(card),
-      section: card.section || "main",
-      owned,
-    });
-    setOwnershipPatch(
-      card.setCode,
-      card.collectorNumber,
-      cardFinish(card),
-      {
-        owned: (result.ownedQty ?? 0) > 0,
-        ownedCount: result.ownedQty ?? 0,
-      },
-    );
-    patchDeckFromMutation(result);
-    clearClientCache();
-    void refreshDeckPage(result?.deckId);
-  } catch (error) {
-    window.alert(error?.message || "Could not update owned status.");
-  } finally {
-    if (ownedToggleBusy.value === busyKey) {
-      ownedToggleBusy.value = "";
-    }
-  }
 }
 
 async function onDeckRenamed(updatedDeck) {
@@ -510,13 +492,20 @@ async function refreshUnpricedMetadata() {
   }
 }
 
+function leftmostGalleryDeckId() {
+  const sorted = sortDecksForGallery(decks.value, browsePages.value, gallerySort.value);
+  return sorted.length ? String(sorted[0].id) : "";
+}
+
 function syncDeckIdFromRoute() {
-  if (typeof route.query.deck === "string") {
+  if (typeof route.query.deck === "string" && route.query.deck.trim()) {
     deckId.value = route.query.deck;
     return;
   }
-  if (!deckId.value && decks.value.length) {
-    deckId.value = String(decks.value[0].id);
+  // No deck query: always pick the leftmost deck after the current gallery sort.
+  const nextId = leftmostGalleryDeckId();
+  if (nextId) {
+    deckId.value = nextId;
   }
 }
 
@@ -586,19 +575,6 @@ function deckCardOwnershipClass(card) {
     return "is-partial";
   }
   return "is-missing";
-}
-
-function deckCardOwnedLabel(card) {
-  ownershipRevision.value;
-  const qty = Number(card?.qty) || 0;
-  const ownedQty = effectiveDeckOwnedQty(card);
-  if (isDeckCardFullyOwned(card)) {
-    return "—";
-  }
-  if (ownedQty > 0 && ownedQty < qty) {
-    return `${ownedQty} / ${card.qty}`;
-  }
-  return "—";
 }
 
 watch(deckTypeFilterOptions, (options) => {
@@ -1012,7 +988,7 @@ onActivated(async () => {
                   <thead>
                     <tr>
                       <th>Mana</th>
-                      <th>Qty</th>
+                      <th>In deck</th>
                       <th>Card</th>
                       <th>Type</th>
                       <th>Role</th>
@@ -1056,6 +1032,15 @@ onActivated(async () => {
                             <div class="deck-cards-group-heading">
                               <DeckTypeIcon :type="deckTypeIconType(group)" />
                               <span>{{ formatDeckGroupHeading(group) }}</span>
+                              <button
+                                v-if="group.kind === 'type' && deckId"
+                                type="button"
+                                class="deck-cards-group-add"
+                                :title="`Add ${group.label.toLowerCase()} to deck`"
+                                @click="openTableTypeAdd(group)"
+                              >
+                                +
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1066,7 +1051,17 @@ onActivated(async () => {
                           :class="deckCardOwnershipClass(card)"
                         >
                           <td><ManaCost :mana-cost="card.manaCost || ''" :size="18" /></td>
-                          <td class="deck-cards-qty">{{ card.qty }}</td>
+                          <td class="deck-cards-qty-cell">
+                            <DeckCardQtyControl
+                              :card="card"
+                              :deck-id="deckId"
+                              :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+                              compact
+                              inline
+                              @changed="onDeckCardChanged"
+                              @removed="onDeckCardRemoved"
+                            />
+                          </td>
                           <td>
                             <CardPreview
                               :image-uri="card.imageUri"
@@ -1120,22 +1115,12 @@ onActivated(async () => {
                           </td>
                           <td>{{ formatEuro(card.currentValue) }}</td>
                           <td class="manager-checkbox-cell deck-owned-cell">
-                            <template v-if="deckCardCanMarkOwned(card)">
-                              <input
-                                type="checkbox"
-                                :checked="isDeckCardFullyOwned(card)"
-                                :disabled="ownedToggleBusy === deckOwnedToggleKey(card)"
-                                :aria-label="`Mark ${card.cardName} as owned in deck`"
-                                @change="toggleDeckOwned(card, $event.target.checked)"
-                              />
-                              <span
-                                v-if="!isDeckCardFullyOwned(card) && effectiveDeckOwnedQty(card) > 0"
-                                class="deck-owned-partial"
-                              >
-                                {{ deckCardOwnedLabel(card) }}
-                              </span>
-                            </template>
-                            <span v-else>{{ deckCardOwnedLabel(card) }}</span>
+                            <DeckOwnedToggle
+                              :card="card"
+                              :deck-id="deckId"
+                              inline
+                              @changed="onDeckCardChanged"
+                            />
                           </td>
                         </tr>
                       </template>
@@ -1154,7 +1139,9 @@ onActivated(async () => {
       :open="emptyDeckAddOpen"
       :deck-id="deckId"
       :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
-      section="main"
+      :section="deckAddModal.section"
+      :card-type="deckAddModal.cardType"
+      :type-label="deckAddModal.typeLabel"
       @close="closeEmptyDeckAdd"
       @added="onDeckCardAdded"
     />

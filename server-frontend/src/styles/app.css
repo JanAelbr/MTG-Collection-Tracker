@@ -6036,6 +6036,180 @@ body {
   color: #e65100;
 }
 
+.deck-owned-toggle {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deck-owned-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.deck-owned-toggle-input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1b5e20;
+}
+
+.deck-owned-toggle-compact {
+  flex: 0 0 auto;
+}
+
+.deck-owned-toggle-compact .deck-owned-toggle-label {
+  gap: 4px;
+}
+
+.deck-owned-toggle.is-missing .deck-owned-toggle-text,
+.deck-owned-toggle.is-missing .deck-owned-toggle-fallback {
+  color: #c62828;
+}
+
+.deck-owned-toggle.is-partial .deck-owned-toggle-text {
+  color: #e65100;
+}
+
+.deck-owned-toggle-error {
+  margin: 0;
+  font-size: 11px;
+  color: #c62828;
+}
+
+.deck-owned-toggle-fallback {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.deck-card-grid-manage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.deck-card-grid-manage .deck-card-qty-tile {
+  flex: 1 1 auto;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.deck-card-grid-manage .deck-owned-toggle {
+  padding: 4px 6px;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.decks-page .deck-cards-qty-cell {
+  vertical-align: middle;
+}
+
+.decks-page .deck-cards-qty-cell .deck-card-qty-tile,
+.decks-page .deck-owned-cell .deck-owned-toggle {
+  margin: 0;
+}
+
+.deck-card-qty-tile-inline {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.deck-card-qty-tile-inline .deck-card-qty-tile-row {
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.deck-card-qty-tile-inline .card-interactive-stepper {
+  gap: 4px;
+}
+
+.deck-card-qty-tile-inline .card-interactive-step {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #e5e9ef;
+  background: #fff;
+  font-size: 14px;
+}
+
+.deck-card-qty-tile-inline .card-interactive-count {
+  min-width: 18px;
+  font-size: 13px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.deck-card-qty-tile-inline .deck-card-qty-tile-remove {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #e5e9ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.deck-card-qty-tile-inline .deck-card-qty-tile-status {
+  font-size: 11px;
+}
+
+.deck-owned-toggle-inline {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.deck-owned-toggle-inline .deck-owned-toggle-label {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  gap: 8px;
+}
+
+.deck-owned-toggle-inline .deck-owned-toggle-text {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.decks-page .deck-cards-group-add {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px dashed #9ccc9c;
+  border-radius: 6px;
+  background: #f9fbf9;
+  color: #1b5e20;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.decks-page .deck-cards-group-add:hover {
+  background: #f1f8e9;
+  border-color: #1b5e20;
+}
+
+.deck-stacks-detail-owned-row dd {
+  margin: 0;
+}
+
 .decks-page .deck-cards-layout.is-stacks-view,
 .decks-page .deck-cards-layout.is-overview-view {
   display: block;
@@ -6089,6 +6263,18 @@ body {
 
 .deck-overview-top {
   padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.deck-overview-top .deck-overview-panel-head {
+  width: 100%;
+  max-width: 680px;
+}
+
+.deck-overview-top .deck-overview-empty {
+  text-align: center;
 }
 
 .deck-overview-panel-head,
@@ -6337,15 +6523,17 @@ body {
 .deck-overview-top-grid {
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
-  justify-content: flex-start;
+  gap: 12px;
+  justify-content: center;
   overflow-x: auto;
   padding-bottom: 2px;
+  width: 100%;
+  max-width: 680px;
 }
 
 .deck-overview-top-card {
-  flex: 0 0 96px;
-  width: 96px;
+  flex: 0 0 120px;
+  width: 120px;
   margin: 0;
   min-width: 0;
 }
@@ -6405,7 +6593,7 @@ body {
 
 .deck-overview-top-name {
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
   color: #1f2937;
@@ -6425,7 +6613,7 @@ body {
 }
 
 .deck-overview-top-value {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #0f766e;
 }
@@ -6434,10 +6622,19 @@ body {
   margin: 0;
 }
 
-.deck-overview-curve .deck-mana-curve-svg {
+.deck-overview-curve .deck-mana-curve-svg,
+.deck-overview-land-mana .deck-land-mana-svg {
   width: 100%;
-  max-width: 520px;
+  max-width: 420px;
   height: auto;
+}
+
+.deck-overview-land-mana .deck-land-mana-body {
+  width: 100%;
+}
+
+.deck-overview-pips .deck-breakdown-swatch {
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.2);
 }
 
 @media (max-width: 960px) {
@@ -6461,8 +6658,8 @@ body {
   }
 
   .deck-overview-top-card {
-    flex-basis: 84px;
-    width: 84px;
+    flex-basis: 105px;
+    width: 105px;
   }
 }
 
@@ -7288,8 +7485,10 @@ body {
 
 .decks-page .deck-cards-table th:nth-child(2),
 .decks-page .deck-cards-table td:nth-child(2) {
-  width: 44px;
-  text-align: center;
+  width: 148px;
+  min-width: 148px;
+  text-align: left;
+  white-space: normal;
 }
 
 .decks-page .deck-cards-table th:nth-child(4),
@@ -7299,7 +7498,7 @@ body {
 
 .decks-page .deck-cards-table th:nth-child(5),
 .decks-page .deck-cards-table td:nth-child(5) {
-  width: 160px;
+  width: 148px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -7312,8 +7511,9 @@ body {
 
 .decks-page .deck-cards-table th:nth-child(7),
 .decks-page .deck-cards-table td:nth-child(7) {
-  width: 72px;
-  text-align: center;
+  width: 108px;
+  text-align: left;
+  white-space: normal;
 }
 
 .decks-page .deck-cards-table td:nth-child(3) {
@@ -7729,7 +7929,7 @@ body {
 .art-style-rules-table td {
   padding: 10px 12px;
   border-bottom: 1px solid #eee;
-  vertical-align: top;
+  vertical-align: middle;
   text-align: left;
 }
 
@@ -7741,13 +7941,78 @@ body {
   background: #f3f4f6;
 }
 
+.art-style-rules-row--dragging {
+  opacity: 0.55;
+}
+
+.art-style-rules-row--drop-target td {
+  box-shadow: inset 0 2px 0 #7cb342;
+}
+
 .art-style-rules-order {
+  width: 40px;
   white-space: nowrap;
 }
 
-.art-style-rules-order .btn {
-  min-width: 34px;
-  padding-inline: 8px;
+.art-style-rules-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #dde2e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.art-style-rules-icon-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.art-style-rules-icon-btn:hover:not(:disabled),
+.art-style-rules-icon-btn:focus-visible {
+  border-color: #7cb342;
+  background: #f7fbf2;
+  color: #2e7d32;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(124, 179, 66, 0.12);
+}
+
+.art-style-rules-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.art-style-rules-icon-btn--danger:hover:not(:disabled),
+.art-style-rules-icon-btn--danger:focus-visible {
+  border-color: #f1b0b7;
+  background: #fff5f5;
+  color: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.1);
+}
+
+.art-style-rules-icon-btn--add {
+  width: auto;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.art-style-rules-drag-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.art-style-rules-drag-handle:active {
+  cursor: grabbing;
 }
 
 .art-style-rules-input,
@@ -7766,27 +8031,26 @@ body {
   width: 88px;
 }
 
+.art-style-rules-input--suffix {
+  min-width: 72px;
+  width: 96px;
+}
+
 .art-style-rules-detail-fields {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-}
-
-.art-style-rules-detail-fields label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #666;
+  gap: 8px;
+  align-items: center;
 }
 
 .art-style-rules-detail-muted {
   color: #888;
   font-size: 13px;
-  padding-top: 8px;
 }
 
 .art-style-rules-actions {
+  display: flex;
+  gap: 6px;
   white-space: nowrap;
 }
 
@@ -10091,6 +10355,234 @@ button.card-variant {
 .deck-mana-curve-empty {
   margin: 0;
   padding: 8px 14px 14px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.deck-land-mana-chart {
+  margin: 0;
+}
+
+.deck-land-mana-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, max-content);
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.deck-land-mana-svg {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+}
+
+.deck-land-mana-ratios {
+  min-width: 260px;
+  width: max-content;
+  max-width: 100%;
+  padding-top: 4px;
+}
+
+.deck-land-mana-ratios-head,
+.deck-land-mana-ratios-row {
+  display: grid;
+  grid-template-columns: 5rem 5.5rem 4.75rem 3rem;
+  column-gap: 14px;
+  align-items: baseline;
+}
+
+.deck-land-mana-ratios-head {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e5e9ef;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deck-land-mana-ratios-head > span:not(:first-child) {
+  text-align: center;
+}
+
+.deck-land-mana-ratios-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deck-land-mana-ratios-row {
+  padding: 4px 0;
+  color: #475569;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-land-mana-ratios-row.is-selected {
+  color: #0f2f86;
+}
+
+.deck-land-mana-ratios-color {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deck-land-mana-ratios-color:hover {
+  color: #1f4fd6;
+}
+
+.deck-land-mana-ratios-expected,
+.deck-land-mana-ratios-actual,
+.deck-land-mana-ratios-mult {
+  text-align: center;
+  font-weight: 600;
+}
+
+.deck-land-mana-ratios-row.is-balanced .deck-land-mana-ratios-mult {
+  color: #0f766e;
+}
+
+.deck-land-mana-ratios-row.is-low .deck-land-mana-ratios-mult {
+  color: #b45309;
+}
+
+.deck-land-mana-ratios-row.is-high .deck-land-mana-ratios-mult {
+  color: #0369a1;
+}
+
+.deck-land-mana-grid line {
+  stroke: #dbe3ef;
+  stroke-width: 1;
+}
+
+.deck-land-mana-grid-line {
+  stroke-dasharray: 4 4;
+}
+
+.deck-land-mana-axis-label {
+  fill: #6b7280;
+  font-size: 11px;
+}
+
+.deck-land-mana-axis-label--x {
+  font-size: 11px;
+  font-weight: 600;
+  fill: #4b5563;
+}
+
+.deck-land-mana-bar--stack {
+  stroke: rgba(255, 255, 255, 0.65);
+  stroke-width: 0.75;
+}
+
+.deck-land-mana-bar--stack.is-clickable {
+  cursor: pointer;
+}
+
+.deck-land-mana-bar--stack.is-clickable:hover,
+.deck-land-mana-bar--stack.is-clickable:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.deck-land-mana-bar--stack.is-selected {
+  stroke: #0f172a;
+  stroke-width: 1.5;
+}
+
+.deck-land-mana-bar--stack.is-dimmed {
+  opacity: 0.45;
+}
+
+.deck-land-mana-axis-label--x.is-clickable {
+  cursor: pointer;
+}
+
+.deck-land-mana-axis-label--x.is-clickable:hover,
+.deck-land-mana-axis-label--x.is-clickable:focus-visible {
+  fill: #1f4fd6;
+}
+
+.deck-land-mana-axis-label--x.is-selected {
+  fill: #0f2f86;
+}
+
+.deck-land-mana-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 10px;
+  color: #5b6475;
+  font-size: 12px;
+}
+
+.deck-land-mana-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-land-mana-legend-note {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.deck-land-mana-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+@media (max-width: 720px) {
+  .deck-land-mana-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.deck-land-mana-selection {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e9ef;
+}
+
+.deck-land-mana-selection-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.deck-land-mana-selection-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.deck-land-mana-selection-count {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deck-land-mana-selection-empty,
+.deck-land-mana-empty {
+  margin: 0;
   color: #6b7280;
   font-size: 13px;
   line-height: 1.45;

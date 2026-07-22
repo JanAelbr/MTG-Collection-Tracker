@@ -11,6 +11,8 @@ const props = defineProps({
   deckId: { type: String, required: true },
   deckName: { type: String, default: "" },
   compact: { type: Boolean, default: false },
+  /** Flatten chrome for dense table rows. */
+  inline: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["changed", "removed"]);
@@ -153,7 +155,10 @@ watch(
   <div
     v-if="ready && canAdjust && deckQty > 0"
     class="deck-card-qty-tile"
-    :class="{ 'deck-card-qty-tile-compact': compact }"
+    :class="{
+      'deck-card-qty-tile-compact': compact,
+      'deck-card-qty-tile-inline': inline,
+    }"
     @click.stop
     @mousedown.stop
   >

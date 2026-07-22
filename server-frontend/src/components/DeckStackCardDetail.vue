@@ -1,16 +1,11 @@
 <script setup>
-import { computed } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
+import DeckOwnedToggle from "./DeckOwnedToggle.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
 import ManaCost from "./ManaCost.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
-import {
-  effectiveDeckOwnedQty,
-  isDeckCardFullyOwned,
-  ownershipRevision,
-} from "../composables/cardContextMenu";
 import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { cardTypeGroup, deckTypeLabel } from "../utils/deckCards";
 
@@ -22,8 +17,6 @@ const props = defineProps({
 });
 
 defineEmits(["deck-removed", "deck-changed"]);
-
-const ownershipTick = computed(() => ownershipRevision.value);
 
 function cardRoute(card) {
   if (!card?.setCode || !card?.collectorNumber) {
@@ -38,32 +31,6 @@ function cardRoute(card) {
     params: { setCode: card.setCode, collectorNumber: card.collectorNumber },
     query,
   };
-}
-
-function ownershipClass(card) {
-  ownershipTick.value;
-  const qty = Number(card?.qty) || 0;
-  const ownedQty = effectiveDeckOwnedQty(card);
-  if (isDeckCardFullyOwned(card)) {
-    return "is-owned";
-  }
-  if (ownedQty > 0 && ownedQty < qty) {
-    return "is-partial";
-  }
-  return "is-missing";
-}
-
-function ownedLabel(card) {
-  ownershipTick.value;
-  const qty = Number(card?.qty) || 0;
-  const ownedQty = effectiveDeckOwnedQty(card);
-  if (isDeckCardFullyOwned(card)) {
-    return qty > 1 ? `${qty} owned` : "Owned";
-  }
-  if (ownedQty > 0 && ownedQty < qty) {
-    return `${ownedQty} / ${qty} owned`;
-  }
-  return "Missing";
 }
 </script>
 
@@ -122,10 +89,6 @@ function ownedLabel(card) {
               <span>{{ deckTypeLabel(cardTypeGroup(card)) }}</span>
             </dd>
           </div>
-          <div v-if="card.qty > 1" class="deck-stacks-detail-row">
-            <dt>Qty</dt>
-            <dd>{{ card.qty }}</dd>
-          </div>
           <div v-if="card.setCode" class="deck-stacks-detail-row">
             <dt>Print</dt>
             <dd>
@@ -141,9 +104,17 @@ function ownedLabel(card) {
             <dt>Value</dt>
             <dd><PriceStrategyValue :card="card" /></dd>
           </div>
-          <div class="deck-stacks-detail-row">
+          <div class="deck-stacks-detail-row deck-stacks-detail-owned-row">
             <dt>Owned</dt>
-            <dd :class="`is-${ownershipClass(card)}`">{{ ownedLabel(card) }}</dd>
+            <dd>
+              <DeckOwnedToggle
+                v-if="defaultDeckId"
+                :card="card"
+                :deck-id="defaultDeckId"
+                @changed="$emit('deck-changed', $event)"
+              />
+              <span v-else>—</span>
+            </dd>
           </div>
         </dl>
 

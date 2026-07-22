@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { api } from "../api";
 import DeckBreakdownChart from "./DeckBreakdownChart.vue";
+import DeckLandManaChart from "./DeckLandManaChart.vue";
 import DeckManaCurveChart from "./DeckManaCurveChart.vue";
 import ManaCost from "./ManaCost.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
@@ -9,6 +10,12 @@ import PriceStrategyValue from "./PriceStrategyValue.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
 import { buildManaCurveChartData } from "../utils/manaCurve";
+import {
+  buildColorPipBreakdown,
+  buildManaSourceStack,
+  filterCardsByPipColor,
+  PIP_CHART_COLORS,
+} from "../utils/manaPips";
 import {
   OVERVIEW_TOP_CARD_LIMIT,
   ROLE_CHART_COLORS,
@@ -32,6 +39,8 @@ const powerError = ref("");
 
 const typeBreakdown = computed(() => buildTypeBreakdown(props.cards));
 const roleBreakdown = computed(() => buildRoleBreakdown(powerPayload.value?.counts || {}));
+const pipBreakdown = computed(() => buildColorPipBreakdown(props.cards));
+const manaSourceStack = computed(() => buildManaSourceStack(props.cards));
 const topCards = computed(() => overviewTopCards(props.cards, OVERVIEW_TOP_CARD_LIMIT));
 const typeCardsById = computed(() => {
   const groups = {};
@@ -45,6 +54,13 @@ const roleCardsById = computed(() => {
   const groups = {};
   for (const row of roleBreakdown.value.rows) {
     groups[row.id] = Array.isArray(categoryCards[row.id]) ? categoryCards[row.id] : [];
+  }
+  return groups;
+});
+const pipCardsById = computed(() => {
+  const groups = {};
+  for (const row of pipBreakdown.value.rows) {
+    groups[row.id] = filterCardsByPipColor(props.cards, row.id);
   }
   return groups;
 });
@@ -73,6 +89,9 @@ const summaryBits = computed(() => {
   const lands = typeBreakdown.value.rows.find((row) => row.id === "land");
   if (lands?.count) {
     bits.push(`${lands.count} lands`);
+  }
+  if (pipBreakdown.value.total) {
+    bits.push(`${pipBreakdown.value.total} color pips`);
   }
   return bits;
 });
@@ -161,7 +180,7 @@ function cardRoute(card) {
 
           <figcaption class="deck-overview-top-caption">
             <span class="deck-overview-top-name-row">
-              <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="10" />
+              <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="12" />
               <RouterLink
                 v-if="cardRoute(card)"
                 :to="cardRoute(card)"
@@ -216,6 +235,35 @@ function cardRoute(card) {
           <p v-else class="deck-overview-roles-status is-error">{{ powerError }}</p>
         </template>
       </div>
+
+      <DeckBreakdownChart
+        class="deck-overview-panel deck-overview-pips"
+        title="Color pips"
+        :rows="pipBreakdown.rows"
+        :total="pipBreakdown.total"
+        :colors="PIP_CHART_COLORS"
+        :cards-by-id="pipCardsById"
+        :deck-id="deckId"
+        interactive
+        unit-label="pips"
+        empty-label="No colored mana symbols in this deck yet."
+      />
+
+      <section class="deck-overview-panel deck-overview-land-mana">
+        <header class="deck-overview-panel-head">
+          <h3 class="deck-overview-panel-title">Mana sources</h3>
+          <span v-if="manaSourceStack.hasData" class="deck-overview-panel-meta">
+            {{ manaSourceStack.sourceCount }} sources
+            <template v-if="manaSourceStack.anyColorCount">
+              · {{ manaSourceStack.anyColorCount }} any-color
+            </template>
+          </span>
+        </header>
+        <DeckLandManaChart
+          :comparison="manaSourceStack"
+          :deck-id="deckId"
+        />
+      </section>
 
       <section class="deck-overview-panel deck-overview-curve">
         <header class="deck-overview-panel-head">
