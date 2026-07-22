@@ -91,7 +91,16 @@ class StatsApiServiceTests(unittest.TestCase):
         self.conn.close()
         self.temp_dir.cleanup()
 
-    def test_collection_stats_returns_summary(self):
+    @patch("api.services.pricing_helpers.values_by_strategy_for_finish")
+    def test_collection_stats_returns_summary(self, values_mock):
+        values_mock.return_value = {
+            "trend": 2.0,
+            "avg": 2.0,
+            "avg7": 2.0,
+            "avg30": 2.0,
+            "avg1": 2.0,
+            "low": 1.5,
+        }
         payload = stats_service.load_collection_stats(self.conn, set_code="LTR")
         self.assertEqual(payload["setCode"], "LTR")
         self.assertEqual(payload["stats"]["ownedCount"], 1)
@@ -99,7 +108,16 @@ class StatsApiServiceTests(unittest.TestCase):
         self.assertEqual(len(payload["stats"]["artStyles"]), 1)
         self.assertEqual(payload["stats"]["setBreakdown"], [])
 
-    def test_all_sets_stats_group_by_set(self):
+    @patch("api.services.pricing_helpers.values_by_strategy_for_finish")
+    def test_all_sets_stats_group_by_set(self, values_mock):
+        values_mock.return_value = {
+            "trend": 2.0,
+            "avg": 2.0,
+            "avg7": 2.0,
+            "avg30": 2.0,
+            "avg1": 2.0,
+            "low": 1.5,
+        }
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -174,7 +192,8 @@ class StatsApiServiceTests(unittest.TestCase):
             stats_service.load_collection_stats(self.conn, set_code="LTR")
             load_owned.assert_not_called()
 
-    def test_vectorized_strategy_apply_matches_legacy_path(self):
+    @patch("api.services.pricing_helpers.values_by_strategy_for_finish")
+    def test_vectorized_strategy_apply_matches_legacy_path(self, values_mock):
         import pandas as pd
 
         from api.services.pricing_helpers import (
@@ -183,6 +202,14 @@ class StatsApiServiceTests(unittest.TestCase):
             build_neutral_owned_df,
         )
 
+        values_mock.return_value = {
+            "trend": None,
+            "avg": None,
+            "avg7": None,
+            "avg30": None,
+            "avg1": None,
+            "low": None,
+        }
         raw = pd.DataFrame([{
             "set_code": "LTR",
             "collector_number": "1",

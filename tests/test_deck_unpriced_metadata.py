@@ -10,6 +10,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import decks_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables, seed_storage_locations  # noqa: E402
 
@@ -73,6 +74,7 @@ class DeckUnpricedMetadataRefreshTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -143,7 +145,8 @@ class DeckUnpricedMetadataRefreshTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         mock_import.assert_called_once_with(self.conn, "LTC")
 
-    def test_deck_stats_price_joined_catalog_when_in_catalog_flag_stale(self):
+    @patch("api.services.pricing_helpers.price_from_strategy", return_value=2.5)
+    def test_deck_stats_price_joined_catalog_when_in_catalog_flag_stale(self, _price_mock):
         self.conn.execute("UPDATE deck_cards SET in_catalog = 0")
         self.conn.execute(
             "UPDATE cards SET market_value = 2.5 WHERE id = 'LTC-284'"

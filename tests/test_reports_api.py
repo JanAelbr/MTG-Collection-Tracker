@@ -14,6 +14,7 @@ from api.services import reports_service  # noqa: E402
 from api.services import search_service  # noqa: E402
 from api.cache import bump_cache_epoch  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.set_catalog import ensure_sets_table  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
@@ -65,6 +66,7 @@ class ReportsApiServiceTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -119,10 +121,19 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.conn.close()
         self.temp_dir.cleanup()
 
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
     @patch("api.services.reports_service.load_ranked_cards_data_for_set")
-    def test_top_report_includes_locations_and_gain_loss(self, load_ranked):
+    def test_top_report_includes_locations_and_gain_loss(self, load_ranked, values_mock):
         import pandas as pd
 
+        values_mock.return_value = {
+            "trend": 2.0,
+            "avg": 2.0,
+            "avg7": 2.0,
+            "avg30": 2.0,
+            "avg1": 2.0,
+            "low": 1.5,
+        }
         load_ranked.return_value = pd.DataFrame(self.ranked_rows)
         payload = reports_service.list_report_cards(
             self.conn,
@@ -138,10 +149,19 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertIn("valuesByStrategy", card)
         self.assertIn("trend", card["valuesByStrategy"])
 
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
     @patch("api.services.reports_service.load_ranked_cards_data_for_set")
-    def test_risers_require_positive_change(self, load_ranked):
+    def test_risers_require_positive_change(self, load_ranked, values_mock):
         import pandas as pd
 
+        values_mock.return_value = {
+            "trend": 2.0,
+            "avg": 2.0,
+            "avg7": 2.0,
+            "avg30": 2.0,
+            "avg1": 2.0,
+            "low": 1.5,
+        }
         load_ranked.return_value = pd.DataFrame(self.ranked_rows)
         payload = reports_service.list_report_cards(
             self.conn,

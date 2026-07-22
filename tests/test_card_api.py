@@ -13,6 +13,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 from api.services import card_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.set_catalog import SETS_TABLE_SQL  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
@@ -51,6 +52,7 @@ class CardApiServiceTests(unittest.TestCase):
         )
         self.conn.executescript(SETS_TABLE_SQL)
         self.conn.executescript(CARD_PRICES_TABLE_SQL)
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -109,9 +111,10 @@ class CardApiServiceTests(unittest.TestCase):
         self.conn.close()
         self.temp_dir.cleanup()
 
+    @patch("api.services.pricing_service.all_guide_prices_for_card")
     @patch("api.services.card_service.all_guide_prices_for_card")
-    def test_load_card_detail_includes_guide_matrix_and_neighbors(self, guide_prices):
-        guide_prices.return_value = {
+    def test_load_card_detail_includes_guide_matrix_and_neighbors(self, guide_prices, pricing_guide):
+        guide_payload = {
             "nonfoil": {
                 "trend": 2.0,
                 "avg": 1.9,
@@ -129,6 +132,8 @@ class CardApiServiceTests(unittest.TestCase):
                 "low": 3.0,
             },
         }
+        guide_prices.return_value = guide_payload
+        pricing_guide.return_value = guide_payload
         payload = card_service.load_card_detail(self.conn, "LTR", "1")
         self.assertEqual(payload["setCode"], "LTR")
         self.assertEqual(payload["imageUri"], "https://example.test/card.jpg")
@@ -141,9 +146,11 @@ class CardApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["setGallery"]["cards"][1]["collectorNumber"], "2")
         self.assertEqual(payload["finishes"]["0"]["guidePrices"]["trend"], 2.0)
 
+    @patch("api.services.pricing_service.all_guide_prices_for_card")
     @patch("api.services.card_service.all_guide_prices_for_card")
-    def test_load_card_detail_includes_owned_unpriced_finish(self, guide_prices):
+    def test_load_card_detail_includes_owned_unpriced_finish(self, guide_prices, pricing_guide):
         guide_prices.return_value = {}
+        pricing_guide.return_value = {}
         self.conn.execute(
             """
             INSERT INTO cards (

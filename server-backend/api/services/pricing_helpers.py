@@ -149,11 +149,25 @@ def _apply_strategy_from_price_columns(df: pd.DataFrame, strategy: str) -> pd.Da
     current = price_matrix[np.arange(row_count), valuation]
 
     updated = df.copy()
-    updated["current_value"] = current
+    updated["current_value"] = [
+        None if value is None or np.isnan(value) else float(value)
+        for value in current
+    ]
     purchase = pd.to_numeric(df["purchase_value"], errors="coerce").to_numpy(dtype=float)
-    profit = current - purchase
-    invalid = np.isnan(purchase) | np.isnan(current) | (purchase == 0)
-    updated["profit_loss"] = np.where(invalid, np.nan, profit)
+    profit_values = []
+    for index, value in enumerate(current):
+        purchase_value = purchase[index]
+        if (
+            value is None
+            or np.isnan(value)
+            or purchase_value is None
+            or np.isnan(purchase_value)
+            or purchase_value == 0
+        ):
+            profit_values.append(None)
+        else:
+            profit_values.append(float(value) - float(purchase_value))
+    updated["profit_loss"] = profit_values
     return updated
 
 

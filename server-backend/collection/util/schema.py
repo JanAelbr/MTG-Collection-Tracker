@@ -93,8 +93,8 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
+        ensure_tracked_sets_ready(conn)
         ensure_card_detail_metadata(conn)
         ensure_art_style_rules_table(conn)
-        ensure_tracked_sets_ready(conn)
         if db_path:
             _initialized_db_paths.add(db_path)

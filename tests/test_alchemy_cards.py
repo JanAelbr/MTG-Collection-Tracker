@@ -1,11 +1,10 @@
-import sys
+import sqlite3
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+import runpy
+
+runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from report.report_data import load_catalog_count_by_set  # noqa: E402
 from util.alchemy_cards import (  # noqa: E402

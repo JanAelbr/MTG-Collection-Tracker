@@ -28,13 +28,13 @@ describe("searchResults helpers", () => {
     expect(formatRarityLabel("")).toBe("—");
   });
 
-  it("displays strategy value with fallback", () => {
+  it("displays strategy value without currentValue fallback", () => {
     const card = {
       currentValue: 1.25,
       valuesByStrategy: { trend: 2.5 },
     };
     expect(displayCardValue(card, "trend")).toBe("€ 2.50");
-    expect(displayCardValue(card, "avg")).toBe("€ 1.25");
+    expect(displayCardValue(card, "avg")).toBe("—");
     expect(displayCardValue(null, "trend")).toBe("—");
   });
 });

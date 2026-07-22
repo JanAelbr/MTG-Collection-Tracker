@@ -240,7 +240,7 @@ def load_card_detail_assets() -> tuple[dict, dict[str, dict[str, dict]]]:
         ensure_storage_tables(conn)
         ensure_card_columns(conn)
         cards_df = pd.read_sql_query(
-            """
+            f"""
             SELECT
                 set_code,
                 collector_number,

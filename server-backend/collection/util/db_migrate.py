@@ -141,18 +141,22 @@ def list_top_set_codes_by_collection_size(
     if len(codes) >= limit:
         return codes[:limit]
 
-    tracked_rows = conn.execute(
-        "SELECT set_code FROM tracked_sets ORDER BY set_code ASC"
-    ).fetchall()
-    seen = set(codes)
-    for row in tracked_rows:
-        code = str(row[0]).upper()
-        if not code or code in seen:
-            continue
-        codes.append(code)
-        seen.add(code)
-        if len(codes) >= limit:
-            break
+    has_tracked = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tracked_sets' LIMIT 1"
+    ).fetchone()
+    if has_tracked:
+        tracked_rows = conn.execute(
+            "SELECT set_code FROM tracked_sets ORDER BY set_code ASC"
+        ).fetchall()
+        seen = set(codes)
+        for row in tracked_rows:
+            code = str(row[0]).upper()
+            if not code or code in seen:
+                continue
+            codes.append(code)
+            seen.add(code)
+            if len(codes) >= limit:
+                break
     return codes[:limit]
 
 

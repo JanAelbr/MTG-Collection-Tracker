@@ -8,6 +8,7 @@ import runpy
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from report.deck_queries import enrich_deck_cards_df, load_deck_cards_df  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 
 
@@ -58,6 +59,7 @@ class DeckOwnedScopeTests(unittest.TestCase):
             );
             """
         )
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (
