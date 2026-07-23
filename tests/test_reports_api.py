@@ -938,6 +938,123 @@ class ReportsApiServiceTests(unittest.TestCase):
         load_ranked.assert_called_once()
         self.assertEqual(low_payload["cards"][0]["currentValue"], 1.5)
 
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
+    def test_all_report_paginates_sorts_and_reports_scope_stats(self, load_ranked, values_mock):
+        import pandas as pd
+
+        values_mock.side_effect = lambda card, finish: {"trend": card.get("market_value")}
+        rows = []
+        for number, value in [("1", 2.0), ("2", 5.0), ("3", 1.0)]:
+            rows.append({
+                "set_code": "LTR",
+                "collector_number": number,
+                "name": f"Card {number}",
+                "art_style": "01. Main set",
+                "finish": 0,
+                "purchase_value": None,
+                "current_value": value,
+                "profit_loss": None,
+                "market_value": value,
+                "market_value_foil": None,
+                "market_value_etched": None,
+                "has_nonfoil": 1,
+                "has_foil": 0,
+                "has_etched": 0,
+                "image_uri": "",
+                "cardmarket_url": "",
+                "cardmarket_url_foil": "",
+            })
+        load_ranked.return_value = pd.DataFrame(rows)
+
+        # Card "1" is already owned via setUp's purchase/instance rows; make "3" owned too.
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, purchase_value, finish) "
+            "VALUES ('LTR', '3', 1.0, 0)"
+        )
+        self.conn.commit()
+
+        first_page = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="LTR",
+            owned_filter="all",
+            page_size=2,
+            page=1,
+            sort="value",
+            sort_dir="desc",
+        )
+        self.assertEqual(first_page["totalMatches"], 3)
+        self.assertEqual(first_page["totalPages"], 2)
+        self.assertTrue(first_page["hasMore"])
+        self.assertEqual(
+            [card["collectorNumber"] for card in first_page["cards"]], ["2", "1"]
+        )
+        self.assertEqual(first_page["scopeStats"]["totalCount"], 3)
+        self.assertEqual(first_page["scopeStats"]["ownedCount"], 2)
+
+        second_page = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="LTR",
+            owned_filter="all",
+            page_size=2,
+            page=2,
+            sort="value",
+            sort_dir="desc",
+        )
+        self.assertFalse(second_page["hasMore"])
+        self.assertEqual(
+            [card["collectorNumber"] for card in second_page["cards"]], ["3"]
+        )
+
+        # Scope stats reflect the whole scope regardless of the interactive owned filter.
+        owned_only = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="LTR",
+            owned_filter="owned",
+            page_size=10,
+            page=1,
+        )
+        self.assertEqual(owned_only["totalMatches"], 2)
+        self.assertEqual(owned_only["scopeStats"]["totalCount"], 3)
+
+    @patch("api.services.reports_service.values_by_strategy_for_finish")
+    @patch("api.services.reports_service.load_ranked_cards_data_for_set")
+    def test_all_report_search_matches_collector_number_and_name(self, load_ranked, values_mock):
+        import pandas as pd
+
+        values_mock.return_value = {"trend": 1.0}
+        load_ranked.return_value = pd.DataFrame([
+            {
+                "set_code": "LTR", "collector_number": "42", "name": "Frodo Baggins",
+                "art_style": "01. Main set", "finish": 0, "purchase_value": None,
+                "current_value": 1.0, "profit_loss": None, "market_value": 1.0,
+                "market_value_foil": None, "market_value_etched": None,
+                "has_nonfoil": 1, "has_foil": 0, "has_etched": 0,
+                "image_uri": "", "cardmarket_url": "", "cardmarket_url_foil": "",
+            },
+            {
+                "set_code": "LTR", "collector_number": "7", "name": "Random Card",
+                "art_style": "01. Main set", "finish": 0, "purchase_value": None,
+                "current_value": 1.0, "profit_loss": None, "market_value": 1.0,
+                "market_value_foil": None, "market_value_etched": None,
+                "has_nonfoil": 1, "has_foil": 0, "has_etched": 0,
+                "image_uri": "", "cardmarket_url": "", "cardmarket_url_foil": "",
+            },
+        ])
+
+        by_number = reports_service.list_report_cards(
+            self.conn, report="all", set_code="LTR", owned_filter="all", search="42",
+        )
+        self.assertEqual([card["collectorNumber"] for card in by_number["cards"]], ["42"])
+
+        by_name = reports_service.list_report_cards(
+            self.conn, report="all", set_code="LTR", owned_filter="all", search="frodo",
+        )
+        self.assertEqual([card["name"] for card in by_name["cards"]], ["Frodo Baggins"])
+
 
 if __name__ == "__main__":
     unittest.main()

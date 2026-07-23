@@ -1,15 +1,19 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { APP_TITLE } from "./constants/app";
-import StorageView from "./views/StorageView.vue";
-import CollectionView from "./views/CollectionView.vue";
-import CollectionSearchView from "./views/CollectionSearchView.vue";
-import StatsView from "./views/StatsView.vue";
-import DecksView from "./views/DecksView.vue";
-import DeckBuilderView from "./views/DeckBuilderView.vue";
-import CardDetailView from "./views/CardDetailView.vue";
-import HomeView from "./views/HomeView.vue";
-import FavoritesHomeView from "./views/FavoritesHomeView.vue";
-import ScanView from "./views/ScanView.vue";
+
+// Route components are lazy-loaded so the initial bundle only pays for the
+// view the user actually lands on. ScanView pulls in tesseract.js (OCR), by
+// far the heaviest dependency, so it benefits the most from code-splitting.
+const StorageView = () => import("./views/StorageView.vue");
+const CollectionView = () => import("./views/CollectionView.vue");
+const CollectionSearchView = () => import("./views/CollectionSearchView.vue");
+const StatsView = () => import("./views/StatsView.vue");
+const DecksView = () => import("./views/DecksView.vue");
+const DeckBuilderView = () => import("./views/DeckBuilderView.vue");
+const CardDetailView = () => import("./views/CardDetailView.vue");
+const HomeView = () => import("./views/HomeView.vue");
+const FavoritesHomeView = () => import("./views/FavoritesHomeView.vue");
+const ScanView = () => import("./views/ScanView.vue");
 
 const router = createRouter({
   history: createWebHistory(),

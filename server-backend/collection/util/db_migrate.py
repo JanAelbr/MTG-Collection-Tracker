@@ -228,6 +228,12 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_art_ahash ON cards(art_ahash)"
     )
+    # Speeds up the many exact `WHERE name = ?` lookups (variant gallery, scan
+    # name search, print finish flags). Does not help `LIKE '%term%'` set search
+    # (leading wildcard), which stays a table scan by design.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name)"
+    )
 
 
 # Remove duplicate purchase rows, keeping the earliest insert per card finish.

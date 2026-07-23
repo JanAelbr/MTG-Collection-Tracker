@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/card-detail.css";
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { api, clearClientCache } from "../api";

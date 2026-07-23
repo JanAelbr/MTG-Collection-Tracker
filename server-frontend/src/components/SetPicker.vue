@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/set-gallery.css";
 import { computed, onMounted, ref, watch } from "vue";
 import SetGallery from "./SetGallery.vue";
 import { api, clearClientCache } from "../api";

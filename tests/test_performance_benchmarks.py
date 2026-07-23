@@ -17,18 +17,23 @@ if str(TESTS_DIR) not in sys.path:
 
 runpy.run_path(str(TESTS_DIR / "_paths.py"))
 
+import json
+
 from api.cache import bump_cache_epoch  # noqa: E402
 from api.services import reports_service  # noqa: E402
 from api.services import search_service  # noqa: E402
 from api.services import stats_service  # noqa: E402
 from benchmark_helpers import (  # noqa: E402
     DEFAULT_CARD_COUNT,
+    DEFAULT_GUIDE_PRODUCT_COUNT,
     bench_call,
     assert_under_threshold,
+    build_synthetic_price_guide_payload,
     perf_threshold_ms,
     seed_benchmark_collection,
 )
 from util.app_tables import ensure_app_tables  # noqa: E402
+import util.cardmarket_prices as cardmarket_prices  # noqa: E402
 
 
 class PerformanceBenchmarkTests(unittest.TestCase):
@@ -280,6 +285,130 @@ class PerformanceBenchmarkTests(unittest.TestCase):
             result,
             perf_threshold_ms("LOTR_PERF_STATS_ALL_TO_SET_MS", 25.0),
         )
+
+
+class PriceGuideBenchmarkTests(unittest.TestCase):
+    """Measures the real Cardmarket guide load path with a realistic payload.
+
+    The other benchmarks mock ``pricing_service._load_guide`` to ``{}`` so the
+    ~125k-product guide's JSON-parse / pickle-cache cost never shows up. This
+    exercises ``load_price_guide_index`` for real against a synthetic guide
+    the same size as production, matching the guide-preload added to the app
+    lifespan.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._temp_dir = tempfile.TemporaryDirectory()
+        temp_dir = Path(cls._temp_dir.name)
+        cls.guide_json_path = temp_dir / "cardmarket_price_guide.json"
+        cls.guide_pickle_path = temp_dir / "cardmarket_price_guide.pkl"
+
+        payload = build_synthetic_price_guide_payload(DEFAULT_GUIDE_PRODUCT_COUNT)
+        cls.guide_json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        cls._patches = [
+            patch.object(cardmarket_prices, "PRICE_GUIDE_CACHE", cls.guide_json_path),
+            patch.object(cardmarket_prices, "PRICE_GUIDE_INDEX_CACHE", cls.guide_pickle_path),
+        ]
+        for item in cls._patches:
+            item.start()
+
+        cls._results: list[str] = []
+
+    @classmethod
+    def tearDownClass(cls):
+        for item in reversed(cls._patches):
+            item.stop()
+        cls._temp_dir.cleanup()
+        if cls._results:
+            print("\n--- Price guide performance benchmarks ---", file=sys.stderr)
+            for line in cls._results:
+                print(line, file=sys.stderr)
+
+    def setUp(self):
+        cardmarket_prices.invalidate_price_guide_memory_cache()
+        if self.guide_pickle_path.exists():
+            self.guide_pickle_path.unlink()
+
+    def _record(self, result) -> None:
+        line = result.format_line()
+        self._results.append(line)
+        with self.subTest(result.label):
+            self.assertGreater(result.median_ms, 0.0)
+
+    def test_benchmark_guide_cold_json_parse(self):
+        """First-ever load: no pickle cache yet, must parse the raw JSON."""
+
+        def run():
+            cardmarket_prices.invalidate_price_guide_memory_cache()
+            if self.guide_pickle_path.exists():
+                self.guide_pickle_path.unlink()
+            guide = cardmarket_prices.load_price_guide_index()
+            self.assertEqual(len(guide), DEFAULT_GUIDE_PRODUCT_COUNT)
+
+        result = bench_call(
+            f"load_price_guide_index[cold-json] products={DEFAULT_GUIDE_PRODUCT_COUNT}",
+            run,
+            iterations=3,
+            warmup=0,
+        )
+        self._record(result)
+        assert_under_threshold(result, perf_threshold_ms("LOTR_PERF_GUIDE_COLD_JSON_MS", 4000.0))
+
+    def test_benchmark_guide_warm_pickle_reload(self):
+        """Process restart with a warm on-disk pickle cache (no in-memory hit)."""
+        cardmarket_prices.load_price_guide_index()  # populates the pickle cache
+
+        def run():
+            cardmarket_prices.invalidate_price_guide_memory_cache()
+            guide = cardmarket_prices.load_price_guide_index()
+            self.assertEqual(len(guide), DEFAULT_GUIDE_PRODUCT_COUNT)
+
+        result = bench_call(
+            f"load_price_guide_index[warm-pickle] products={DEFAULT_GUIDE_PRODUCT_COUNT}",
+            run,
+            iterations=5,
+            warmup=1,
+        )
+        self._record(result)
+        assert_under_threshold(result, perf_threshold_ms("LOTR_PERF_GUIDE_WARM_PICKLE_MS", 1500.0))
+
+    def test_benchmark_guide_memory_cache_hit(self):
+        """Steady state after the lifespan preload: pure in-memory hit."""
+        cardmarket_prices.load_price_guide_index()
+
+        result = bench_call(
+            f"load_price_guide_index[memory] products={DEFAULT_GUIDE_PRODUCT_COUNT}",
+            lambda: cardmarket_prices.load_price_guide_index(),
+            iterations=5,
+            warmup=1,
+        )
+        self._record(result)
+        assert_under_threshold(result, perf_threshold_ms("LOTR_PERF_GUIDE_MEMORY_MS", 1.0))
+
+    def test_benchmark_guide_lookup_scales_with_usage_not_guide_size(self):
+        """Per-card price lookups against a full-size guide stay ~O(1)."""
+        guide = cardmarket_prices.load_price_guide_index()
+        product_ids = list(range(1, 2001))
+
+        def run():
+            total = 0.0
+            for product_id in product_ids:
+                entry = guide.get(product_id)
+                price = cardmarket_prices.price_from_guide_entry(entry, 0)
+                if price:
+                    total += price
+            self.assertGreater(total, 0.0)
+
+        result = bench_call(
+            f"guide_lookup[2000 cards] guide_products={DEFAULT_GUIDE_PRODUCT_COUNT}",
+            run,
+            iterations=5,
+            warmup=1,
+        )
+        self._record(result)
+        assert_under_threshold(result, perf_threshold_ms("LOTR_PERF_GUIDE_LOOKUP_MS", 25.0))
 
 
 class PerformanceHttpBenchmarkTests(unittest.TestCase):

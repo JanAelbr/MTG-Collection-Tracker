@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/decks.css";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";

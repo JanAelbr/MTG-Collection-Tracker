@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/set-gallery.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import {

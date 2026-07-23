@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/scan.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 

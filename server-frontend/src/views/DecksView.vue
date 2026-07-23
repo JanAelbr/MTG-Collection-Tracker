@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/decks.css";
 import { computed, nextTick, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";

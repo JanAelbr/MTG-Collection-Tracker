@@ -1,7 +1,9 @@
 <script setup>
+import "../styles/favorites-home.css";
 import { computed, onMounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { fetchFavorites, useFavorites } from "../composables/favorites";
 import {
@@ -60,6 +62,16 @@ const displayArtStyles = computed(() =>
 const isEmpty = computed(
   () => !sets.value.length && !artStyles.value.length && !cards.value.length,
 );
+
+/** Above this many cards, an art-style gallery gets a bounded, virtualized
+ * viewport instead of rendering every tile — some art styles span whole
+ * sets and "expand all" style browsing would otherwise dump hundreds of
+ * card tiles into the DOM at once. */
+const ART_GALLERY_VIRTUALIZE_THRESHOLD = 40;
+
+function isLargeArtGallery(style) {
+  return (style?.cards?.length || 0) > ART_GALLERY_VIRTUALIZE_THRESHOLD;
+}
 
 function setRoute(set) {
   return collectionRouteForSet(set.setCode);
@@ -378,8 +390,19 @@ onMounted(async () => {
           <div
             v-if="style.cards?.length"
             class="favorites-home-art-gallery collection-gallery-panel"
+            :class="{ 'is-scrollable-group': isLargeArtGallery(style) }"
           >
+            <VirtualizedCollectionCardGrid
+              v-if="isLargeArtGallery(style)"
+              :cards="style.cards"
+              show-unowned-badge
+              :card-scale="collectionCardScale"
+              :price-strategy="artStylesPriceStrategy"
+              @ownership-changed="onOwnershipChanged"
+              @favorite-changed="onCardFavoriteChanged"
+            />
             <CollectionCardGrid
+              v-else
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"

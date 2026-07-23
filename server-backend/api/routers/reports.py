@@ -45,6 +45,18 @@ def report_cards(
     colors: str = Query(default=""),
     compareDate: str | None = Query(default=None),
     pageSize: int = Query(default=25, ge=1, le=500),
+    search: str = Query(default=""),
+    rarity: str = Query(default="all"),
+    cmcMin: str = Query(default=""),
+    cmcMax: str = Query(default=""),
+    priceMin: str = Query(default=""),
+    priceMax: str = Query(default=""),
+    powMin: str = Query(default=""),
+    tghMin: str = Query(default=""),
+    storage: str = Query(default=""),
+    sort: str = Query(default="number"),
+    dir: str = Query(default=""),
+    page: int | None = Query(default=None, ge=1),
 ):
     try:
         return list_report_cards(
@@ -59,6 +71,18 @@ def report_cards(
             color_filters=colors,
             compare_date=compareDate,
             page_size=pageSize,
+            search=search,
+            rarity_filter=rarity,
+            cmc_min=_parse_optional_float(cmcMin),
+            cmc_max=_parse_optional_float(cmcMax),
+            price_min=_parse_optional_float(priceMin),
+            price_max=_parse_optional_float(priceMax),
+            power_min=_parse_optional_float(powMin),
+            toughness_min=_parse_optional_float(tghMin),
+            storage_filters=_parse_storage_filters(storage),
+            sort=sort,
+            sort_dir=dir,
+            page=page,
         )
     except ReportsError as exc:
         raise _reports_error(exc) from exc

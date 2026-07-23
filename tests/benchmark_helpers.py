@@ -148,6 +148,45 @@ def seed_benchmark_collection(
     return summary
 
 
+DEFAULT_GUIDE_PRODUCT_COUNT = 125_000
+
+
+def build_synthetic_price_guide_payload(
+    product_count: int = DEFAULT_GUIDE_PRODUCT_COUNT,
+) -> dict:
+    """Build a Cardmarket price-guide JSON payload sized like the real feed.
+
+    The real feed is ~125k products / ~24MB of JSON. Benchmarks that mock the
+    guide to ``{}`` never pay (or measure) that cold JSON-parse + pickle-cache
+    cost, so this generates a representative subset with the same field shape
+    (``idProduct`` plus trend/avg/low, foil variants for ~1 in 3 products).
+    """
+    products = []
+    for index in range(1, product_count + 1):
+        entry = {
+            "idProduct": index,
+            "trend": round(0.1 + (index % 500) * 0.15, 2),
+            "avg": round(0.1 + (index % 480) * 0.14, 2),
+            "avg7": round(0.1 + (index % 460) * 0.13, 2),
+            "avg30": round(0.1 + (index % 440) * 0.12, 2),
+            "avg1": round(0.1 + (index % 420) * 0.11, 2),
+            "low": round(0.05 + (index % 100) * 0.05, 2),
+        }
+        if index % 3 == 0:
+            entry.update(
+                {
+                    "trend-foil": round(0.2 + (index % 500) * 0.3, 2),
+                    "avg-foil": round(0.2 + (index % 480) * 0.28, 2),
+                    "avg7-foil": round(0.2 + (index % 460) * 0.26, 2),
+                    "avg30-foil": round(0.2 + (index % 440) * 0.24, 2),
+                    "avg1-foil": round(0.2 + (index % 420) * 0.22, 2),
+                    "low-foil": round(0.1 + (index % 100) * 0.1, 2),
+                }
+            )
+        products.append(entry)
+    return {"priceGuides": products}
+
+
 def bench_call(
     label: str,
     func,

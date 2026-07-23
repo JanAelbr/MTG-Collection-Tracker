@@ -15,6 +15,7 @@ const props = defineProps({
   focusedIndex: { type: Number, default: -1 },
   hasMore: { type: Boolean, default: false },
   loadMoreThreshold: { type: Number, default: 240 },
+  priceStrategy: { type: String, default: "" },
 });
 
 const emit = defineEmits([
@@ -24,6 +25,7 @@ const emit = defineEmits([
   "ownership-changed",
   "browse-name",
   "load-more",
+  "favorite-changed",
 ]);
 
 const rootRef = ref(null);
@@ -248,10 +250,12 @@ defineExpose({ scrollToIndex, rootRef });
           :selected-keys="selectedKeys"
           :focused-index="focusedIndex >= 0 ? focusedIndex - visibleRange.start : -1"
           :start-index="visibleRange.start"
+          :price-strategy="priceStrategy"
           @toggle-select="emit('toggle-select', $event)"
           @focus-index="emit('focus-index', $event)"
           @browse-name="emit('browse-name', $event)"
           @ownership-changed="emit('ownership-changed')"
+          @favorite-changed="emit('favorite-changed', $event)"
         />
       </div>
     </div>

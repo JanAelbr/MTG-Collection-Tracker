@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/stats.css";
 import { computed } from "vue";
 import { COLLECTION_RARITY_LABELS } from "../utils/collectionRarities";
 import { rarityColor } from "../utils/mtgTheme";

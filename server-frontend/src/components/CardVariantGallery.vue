@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/card-detail.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";

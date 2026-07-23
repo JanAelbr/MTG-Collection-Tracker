@@ -414,6 +414,24 @@ function setGroupMetaText(group) {
   return `${printLabel} · ${formatEuro(group.totalValue)}`;
 }
 
+/**
+ * "Expand all groups" can otherwise dump every owned card across every set
+ * into the DOM at once. Small groups keep their natural auto-fit height
+ * (most groups); large ones get a bounded, truly virtualized viewport.
+ */
+const GROUP_VIRTUALIZE_THRESHOLD = 40;
+const GROUP_TABLE_MAX_VISIBLE_ROWS = 12;
+
+function isLargeSetGroup(group) {
+  return (group?.cards?.length || 0) > GROUP_VIRTUALIZE_THRESHOLD;
+}
+
+function setGroupTableRowVar(group) {
+  return isLargeSetGroup(group)
+    ? Math.min(group.cards.length, GROUP_TABLE_MAX_VISIBLE_ROWS)
+    : group.cards.length;
+}
+
 const setGroupCodesKey = computed(() =>
   setGroups.value.map((group) => group.setCode).join("|"),
 );
@@ -1065,11 +1083,22 @@ onMounted(async () => {
                 </h3>
                 <span class="storage-set-group-meta">{{ setGroupMetaText(group) }}</span>
               </button>
-              <CollectionCardGrid
+              <div
                 v-if="isSetGroupExpanded(group.setCode)"
-                :cards="group.cards"
-                :card-scale="collectionCardScale"
-              />
+                class="storage-set-group-gallery"
+                :class="{ 'is-scrollable-group': isLargeSetGroup(group) }"
+              >
+                <VirtualizedCollectionCardGrid
+                  v-if="isLargeSetGroup(group)"
+                  :cards="group.cards"
+                  :card-scale="collectionCardScale"
+                />
+                <CollectionCardGrid
+                  v-else
+                  :cards="group.cards"
+                  :card-scale="collectionCardScale"
+                />
+              </div>
             </section>
           </div>
           <VirtualizedCollectionCardGrid
@@ -1112,7 +1141,7 @@ onMounted(async () => {
             <div
               v-if="isSetGroupExpanded(group.setCode)"
               class="storage-set-group-table"
-              :style="{ '--storage-group-rows': group.cards.length }"
+              :style="{ '--storage-group-rows': setGroupTableRowVar(group) }"
             >
               <VirtualizedStorageTable
                 :cards="group.cards"

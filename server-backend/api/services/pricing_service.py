@@ -28,9 +28,6 @@ STRATEGY_KEY_MAP = {
     "low": ("low", "low-foil"),
 }
 
-_guide_index: dict[int, dict] | None = None
-
-
 def list_price_strategies() -> list[dict[str, str]]:
     return list(PRICE_STRATEGIES)
 
@@ -43,15 +40,12 @@ def normalize_strategy(strategy: str | None) -> str:
 
 
 def _load_guide() -> dict[int, dict]:
-    global _guide_index
-    if _guide_index is None:
-        _guide_index = load_price_guide_index()
-    return _guide_index
+    # load_price_guide_index() already memoizes in-process (cardmarket_prices
+    # ._GUIDE_INDEX_MEMORY); avoid a second, independently-invalidated cache here.
+    return load_price_guide_index()
 
 
 def refresh_guide_cache() -> None:
-    global _guide_index
-    _guide_index = None
     from util.cardmarket_prices import invalidate_price_guide_memory_cache
 
     invalidate_price_guide_memory_cache()

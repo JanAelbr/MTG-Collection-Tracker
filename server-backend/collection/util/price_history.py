@@ -100,7 +100,45 @@ def load_snapshot_prices(conn: sqlite3.Connection, price_date: str) -> pd.DataFr
 
 # Load all snapshot price maps once for repeated portfolio calculations.
 
+_SNAPSHOT_CACHE_TTL = 300
+
+
+def _database_identity(conn: sqlite3.Connection) -> str | None:
+    """On-disk path for this connection, or None when not safely cacheable.
+
+    ``:memory:`` / temp databases (used heavily in tests) get a distinct DB per
+    connection but share the process-wide memory_cache, so caching them by
+    epoch alone would leak results across unrelated databases.
+    """
+    row = conn.execute("PRAGMA database_list").fetchone()
+    path = row[2] if row else ""
+    return path if path else None
+
+
 def load_price_snapshot_cache(conn: sqlite3.Connection) -> PriceSnapshotCache:
+    """Cache the full per-date snapshot price maps by cache-epoch.
+
+    This scans every row of every price_date snapshot, so without memoizing it
+    every portfolio/history request re-reads the whole card_prices table.
+    """
+    db_path = _database_identity(conn)
+    if db_path is None:
+        return _load_price_snapshot_cache_uncached(conn)
+
+    from api.cache import get_cache_epoch, memory_cache
+
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key("price_history.snapshot_cache", {"db": db_path}, epoch)
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _load_price_snapshot_cache_uncached(conn)
+    memory_cache.set(cache_key, result, _SNAPSHOT_CACHE_TTL)
+    return result
+
+
+def _load_price_snapshot_cache_uncached(conn: sqlite3.Connection) -> PriceSnapshotCache:
 
     dates = get_price_snapshot_dates(conn)
 

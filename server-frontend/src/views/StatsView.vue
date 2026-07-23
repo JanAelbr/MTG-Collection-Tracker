@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/stats.css";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";

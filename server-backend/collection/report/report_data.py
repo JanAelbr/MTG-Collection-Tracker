@@ -123,32 +123,81 @@ def _owned_prints_sql(has_instances: bool) -> str:
     return "SELECT set_code, collector_number FROM purchases"
 
 
+_SET_COUNT_CACHE_TTL = 300
+
+
+def _database_identity(conn: sqlite3.Connection) -> str | None:
+    """On-disk path for this connection, or None when not safely cacheable.
+
+    ``:memory:`` / temp databases (used heavily in tests) get a distinct DB per
+    connection but share the process-wide memory_cache, so caching them by
+    epoch alone would leak results across unrelated databases.
+    """
+    row = conn.execute("PRAGMA database_list").fetchone()
+    path = row[2] if row else ""
+    return path if path else None
+
+
 def load_owned_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     from util.set_completion import count_completion_keys_by_set
 
-    owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
-    rows = conn.execute(
-        f"""
-        SELECT set_code, collector_number
-        FROM ({owned_prints}) owned_prints
-        WHERE {exclude_alchemy_sql()}
-        """
-    ).fetchall()
-    return count_completion_keys_by_set(rows)
+    def _compute() -> dict[str, int]:
+        owned_prints = _owned_prints_sql(_table_has_card_instances(conn))
+        rows = conn.execute(
+            f"""
+            SELECT set_code, collector_number
+            FROM ({owned_prints}) owned_prints
+            WHERE {exclude_alchemy_sql()}
+            """
+        ).fetchall()
+        return count_completion_keys_by_set(rows)
+
+    db_path = _database_identity(conn)
+    if db_path is None:
+        return _compute()
+
+    from api.cache import get_cache_epoch, memory_cache
+
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key("report_data.owned_count_by_set", {"db": db_path}, epoch)
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _compute()
+    memory_cache.set(cache_key, result, _SET_COUNT_CACHE_TTL)
+    return result
 
 
 def load_catalog_count_by_set(conn: sqlite3.Connection) -> dict[str, int]:
     from util.set_completion import count_completion_keys_by_set
 
-    rows = conn.execute(
-        f"""
-        SELECT set_code, collector_number
-        FROM cards
-        WHERE {exclude_alchemy_sql()}
-          AND {exclude_alchemy_art_style_sql()}
-        """
-    ).fetchall()
-    return count_completion_keys_by_set(rows)
+    def _compute() -> dict[str, int]:
+        rows = conn.execute(
+            f"""
+            SELECT set_code, collector_number
+            FROM cards
+            WHERE {exclude_alchemy_sql()}
+              AND {exclude_alchemy_art_style_sql()}
+            """
+        ).fetchall()
+        return count_completion_keys_by_set(rows)
+
+    db_path = _database_identity(conn)
+    if db_path is None:
+        return _compute()
+
+    from api.cache import get_cache_epoch, memory_cache
+
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key("report_data.catalog_count_by_set", {"db": db_path}, epoch)
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _compute()
+    memory_cache.set(cache_key, result, _SET_COUNT_CACHE_TTL)
+    return result
 
 
 def build_sorted_set_options(

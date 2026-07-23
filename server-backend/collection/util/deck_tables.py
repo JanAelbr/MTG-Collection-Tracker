@@ -1,4 +1,8 @@
 import sqlite3
+import threading
+
+_deck_tables_lock = threading.Lock()
+_ready_db_paths: set[str] = set()
 
 DECK_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS decks (
@@ -121,13 +125,34 @@ def ensure_deck_cards_print_unique(conn: sqlite3.Connection) -> None:
     )
 
 
+def _database_path(conn: sqlite3.Connection) -> str:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return row[2] if row else ""
+
+
 # Create deck tables when missing.
 def ensure_deck_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript(DECK_TABLES_SQL)
-    ensure_deck_columns(conn)
-    ensure_deck_finish_column(conn)
-    ensure_deck_card_columns(conn)
-    ensure_deck_cards_print_unique(conn)
+    """Run deck schema/migration checks, once per on-disk DB per process.
+
+    Deck endpoints call this on nearly every request; without caching, each
+    call re-runs CREATE TABLE IF NOT EXISTS plus several PRAGMA table_info
+    round-trips and takes a write lock for no reason after the first run.
+    """
+    db_path = _database_path(conn)
+    cacheable = bool(db_path) and db_path != ":memory:"
+    if cacheable and db_path in _ready_db_paths:
+        return
+
+    with _deck_tables_lock:
+        if cacheable and db_path in _ready_db_paths:
+            return
+        conn.executescript(DECK_TABLES_SQL)
+        ensure_deck_columns(conn)
+        ensure_deck_finish_column(conn)
+        ensure_deck_card_columns(conn)
+        ensure_deck_cards_print_unique(conn)
+        if cacheable:
+            _ready_db_paths.add(db_path)
 
 
 # Add missing deck columns without recreating the database.

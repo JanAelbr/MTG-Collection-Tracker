@@ -23,10 +23,8 @@ import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, store
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import { hasSelectableArtStyles } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
-import { filterCollectionCards, parseOptionalNumber } from "../utils/collectionFilters";
-import { sortCollectionCards } from "../utils/collectionSort";
+import { parseOptionalNumber } from "../utils/collectionFilters";
 import { detectActiveLens, lensDefinition } from "../utils/collectionLenses";
-import { computeCollectionScopeStats } from "../utils/collectionScopeStats";
 import {
   allCardsFiltersFromRoute,
   allCardsRouteQuery,
@@ -50,8 +48,12 @@ const router = useRouter();
 const meta = ref(null);
 const appMeta = ref(null);
 const cardsPayload = ref(null);
-const allViewScopeCards = ref([]);
-const allViewScopeKey = ref("");
+const accumulatedCards = ref([]);
+const scopeStatsData = ref(null);
+const allCardsTotalMatches = ref(0);
+const allCardsLoadedPages = ref(0);
+const loadingMoreCards = ref(false);
+let allCardsRequestToken = 0;
 const viewType = ref("all");
 const setCode = ref("All");
 const familyScope = ref(false);
@@ -72,7 +74,6 @@ const toughnessMin = ref("");
 const activeLens = ref("");
 const mobileFiltersOpen = ref(false);
 const virtualGridRef = ref(null);
-const allCardsPage = ref(1);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
 const { pageSize, collectionCardScale, settings: pricingSettings } = usePricingSettings();
@@ -146,16 +147,18 @@ const displayArtStyles = computed(() => {
   return artStyles.value;
 });
 const showArtStylePicker = computed(() => hasSelectableArtStyles(displayArtStyles.value));
+/** Server-side query params for the paginated `/reports/cards?report=all` endpoint. */
 function allCardsFilterParams() {
   return {
-    setCode: familyScope.value ? "All" : setCode.value,
+    setCode: setCode.value,
+    family: familyScope.value,
     artStyle: isAllSetsView.value || familyScope.value ? "" : artStyle.value,
     ownedFilter: ownedFilter.value,
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
     storageFilters: storageFilters.value,
-    searchQuery: searchQuery.value,
+    search: searchQuery.value.trim(),
     rarityFilter: rarityFilter.value,
     cmcMin: parseOptionalNumber(cmcMin.value),
     cmcMax: parseOptionalNumber(cmcMax.value),
@@ -163,35 +166,30 @@ function allCardsFilterParams() {
     priceMax: parseOptionalNumber(priceMax.value),
     powerMin: parseOptionalNumber(powerMin.value),
     toughnessMin: parseOptionalNumber(toughnessMin.value),
+    sort: allCardsSort.value,
+    sortDir: allCardsSortDir.value,
   };
 }
 const cards = computed(() => {
   if (isAllView.value) {
     ownershipRevision.value;
     pricingSettings.value?.priceStrategy;
-    const priced = applyStrategyToCards(
-      allViewScopeCards.value,
+    // Filtering/sorting/pagination already happened server-side; only the display
+    // price label needs a client-side relabel so switching strategy is instant.
+    return applyStrategyToCards(
+      accumulatedCards.value,
       pricingSettings.value?.priceStrategy || "trend",
     );
-    return filterCollectionCards(priced, allCardsFilterParams());
   }
   return cardsPayload.value?.cards || [];
 });
-const scopeStats = computed(() => {
+const scopeStats = computed(() => (isAllView.value ? scopeStatsData.value : null));
+const allCardsHasMore = computed(() => {
   if (!isAllView.value) {
-    return null;
+    return false;
   }
-  ownershipRevision.value;
-  const scoped = filterCollectionCards(allViewScopeCards.value, {
-    setCode: setCode.value,
-    artStyle: isAllSetsView.value ? "" : artStyle.value,
-    ownedFilter: "all",
-    foilFilter: "all",
-    typeFilter: "all",
-    colorFilters: [],
-    searchQuery: "",
-  });
-  return computeCollectionScopeStats(scoped);
+  const totalPages = cardsPayload.value?.totalPages ?? 1;
+  return allCardsLoadedPages.value < totalPages;
 });
 const resolvedActiveLens = computed(() => detectActiveLens({
   lensId: activeLens.value,
@@ -241,13 +239,11 @@ function isAllSetsCode(code) {
   return !code || String(code).toLowerCase() === "all";
 }
 
-function currentAllViewScopeKey() {
-  const art = isAllSetsView.value || familyScope.value ? "" : artStyle.value;
-  return `${setCode.value}|${familyScope.value ? "family" : "single"}|${art}`;
-}
-
 function invalidateAllViewScope() {
-  allViewScopeKey.value = "";
+  // Pagination/filtering state now lives entirely on the server; loadCards()
+  // always fetches a fresh page 1 and replaces accumulatedCards atomically, so
+  // there's no local scope cache left to invalidate here. Kept as a no-op so
+  // existing call sites (which always follow up with loadCards()) still work.
 }
 
 function defaultSetCode() {
@@ -308,9 +304,6 @@ function applyClientQueryFromRoute() {
     allCardsSort.value = filters.sort;
     allCardsSortDir.value = filters.sortDir;
     collectionViewMode.value = filters.viewMode;
-    if ("page" in route.query) {
-      allCardsPage.value = filters.page;
-    }
     if (filters.openArtStyleEditor) {
       artStyleRulesOpen.value = true;
     }
@@ -362,51 +355,10 @@ function routeQueriesMatch(nextQuery) {
   return true;
 }
 
-const sortedAllCards = computed(() => {
-  if (!isAllView.value) {
-    return [];
-  }
-  return sortCollectionCards(strategyCards.value, {
-    sort: allCardsSort.value,
-    dir: allCardsSortDir.value,
-  });
-});
+// Sorting/pagination already happened server-side (see loadCards()/loadMoreAllCards()),
+// so this is just the currently-accumulated, strategy-priced card list.
+const sortedAllCards = computed(() => (isAllView.value ? strategyCards.value : []));
 
-const allCardsTotalPages = computed(() => {
-  if (!isAllView.value) {
-    return 1;
-  }
-  return Math.max(1, Math.ceil(sortedAllCards.value.length / pageSize.value));
-});
-
-const paginatedAllCards = computed(() => {
-  if (!isAllView.value) {
-    return [];
-  }
-  const start = (allCardsPage.value - 1) * pageSize.value;
-  return sortedAllCards.value.slice(start, start + pageSize.value);
-});
-
-const allCardsRangeStart = computed(() => {
-  if (!sortedAllCards.value.length) {
-    return 0;
-  }
-  return (allCardsPage.value - 1) * pageSize.value + 1;
-});
-
-const allCardsRangeEnd = computed(() => {
-  if (!sortedAllCards.value.length) {
-    return 0;
-  }
-  return Math.min(allCardsPage.value * pageSize.value, sortedAllCards.value.length);
-});
-
-const displayCards = computed(() => {
-  if (isAllView.value) {
-    return paginatedAllCards.value;
-  }
-  return strategyCards.value;
-});
 const lastPriceUpdate = computed(
   () => syncStatus.value?.lastPriceUpdate || appMeta.value?.lastPriceUpdate || null,
 );
@@ -534,8 +486,8 @@ async function onArtStyleRulesSaved(result) {
 async function onTableSetCopyCount(card, finish, value) {
   try {
     await managerTable.setCopyCount(setCode.value, card, finish, value);
-    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
-    reconcileOwnershipPatches(allViewScopeCards.value);
+    mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+    reconcileOwnershipPatches(accumulatedCards.value);
   } catch (error) {
     window.alert(error.message || "Failed to update copy count.");
   }
@@ -544,8 +496,8 @@ async function onTableSetCopyCount(card, finish, value) {
 async function onTableUpdateSingleStorage(card, finish, locationSlug) {
   try {
     await managerTable.updateSingleStorage(setCode.value, card, finish, locationSlug);
-    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
-    reconcileOwnershipPatches(allViewScopeCards.value);
+    mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+    reconcileOwnershipPatches(accumulatedCards.value);
   } catch (error) {
     window.alert(error.message || "Failed to update storage.");
   }
@@ -575,8 +527,8 @@ async function onTableStorageModalSaved() {
         payload.state,
       );
     }
-    mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
-    reconcileOwnershipPatches(allViewScopeCards.value);
+    mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+    reconcileOwnershipPatches(accumulatedCards.value);
   } catch (error) {
     window.alert(error.message || "Failed to refresh storage.");
   }
@@ -608,29 +560,57 @@ async function loadAppMeta() {
 }
 
 async function loadCards() {
-  if (isAllView.value) {
-    const scopeKey = currentAllViewScopeKey();
-    if (allViewScopeKey.value === scopeKey) {
+  if (!isAllView.value) {
+    return;
+  }
+  const token = ++allCardsRequestToken;
+  await runCardsLoad(async (isCurrent) => {
+    const payload = await ignoreAborted(api.getReportCards({
+      report: "all",
+      ...allCardsFilterParams(),
+      page: 1,
+      pageSize: pageSize.value,
+    }));
+    if (!payload || !isCurrent() || token !== allCardsRequestToken) {
       return;
     }
-    await runCardsLoad(async () => {
-      const payload = await api.getReportCards({
-        report: "all",
-        setCode: setCode.value,
-        family: familyScope.value,
-        artStyle: isAllSetsView.value || familyScope.value ? "" : artStyle.value,
-        ownedFilter: "all",
-        foilFilter: "all",
-        typeFilter: "all",
-        colorFilters: [],
-        pageSize: pageSize.value,
-      });
-      cardsPayload.value = payload;
-      allViewScopeCards.value = payload.cards || [];
-      allViewScopeKey.value = scopeKey;
-      mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
-      reconcileOwnershipPatches(allViewScopeCards.value);
-    });
+    cardsPayload.value = payload;
+    accumulatedCards.value = payload.cards || [];
+    scopeStatsData.value = payload.scopeStats || null;
+    allCardsTotalMatches.value = payload.totalMatches ?? 0;
+    allCardsLoadedPages.value = payload.page ?? 1;
+    mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+    reconcileOwnershipPatches(accumulatedCards.value);
+  });
+}
+
+async function loadMoreAllCards() {
+  if (!isAllView.value || isTableView.value || loadingCards.value || loadingMoreCards.value) {
+    return;
+  }
+  if (!allCardsHasMore.value) {
+    return;
+  }
+  const token = allCardsRequestToken;
+  loadingMoreCards.value = true;
+  try {
+    const payload = await ignoreAborted(api.getReportCards({
+      report: "all",
+      ...allCardsFilterParams(),
+      page: allCardsLoadedPages.value + 1,
+      pageSize: pageSize.value,
+    }));
+    if (!payload || token !== allCardsRequestToken) {
+      return;
+    }
+    accumulatedCards.value = [...accumulatedCards.value, ...(payload.cards || [])];
+    cardsPayload.value = payload;
+    allCardsTotalMatches.value = payload.totalMatches ?? allCardsTotalMatches.value;
+    allCardsLoadedPages.value = payload.page ?? (allCardsLoadedPages.value + 1);
+    mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+    reconcileOwnershipPatches(accumulatedCards.value);
+  } finally {
+    loadingMoreCards.value = false;
   }
 }
 
@@ -742,7 +722,7 @@ function buildCollectionQuery() {
     storageFilters: storageFilters.value,
     sort: allCardsSort.value,
     sortDir: allCardsSortDir.value,
-    page: allCardsPage.value,
+    page: 1,
     searchQuery: searchQuery.value,
     rarityFilter: rarityFilter.value,
     cmcMin: parseOptionalNumber(cmcMin.value),
@@ -779,32 +759,10 @@ function pushCollectionRoute() {
   return replaceRouteQuery(buildCollectionQuery());
 }
 
-function replacePageInRoute(page) {
-  const query = { ...route.query };
-  if (page <= 1) {
-    delete query.page;
-  } else {
-    query.page = String(page);
-  }
-  suppressPageRouteRead = true;
-  return replaceRouteQuery(query).finally(() => {
-    queueMicrotask(() => {
-      suppressPageRouteRead = false;
-    });
-  });
-}
-
-function goToAllCardsPage(page) {
-  const nextPage = Math.max(1, Math.min(page, allCardsTotalPages.value));
-  if (allCardsPage.value === nextPage) {
-    return;
-  }
-  allCardsPage.value = nextPage;
-  replacePageInRoute(nextPage);
-}
-
 function resetAllCardsPage() {
-  allCardsPage.value = 1;
+  // Pagination is server-driven now; loadCards() atomically replaces
+  // accumulatedCards once fresh results arrive. Kept as a no-op so existing
+  // call sites (which always follow up with loadCards()) still read naturally.
 }
 
 async function setCollectionCardScale(scale) {
@@ -815,15 +773,19 @@ function updateAllCardsSort(event) {
   allCardsSort.value = event.target.value;
   allCardsSortDir.value = defaultAllCardsSortDir(allCardsSort.value);
   storeAllCardsSort(allCardsSort.value, allCardsSortDir.value);
-  resetAllCardsPage();
   pushCollectionRoute();
+  if (!isTableView.value) {
+    loadCards();
+  }
 }
 
 function toggleAllCardsSortDir() {
   allCardsSortDir.value = allCardsSortDir.value === "asc" ? "desc" : "asc";
   storeAllCardsSort(allCardsSort.value, allCardsSortDir.value);
-  resetAllCardsPage();
   pushCollectionRoute();
+  if (!isTableView.value) {
+    loadCards();
+  }
 }
 
 function onTableSort(field) {
@@ -924,7 +886,6 @@ function onRarityFilterChange(event) {
 function updateSearchQuery(value) {
   searchQuery.value = value;
   activeLens.value = "";
-  resetAllCardsPage();
   focusedIndex.value = -1;
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
@@ -932,6 +893,7 @@ function updateSearchQuery(value) {
   searchDebounceTimer = setTimeout(() => {
     if (routeSyncReady.value && !applyingRouteQuery.value && isAllView.value && !isTableView.value) {
       pushCollectionRoute();
+      loadCards();
     }
   }, 250);
   if (tableSearchDebounceTimer) {
@@ -963,9 +925,11 @@ function clearAllCardsQuickFilters() {
   allCardsSort.value = "value";
   allCardsSortDir.value = "desc";
   storeAllCardsSort("value", "desc");
-  resetAllCardsPage();
   focusedIndex.value = -1;
   pushCollectionRoute();
+  if (!isTableView.value) {
+    loadCards();
+  }
 }
 
 function applyCollectionLens(lensId) {
@@ -989,9 +953,11 @@ function applyCollectionLens(lensId) {
   typeFilter.value = "all";
   colorFilters.value = [];
   searchQuery.value = "";
-  resetAllCardsPage();
   focusedIndex.value = -1;
   pushCollectionRoute();
+  if (!isTableView.value) {
+    loadCards();
+  }
 }
 
 function setFocusIndex(index) {
@@ -1040,10 +1006,8 @@ function onCollectionGridKeydown(event) {
 }
 
 async function onGalleryOwnershipChanged() {
-  mergeOwnershipPatchesIntoCards(allViewScopeCards.value);
-  mergeOwnershipPatchesIntoCards(cardsPayload.value?.cards);
-  reconcileOwnershipPatches(allViewScopeCards.value);
-  reconcileOwnershipPatches(cardsPayload.value?.cards);
+  mergeOwnershipPatchesIntoCards(accumulatedCards.value);
+  reconcileOwnershipPatches(accumulatedCards.value);
 }
 
 async function bulkMarkSelectedOwned() {
@@ -1154,9 +1118,11 @@ watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarity
     return;
   }
   activeLens.value = resolvedActiveLens.value;
-  resetAllCardsPage();
   focusedIndex.value = -1;
   pushCollectionRoute();
+  if (!isTableView.value) {
+    loadCards();
+  }
 });
 
 watch(pageSize, () => {
@@ -1168,22 +1134,24 @@ watch(pageSize, () => {
   ) {
     return;
   }
-  resetAllCardsPage();
-  if (isAllView.value) {
-    return;
-  }
   pushCollectionRoute();
-  loadCards();
+  if (!isTableView.value) {
+    loadCards();
+  }
 });
 
-watch(allCardsTotalPages, (totalPages) => {
-  if (applyingRouteQuery.value || loadingCards.value || routeQuerySyncInFlight.value || !cards.value.length) {
+// Sort-by-value is computed server-side using the persisted price strategy, so
+// switching strategy needs a refetch to keep ordering (not just labels) correct.
+watch(() => pricingSettings.value?.priceStrategy, () => {
+  if (
+    !routeSyncReady.value
+    || !collectionHydrated.value
+    || !isAllView.value
+    || isTableView.value
+  ) {
     return;
   }
-  if (allCardsPage.value > totalPages) {
-    allCardsPage.value = totalPages;
-    replacePageInRoute(allCardsPage.value);
-  }
+  loadCards();
 });
 
 watch(
@@ -1236,46 +1204,14 @@ watch(
         || familyScope.value !== prevFamily
         || artStyle.value !== prevArt;
       if (isAllView.value) {
-        resetAllCardsPage();
         pushCollectionRoute();
-        if (scopeChanged) {
-          invalidateAllViewScope();
-          loadCards();
-        }
+        loadCards();
       } else {
         if (scopeChanged) {
-          resetAllCardsPage();
           pushCollectionRoute();
         }
         loadCards();
       }
-    }
-  },
-);
-
-watch(
-  () => route.query.page,
-  (pageParam) => {
-    if (
-      !routeSyncReady.value
-      || !isAllView.value
-      || routeQuerySyncInFlight.value
-      || suppressPageRouteRead
-    ) {
-      return;
-    }
-    applyingRouteQuery.value = true;
-    try {
-      if (pageParam == null || pageParam === "") {
-        if (!("page" in route.query)) {
-          allCardsPage.value = 1;
-        }
-        return;
-      }
-      const parsed = Number(pageParam);
-      allCardsPage.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-    } finally {
-      applyingRouteQuery.value = false;
     }
   },
 );
@@ -1286,11 +1222,15 @@ watch(
     if (!routeSyncReady.value || !isAllView.value || routeQuerySyncInFlight.value) {
       return;
     }
+    const prevSort = allCardsSort.value;
     applyingRouteQuery.value = true;
     try {
       allCardsSort.value = allCardsFiltersFromRoute(route).sort;
     } finally {
       applyingRouteQuery.value = false;
+    }
+    if (allCardsSort.value !== prevSort && !isTableView.value) {
+      loadCards();
     }
   },
 );
@@ -1301,11 +1241,15 @@ watch(
     if (!routeSyncReady.value || !isAllView.value || routeQuerySyncInFlight.value) {
       return;
     }
+    const prevDir = allCardsSortDir.value;
     applyingRouteQuery.value = true;
     try {
       allCardsSortDir.value = allCardsFiltersFromRoute(route).sortDir;
     } finally {
       applyingRouteQuery.value = false;
+    }
+    if (allCardsSortDir.value !== prevDir && !isTableView.value) {
+      loadCards();
     }
   },
 );
@@ -1551,7 +1495,7 @@ onUnmounted(stopPolling);
           <CollectionAllToolbar
             :search-query="searchQuery"
             :active-lens="resolvedActiveLens"
-            :filtered-count="sortedAllCards.length"
+            :filtered-count="allCardsTotalMatches"
             :scope-count="scopeStats?.totalCount ?? 0"
             :scope-stats="scopeStats"
             :bulk-select-mode="bulkSelectMode"
@@ -1625,11 +1569,16 @@ onUnmounted(stopPolling);
               :selectable="bulkSelectMode"
               :selected-keys="selectedKeys"
               :focused-index="focusedIndex"
+              :has-more="allCardsHasMore"
               @toggle-select="toggleCardSelection"
               @focus-index="setFocusIndex"
               @keydown="onCollectionGridKeydown"
               @ownership-changed="onGalleryOwnershipChanged"
+              @load-more="loadMoreAllCards"
             />
+            <p v-if="loadingMoreCards" class="collection-search-load-more-status">
+              <LoadingIndicator label="Loading more cards…" />
+            </p>
           </GalleryLoadingOverlay>
           </template>
         </div>

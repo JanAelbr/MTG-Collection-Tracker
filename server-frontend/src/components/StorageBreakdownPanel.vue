@@ -1,4 +1,5 @@
 <script setup>
+import "../styles/stats.css";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import DeckBreakdownChart from "./DeckBreakdownChart.vue";

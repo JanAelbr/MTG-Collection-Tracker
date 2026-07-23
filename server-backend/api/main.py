@@ -20,6 +20,20 @@ def _verbose_logging_enabled() -> bool:
     return os.environ.get("LOTR_VERBOSE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _preload_price_guide() -> None:
+    """Warm the in-memory Cardmarket guide cache so the first pricing request
+    (card detail, cold report) doesn't pay the ~125k-product JSON/pickle load."""
+    from util.cardmarket_prices import load_price_guide_index
+
+    try:
+        guide = load_price_guide_index(logger=log)
+        log.info("Preloaded Cardmarket price guide (%s products)", len(guide))
+    except Exception:
+        # Non-fatal: first-ever run with no cache file and no network will hit
+        # this; pricing endpoints fall back to a lazy load on first use.
+        log.warning("Could not preload Cardmarket price guide at startup", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     configure_logging(verbose=_verbose_logging_enabled())
@@ -38,6 +52,7 @@ async def lifespan(_app: FastAPI):
                 result.get("ownedRows"),
             )
         conn.commit()
+        _preload_price_guide()
         log.info("API ready")
     except Exception:
         log.exception("API startup failed during schema ensure")

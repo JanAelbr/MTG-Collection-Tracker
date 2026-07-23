@@ -46,6 +46,47 @@ const assignLocationSlug = ref("");
 const loadMoreSentinelRef = ref(null);
 let loadMoreObserver = null;
 
+/**
+ * `finishRows` groups multiple physical <tr>s per card via `rowspan`, so we
+ * can't slice by raw row index without risking cutting a rowspan group in
+ * half (which would visually corrupt the table). Instead we render a bounded
+ * number of complete card groups and reveal more as the user scrolls near the
+ * bottom — the same incremental-reveal idea as the existing "load more"
+ * sentinel below, just for rows already fetched but not yet rendered. This
+ * keeps "select all" / long scroll sessions on big sets from dumping
+ * thousands of <tr> elements into the DOM at once.
+ */
+const RENDER_CHUNK_GROUPS = 60;
+const renderGroupLimit = ref(RENDER_CHUNK_GROUPS);
+
+const cardGroups = computed(() => {
+  const groups = [];
+  let current = null;
+  for (const row of props.finishRows) {
+    if (row.isFirstFinishRow || !current) {
+      current = [];
+      groups.push(current);
+    }
+    current.push(row);
+  }
+  return groups;
+});
+
+const visibleFinishRows = computed(() =>
+  cardGroups.value.slice(0, renderGroupLimit.value).flat(),
+);
+
+const hasMoreToReveal = computed(() => renderGroupLimit.value < cardGroups.value.length);
+
+watch(
+  () => props.loading,
+  (isLoading) => {
+    if (isLoading) {
+      renderGroupLimit.value = RENDER_CHUNK_GROUPS;
+    }
+  },
+);
+
 async function loadStorageLocations() {
   const payload = await api.listStorageLocations();
   storageLocations.value = payload.locations || [];
@@ -129,12 +170,22 @@ async function setupLoadMoreObserver() {
   disconnectLoadMoreObserver();
   await nextTick();
   const sentinel = loadMoreSentinelRef.value;
-  if (!sentinel || !props.hasMore) {
+  if (!sentinel || (!props.hasMore && !hasMoreToReveal.value)) {
     return;
   }
   loadMoreObserver = new IntersectionObserver(
     (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        return;
+      }
+      if (hasMoreToReveal.value) {
+        renderGroupLimit.value = Math.min(
+          cardGroups.value.length,
+          renderGroupLimit.value + RENDER_CHUNK_GROUPS,
+        );
+        return;
+      }
+      if (props.hasMore) {
         emit("load-more");
       }
     },
@@ -144,7 +195,7 @@ async function setupLoadMoreObserver() {
 }
 
 watch(
-  () => [props.hasMore, props.finishRows.length, props.loading],
+  () => [props.hasMore, hasMoreToReveal.value, props.finishRows.length, props.loading],
   () => {
     setupLoadMoreObserver();
   },
@@ -225,7 +276,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in finishRows" :key="row.rowKey">
+          <tr v-for="row in visibleFinishRows" :key="row.rowKey">
             <td>
               <input
                 type="checkbox"
@@ -329,7 +380,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
         </tbody>
       </table>
       <div
-        v-if="hasMore"
+        v-if="hasMore || hasMoreToReveal"
         ref="loadMoreSentinelRef"
         class="manager-load-more-sentinel"
         aria-hidden="true"

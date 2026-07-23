@@ -1,3 +1,4 @@
+import functools
 import sqlite3
 
 from api.cache import get_cache_epoch, memory_cache
@@ -17,7 +18,11 @@ from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sq
 from util.cardmarket_urls import cardmarket_url_for_finish
 from util.card_metadata import (
     COLLECTION_FILTER_TYPES,
+    card_matches_collection_cmc_filter,
     card_matches_collection_color_filter,
+    card_matches_collection_price_filter,
+    card_matches_collection_rarity_filter,
+    card_matches_collection_stat_filter,
     card_matches_collection_storage_filter,
     card_matches_collection_type_filter,
     card_metadata_api,
@@ -89,6 +94,18 @@ def list_report_cards(
     color_filters: str = "",
     compare_date: str | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
+    search: str = "",
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
+    sort: str = "number",
+    sort_dir: str = "",
+    page: int | None = None,
 ) -> dict:
     normalized_report = (report or "all").strip().lower()
     if normalized_report not in REPORT_TYPES:
@@ -122,8 +139,19 @@ def list_report_cards(
 
     effective_art = "" if use_family else art_style
     art_styles = [] if use_family else build_art_style_options(conn, set_code)
-    filtered = _apply_filters(
+
+    scope_cards = _apply_filters(
         cards,
+        set_code=set_code,
+        family=use_family,
+        art_style=effective_art,
+        owned_filter="all",
+        foil_filter="all",
+        type_filter="all",
+        color_filters=[],
+    )
+    filtered = _apply_filters(
+        scope_cards,
         set_code=set_code,
         family=use_family,
         art_style=effective_art,
@@ -131,19 +159,22 @@ def list_report_cards(
         foil_filter=normalized_foil,
         type_filter=normalized_type,
         color_filters=parsed_colors,
+        storage_filters=storage_filters or [],
+    )
+    filtered = _apply_all_view_extra_filters(
+        filtered,
+        rarity_filter=rarity_filter,
+        cmc_min=cmc_min,
+        cmc_max=cmc_max,
+        price_min=price_min,
+        price_max=price_max,
+        power_min=power_min,
+        toughness_min=toughness_min,
+        search=search,
     )
     scoped = _cards_for_report(filtered, normalized_report)
-    ranked = _rank_cards(scoped, normalized_report)
-    if normalized_report == "all":
-        limited = ranked
-    else:
-        limited = _apply_page_size_limit(
-            ranked,
-            page_size,
-            include_unpriced_owned=normalized_owned == "owned",
-        )
 
-    return {
+    result: dict = {
         "report": normalized_report,
         "setCode": set_code,
         "family": use_family,
@@ -154,11 +185,169 @@ def list_report_cards(
         "colorFilters": parsed_colors,
         "compareDate": selected_compare,
         "pageSize": page_size,
-        "totalMatches": len(ranked),
-        "cards": limited,
         "artStyles": art_styles,
         "priceStrategy": strategy,
     }
+
+    if normalized_report == "all":
+        normalized_sort = sort if sort in {"number", "value"} else "number"
+        ascending = (sort_dir or "").strip().lower() == "asc"
+        ranked = sorted(
+            scoped,
+            key=functools.cmp_to_key(_all_view_card_comparator(normalized_sort, ascending)),
+        )
+        total = len(ranked)
+        if page is None:
+            limited = ranked
+            result["page"] = 1
+            result["totalPages"] = 1
+            result["hasMore"] = False
+        else:
+            safe_page_size = max(1, min(int(page_size), 500))
+            safe_page = max(1, int(page))
+            start = (safe_page - 1) * safe_page_size
+            limited = ranked[start : start + safe_page_size]
+            total_pages = max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1
+            result["page"] = safe_page
+            result["totalPages"] = total_pages
+            result["hasMore"] = safe_page < total_pages
+        result["totalMatches"] = total
+        result["cards"] = limited
+        result["scopeStats"] = compute_collection_scope_stats(scope_cards)
+        return result
+
+    ranked = _rank_cards(scoped, normalized_report)
+    limited = _apply_page_size_limit(
+        ranked,
+        page_size,
+        include_unpriced_owned=normalized_owned == "owned",
+    )
+    result["totalMatches"] = len(ranked)
+    result["cards"] = limited
+    return result
+
+
+def compute_collection_scope_stats(cards: list[dict]) -> dict:
+    """Mirror frontend `computeCollectionScopeStats` (owned/missing counts + value totals)."""
+    owned_count = 0
+    owned_value = 0.0
+    missing_value = 0.0
+    for card in cards:
+        value = card.get("currentValue") or 0
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 0.0
+        if card.get("owned"):
+            owned_count += 1
+            owned_value += value
+        else:
+            missing_value += value
+
+    total_count = len(cards)
+    missing_count = total_count - owned_count
+    completion_pct = (owned_count / total_count * 100) if total_count else 0
+    return {
+        "totalCount": total_count,
+        "ownedCount": owned_count,
+        "missingCount": missing_count,
+        "ownedValue": owned_value,
+        "missingValue": missing_value,
+        "totalValue": owned_value + missing_value,
+        "completionPct": completion_pct,
+    }
+
+
+def _apply_all_view_extra_filters(
+    cards: list[dict],
+    *,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    search: str = "",
+) -> list[dict]:
+    result = [
+        card for card in cards
+        if card_matches_collection_rarity_filter(card, rarity_filter)
+    ]
+    result = [
+        card for card in result
+        if card_matches_collection_cmc_filter(card, cmc_min=cmc_min, cmc_max=cmc_max)
+    ]
+    result = [
+        card for card in result
+        if card_matches_collection_price_filter(card, price_min=price_min, price_max=price_max)
+    ]
+    result = [
+        card for card in result
+        if card_matches_collection_stat_filter(card, power_min=power_min, toughness_min=toughness_min)
+    ]
+    term = (search or "").strip().lower()
+    if term:
+        result = [card for card in result if _card_matches_all_view_search(card, term)]
+    return result
+
+
+def _card_matches_all_view_search(card: dict, term: str) -> bool:
+    """Matches frontend `cardMatchesSearchQuery`: collector number, name, or oracle text."""
+    number = str(card.get("collectorNumber") or "").lower()
+    padded = number.zfill(3)
+    name = str(card.get("name") or "").lower()
+    oracle_text = str(card.get("oracleText") or "").lower()
+    return (
+        term in number
+        or term in padded
+        or term in name
+        or term in oracle_text
+        or term in f"#{number}"
+        or term in f"#{padded}"
+    )
+
+
+def _compare_collector_numbers(left: str, right: str) -> int:
+    left_key = collector_sort_key(left)
+    right_key = collector_sort_key(right)
+    if left_key < right_key:
+        return -1
+    if left_key > right_key:
+        return 1
+    return 0
+
+
+def _all_view_tie_break(left: dict, right: dict) -> int:
+    """Mirrors frontend `compareCollectionCardTieBreak`: set, then number, then finish."""
+    if left["setCode"] != right["setCode"]:
+        return -1 if left["setCode"] < right["setCode"] else 1
+    number_order = _compare_collector_numbers(left["collectorNumber"], right["collectorNumber"])
+    if number_order != 0:
+        return number_order
+    return int(left["finish"]) - int(right["finish"])
+
+
+def _all_view_card_comparator(sort: str, ascending: bool):
+    """Mirrors frontend `sortCollectionCards` for the two sorts the All view exposes."""
+
+    def compare(left: dict, right: dict) -> int:
+        if sort == "value":
+            left_value = left.get("currentValue")
+            right_value = right.get("currentValue")
+            left_num = left_value if left_value is not None else float("-inf")
+            right_num = right_value if right_value is not None else float("-inf")
+            diff = (left_num - right_num) if ascending else (right_num - left_num)
+            if diff != 0:
+                return -1 if diff < 0 else 1
+            return _all_view_tie_break(left, right)
+
+        primary = _compare_collector_numbers(left["collectorNumber"], right["collectorNumber"])
+        if primary != 0:
+            return primary if ascending else -primary
+        return int(left["finish"]) - int(right["finish"])
+
+    return compare
 
 
 def _resolve_set_codes(

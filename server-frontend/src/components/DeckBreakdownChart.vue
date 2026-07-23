@@ -1,4 +1,8 @@
 <script setup>
+// Used from both DeckOverview (Decks routes) and StorageBreakdownPanel
+// (Storage/Stats routes), so its styles must travel with the component
+// itself rather than being assumed present via a parent-view import.
+import "../styles/decks.css";
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { buildDonutSegments } from "../utils/deckOverview";

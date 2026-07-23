@@ -1,0 +1,254 @@
+.favorites-home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: none;
+  width: 100%;
+}
+
+.favorites-home-header h1 {
+  margin: 0 0 6px;
+  font-size: 1.6rem;
+}
+
+.favorites-home-intro,
+.favorites-home-empty,
+.favorites-home-error,
+.favorites-home-muted {
+  margin: 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.favorites-home-error {
+  color: #b71c1c;
+}
+
+.favorites-home-section h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.favorites-home-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+
+.favorites-home-strategy {
+  margin: 0;
+}
+
+.favorites-home-cards {
+  margin: 0 -4px;
+}
+
+.favorites-home-art-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.favorites-home-art-row:last-child {
+  margin-bottom: 0;
+}
+
+.favorites-home-art-row-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 36px;
+}
+
+.favorites-home-drag-handle,
+.collection-card-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: #90a4ae;
+  font-size: 12px;
+  letter-spacing: -2px;
+  cursor: grab;
+  user-select: none;
+}
+
+.favorites-home-drag-handle:hover,
+.collection-card-drag-handle:hover {
+  color: #546e7a;
+  background: #eceff1;
+}
+
+.favorites-home-art-row.is-dragging,
+.collection-card-grid-item.is-dragging {
+  opacity: 0.55;
+}
+
+.favorites-home-art-row.is-drop-target,
+.collection-card-grid-item.is-drop-target {
+  outline: 2px dashed #2e7d32;
+  outline-offset: 2px;
+}
+
+.favorites-home-art-row-title {
+  color: #1b5e20;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.favorites-home-art-row-title:hover {
+  text-decoration: underline;
+}
+
+.favorites-home-art-row-header .favorites-home-star {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.favorites-home-art-gallery {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.favorites-home-art-gallery .collection-card-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  width: max-content;
+  min-width: 100%;
+  padding: 4px;
+  grid-template-columns: none;
+}
+
+.favorites-home-art-gallery .collection-card-grid-item {
+  flex: 0 0 auto;
+  width: calc(118px * var(--collection-card-scale, 1));
+}
+
+/* Large art-style galleries (see isLargeArtGallery) switch from the default
+   single-row horizontal scroll strip to a bounded, vertically-scrolling
+   wrapped grid so VirtualizedCollectionCardGrid's row-based windowing (which
+   assumes a vertical scroller) actually works, and so "expand" on a huge art
+   style doesn't render one absurdly long horizontal row. */
+.favorites-home-art-gallery.is-scrollable-group {
+  overflow: hidden;
+  height: 420px;
+  max-height: 60vh;
+  border-radius: 8px;
+  padding-bottom: 0;
+}
+
+.favorites-home-art-gallery.is-scrollable-group .collection-card-grid {
+  display: grid;
+  flex-wrap: wrap;
+  width: auto;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(calc(118px * var(--collection-card-scale, 1)), 1fr));
+}
+
+.favorites-home-art-gallery.is-scrollable-group .collection-card-grid-item {
+  flex: initial;
+  width: auto;
+}
+
+.favorites-home-art-gallery.is-scrollable-group .collection-virtual-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+.favorites-home-set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.favorites-home-set-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 36px 10px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.favorites-home-set-card:hover {
+  border-color: #2e7d32;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.favorites-home-set-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.favorites-home-set-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.favorites-home-set-meta strong {
+  font-size: 0.95rem;
+}
+
+.favorites-home-set-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: #555;
+}
+
+.favorites-home-star {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #e8e8e8;
+  border-radius: 999px;
+  background: #fff;
+  color: #bbb;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.favorites-home-set-card .favorites-home-star {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.favorites-home-set-card:hover .favorites-home-star,
+.favorites-home-set-card:focus-within .favorites-home-star,
+.favorites-home-set-card .favorites-home-star:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.favorites-home-star.is-favorite,
+.favorites-home-star:hover {
+  border-color: #f9a825;
+  color: #f57f17;
+}
