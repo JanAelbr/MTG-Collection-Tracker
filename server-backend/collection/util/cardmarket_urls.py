@@ -287,6 +287,9 @@ def normalize_cardmarket_url_columns(
                 paired = find_paired_product_id(product_id, guide, FINISH_FOIL)
                 if paired is not None:
                     foil_url = build_product_url(paired)
+            elif bias == "both":
+                # Single Cardmarket product with both price columns.
+                foil_url = nonfoil_url
     elif foil_url and not nonfoil_url:
         product_id = parse_id_product(foil_url)
         if product_id is not None:
@@ -299,6 +302,9 @@ def normalize_cardmarket_url_columns(
                 paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
                 if paired is not None and _is_plausible_nonfoil_product(paired, guide):
                     nonfoil_url = build_product_url(paired)
+            elif bias == "both":
+                # Promo/dual-finish mis-stored as foil-only (e.g. PF23 from foil:true).
+                nonfoil_url = foil_url
 
     return _apply_finish_flag_url_constraints(
         nonfoil_url,
@@ -426,23 +432,33 @@ def cardmarket_url_for_finish(
 
 
 def scryfall_url_targets(card: dict) -> dict[int, str]:
+    """Map a Scryfall Cardmarket purchase URI to finish columns.
+
+    Prefer ``finishes[]``. Scryfall's legacy ``foil`` / ``nonfoil`` booleans mean
+    "available in that finish", not "this printing is foil-only" — treating
+    ``foil: true`` as foil-only wrongly drops nonfoil URLs for dual-finish promos.
+    """
     url = scryfall_cardmarket_url(card)
     if not url:
         return {}
 
     finishes = set(card.get("finishes") or [])
-    foil_print = card.get("foil")
-    if foil_print is True:
-        return {FINISH_FOIL: url}
-    if foil_print is False:
+    if finishes:
+        targets: dict[int, str] = {}
+        if "nonfoil" in finishes:
+            targets[FINISH_NONFOIL] = url
+        if "foil" in finishes:
+            targets[FINISH_FOIL] = url
+        if targets:
+            return targets
         return {FINISH_NONFOIL: url}
-    if finishes == {"foil"}:
+
+    # Legacy fallback when finishes[] is missing from the payload.
+    if card.get("foil") is True and card.get("nonfoil") is False:
         return {FINISH_FOIL: url}
-    if finishes == {"nonfoil"}:
+    if card.get("nonfoil") is True and card.get("foil") is False:
         return {FINISH_NONFOIL: url}
-    if "foil" in finishes and "nonfoil" not in finishes:
-        return {FINISH_FOIL: url}
-    if "nonfoil" in finishes and "foil" not in finishes:
+    if card.get("foil") is False:
         return {FINISH_NONFOIL: url}
     return {FINISH_NONFOIL: url}
 

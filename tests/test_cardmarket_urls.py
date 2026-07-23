@@ -24,13 +24,55 @@ from util.cardmarket_urls import (  # noqa: E402
 
 
 class CardmarketUrlTests(unittest.TestCase):
-    def test_scryfall_url_targets_use_foil_print_flag(self):
+    def test_scryfall_url_targets_prefer_finishes_over_foil_boolean(self):
         targets = scryfall_url_targets({
             "foil": True,
             "finishes": ["nonfoil", "foil"],
             "purchase_uris": {"cardmarket": "https://example.com/?idProduct=738285"},
         })
+        self.assertEqual(
+            targets,
+            {
+                FINISH_NONFOIL: "https://example.com/?idProduct=738285",
+                FINISH_FOIL: "https://example.com/?idProduct=738285",
+            },
+        )
+
+    def test_scryfall_url_targets_foil_only_finish(self):
+        targets = scryfall_url_targets({
+            "foil": True,
+            "finishes": ["foil"],
+            "purchase_uris": {"cardmarket": "https://example.com/?idProduct=738285"},
+        })
         self.assertEqual(targets, {FINISH_FOIL: "https://example.com/?idProduct=738285"})
+
+    def test_normalize_shares_dual_finish_product_stored_as_foil(self):
+        guide = {
+            716469: {"trend": 1.25, "trend-foil": 2.50},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            None,
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=716469",
+            guide,
+            has_nonfoil=1,
+            has_foil=1,
+        )
+        self.assertIn("716469", nonfoil or "")
+        self.assertIn("716469", foil or "")
+
+    def test_normalize_shares_dual_finish_product_stored_as_nonfoil(self):
+        guide = {
+            716469: {"trend": 1.25, "trend-foil": 2.50},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=716469",
+            None,
+            guide,
+            has_nonfoil=1,
+            has_foil=1,
+        )
+        self.assertIn("716469", nonfoil or "")
+        self.assertIn("716469", foil or "")
 
     def test_merge_cardmarket_urls_keeps_both_finishes(self):
         nonfoil, foil = merge_cardmarket_urls(

@@ -9889,15 +9889,29 @@ body {
   font-size: 16px;
 }
 
-.card-detail-cardmarket-link {
+.card-detail-external-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.card-detail-external-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #d84315;
   text-decoration: none;
+}
+
+.card-detail-external-icon {
+  flex: 0 0 auto;
+}
+
+.card-detail-cardmarket-link {
+  color: #d84315;
 }
 
 .card-detail-cardmarket-link:hover {
@@ -9905,9 +9919,21 @@ body {
   text-decoration: underline;
 }
 
-.card-detail-cardmarket-icon {
-  flex: 0 0 auto;
+.card-detail-cardmarket-link .card-detail-external-icon {
   color: #1e3a5f;
+}
+
+.card-detail-scryfall-link {
+  color: #1b4f72;
+}
+
+.card-detail-scryfall-link:hover {
+  color: #0e2f44;
+  text-decoration: underline;
+}
+
+.card-detail-scryfall-link .card-detail-external-icon {
+  color: #1b4f72;
 }
 
 .card-detail-guide-table-wrap {
@@ -10635,7 +10661,7 @@ button.card-variant {
   justify-content: space-between;
 }
 
-.collection-all-missing-value {
+.collection-all-scope-value {
   margin: 0;
   color: #666;
   font-size: 12px;

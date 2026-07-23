@@ -8,6 +8,26 @@ export function scryfallSetIconUri(setCode) {
   return `https://svgs.scryfall.io/sets/${String(setCode).toLowerCase()}.svg`;
 }
 
+/** Canonical Scryfall page for a specific printing. */
+export function scryfallCardUri(setCode, collectorNumber) {
+  const set = String(setCode || "").trim().toLowerCase();
+  const number = String(collectorNumber || "").trim();
+  if (!set || !number) {
+    return "";
+  }
+  return `https://scryfall.com/card/${encodeURIComponent(set)}/${encodeURIComponent(number)}`;
+}
+
+/** Scryfall search of every printing for this card name (unique=prints). */
+export function scryfallPrintsSearchUri(cardName) {
+  const name = String(cardName || "").trim();
+  if (!name) {
+    return "";
+  }
+  const query = `!"${name}"`;
+  return `https://scryfall.com/search?as=grid&order=released&q=${encodeURIComponent(query)}&unique=prints`;
+}
+
 export function resolveSetIconUri(set) {
   if (!set) {
     return null;

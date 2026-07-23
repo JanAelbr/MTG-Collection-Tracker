@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import CollectionGalleryScaleControl from "./CollectionGalleryScaleControl.vue";
 import { COLLECTION_LENSES } from "../utils/collectionLenses";
-import { formatEuro } from "../utils/format";
+import { formatDeckValueRange } from "../utils/format";
 
 const props = defineProps({
   searchQuery: { type: String, default: "" },
@@ -67,12 +67,16 @@ const matchSummary = computed(() => {
   return `${props.filteredCount} shown · ${props.scopeCount} in scope · ${missingInView} missing`;
 });
 
-const missingValueLabel = computed(() => {
+const scopeValueLabel = computed(() => {
   if (props.summaryText || isTableView.value) {
     return "";
   }
-  const value = props.scopeStats?.missingValue ?? 0;
-  return value > 0 ? formatEuro(value) : "";
+  const ownedValue = props.scopeStats?.ownedValue ?? 0;
+  const totalValue = props.scopeStats?.totalValue ?? 0;
+  if (!(totalValue > 0 || ownedValue > 0)) {
+    return "";
+  }
+  return formatDeckValueRange(ownedValue, totalValue);
 });
 
 function setViewMode(mode) {
@@ -164,8 +168,8 @@ function setViewMode(mode) {
 
     <div v-if="matchSummary" class="collection-all-toolbar-row collection-all-summary">
       <p class="collection-gallery-toolbar-stats">{{ matchSummary }}</p>
-      <p v-if="missingValueLabel" class="collection-all-missing-value">
-        Missing value: {{ missingValueLabel }}
+      <p v-if="scopeValueLabel" class="collection-all-scope-value">
+        Owned / all value: {{ scopeValueLabel }}
       </p>
     </div>
 

@@ -18,6 +18,7 @@ export function computeCollectionScopeStats(cards = []) {
   const totalCount = cards.length;
   const missingCount = totalCount - ownedCount;
   const completionPct = totalCount ? (ownedCount / totalCount) * 100 : 0;
+  const totalValue = ownedValue + missingValue;
 
   return {
     totalCount,
@@ -25,6 +26,7 @@ export function computeCollectionScopeStats(cards = []) {
     missingCount,
     ownedValue,
     missingValue,
+    totalValue,
     completionPct,
   };
 }

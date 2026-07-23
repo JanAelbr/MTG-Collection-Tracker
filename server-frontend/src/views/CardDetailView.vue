@@ -6,6 +6,7 @@ import CardVariantGallery from "../components/CardVariantGallery.vue";
 import CardDetailOwnershipPanel from "../components/CardDetailOwnershipPanel.vue";
 import CardmarketIcon from "../components/CardmarketIcon.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import ScryfallIcon from "../components/ScryfallIcon.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { formatEuro } from "../utils/format";
 import { priceStrategyDescription } from "../utils/priceStrategies";
@@ -18,6 +19,7 @@ import {
 } from "../utils/finishes";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import { fetchFavorites, useFavorites } from "../composables/favorites";
+import { scryfallCardUri, scryfallPrintsSearchUri } from "../utils/scryfall";
 
 const route = useRoute();
 const router = useRouter();
@@ -58,6 +60,20 @@ const showEtchedGuidePrices = computed(() =>
 const cardmarketLinkUrl = computed(() => {
   const url = card.value?.cardmarketUrl;
   return url && String(url).trim() ? String(url).trim() : "";
+});
+
+const scryfallCardLinkUrl = computed(() => {
+  if (!card.value) {
+    return "";
+  }
+  return scryfallCardUri(card.value.setCode, card.value.collectorNumber);
+});
+
+const scryfallPrintsLinkUrl = computed(() => {
+  if (!card.value?.name) {
+    return "";
+  }
+  return scryfallPrintsSearchUri(card.value.name);
 });
 
 const showNeighborGallery = computed(
@@ -307,16 +323,38 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
-          <a
-            v-if="cardmarketLinkUrl"
-            :href="cardmarketLinkUrl"
-            class="card-detail-cardmarket-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <CardmarketIcon class="card-detail-cardmarket-icon" :size="16" />
-            <span>View on Cardmarket</span>
-          </a>
+          <div class="card-detail-external-links">
+            <a
+              v-if="cardmarketLinkUrl"
+              :href="cardmarketLinkUrl"
+              class="card-detail-external-link card-detail-cardmarket-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <CardmarketIcon class="card-detail-external-icon" :size="16" />
+              <span>View on Cardmarket</span>
+            </a>
+            <a
+              v-if="scryfallCardLinkUrl"
+              :href="scryfallCardLinkUrl"
+              class="card-detail-external-link card-detail-scryfall-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ScryfallIcon class="card-detail-external-icon" :size="16" />
+              <span>View on Scryfall</span>
+            </a>
+            <a
+              v-if="scryfallPrintsLinkUrl"
+              :href="scryfallPrintsLinkUrl"
+              class="card-detail-external-link card-detail-scryfall-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ScryfallIcon class="card-detail-external-icon" :size="16" />
+              <span>All prints on Scryfall</span>
+            </a>
+          </div>
         </div>
       </div>
     </section>
