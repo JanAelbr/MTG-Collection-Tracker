@@ -8,7 +8,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from report.report_data import build_art_style_option, build_set_option  # noqa: E402
-from report.set_order import SET_PICKER_BROWSER, SET_SORT_OWNED, normalize_favorite_sets, normalize_set_picker_mode, sort_set_codes  # noqa: E402
+from report.set_order import SET_SORT_OWNED, normalize_favorite_sets, sort_set_codes  # noqa: E402
 
 
 class SetOrderTests(unittest.TestCase):
@@ -80,10 +80,6 @@ class SetOrderTests(unittest.TestCase):
         icon_uri = "https://svgs.scryfall.io/sets/hob.svg?1782705600"
         option = build_set_option("HOB", set_names, [], icon_uri=icon_uri)
         self.assertEqual(option["iconUri"], icon_uri)
-
-    def test_normalize_set_picker_mode(self):
-        self.assertEqual(normalize_set_picker_mode("browser"), SET_PICKER_BROWSER)
-        self.assertEqual(normalize_set_picker_mode("invalid"), "dropdown")
 
 
 if __name__ == "__main__":

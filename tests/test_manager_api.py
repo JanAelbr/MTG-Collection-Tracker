@@ -438,30 +438,76 @@ class ManagerApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(fourth["ownedCount"], 4)
 
-        deck_row = self.conn.execute(
-            "SELECT location_slug FROM storage_locations WHERE location_slug != 'storage:general' LIMIT 1"
-        ).fetchone()
-        if deck_row is None:
-            self.conn.execute(
-                """
-                INSERT INTO storage_locations (
-                    location_slug, label, location_type, sort_order, description
-                ) VALUES ('storage:deckbox', 'Deck box', 'deck', 2, '')
-                """
-            )
-            self.conn.commit()
-            deck_slug = "storage:deckbox"
-        else:
-            deck_slug = deck_row[0]
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description, is_system
+            ) VALUES ('binder:test', 'Test binder', 'binder', 50, '', 0)
+            """
+        )
+        self.conn.commit()
 
         instance_id = state["copies"][0]["instanceId"]
         updated = manager_service.update_copy_storage(
             self.conn,
             instance_id=instance_id,
-            location_slug=deck_slug,
+            location_slug="binder:test",
         )
-        self.assertEqual(updated["copies"][0]["locationSlug"], deck_slug)
+        self.assertEqual(updated["copies"][0]["locationSlug"], "binder:test")
         self.assertEqual(updated["copies"][1]["locationSlug"], "storage:general")
+
+    def test_reject_manual_assign_to_deck_storage(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description, is_system
+            ) VALUES ('deck:sample', 'Sample deck', 'deck', 10, '', 1)
+            """
+        )
+        self.conn.commit()
+        state = manager_service.adjust_copy_count(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            delta=1,
+            location_slug="storage:general",
+        )
+        instance_id = state["copies"][0]["instanceId"]
+
+        with self.assertRaises(manager_service.ManagerError) as ctx:
+            manager_service.update_copy_storage(
+                self.conn,
+                instance_id=instance_id,
+                location_slug="deck:sample",
+            )
+        self.assertIn("deck ownership", str(ctx.exception.message).lower())
+
+        with self.assertRaises(manager_service.ManagerError):
+            manager_service.bulk_assign_storage(
+                self.conn,
+                location_slug="deck:sample",
+                items=[{"setCode": "LTR", "collectorNumber": "1", "finish": 0}],
+            )
+
+        with self.assertRaises(manager_service.ManagerError):
+            manager_service.adjust_copy_count(
+                self.conn,
+                set_code="LTR",
+                collector_number="1",
+                finish=0,
+                delta=1,
+                location_slug="deck:sample",
+            )
+
+        with self.assertRaises(manager_service.ManagerError):
+            manager_service.set_copy_allocations(
+                self.conn,
+                set_code="LTR",
+                collector_number="1",
+                finish=0,
+                allocations=[{"locationSlug": "deck:sample", "count": 1}],
+            )
 
     @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
     def test_remove_set_without_owned_cards(self, _mock_decks):
@@ -477,6 +523,36 @@ class ManagerApiServiceTests(unittest.TestCase):
             self.conn.execute(
                 "SELECT 1 FROM tracked_sets WHERE set_code = 'MB2'"
             ).fetchone()
+        )
+
+    @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])
+    def test_remove_orphan_catalog_set(self, _mock_decks):
+        """Sets with catalog rows but no tracked_sets entry can still be removed."""
+        ensure_sets_table(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES ('PR', '1', 'Promo Card', '', 1.0, NULL, NULL, 1, 0, 0, NULL, NULL, NULL)
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO sets (set_code, name, updated_at) VALUES ('PR', 'PR', '2026-01-01')"
+        )
+        self.conn.commit()
+
+        result = manager_service.remove_set(self.conn, "PR")
+
+        self.assertTrue(result["removed"])
+        self.assertEqual(result["removedSetCodes"], ["PR"])
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM cards WHERE set_code = 'PR'").fetchone()[0],
+            0,
+        )
+        self.assertIsNone(
+            self.conn.execute("SELECT 1 FROM sets WHERE set_code = 'PR'").fetchone()
         )
 
     @patch("api.services.manager_service.list_deck_sync_set_codes", return_value=[])

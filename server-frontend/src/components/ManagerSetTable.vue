@@ -172,6 +172,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
         <StorageLocationSelect
           v-model="assignLocationSlug"
           :locations="storageLocations"
+          :include-types="['storage', 'binder']"
           aria-label="Assign storage location"
         />
       </label>
@@ -304,6 +305,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
                   class="manager-storage-inline-select"
                   :model-value="singleStorageSlug(row)"
                   :locations="storageLocations"
+                  :include-types="['storage', 'binder']"
                   :aria-label="`${finishLabel(row.finish)} storage location`"
                   @update:model-value="(slug) => onSingleStorageChange(row, slug)"
                 />

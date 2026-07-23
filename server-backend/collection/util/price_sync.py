@@ -34,6 +34,7 @@ from util.scryfall_card import (
     card_type_line,
 )
 from util.alchemy_cards import is_alchemy_scryfall_card
+from util.card_name_roles import refresh_card_name_roles_for_card
 from util.scryfall_client import scryfall_get
 from util.set_catalog import upsert_set_from_card
 from util.tracked_sets import ensure_tracked_sets_ready, list_tracked_set_codes
@@ -210,6 +211,15 @@ def upsert_card(
             toughness,
             rarity,
         ),
+    )
+    refresh_card_name_roles_for_card(
+        cursor.connection,
+        {
+            "name": name,
+            "type_line": type_line,
+            "oracle_text": oracle_text,
+            "card_type": card_type,
+        },
     )
     if owned_set_codes is None or set_code.upper() in owned_set_codes:
         upsert_set_from_card(cursor, card, price_date)

@@ -1,12 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import CardFinishBadge from "./CardFinishBadge.vue";
 import { formatEuro } from "../utils/format";
 import {
   FINISH_ETCHED,
   FINISH_FOIL,
   FINISH_NONFOIL,
-  cardDisplayName,
   cardRouteQuery,
   finishLabel,
   hasFinish,
@@ -173,7 +173,10 @@ function onSelect(card) {
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
-            <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
+            <p v-if="showName" class="card-variant-name">
+              <span>{{ card.name }}</span>
+              <CardFinishBadge :card="card" :finish="finish" compact />
+            </p>
             <div class="card-variant-prices">
               <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
                 <div
@@ -207,7 +210,10 @@ function onSelect(card) {
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
-            <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
+            <p v-if="showName" class="card-variant-name">
+              <span>{{ card.name }}</span>
+              <CardFinishBadge :card="card" :finish="finish" compact />
+            </p>
             <div class="card-variant-prices">
               <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
                 <div
@@ -237,7 +243,10 @@ function onSelect(card) {
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
-            <p v-if="showName" class="card-variant-name">{{ cardDisplayName(card, finish) }}</p>
+            <p v-if="showName" class="card-variant-name">
+              <span>{{ card.name }}</span>
+              <CardFinishBadge :card="card" :finish="finish" compact />
+            </p>
             <div class="card-variant-prices">
               <template v-for="finishOption in [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED]" :key="finishOption">
                 <div

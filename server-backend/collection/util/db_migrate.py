@@ -29,6 +29,7 @@ CARD_COLUMNS = {
     "power": "TEXT",
     "toughness": "TEXT",
     "rarity": "TEXT",
+    "art_ahash": "TEXT",
 }
 
 
@@ -183,7 +184,9 @@ def ensure_card_detail_metadata(conn: sqlite3.Connection) -> None:
         ("card_detail_metadata_reload_v1",),
     ).fetchone()
     if row and row[0] == "done":
+        log.debug("Card detail metadata reload skipped (already done)")
         return
+    log.info("Starting card detail metadata reload (top sets)")
     reloaded = reload_top_set_catalogs(conn, limit=15)
     conn.execute(
         """
@@ -200,6 +203,8 @@ def ensure_card_detail_metadata(conn: sqlite3.Connection) -> None:
             len(reloaded),
             ", ".join(reloaded),
         )
+    else:
+        log.info("Card detail metadata reload finished (no sets reloaded)")
 
 
 # Add missing card columns without recreating the database.
@@ -219,6 +224,9 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_art_style ON cards(set_code, art_style)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_art_ahash ON cards(art_ahash)"
     )
 
 

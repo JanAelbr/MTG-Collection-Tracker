@@ -68,8 +68,10 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
-| **Collection** | `/collection/all` | All cards, Top owned, Search, Stats |
-| **Storage** | `/storage` | — |
+| **Collection** | `/collection/all` | All cards, Search, Stats |
+| **Storage** | `/storage` | Gallery / Table / Breakdown (`?view=`) |
+
+Storage **Breakdown** shows value tiles, finish/set charts, and top prints for the **selected location** (`?view=breakdown`).
 | **Decks** | `/decks` | — |
 | **Settings** | `/settings` | — |
 
@@ -79,16 +81,25 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 
 ---
 
+## Favourites & home
+
+`/` is the **Favourites** home. Sections appear in order: **Cards**, **Art styles**, **Sets**.
+
+- **Cards** — collection-style card grid (print + finish); drag to reorder
+- **Art styles** — one horizontal scrolling gallery row per favourited style; drag rows to reorder
+- **Sets** — links into collection scoped to that set
+
+Favourite ★ toggles on cards and sets appear on hover. Star art styles in the filter list. Settings remain at `/settings`.
+
+---
+
 ## Set picker
 
-Controlled in **Settings → Set picker mode**:
+Collection and Stats use a horizontal set gallery (banner) with coloured set symbols. The filter sidebar shows the **full set name** for the active set.
 
-| Mode | Behaviour |
-|------|-----------|
-| **Browser** | Horizontal set gallery (banner) with coloured set symbols; filter sidebar shows the **full set name** for the active set |
-| **Dropdown** | Searchable set list in the filter sidebar |
+The gallery shows **one card per family**, and by default only families with **owned cards** (plus All and the active set). Use the navbar **Search sets** field to find any set already in the DB or on Scryfall (first 12 matches). Selecting a set that is not in the library yet **imports and populates** it automatically — there is no separate add/remove control. Related set codes appear as **tags to the right** (root first) only while that family is selected, in a scrollable column list. On startup / first sets load, missing Scryfall siblings for tracked families are imported automatically.
 
-Set gallery cards show **set code** and completion count only (not the full name). Favourited sets can be starred in browser mode.
+Set gallery cards show **set code** and completion count only (not the full name). Favourited sets can be starred in the gallery.
 
 Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with rarity tint from completion %; Scryfall monochrome SVG is used on load failure.
 
@@ -98,13 +109,13 @@ Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with 
 
 Filter sidebar (collapsible) on **All cards**, **Search**, and **Stats**:
 
-- **Set** — scope; full name in sidebar when using set browser
+- **Set** — scope; full name in sidebar; favourites starred in the gallery
 - **Art style** — list picker per set; pencil icon on All cards opens the inline art-style rules editor (`/collection/all?set=CODE&editArtStyles=1`)
 - **Ownership / Finish** — compact button groups (All cards gallery & Search)
 - **Type / Colour / Sort** — All cards gallery only
 - **Table view** — on All cards with a specific set selected (`?view=table`); per-finish ownership, price health, bulk storage assign
 
-Filter state is reflected in the URL query string where applicable (`?set=LTR&art=…&owned=…`).
+Filter state is reflected in the URL query string where applicable (`?set=LTR&family=1&owned=…`).
 
 ---
 
@@ -132,8 +143,8 @@ server-frontend/
 ├── public/              # static assets + PWA icons
 ├── src/
 │   ├── components/      # SetPicker, SetGallery, FilterSidebar, …
-│   ├── views/           # CollectionView, StorageView, …
-│   ├── utils/           # format.js, setScope.js, mtgVectors.js, …
+│   ├── views/           # FavoritesHomeView, CollectionView, StorageView, …
+│   ├── utils/           # format.js, setScope.js, favorites.js, mtgVectors.js, …
 │   └── styles/app.css
 └── vite.config.js       # Vite + PWA plugin
 ```

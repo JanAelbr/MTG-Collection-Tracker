@@ -44,16 +44,6 @@ async function updatePriceStrategy(event) {
   }
 }
 
-async function updateCompareDate(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ compareDate: event.target.value || null });
-    settingsMessage.value = "Pricing settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save pricing settings.";
-  }
-}
-
 async function updatePageSize(event) {
   settingsMessage.value = "";
   try {
@@ -75,23 +65,6 @@ async function updateSetSortMode(event) {
   settingsMessage.value = "";
   try {
     await savePricingSettings({ setSortMode: event.target.value });
-    settingsMessage.value = "Display settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save display settings.";
-  }
-}
-
-function setPickerModeLabel(mode) {
-  if (mode === "browser") {
-    return "Set browser";
-  }
-  return "Dropdown";
-}
-
-async function updateSetPickerMode(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ setPickerMode: event.target.value });
     settingsMessage.value = "Display settings saved.";
   } catch (error) {
     settingsMessage.value = error.message || "Could not save display settings.";
@@ -308,8 +281,9 @@ onUnmounted(stopPolling);
     <section v-if="pricingSettings" class="home-panel">
       <h2>Pricing &amp; display</h2>
       <p class="home-intro">
-        Price strategy and compare date apply across Collection, Stats, Storage, Decks, and card detail pages.
+        Price strategy applies across Collection, Stats, Storage, Decks, and card detail pages.
         Rows per page applies to Collection gallery and table lists.
+        Price change columns compare against the previous price snapshot automatically.
       </p>
       <div class="home-pricing-panel">
         <label class="manager-filter">
@@ -324,18 +298,6 @@ onUnmounted(stopPolling);
             </option>
           </select>
         </label>
-        <label v-if="pricingSettings.compareDates?.length" class="manager-filter">
-          <span>Compare date</span>
-          <select :value="pricingSettings.compareDate || ''" @change="updateCompareDate">
-            <option
-              v-for="date in pricingSettings.compareDates"
-              :key="date"
-              :value="date"
-            >
-              {{ date }}
-            </option>
-          </select>
-        </label>
         <label class="manager-filter">
           <span>Rows per page</span>
           <select :value="pricingSettings.pageSize" @change="updatePageSize">
@@ -345,21 +307,6 @@ onUnmounted(stopPolling);
               :value="size"
             >
               {{ size }}
-            </option>
-          </select>
-        </label>
-        <label class="manager-filter">
-          <span>Set picker</span>
-          <select
-            :value="pricingSettings.setPickerMode ?? 'dropdown'"
-            @change="updateSetPickerMode"
-          >
-            <option
-              v-for="mode in (pricingSettings.setPickerModeOptions ?? ['dropdown', 'browser'])"
-              :key="mode"
-              :value="mode"
-            >
-              {{ setPickerModeLabel(mode) }}
             </option>
           </select>
         </label>

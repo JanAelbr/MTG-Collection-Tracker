@@ -1,17 +1,23 @@
 import json
 import sqlite3
+import threading
 
 from api.cache import bump_cache_epoch
 from api.services.pricing_service import list_price_strategies, normalize_strategy
-from report.set_order import normalize_favorite_sets, normalize_set_picker_mode, normalize_set_sort_mode
+from lib.run_log import get_logger
+from report.set_order import normalize_favorite_sets, normalize_set_sort_mode
+from util.favorites import normalize_favorite_art_styles, normalize_favorite_cards
 from util.price_history import (
     default_compare_date,
     get_compare_dates,
     get_price_snapshot_dates,
 )
 
+log = get_logger(__name__)
+
 FAVORITE_SETS_KEY = "favorite_sets"
-COMPARE_DATE_KEY = "compare_date"
+FAVORITE_CARDS_KEY = "favorite_cards"
+FAVORITE_ART_STYLES_KEY = "favorite_art_styles"
 PAGE_SIZE_KEY = "page_size"
 DEFAULT_PAGE_SIZE = 25
 PAGE_SIZE_OPTIONS = (25, 50, 100)
@@ -21,18 +27,42 @@ COLLECTION_CARD_SCALE_OPTIONS = (75, 100, 125, 150)
 SET_SORT_MODE_KEY = "set_sort_mode"
 DEFAULT_SET_SORT_MODE = "alphabetical"
 SET_SORT_MODE_OPTIONS = ("alphabetical", "owned")
-SET_PICKER_MODE_KEY = "set_picker_mode"
-DEFAULT_SET_PICKER_MODE = "dropdown"
-SET_PICKER_MODE_OPTIONS = ("dropdown", "browser")
 DEFAULT_STORAGE_LOCATION_KEY = "default_storage_location"
 DEFAULT_STORAGE_LOCATION = "storage:general"
 PRICE_STRATEGY_KEY = "price_strategy"
+FAVORITES_CARDS_PRICE_STRATEGY_KEY = "price_strategy_favorites_cards"
+FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY = "price_strategy_favorites_art_styles"
+OBSOLETE_SETTING_KEYS = ("compare_date", "set_picker_mode")
+
+_purge_lock = threading.Lock()
+_purged_obsolete_settings = False
 
 
 class SettingsError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+def _purge_obsolete_settings(conn: sqlite3.Connection) -> None:
+    """Drop legacy keys once per process — avoid a write lock on every GET /settings."""
+    global _purged_obsolete_settings
+    if _purged_obsolete_settings:
+        return
+    with _purge_lock:
+        if _purged_obsolete_settings:
+            return
+        placeholders = ", ".join("?" for _ in OBSOLETE_SETTING_KEYS)
+        exists = conn.execute(
+            f"SELECT 1 FROM user_settings WHERE key IN ({placeholders}) LIMIT 1",
+            OBSOLETE_SETTING_KEYS,
+        ).fetchone()
+        if exists:
+            conn.executemany(
+                "DELETE FROM user_settings WHERE key = ?",
+                [(key,) for key in OBSOLETE_SETTING_KEYS],
+            )
+        _purged_obsolete_settings = True
 
 
 def get_price_strategy(conn: sqlite3.Connection) -> str:
@@ -43,6 +73,26 @@ def get_price_strategy(conn: sqlite3.Connection) -> str:
     if row is None or row["value"] is None:
         return normalize_strategy(None)
     return normalize_strategy(row["value"])
+
+
+def _optional_price_strategy(values: dict, key: str) -> str | None:
+    raw = values.get(key)
+    if raw is None or not str(raw).strip():
+        return None
+    return normalize_strategy(raw)
+
+
+def _set_price_strategy_setting(conn: sqlite3.Connection, key: str, strategy: str) -> str:
+    normalized = normalize_strategy(strategy)
+    conn.execute(
+        """
+        INSERT INTO user_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, normalized),
+    )
+    return normalized
 
 
 def get_favorite_sets(conn: sqlite3.Connection) -> list[str]:
@@ -75,15 +125,60 @@ def save_favorite_sets(conn: sqlite3.Connection, favorite_sets: list[str]) -> li
     return normalized
 
 
-def get_compare_date_setting(conn: sqlite3.Connection) -> str | None:
+def get_favorite_cards(conn: sqlite3.Connection) -> list[dict]:
     row = conn.execute(
         "SELECT value FROM user_settings WHERE key = ?",
-        (COMPARE_DATE_KEY,),
+        (FAVORITE_CARDS_KEY,),
     ).fetchone()
     if row is None or row["value"] is None:
-        return None
-    value = str(row["value"]).strip()
-    return value or None
+        return []
+    try:
+        parsed = json.loads(row["value"])
+    except json.JSONDecodeError:
+        return []
+    return normalize_favorite_cards(parsed)
+
+
+def save_favorite_cards(conn: sqlite3.Connection, favorite_cards: list) -> list[dict]:
+    normalized = normalize_favorite_cards(favorite_cards)
+    conn.execute(
+        """
+        INSERT INTO user_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (FAVORITE_CARDS_KEY, json.dumps(normalized)),
+    )
+    bump_cache_epoch()
+    return normalized
+
+
+def get_favorite_art_styles(conn: sqlite3.Connection) -> list[dict]:
+    row = conn.execute(
+        "SELECT value FROM user_settings WHERE key = ?",
+        (FAVORITE_ART_STYLES_KEY,),
+    ).fetchone()
+    if row is None or row["value"] is None:
+        return []
+    try:
+        parsed = json.loads(row["value"])
+    except json.JSONDecodeError:
+        return []
+    return normalize_favorite_art_styles(parsed)
+
+
+def save_favorite_art_styles(conn: sqlite3.Connection, favorite_art_styles: list) -> list[dict]:
+    normalized = normalize_favorite_art_styles(favorite_art_styles)
+    conn.execute(
+        """
+        INSERT INTO user_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (FAVORITE_ART_STYLES_KEY, json.dumps(normalized)),
+    )
+    bump_cache_epoch()
+    return normalized
 
 
 def normalize_page_size(value) -> int:
@@ -136,16 +231,6 @@ def get_set_sort_mode(conn: sqlite3.Connection) -> str:
     return normalize_set_sort_mode(row["value"])
 
 
-def get_set_picker_mode(conn: sqlite3.Connection) -> str:
-    row = conn.execute(
-        "SELECT value FROM user_settings WHERE key = ?",
-        (SET_PICKER_MODE_KEY,),
-    ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_SET_PICKER_MODE
-    return normalize_set_picker_mode(row["value"])
-
-
 def get_default_storage_location(conn: sqlite3.Connection) -> str:
     row = conn.execute(
         "SELECT value FROM user_settings WHERE key = ?",
@@ -178,27 +263,30 @@ def save_default_storage_location(conn: sqlite3.Connection, location_slug: str) 
 
 
 def resolve_compare_date(conn: sqlite3.Connection, override: str | None = None) -> str | None:
+    """Return the previous price snapshot (or an explicit API override)."""
     dates = get_price_snapshot_dates(conn)
     compare_dates = get_compare_dates(dates)
     if override and override in compare_dates:
         return override
-    stored = get_compare_date_setting(conn)
-    if stored and stored in compare_dates:
-        return stored
     return default_compare_date(dates)
 
 
 def get_settings(conn: sqlite3.Connection) -> dict:
+    _purge_obsolete_settings(conn)
     rows = conn.execute("SELECT key, value FROM user_settings").fetchall()
     values = {row["key"]: row["value"] for row in rows}
-    dates = get_price_snapshot_dates(conn)
-    compare_dates = get_compare_dates(dates)
     return {
         "priceStrategy": normalize_strategy(values.get("price_strategy")),
+        "favoritesCardsPriceStrategy": _optional_price_strategy(
+            values, FAVORITES_CARDS_PRICE_STRATEGY_KEY
+        ),
+        "favoritesArtStylesPriceStrategy": _optional_price_strategy(
+            values, FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY
+        ),
         "priceStrategies": list_price_strategies(),
         "favoriteSets": get_favorite_sets(conn),
-        "compareDates": compare_dates,
-        "defaultCompareDate": default_compare_date(dates),
+        "favoriteCards": get_favorite_cards(conn),
+        "favoriteArtStyles": get_favorite_art_styles(conn),
         "compareDate": resolve_compare_date(conn),
         "pageSize": get_page_size(conn),
         "pageSizeOptions": list(PAGE_SIZE_OPTIONS),
@@ -206,8 +294,6 @@ def get_settings(conn: sqlite3.Connection) -> dict:
         "collectionCardScaleOptions": list(COLLECTION_CARD_SCALE_OPTIONS),
         "setSortMode": get_set_sort_mode(conn),
         "setSortModeOptions": list(SET_SORT_MODE_OPTIONS),
-        "setPickerMode": get_set_picker_mode(conn),
-        "setPickerModeOptions": list(SET_PICKER_MODE_OPTIONS),
         "defaultStorageLocation": get_default_storage_location(conn),
     }
 
@@ -216,42 +302,42 @@ def update_settings(
     conn: sqlite3.Connection,
     *,
     price_strategy: str | None = None,
+    favorites_cards_price_strategy: str | None = None,
+    favorites_art_styles_price_strategy: str | None = None,
     favorite_sets: list[str] | None = None,
-    compare_date: str | None = None,
-    set_compare_date: bool = False,
+    favorite_cards: list | None = None,
+    favorite_art_styles: list | None = None,
     page_size: int | None = None,
     collection_card_scale: int | None = None,
     set_sort_mode: str | None = None,
-    set_picker_mode: str | None = None,
     default_storage_location: str | None = None,
 ) -> dict:
+    _purge_obsolete_settings(conn)
+    changed: list[str] = []
     if price_strategy is not None:
-        normalized = normalize_strategy(price_strategy)
-        conn.execute(
-            """
-            INSERT INTO user_settings (key, value)
-            VALUES ('price_strategy', ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (normalized,),
+        normalized = _set_price_strategy_setting(conn, PRICE_STRATEGY_KEY, price_strategy)
+        changed.append(f"price_strategy={normalized}")
+    if favorites_cards_price_strategy is not None:
+        normalized = _set_price_strategy_setting(
+            conn, FAVORITES_CARDS_PRICE_STRATEGY_KEY, favorites_cards_price_strategy
         )
+        changed.append(f"price_strategy_favorites_cards={normalized}")
+    if favorites_art_styles_price_strategy is not None:
+        normalized = _set_price_strategy_setting(
+            conn,
+            FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY,
+            favorites_art_styles_price_strategy,
+        )
+        changed.append(f"price_strategy_favorites_art_styles={normalized}")
     if favorite_sets is not None:
         save_favorite_sets(conn, favorite_sets)
-    if set_compare_date:
-        dates = get_price_snapshot_dates(conn)
-        compare_dates = get_compare_dates(dates)
-        normalized_compare = None if compare_date in (None, "") else str(compare_date).strip()
-        if normalized_compare and normalized_compare not in compare_dates:
-            raise SettingsError("Invalid compare date")
-        conn.execute(
-            """
-            INSERT INTO user_settings (key, value)
-            VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (COMPARE_DATE_KEY, normalized_compare or ""),
-        )
-        bump_cache_epoch()
+        changed.append(f"favorite_sets={len(favorite_sets)}")
+    if favorite_cards is not None:
+        saved_cards = save_favorite_cards(conn, favorite_cards)
+        changed.append(f"favorite_cards={len(saved_cards)}")
+    if favorite_art_styles is not None:
+        saved_styles = save_favorite_art_styles(conn, favorite_art_styles)
+        changed.append(f"favorite_art_styles={len(saved_styles)}")
     if page_size is not None:
         try:
             parsed = int(page_size)
@@ -268,6 +354,7 @@ def update_settings(
             (PAGE_SIZE_KEY, str(parsed)),
         )
         bump_cache_epoch()
+        changed.append(f"page_size={parsed}")
     if collection_card_scale is not None:
         try:
             parsed_scale = int(collection_card_scale)
@@ -284,6 +371,7 @@ def update_settings(
             (COLLECTION_CARD_SCALE_KEY, str(parsed_scale)),
         )
         bump_cache_epoch()
+        changed.append(f"collection_card_scale={parsed_scale}")
     if set_sort_mode is not None:
         normalized_sort_mode = normalize_set_sort_mode(set_sort_mode)
         conn.execute(
@@ -295,17 +383,10 @@ def update_settings(
             (SET_SORT_MODE_KEY, normalized_sort_mode),
         )
         bump_cache_epoch()
-    if set_picker_mode is not None:
-        normalized_picker_mode = normalize_set_picker_mode(set_picker_mode)
-        conn.execute(
-            """
-            INSERT INTO user_settings (key, value)
-            VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (SET_PICKER_MODE_KEY, normalized_picker_mode),
-        )
-        bump_cache_epoch()
+        changed.append(f"set_sort_mode={normalized_sort_mode}")
     if default_storage_location is not None:
         save_default_storage_location(conn, default_storage_location)
+        changed.append(f"default_storage_location={default_storage_location}")
+    if changed:
+        log.info("Updated settings: %s", ", ".join(changed))
     return get_settings(conn)

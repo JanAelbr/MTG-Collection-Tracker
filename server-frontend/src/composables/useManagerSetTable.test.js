@@ -48,6 +48,21 @@ describe("useManagerSetTable helpers", () => {
     });
   });
 
+  it("does not invent a nonfoil row for foil-only prints with stale pricing", () => {
+    const card = {
+      collectorNumber: "279",
+      name: "Sacred Foundry",
+      hasNonfoil: false,
+      hasFoil: true,
+      hasEtched: false,
+      marketValue: 0.35,
+      marketValueFoil: 19.22,
+    };
+    const rows = expandCardFinishRows([card]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].finish).toBe(FINISH_FOIL);
+  });
+
   it("compares collector numbers numerically when possible", () => {
     expect(compareCollectorNumbers("2", "10")).toBeLessThan(0);
     expect(compareCollectorNumbers("10a", "2")).toBeGreaterThan(0);

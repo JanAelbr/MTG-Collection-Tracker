@@ -167,7 +167,6 @@ function cardRoute(card) {
         >
           <div class="deck-overview-top-image-wrap">
             <span class="deck-overview-top-rank">{{ index + 1 }}</span>
-            <CardFinishBadge :card="card" variant="overlay" compact />
             <RouterLink
               v-if="cardRoute(card)"
               :to="cardRoute(card)"
@@ -192,6 +191,7 @@ function cardRoute(card) {
               <span v-else class="deck-overview-top-name is-plain" :title="card.cardName">
                 {{ card.cardName }}
               </span>
+              <CardFinishBadge :card="card" compact />
             </span>
             <PriceStrategyValue :card="card" class="deck-overview-top-value" />
           </figcaption>
@@ -245,6 +245,7 @@ function cardRoute(card) {
         :cards-by-id="pipCardsById"
         :deck-id="deckId"
         interactive
+        mana-legend
         unit-label="pips"
         empty-label="No colored mana symbols in this deck yet."
       />

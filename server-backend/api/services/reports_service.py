@@ -23,6 +23,7 @@ from util.card_metadata import (
     card_metadata_api,
     parse_collection_color_filters,
 )
+from util.card_name_roles import load_card_name_roles_map
 from util.price_history import (
     card_price_key,
     default_compare_date,
@@ -33,7 +34,7 @@ from util.price_history import (
 
 _ENRICHED_REPORTS_TTL = 300
 
-REPORT_TYPES = frozenset({"top", "risers", "fallers", "all"})
+REPORT_TYPES = frozenset({"risers", "fallers", "all"})
 OWNED_FILTERS = frozenset({"owned", "all", "unowned"})
 FOIL_FILTERS = frozenset({"all", "nonfoil", "foil", "etched"})
 TYPE_FILTERS = frozenset({"all", *COLLECTION_FILTER_TYPES})
@@ -47,6 +48,9 @@ class ReportsError(Exception):
 
 
 def load_reports_meta(conn: sqlite3.Connection) -> dict:
+    from util.set_family_sync import ensure_tracked_family_children_once
+
+    ensure_tracked_family_children_once(conn)
     settings = settings_service.get_settings(conn)
     dates = get_price_snapshot_dates(conn)
     compare_dates = get_compare_dates(dates)
@@ -77,6 +81,7 @@ def list_report_cards(
     *,
     report: str,
     set_code: str = "All",
+    family: bool = False,
     art_style: str = "",
     owned_filter: str = "owned",
     foil_filter: str = "all",
@@ -85,7 +90,7 @@ def list_report_cards(
     compare_date: str | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> dict:
-    normalized_report = (report or "top").strip().lower()
+    normalized_report = (report or "all").strip().lower()
     if normalized_report not in REPORT_TYPES:
         raise ReportsError("Invalid report type")
 
@@ -102,11 +107,12 @@ def list_report_cards(
         raise ReportsError("Invalid type filter")
 
     parsed_colors = parse_collection_color_filters(color_filters)
+    use_family = bool(family) and (set_code or "").strip().upper() not in {"", "ALL"}
 
     settings = settings_service.get_settings(conn)
     strategy = settings["priceStrategy"]
     selected_compare = compare_date or settings["compareDate"]
-    set_codes = _resolve_set_codes(conn, set_code=set_code)
+    set_codes = _resolve_set_codes(conn, set_code=set_code, family=use_family)
     cards, selected_compare = _load_enriched_report_cards(
         conn,
         set_codes=set_codes,
@@ -114,11 +120,13 @@ def list_report_cards(
         compare_date=selected_compare,
     )
 
-    art_styles = build_art_style_options(conn, set_code)
+    effective_art = "" if use_family else art_style
+    art_styles = [] if use_family else build_art_style_options(conn, set_code)
     filtered = _apply_filters(
         cards,
         set_code=set_code,
-        art_style=art_style,
+        family=use_family,
+        art_style=effective_art,
         owned_filter=normalized_owned,
         foil_filter=normalized_foil,
         type_filter=normalized_type,
@@ -138,7 +146,8 @@ def list_report_cards(
     return {
         "report": normalized_report,
         "setCode": set_code,
-        "artStyle": art_style,
+        "family": use_family,
+        "artStyle": effective_art,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
         "typeFilter": normalized_type,
@@ -156,10 +165,19 @@ def _resolve_set_codes(
     conn: sqlite3.Connection,
     *,
     set_code: str = "All",
+    family: bool = False,
     search_term: str | None = None,
 ) -> list[str]:
+    from util.set_families import resolve_set_codes_for_scope
+
     normalized_set = (set_code or "All").strip()
     if normalized_set.upper() != "ALL":
+        if family:
+            return resolve_set_codes_for_scope(
+                conn,
+                set_code=normalized_set,
+                family=True,
+            )
         return [normalized_set.upper()]
 
     term = (search_term or "").strip()
@@ -214,6 +232,7 @@ def _load_enriched_sets(
 
     locations_map = _load_card_locations(conn)
     owned_keys = _load_owned_print_keys(conn)
+    roles_by_name = load_card_name_roles_map(conn)
     snapshot_cache = load_price_snapshot_cache(conn)
     if not compare_date:
         selected_compare = default_compare_date(snapshot_cache.dates)
@@ -229,6 +248,7 @@ def _load_enriched_sets(
                 locations_map=locations_map,
                 owned_keys=owned_keys,
                 snapshot_prices=snapshot_prices,
+                roles_by_name=roles_by_name,
             )
         )
     return merged, selected_compare
@@ -242,18 +262,20 @@ def _load_enriched_set(
     locations_map: dict[str, list[dict]],
     owned_keys: frozenset[str],
     snapshot_prices: dict[str, float],
+    roles_by_name: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     normalized = set_code.strip().upper()
     epoch = get_cache_epoch()
     cache_key = memory_cache.make_key(
         "reports.enriched.set",
-        {"setCode": normalized, "compareDate": selected_compare or ""},
+        {"setCode": normalized, "compareDate": selected_compare or "", "roles": "v1"},
         epoch,
     )
     cached = memory_cache.get(cache_key)
     if cached is not None:
         return cached
 
+    name_roles = roles_by_name if roles_by_name is not None else load_card_name_roles_map(conn)
     cards_df = load_ranked_cards_data_for_set(normalized)
     base_cards = serialize_ranked_cards(cards_df)
     enriched = [
@@ -263,6 +285,7 @@ def _load_enriched_set(
             owned_keys=owned_keys,
             snapshot_prices=snapshot_prices,
             compare_date=selected_compare,
+            roles_by_name=name_roles,
         )
         for card in base_cards
     ]
@@ -325,6 +348,7 @@ def _enrich_card(
     owned_keys: frozenset[str],
     snapshot_prices: dict[str, float],
     compare_date: str | None,
+    roles_by_name: dict[str, list[str]] | None = None,
 ) -> dict:
     finish = int(card["finish"])
     values_by_strategy = values_by_strategy_for_finish(card, finish)
@@ -333,11 +357,15 @@ def _enrich_card(
     key = card_price_key(card["set_code"], card["collector_number"], finish)
     locations = locations_map.get(key, [])
     previous_value = snapshot_prices.get(key)
+    name = card["name"]
+    roles = []
+    if roles_by_name:
+        roles = roles_by_name.get(name) or roles_by_name.get(str(name).casefold()) or []
 
     return {
         "setCode": card["set_code"],
         "collectorNumber": str(card["collector_number"]),
-        "name": card["name"],
+        "name": name,
         "artStyle": card.get("art_style") or "",
         "finish": finish,
         "foil": finish,
@@ -355,6 +383,7 @@ def _enrich_card(
         "hasFoil": bool(card.get("has_foil")),
         "hasEtched": bool(card.get("has_etched")),
         **card_metadata_api(card),
+        "roles": list(roles),
         "owned": purchase_value is not None or key in owned_keys or bool(locations),
         "locations": locations,
     }
@@ -417,9 +446,10 @@ def _apply_filters(
     type_filter: str = "all",
     color_filters: list[str] | None = None,
     storage_filters: list[str] | None = None,
+    family: bool = False,
 ) -> list[dict]:
     result = cards
-    if set_code and set_code != "All":
+    if set_code and set_code != "All" and not family:
         normalized_set = set_code.upper()
         result = [card for card in result if card["setCode"] == normalized_set]
     if art_style:
@@ -462,8 +492,6 @@ def _rank_cards(cards: list[dict], report: str) -> list[dict]:
                 card["finish"],
             ),
         )
-    if report == "top":
-        return sorted(cards, key=_top_sort_key)
     if report == "risers":
         risers = [
             card for card in cards
@@ -480,24 +508,6 @@ def _rank_cards(cards: list[dict], report: str) -> list[dict]:
     return sorted(
         fallers,
         key=lambda card: (card["priceChange"], -(card["currentValue"] or 0)),
-    )
-
-
-def _top_sort_key(card: dict) -> tuple:
-    current = card.get("currentValue")
-    priced = current is not None
-    if priced:
-        price_rank = 0
-        price_value = -current
-    else:
-        price_rank = 1
-        price_value = 0
-    return (
-        price_rank,
-        price_value,
-        card["setCode"],
-        collector_sort_key(card["collectorNumber"]),
-        card["finish"],
     )
 
 

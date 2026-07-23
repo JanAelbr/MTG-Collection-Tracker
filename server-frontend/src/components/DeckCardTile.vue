@@ -62,8 +62,6 @@ function ownershipState(card) {
     <span v-if="card.qty > 1 && !showDeckRemove" class="deck-card-grid-qty">×{{ card.qty }}</span>
 
     <div class="deck-card-grid-image-wrap">
-      <CardFinishBadge :card="card" variant="overlay" compact />
-
       <RouterLink
         v-if="card.imageUri && cardRoute(card)"
         :to="cardRoute(card)"
@@ -117,6 +115,7 @@ function ownershipState(card) {
           {{ card.cardName }}
         </RouterLink>
         <span v-else class="deck-card-grid-name">{{ card.cardName }}</span>
+        <CardFinishBadge :card="card" compact />
       </span>
       <span class="deck-card-grid-meta">
         <PriceStrategyValue v-if="card.currentValue != null" :card="card" />

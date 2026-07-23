@@ -202,7 +202,7 @@ class CacheTests(unittest.TestCase):
             }])
             first = reports_service.list_report_cards(
                 conn,
-                report="top",
+                report="all",
                 set_code="LTR",
                 owned_filter="all",
             )
@@ -215,7 +215,7 @@ class CacheTests(unittest.TestCase):
             conn.commit()
             second = reports_service.list_report_cards(
                 conn,
-                report="top",
+                report="all",
                 set_code="LTR",
                 owned_filter="all",
             )

@@ -72,3 +72,30 @@ def count_completion_keys_by_art_style(
         style = str(art_style or "").strip() or "Unknown"
         keys_by_style.setdefault(style, set()).add(slot)
     return {style: len(slots) for style, slots in keys_by_style.items()}
+
+
+def count_completion_keys_by_rarity(
+    rows: Iterable[tuple[str, str, str | None]],
+    *,
+    set_code: str | None = None,
+) -> dict[str, int]:
+    """Count unique completion slots per rarity (first-seen rarity wins per slot)."""
+    slot_rarity: dict[str | tuple[str, str], str] = {}
+    normalized_set = str(set_code).upper() if set_code else None
+    for raw_set_code, collector_number, rarity in rows:
+        set_key = str(raw_set_code).upper()
+        if normalized_set and set_key != normalized_set:
+            continue
+        slot = completion_collector_key(collector_number)
+        if slot is None:
+            continue
+        rarity_key = str(rarity or "").strip().lower() or "unknown"
+        key = slot if normalized_set else (set_key, slot)
+        if key in slot_rarity:
+            continue
+        slot_rarity[key] = rarity_key
+
+    counts: dict[str, int] = {}
+    for rarity_key in slot_rarity.values():
+        counts[rarity_key] = counts.get(rarity_key, 0) + 1
+    return counts

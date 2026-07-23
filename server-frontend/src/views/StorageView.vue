@@ -1,40 +1,63 @@
 <script setup>
-
 import { computed, onMounted, reactive, ref, watch } from "vue";
-
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../api";
-
-import CardPreview from "../components/CardPreview.vue";
-import CollectionSetLink from "../components/CollectionSetLink.vue";
+import BrowseSelect from "../components/BrowseSelect.vue";
+import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
+import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
-import PriceStrategyValue from "../components/PriceStrategyValue.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
+import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
+import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
+import VirtualizedStorageTable from "../components/VirtualizedStorageTable.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-
-import { formatEuro } from "../utils/format";
-import { cardDisplayName, cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { filterCollectionCards } from "../utils/collectionFilters";
+import {
+  defaultCollectionSortDir,
+  groupCollectionCardsBySet,
+  sortCollectionCards,
+} from "../utils/collectionSort";
+import { cardDisplayName } from "../utils/finishes";
+import { formatEuro, setShortName } from "../utils/format";
+import { resolveSetIconUri } from "../utils/scryfall";
+import {
+  storageFiltersFromRoute,
+  storageLocationFromRoute,
+  storageRouteQuery,
+} from "../utils/storageScope";
 import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 
-
-
 const route = useRoute();
+const router = useRouter();
 
-const { settings: pricingSettings, fetchPricingSettings: loadPricingSettings } = usePricingSettings();
+const {
+  settings: pricingSettings,
+  collectionCardScale,
+  fetchPricingSettings: loadPricingSettings,
+} = usePricingSettings();
 
 const locations = ref([]);
-
 const selectedSlug = ref("");
-
 const cardsPayload = ref(null);
-
+const breakdownPayload = ref(null);
+const setsCatalog = ref([]);
 const defaultStorageSaving = ref(false);
-
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
+const { loading: loadingBreakdown, run: runBreakdownLoad } = useAsyncLoad();
 
-
+const searchQuery = ref("");
+const foilFilter = ref("all");
+const setFilter = ref("");
+const cardsSort = ref("value");
+const cardsSortDir = ref(defaultCollectionSortDir("value"));
+const viewMode = ref("gallery");
+const groupBySet = ref(true);
+/** Set codes currently expanded; empty = all collapsed (default). */
+const expandedSetCodes = ref(new Set());
+const syncingRoute = ref(false);
 
 const editor = reactive({
   open: false,
@@ -50,6 +73,23 @@ const inlineError = ref("");
 const inlineLabelRef = ref(null);
 const inlineDescRef = ref(null);
 
+const FINISH_OPTIONS = [
+  { id: "all", label: "All finishes" },
+  { id: "nonfoil", label: "Nonfoil" },
+  { id: "foil", label: "Foil" },
+  { id: "etched", label: "Etched" },
+];
+
+const SORT_OPTIONS = [
+  { id: "value", label: "Value" },
+  { id: "name", label: "Name" },
+  { id: "number", label: "Number" },
+  { id: "set", label: "Set" },
+  { id: "artStyle", label: "Art style" },
+  { id: "finish", label: "Finish" },
+  { id: "copies", label: "Copies" },
+];
+
 const selectedLocation = computed(() =>
   locations.value.find((item) => item.slug === selectedSlug.value),
 );
@@ -58,6 +98,10 @@ const canInlineEdit = computed(() => {
   const type = selectedLocation.value?.locationType;
   return type === "storage" || type === "binder";
 });
+
+const isDeckLocation = computed(
+  () => selectedLocation.value?.locationType === "deck",
+);
 
 const visibleLocations = computed(() =>
   locations.value.filter(
@@ -141,60 +185,269 @@ async function toggleDefaultStorage(location) {
 }
 
 function lineTotal(card) {
-
   if (card.currentValue == null || Number.isNaN(card.currentValue)) {
-
     return null;
-
   }
-
   return card.currentValue * card.copyCount;
-
 }
 
-
-
-function cardRoute(card) {
-
-  return {
-
-    name: "card",
-
-    params: { setCode: card.setCode, collectorNumber: card.collectorNumber },
-
-    query: cardRouteQuery(cardFinish(card)),
-
-  };
-
+function applyFiltersFromRoute(routeRef = route) {
+  const filters = storageFiltersFromRoute(routeRef);
+  searchQuery.value = filters.searchQuery;
+  foilFilter.value = filters.foilFilter;
+  setFilter.value = filters.setFilter;
+  cardsSort.value = filters.sort;
+  cardsSortDir.value = filters.sortDir;
+  viewMode.value = filters.viewMode;
+  groupBySet.value = filters.groupBySet;
 }
 
+function pushStorageQuery() {
+  const nextQuery = storageRouteQuery({
+    location: selectedSlug.value,
+    foilFilter: foilFilter.value,
+    setFilter: setFilter.value,
+    sort: cardsSort.value,
+    sortDir: cardsSortDir.value,
+    searchQuery: searchQuery.value,
+    viewMode: viewMode.value,
+    groupBySet: groupBySet.value,
+  });
+  const current = route.query || {};
+  const keys = new Set([...Object.keys(current), ...Object.keys(nextQuery)]);
+  let changed = false;
+  for (const key of keys) {
+    if (String(current[key] ?? "") !== String(nextQuery[key] ?? "")) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) {
+    return;
+  }
+  syncingRoute.value = true;
+  router.replace({ query: nextQuery }).finally(() => {
+    syncingRoute.value = false;
+  });
+}
 
+const locationCards = computed(() => {
+  const cards = cardsPayload.value?.cards || [];
+  return cards.map((card) => ({
+    ...card,
+    ownedQty: card.copyCount,
+  }));
+});
+
+const setsByCode = computed(() => {
+  const map = new Map();
+  for (const set of setsCatalog.value) {
+    const code = String(set.setCode || "").trim().toUpperCase();
+    if (code) {
+      map.set(code, set);
+    }
+  }
+  return map;
+});
+
+const breakdownSetIcons = computed(() => {
+  const icons = {};
+  for (const [code, set] of setsByCode.value) {
+    icons[code] = resolveSetIconUri(set);
+  }
+  return icons;
+});
+
+const breakdownSetLabels = computed(() => {
+  const labels = {};
+  for (const [code] of setsByCode.value) {
+    labels[code] = setLabelForCode(code);
+  }
+  for (const row of breakdownPayload.value?.bySet || []) {
+    const code = String(row.setCode || "").trim().toUpperCase();
+    if (code && !labels[code]) {
+      labels[code] = setLabelForCode(code);
+    }
+  }
+  return labels;
+});
+
+const isBreakdownView = computed(() => viewMode.value === "breakdown");
+
+const setCodesInLocation = computed(() => {
+  const codes = new Set();
+  for (const card of locationCards.value) {
+    const code = String(card.setCode || "").trim().toUpperCase();
+    if (code) {
+      codes.add(code);
+    }
+  }
+  return [...codes].sort((left, right) => left.localeCompare(right));
+});
+
+function setMetaForCode(code) {
+  const normalized = String(code || "").trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+  return setsByCode.value.get(normalized) || { setCode: normalized, label: normalized };
+}
+
+function setLabelForCode(code) {
+  return setShortName(setMetaForCode(code)) || String(code || "").toUpperCase();
+}
+
+function setIconForCode(code) {
+  return resolveSetIconUri(setMetaForCode(code));
+}
+
+const setFilterOptions = computed(() => {
+  const options = [
+    {
+      value: "",
+      label: "All sets",
+      iconSrc: null,
+      searchText: "all sets",
+    },
+  ];
+  for (const code of setCodesInLocation.value) {
+    const set = setMetaForCode(code);
+    const label = setShortName(set) || code;
+    options.push({
+      value: code,
+      label,
+      iconSrc: resolveSetIconUri(set),
+      searchText: [code, label, set?.label].filter(Boolean).join(" "),
+    });
+  }
+  return options;
+});
+
+const filteredCards = computed(() =>
+  filterCollectionCards(locationCards.value, {
+    setCode: setFilter.value || "All",
+    searchQuery: searchQuery.value,
+    foilFilter: foilFilter.value,
+    ownedFilter: "all",
+  }),
+);
+
+const sortedCards = computed(() =>
+  sortCollectionCards(filteredCards.value, {
+    sort: cardsSort.value,
+    dir: cardsSortDir.value,
+    allowSet: true,
+  }),
+);
+
+const setGroups = computed(() => {
+  if (!groupBySet.value) {
+    return [];
+  }
+  return groupCollectionCardsBySet(filteredCards.value, {
+    sort: cardsSort.value,
+    dir: cardsSortDir.value,
+    allowSet: true,
+  }).map((group) => {
+    let copyCount = 0;
+    let totalValue = 0;
+    let hasPriced = false;
+    for (const card of group.cards) {
+      copyCount += Number(card.copyCount) || 0;
+      const line = lineTotal(card);
+      if (line != null) {
+        totalValue += line;
+        hasPriced = true;
+      }
+    }
+    return {
+      ...group,
+      printCount: group.cards.length,
+      copyCount,
+      totalValue: hasPriced ? totalValue : null,
+    };
+  });
+});
+
+const anySetGroupExpanded = computed(() =>
+  setGroups.value.some((group) => expandedSetCodes.value.has(group.setCode)),
+);
+
+function defaultExpandedSetCodes(groups = setGroups.value) {
+  if (groups.length === 1) {
+    return new Set([groups[0].setCode]);
+  }
+  return new Set();
+}
+
+function applyDefaultSetGroupExpansion() {
+  expandedSetCodes.value = defaultExpandedSetCodes();
+}
+
+function isSetGroupExpanded(setCode) {
+  return expandedSetCodes.value.has(setCode);
+}
+
+function toggleSetGroup(setCode) {
+  const next = new Set(expandedSetCodes.value);
+  if (next.has(setCode)) {
+    next.delete(setCode);
+  } else {
+    next.add(setCode);
+  }
+  expandedSetCodes.value = next;
+}
+
+function expandAllSetGroups() {
+  expandedSetCodes.value = new Set(setGroups.value.map((group) => group.setCode));
+}
+
+function collapseAllSetGroups() {
+  expandedSetCodes.value = new Set();
+}
+
+function setGroupMetaText(group) {
+  const printLabel = `${group.printCount} ${group.printCount === 1 ? "print" : "prints"}`;
+  if (group.totalValue == null) {
+    return printLabel;
+  }
+  return `${printLabel} · ${formatEuro(group.totalValue)}`;
+}
+
+const setGroupCodesKey = computed(() =>
+  setGroups.value.map((group) => group.setCode).join("|"),
+);
+
+const scopePrintCount = computed(() => locationCards.value.length);
+
+const matchSummaryText = computed(() => {
+  const shown = sortedCards.value.length;
+  const scope = scopePrintCount.value;
+  if (!scope) {
+    return "No prints in this location";
+  }
+  if (shown === scope) {
+    return `${shown} prints`;
+  }
+  return `${shown} shown · ${scope} prints`;
+});
 
 async function loadLocations(preferredSlug = "") {
-
   const payload = await api.listStorageLocations();
-
   locations.value = payload.locations || [];
-
   const nextSlug =
-
     preferredSlug ||
-
     selectedSlug.value ||
-
     payload.defaultLocation ||
-
     locations.value[0]?.slug ||
-
     "";
-
   selectedSlug.value = nextSlug;
-
 }
 
-
-
 async function loadCards() {
+  if (viewMode.value === "breakdown") {
+    return;
+  }
   if (!selectedSlug.value) {
     cardsPayload.value = null;
     return;
@@ -204,7 +457,15 @@ async function loadCards() {
   });
 }
 
-
+async function loadBreakdown() {
+  if (!selectedSlug.value) {
+    breakdownPayload.value = null;
+    return;
+  }
+  await runBreakdownLoad(async () => {
+    breakdownPayload.value = await api.getStorageBreakdown(selectedSlug.value);
+  });
+}
 
 function openCreateEditor(locationType = "storage") {
   editor.open = true;
@@ -308,56 +569,94 @@ function onInlineDescKeydown(event) {
   }
 }
 
-
-
 async function deleteLocation(location) {
-
   if (!location.canDelete) {
-
     return;
-
   }
-
   if (!window.confirm(`Delete empty storage "${location.label}"?`)) {
-
     return;
-
   }
-
   await api.deleteStorageLocation(location.slug);
-
   await loadLocations();
-
 }
-
-
 
 async function removeOneCopy(card) {
-
   const instanceId = card.instanceIds?.[card.instanceIds.length - 1];
-
   if (!instanceId) {
-
     return;
-
   }
-
   if (!window.confirm(`Remove one copy of ${cardDisplayName(card)}?`)) {
-
     return;
-
   }
-
   await api.deleteInstance(instanceId);
-
   await loadLocations(selectedSlug.value);
-
 }
 
+function selectLocation(slug) {
+  if (slug !== selectedSlug.value) {
+    searchQuery.value = "";
+    setFilter.value = "";
+  }
+  selectedSlug.value = slug;
+}
 
+function onSortChange(event) {
+  const next = event.target.value;
+  cardsSort.value = next;
+  cardsSortDir.value = defaultCollectionSortDir(next);
+}
+
+function onColumnSort(field) {
+  if (!field) {
+    return;
+  }
+  if (cardsSort.value === field) {
+    cardsSortDir.value = cardsSortDir.value === "asc" ? "desc" : "asc";
+    return;
+  }
+  cardsSort.value = field;
+  cardsSortDir.value = defaultCollectionSortDir(field);
+}
+
+function toggleSortDir() {
+  cardsSortDir.value = cardsSortDir.value === "asc" ? "desc" : "asc";
+}
+
+function setViewMode(mode) {
+  if (viewMode.value !== mode) {
+    viewMode.value = mode;
+  }
+}
+
+function toggleGroupBySet() {
+  groupBySet.value = !groupBySet.value;
+  if (groupBySet.value) {
+    applyDefaultSetGroupExpansion();
+  }
+}
+
+async function onCardScaleChange(scale) {
+  await savePricingSettings({ collectionCardScale: Number(scale) });
+}
 
 watch(selectedSlug, () => {
-  loadCards();
+  if (viewMode.value === "breakdown") {
+    loadBreakdown();
+  } else {
+    loadCards();
+  }
+  pushStorageQuery();
+});
+
+watch(viewMode, (mode, previous) => {
+  if (mode === previous) {
+    return;
+  }
+  if (mode === "breakdown") {
+    loadBreakdown();
+  } else if (previous === "breakdown") {
+    loadCards();
+  }
 });
 
 watch(selectedLocation, (location) => {
@@ -367,23 +666,70 @@ watch(selectedLocation, (location) => {
   }
 });
 
-
-
-onMounted(async () => {
-  const preferredLocation =
-    typeof route.query.location === "string" ? route.query.location : "";
-  await Promise.all([loadLocations(preferredLocation), loadPricingSettings(true)]);
+watch(setCodesInLocation, (codes) => {
+  if (setFilter.value && !codes.includes(setFilter.value)) {
+    setFilter.value = "";
+  }
 });
 
+watch(setGroupCodesKey, () => {
+  if (!groupBySet.value) {
+    return;
+  }
+  applyDefaultSetGroupExpansion();
+});
+
+watch(
+  [searchQuery, foilFilter, setFilter, cardsSort, cardsSortDir, viewMode, groupBySet],
+  () => {
+    if (syncingRoute.value) {
+      return;
+    }
+    pushStorageQuery();
+  },
+);
+
+watch(
+  () => route.query,
+  () => {
+    if (syncingRoute.value) {
+      return;
+    }
+    const location = storageLocationFromRoute(route);
+    applyFiltersFromRoute(route);
+    if (location && location !== selectedSlug.value) {
+      selectedSlug.value = location;
+    }
+  },
+);
+
+async function loadSetsCatalog() {
+  try {
+    const payload = await api.getReportsMeta();
+    setsCatalog.value = (payload.sets || []).filter((set) => set.setCode && set.setCode !== "All");
+  } catch {
+    setsCatalog.value = [];
+  }
+}
+
+onMounted(async () => {
+  applyFiltersFromRoute(route);
+  const preferredLocation = storageLocationFromRoute(route);
+  await Promise.all([
+    loadLocations(preferredLocation),
+    loadPricingSettings(true),
+    loadSetsCatalog(),
+  ]);
+  if (viewMode.value === "breakdown") {
+    await loadBreakdown();
+  }
+  pushStorageQuery();
+});
 </script>
 
-
-
 <template>
-
-  <div class="storage-page">
+  <div class="storage-page collection-page">
     <div class="storage-layout">
-
       <nav class="storage-location-nav" aria-label="Storage locations">
         <section
           v-for="section in groupedVisibleLocations"
@@ -427,7 +773,7 @@ onMounted(async () => {
             <button
               type="button"
               class="storage-location-select"
-              @click="selectedSlug = location.slug"
+              @click="selectLocation(location.slug)"
             >
               <span class="storage-location-link-main">
                 <StorageLocationIcon :type="location.locationType" />
@@ -452,12 +798,8 @@ onMounted(async () => {
         </section>
       </nav>
 
-
-
       <div class="storage-detail">
-
         <div v-if="selectedLocation" class="storage-detail-header">
-
           <div class="storage-detail-title-row">
             <div class="storage-detail-title-main">
               <StorageLocationIcon
@@ -465,17 +807,17 @@ onMounted(async () => {
                 class="storage-detail-type-icon"
               />
               <input
-              v-if="canInlineEdit"
-              ref="inlineLabelRef"
-              v-model="inlineLabel"
-              class="storage-inline-title"
-              type="text"
-              maxlength="120"
-              :disabled="inlineSaving"
-              aria-label="Storage name"
-              @blur="saveInlineLabel"
-              @keydown="onInlineLabelKeydown"
-              />
+                v-if="canInlineEdit"
+                ref="inlineLabelRef"
+                v-model="inlineLabel"
+                class="storage-inline-title"
+                type="text"
+                maxlength="120"
+                :disabled="inlineSaving"
+                aria-label="Storage name"
+                @blur="saveInlineLabel"
+                @keydown="onInlineLabelKeydown"
+              >
               <h2 v-else>{{ selectedLocation.label }}</h2>
             </div>
 
@@ -504,6 +846,10 @@ onMounted(async () => {
             </div>
           </div>
 
+          <p v-if="isDeckLocation" class="storage-deck-hint">
+            Deck storage is updated automatically when you mark cards owned on the deck.
+          </p>
+
           <textarea
             v-if="canInlineEdit"
             ref="inlineDescRef"
@@ -527,150 +873,284 @@ onMounted(async () => {
           <p v-if="inlineError" class="storage-inline-error">{{ inlineError }}</p>
 
           <p class="storage-location-stats">
-
             {{ cardsPayload?.totalCopies ?? selectedLocation.cardCount }} copies ·
-
             {{ cardsPayload?.uniquePrints ?? selectedLocation.uniquePrints }} unique prints
-
           </p>
-
         </div>
 
+        <div class="storage-detail-toolbar">
+          <div class="storage-toolbar-row">
+            <template v-if="!isBreakdownView">
+            <label class="storage-toolbar-search">
+              <span class="visually-hidden">Search cards</span>
+              <input
+                v-model="searchQuery"
+                type="search"
+                placeholder="Search name or #…"
+                autocomplete="off"
+              >
+            </label>
 
+            <BrowseSelect
+              v-model="setFilter"
+              class="storage-toolbar-set-select"
+              :options="setFilterOptions"
+              filterable
+              show-icons
+              optional-icons
+              hide-arrows
+              empty-icon-label="All"
+              placeholder="All sets"
+              aria-label="Filter by set"
+              portal-panel
+            />
 
-        <div v-if="loadingCards" class="storage-empty">
+            <label class="storage-toolbar-select">
+              <span class="visually-hidden">Finish</span>
+              <select v-model="foilFilter" aria-label="Filter by finish">
+                <option
+                  v-for="option in FINISH_OPTIONS"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <div class="storage-sort-row">
+              <label class="visually-hidden" for="storage-sort">Sort by</label>
+              <select id="storage-sort" :value="cardsSort" @change="onSortChange">
+                <option
+                  v-for="option in SORT_OPTIONS"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="btn btn-secondary collection-sort-dir"
+                :title="cardsSortDir === 'asc' ? 'Ascending' : 'Descending'"
+                @click="toggleSortDir"
+              >
+                {{ cardsSortDir === "asc" ? "↑" : "↓" }}
+              </button>
+            </div>
+
+            <p class="storage-toolbar-summary">{{ matchSummaryText }}</p>
+            </template>
+            <p v-else class="storage-toolbar-summary">Analytics for this location</p>
+
+            <div class="storage-toolbar-end">
+              <button
+                v-if="!isBreakdownView"
+                type="button"
+                class="filter-button"
+                :class="{ active: groupBySet }"
+                :aria-pressed="groupBySet"
+                @click="toggleGroupBySet"
+              >
+                Group by set
+              </button>
+
+              <button
+                v-if="!isBreakdownView && groupBySet && setGroups.length"
+                type="button"
+                class="btn btn-secondary btn-small storage-set-groups-toggle"
+                @click="anySetGroupExpanded ? collapseAllSetGroups() : expandAllSetGroups()"
+              >
+                {{ anySetGroupExpanded ? "Collapse all" : "Expand all" }}
+              </button>
+
+              <div
+                class="button-group collection-view-mode-group"
+                role="group"
+                aria-label="View mode"
+              >
+                <button
+                  type="button"
+                  class="filter-button"
+                  :class="{ active: viewMode === 'gallery' }"
+                  @click="setViewMode('gallery')"
+                >
+                  Gallery
+                </button>
+                <button
+                  type="button"
+                  class="filter-button"
+                  :class="{ active: viewMode === 'table' }"
+                  @click="setViewMode('table')"
+                >
+                  Table
+                </button>
+                <button
+                  type="button"
+                  class="filter-button"
+                  :class="{ active: viewMode === 'breakdown' }"
+                  @click="setViewMode('breakdown')"
+                >
+                  Breakdown
+                </button>
+              </div>
+
+              <CollectionGalleryScaleControl
+                v-if="viewMode === 'gallery'"
+                class="collection-gallery-toolbar-scale"
+                :model-value="collectionCardScale"
+                :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+                @update:model-value="onCardScaleChange"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isBreakdownView && loadingBreakdown" class="storage-empty">
+          <LoadingIndicator label="Loading breakdown…" />
+        </div>
+
+        <StorageBreakdownPanel
+          v-else-if="isBreakdownView"
+          :breakdown="breakdownPayload"
+          :set-icons="breakdownSetIcons"
+          :set-labels="breakdownSetLabels"
+        />
+
+        <div v-else-if="loadingCards" class="storage-empty">
           <LoadingIndicator label="Loading cards…" />
         </div>
 
         <div
-
-          v-else-if="!cardsPayload?.cards?.length"
-
+          v-else-if="!scopePrintCount"
           class="storage-empty"
-
         >
-
           No cards in this location.
-
         </div>
 
-
-
-        <div v-else class="table-panel cards-panel storage-cards-panel">
-
-          <table class="storage-table">
-
-            <thead>
-
-              <tr>
-
-                <th>Set</th>
-
-                <th>#</th>
-
-                <th>Card</th>
-
-                <th>Art Style</th>
-
-                <th>Finish</th>
-
-                <th>Copies</th>
-
-                <th>Total value</th>
-
-                <th></th>
-
-              </tr>
-
-            </thead>
-
-            <tbody>
-
-              <tr v-for="card in cardsPayload.cards" :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`">
-
-                <td>
-                  <CollectionSetLink :set-code="card.setCode" />
-                </td>
-
-                <td>{{ card.collectorNumber }}</td>
-
-                <td>
-
-                  <CardPreview
-                    :image-uri="card.imageUri"
-                    :image-uri-back="card.imageUriBack || ''"
-                  >
-
-                    <RouterLink :to="cardRoute(card)" class="reports-card-link">
-
-                      {{ String(card.collectorNumber).padStart(3, "0") }} · {{ cardDisplayName(card) }}
-
-                    </RouterLink>
-
-                  </CardPreview>
-
-                </td>
-
-                <td>{{ card.artStyle || "—" }}</td>
-
-                <td>{{ finishLabel(cardFinish(card)) }}</td>
-
-                <td>{{ card.copyCount }}</td>
-
-                <td>
-                  <PriceStrategyValue
-                    v-if="card.copyCount <= 1"
-                    :card="card"
-                    :value="lineTotal(card)"
-                  />
-                  <span v-else>{{ formatEuro(lineTotal(card)) }}</span>
-                  <span
-                    v-if="card.copyCount > 1 && card.currentValue != null"
-                    class="storage-unit-value"
-                  >
-                    <PriceStrategyValue :card="card" tag="span" />
-                    <span class="storage-unit-value-suffix"> each</span>
-                  </span>
-                </td>
-
-                <td class="storage-row-actions">
-
-                  <button
-
-                    type="button"
-
-                    class="btn btn-small"
-
-                    @click="removeOneCopy(card)"
-
-                  >
-
-                    Remove one
-
-                  </button>
-
-                </td>
-
-              </tr>
-
-            </tbody>
-
-          </table>
-
+        <div
+          v-else-if="!sortedCards.length"
+          class="storage-empty"
+        >
+          No cards match the current search or filters.
         </div>
 
+        <GalleryLoadingOverlay
+          v-else-if="viewMode === 'gallery'"
+          :loading="false"
+          class="storage-gallery-wrap collection-gallery-panel"
+        >
+          <div v-if="groupBySet" class="storage-grouped-scroll">
+            <section
+              v-for="group in setGroups"
+              :key="group.setCode"
+              class="storage-set-group"
+              :class="{ 'is-collapsed': !isSetGroupExpanded(group.setCode) }"
+            >
+              <button
+                type="button"
+                class="storage-set-group-header"
+                :aria-expanded="isSetGroupExpanded(group.setCode)"
+                @click="toggleSetGroup(group.setCode)"
+              >
+                <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
+                <img
+                  v-if="setIconForCode(group.setCode)"
+                  :src="setIconForCode(group.setCode)"
+                  alt=""
+                  class="storage-set-group-icon"
+                >
+                <h3 class="storage-set-group-title">
+                  {{ setLabelForCode(group.setCode) }}
+                </h3>
+                <span class="storage-set-group-meta">{{ setGroupMetaText(group) }}</span>
+              </button>
+              <CollectionCardGrid
+                v-if="isSetGroupExpanded(group.setCode)"
+                :cards="group.cards"
+                :card-scale="collectionCardScale"
+              />
+            </section>
+          </div>
+          <VirtualizedCollectionCardGrid
+            v-else
+            :cards="sortedCards"
+            :card-scale="collectionCardScale"
+            show-set-label
+            :set-label-for="setLabelForCode"
+          />
+        </GalleryLoadingOverlay>
+
+        <div
+          v-else-if="groupBySet"
+          class="table-panel cards-panel storage-cards-panel storage-grouped-scroll"
+        >
+          <section
+            v-for="group in setGroups"
+            :key="group.setCode"
+            class="storage-set-group"
+            :class="{ 'is-collapsed': !isSetGroupExpanded(group.setCode) }"
+          >
+            <button
+              type="button"
+              class="storage-set-group-header"
+              :aria-expanded="isSetGroupExpanded(group.setCode)"
+              @click="toggleSetGroup(group.setCode)"
+            >
+              <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
+              <img
+                v-if="setIconForCode(group.setCode)"
+                :src="setIconForCode(group.setCode)"
+                alt=""
+                class="storage-set-group-icon"
+              >
+              <h3 class="storage-set-group-title">
+                {{ setLabelForCode(group.setCode) }}
+              </h3>
+              <span class="storage-set-group-meta">{{ setGroupMetaText(group) }}</span>
+            </button>
+            <div
+              v-if="isSetGroupExpanded(group.setCode)"
+              class="storage-set-group-table"
+              :style="{ '--storage-group-rows': group.cards.length }"
+            >
+              <VirtualizedStorageTable
+                :cards="group.cards"
+                :sort-field="cardsSort"
+                :sort-dir="cardsSortDir"
+                :show-remove="!isDeckLocation"
+                :line-total="lineTotal"
+                :set-label-for="setLabelForCode"
+                :set-icon-for="setIconForCode"
+                @sort="onColumnSort"
+                @remove-one="removeOneCopy"
+              />
+            </div>
+          </section>
+        </div>
+
+        <div
+          v-else
+          class="table-panel cards-panel storage-cards-panel"
+        >
+          <VirtualizedStorageTable
+            :cards="sortedCards"
+            :sort-field="cardsSort"
+            :sort-dir="cardsSortDir"
+            :show-remove="!isDeckLocation"
+            :line-total="lineTotal"
+            :set-label-for="setLabelForCode"
+            :set-icon-for="setIconForCode"
+            @sort="onColumnSort"
+            @remove-one="removeOneCopy"
+          />
+        </div>
       </div>
-
     </div>
 
-
-
     <div v-if="editor.open" class="modal-backdrop" @click.self="closeEditor">
-
       <form class="modal-card" @submit.prevent="saveEditor">
-
         <h3>{{ editor.locationType === "binder" ? "New binder" : "New storage" }}</h3>
-
         <label>
           <span>Type</span>
           <select v-model="editor.locationType">
@@ -678,41 +1158,21 @@ onMounted(async () => {
             <option value="binder">Binder</option>
           </select>
         </label>
-
         <label>
-
           <span>Label</span>
-
-          <input v-model="editor.label" type="text" maxlength="120" required />
-
+          <input v-model="editor.label" type="text" maxlength="120" required>
         </label>
-
         <label>
-
           <span>Description</span>
-
           <textarea v-model="editor.description" rows="3" maxlength="500" />
-
         </label>
-
         <div class="modal-actions">
-
           <button type="button" class="btn btn-secondary" @click="closeEditor">
-
             Cancel
-
           </button>
-
           <button type="submit" class="btn btn-primary">Create</button>
-
         </div>
-
       </form>
-
     </div>
-
   </div>
-
 </template>
-
-

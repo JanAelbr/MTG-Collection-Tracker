@@ -8,12 +8,14 @@ const props = defineProps({
   card: { type: Object, default: null },
   value: { type: Number, default: null },
   tag: { type: String, default: "span" },
+  /** When set, highlight/tooltip use this strategy instead of the global setting. */
+  priceStrategy: { type: String, default: "" },
 });
 
 const { settings: pricingSettings } = usePricingSettings();
 
 const activePriceStrategy = computed(
-  () => pricingSettings.value?.priceStrategy || "trend",
+  () => props.priceStrategy || pricingSettings.value?.priceStrategy || "trend",
 );
 
 const priceStrategies = computed(

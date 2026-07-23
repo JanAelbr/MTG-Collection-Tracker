@@ -26,6 +26,22 @@ class PricingServiceEtchedTests(unittest.TestCase):
         self.assertEqual(grouped["nonfoil"]["trend"], 1.02)
         self.assertEqual(grouped["foil"]["trend"], 1.72)
 
+    @patch("api.services.pricing_service._load_guide")
+    def test_all_guide_prices_skips_nonfoil_when_print_is_foil_only(self, load_guide):
+        load_guide.return_value = {
+            752693: {"trend": 0.35, "avg": 0.37},
+            752694: {"trend": 0, "trend-foil": 19.22, "avg-foil": 19.0},
+        }
+        grouped = all_guide_prices_for_card(
+            None,
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=752694",
+            has_nonfoil=0,
+            has_foil=1,
+            has_etched=0,
+        )
+        self.assertIsNone(grouped["nonfoil"]["trend"])
+        self.assertEqual(grouped["foil"]["trend"], 19.22)
+
     @patch("api.services.pricing_service.guide_prices_for_url")
     def test_all_guide_prices_for_card_does_not_backfill_etched(self, guide_prices_for_url):
         guide_prices_for_url.side_effect = lambda url: {

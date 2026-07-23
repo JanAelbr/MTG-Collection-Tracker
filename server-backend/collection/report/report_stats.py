@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 
 import pandas as pd
 
@@ -19,6 +19,27 @@ def load_catalog_counts(conn: sqlite3.Connection | None = None) -> pd.DataFrame:
     return pd.DataFrame(
         [{"set_code": set_code, "catalog_cards": count} for set_code, count in sorted(counts.items())]
     )
+
+
+# Load completion slot counts grouped by rarity for one set.
+def load_catalog_rarity_counts(conn: sqlite3.Connection, set_code: str) -> dict[str, int]:
+    from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
+    from util.set_completion import count_completion_keys_by_rarity
+
+    normalized = str(set_code or "").strip().upper()
+    if not normalized or normalized == "ALL":
+        return {}
+    rows = conn.execute(
+        f"""
+        SELECT set_code, collector_number, rarity
+        FROM cards
+        WHERE set_code = ?
+          AND {exclude_alchemy_sql()}
+          AND {exclude_alchemy_art_style_sql()}
+        """,
+        (normalized,),
+    ).fetchall()
+    return count_completion_keys_by_rarity(rows, set_code=normalized)
 
 
 # Load completion slot counts grouped by set and art style.

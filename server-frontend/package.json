@@ -11,6 +11,7 @@
     "generate-pwa-icons": "pwa-assets-generator app-logo.svg --preset minimal -r public"
   },
   "dependencies": {
+    "tesseract.js": "^5.1.1",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },

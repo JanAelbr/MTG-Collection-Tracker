@@ -1,10 +1,15 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { api, clearClientCache } from "../api";
 import {
   adjustCardCopyCount,
   storageLocations,
 } from "../composables/cardContextMenu";
+import DeckAddControl from "./DeckAddControl.vue";
+import DeckCardQtyControl from "./DeckCardQtyControl.vue";
+import DeckOwnedToggle from "./DeckOwnedToggle.vue";
+import StorageLocationIcon from "./StorageLocationIcon.vue";
 import StorageLocationSelect from "./StorageLocationSelect.vue";
 import { formatEuro, formatProfit } from "../utils/format";
 import {
@@ -20,9 +25,10 @@ const props = defineProps({
   card: { type: Object, required: true },
   manageableFinishes: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  defaultDeckId: { type: String, default: "" },
 });
 
-const emit = defineEmits(["ownership-changed", "finish-selected"]);
+const emit = defineEmits(["ownership-changed", "finish-selected", "deck-changed"]);
 
 const activeTab = ref("summary");
 const busy = ref(false);
@@ -32,6 +38,7 @@ const addFinish = ref(FINISH_NONFOIL);
 const selectNewestAfterReload = ref(false);
 
 const instances = computed(() => props.card?.ownedInstances || []);
+const deckMemberships = computed(() => props.card?.deckMemberships || []);
 const summaryRows = computed(() => props.card?.ownershipSummary || []);
 const showSummaryTab = computed(() => instances.value.length > 1);
 const showTabBar = computed(() => finishOptions.value.length > 0);
@@ -55,12 +62,78 @@ const activeInstance = computed(() => {
   );
 });
 
+function isDeckInstance(instance) {
+  const type = String(instance?.locationType || "").toLowerCase();
+  const slug = String(instance?.locationSlug || "").toLowerCase();
+  return type === "deck" || slug.startsWith("deck:");
+}
+
 function instanceTabLabel(instance) {
   const sameFinish = instances.value.filter((row) => row.finish === instance.finish);
+  let label = instance.finishLabel;
   if (sameFinish.length > 1) {
-    return `${instance.finishLabel} #${instance.finishIndex}`;
+    label = `${instance.finishLabel} #${instance.finishIndex}`;
   }
-  return instance.finishLabel;
+  if (isDeckInstance(instance) && instance.locationLabel) {
+    return `${label} · ${instance.locationLabel}`;
+  }
+  return label;
+}
+
+function decksForInstance(instance) {
+  if (!instance) {
+    return [];
+  }
+  const finish = normalizeFinish(instance.finish);
+  const memberships = deckMemberships.value.filter(
+    (row) => normalizeFinish(row.finish) === finish,
+  );
+  if (!memberships.length) {
+    return [];
+  }
+
+  const claimedSlugs = new Set(
+    instances.value
+      .filter((row) => row.instanceId !== instance.instanceId && isDeckInstance(row))
+      .map((row) => String(row.locationSlug || "").toLowerCase())
+      .filter(Boolean),
+  );
+
+  const finishInstances = instances.value
+    .filter((row) => normalizeFinish(row.finish) === finish)
+    .slice()
+    .sort((left, right) => left.instanceId - right.instanceId);
+
+  return memberships.filter((membership) => {
+    const slug = String(membership.locationSlug || "").toLowerCase();
+    if (String(instance.locationSlug || "").toLowerCase() === slug) {
+      return true;
+    }
+    if (claimedSlugs.has(slug)) {
+      return false;
+    }
+    const primary =
+      finishInstances.find((row) => String(row.locationSlug || "").toLowerCase() === slug)
+      || finishInstances[0];
+    return primary && primary.instanceId === instance.instanceId;
+  });
+}
+
+function deckCardForMembership(membership) {
+  return {
+    ...props.card,
+    finish: membership.finish,
+    qty: membership.qty,
+    ownedQty: membership.ownedQty,
+    section: membership.section,
+  };
+}
+
+function deckRoute(membership) {
+  return {
+    name: "decks",
+    query: { deck: String(membership.deckId) },
+  };
 }
 
 function syncPurchaseDrafts() {
@@ -246,6 +319,10 @@ async function onStorageSelect(instance, locationSlug) {
 }
 
 async function onRemoveInstance(instance) {
+  if (isDeckInstance(instance)) {
+    error.value = "Deck copies are managed from deck ownership. Unown the card in the deck first.";
+    return;
+  }
   busy.value = true;
   error.value = "";
   try {
@@ -283,6 +360,11 @@ async function onAddCopy() {
   }
 }
 
+function onDeckChanged(result) {
+  emit("deck-changed", result);
+  emit("ownership-changed");
+}
+
 watch(
   finishOptions,
   (options) => {
@@ -297,7 +379,7 @@ watch(
 );
 
 watch(
-  () => [props.card?.ownedInstances, props.card?.ownershipSummary],
+  () => [props.card?.ownedInstances, props.card?.ownershipSummary, props.card?.deckMemberships],
   () => {
     syncPurchaseDrafts();
     syncDefaultTab();
@@ -347,7 +429,7 @@ onMounted(async () => {
           class="card-detail-browser-tab-delete"
           aria-label="Delete copy"
           title="Delete copy"
-          :disabled="busy || loading"
+          :disabled="busy || loading || isDeckInstance(instance)"
           @click.stop="onRemoveInstance(instance)"
         >
           ×
@@ -395,6 +477,50 @@ onMounted(async () => {
         >
           Add copy
         </button>
+
+        <div
+          v-if="deckMemberships.length"
+          class="card-detail-instance-decks card-detail-summary-decks"
+        >
+          <p class="card-detail-instance-decks-label">In decks</p>
+          <div
+            v-for="membership in deckMemberships"
+            :key="membership.deckCardId"
+            class="card-detail-instance-deck-controls"
+          >
+            <div class="card-detail-instance-deck-head">
+              <RouterLink
+                class="card-detail-instance-deck-link"
+                :to="deckRoute(membership)"
+              >
+                {{ membership.deckName }}
+              </RouterLink>
+              <DeckOwnedToggle
+                :card="deckCardForMembership(membership)"
+                :deck-id="String(membership.deckId)"
+                compact
+                @changed="onDeckChanged"
+              />
+            </div>
+            <DeckCardQtyControl
+              :card="deckCardForMembership(membership)"
+              :deck-id="String(membership.deckId)"
+              :deck-name="membership.deckName"
+              compact
+              inline
+              @changed="onDeckChanged"
+              @removed="onDeckChanged"
+            />
+          </div>
+        </div>
+
+        <DeckAddControl
+          class="card-detail-storage-deck-add"
+          :card="{ ...card, finish: addFinish }"
+          :default-deck-id="defaultDeckId"
+          compact
+          @added="onDeckChanged"
+        />
       </div>
 
       <div v-else-if="activeTab === 'summary'" class="card-detail-summary-table-wrap">
@@ -430,6 +556,29 @@ onMounted(async () => {
             </tr>
           </tbody>
         </table>
+        <div
+          v-if="deckMemberships.length"
+          class="card-detail-instance-decks card-detail-summary-decks"
+        >
+          <p class="card-detail-instance-decks-label">In decks</p>
+          <ul class="card-detail-instance-decks-list">
+            <li
+              v-for="membership in deckMemberships"
+              :key="membership.deckCardId"
+              class="card-detail-instance-deck-row"
+            >
+              <RouterLink
+                class="card-detail-instance-deck-link"
+                :to="deckRoute(membership)"
+              >
+                {{ membership.deckName }}
+              </RouterLink>
+              <span class="card-detail-instance-deck-meta">
+                {{ finishLabel(membership.finish) }} · {{ membership.qty }}
+              </span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div v-else-if="activeInstance" class="card-detail-instance-fields">
@@ -456,16 +605,75 @@ onMounted(async () => {
           </span>
         </div>
 
-        <div class="card-detail-pricing-stat card-detail-pricing-stat-wide">
+        <div class="card-detail-pricing-stat card-detail-pricing-stat-wide card-detail-storage-block">
           <span class="card-detail-pricing-stat-label">Storage</span>
-          <span class="card-detail-pricing-stat-value">
+          <span class="card-detail-pricing-stat-value card-detail-storage-controls">
+            <div
+              v-if="isDeckInstance(activeInstance)"
+              class="card-detail-deck-storage-readonly"
+            >
+              <StorageLocationIcon type="deck" />
+              <span>{{ activeInstance.locationLabel || "Deck storage" }}</span>
+            </div>
             <StorageLocationSelect
+              v-else
               class="card-detail-storage-picker"
               :model-value="activeInstance.locationSlug"
               :locations="storageLocations"
+              :include-types="['storage', 'binder']"
               :disabled="busy || loading || !storageLocations.length"
               aria-label="Storage location"
               @update:model-value="(slug) => onStorageSelect(activeInstance, slug)"
+            />
+
+            <p
+              v-if="isDeckInstance(activeInstance)"
+              class="card-detail-deck-storage-hint"
+            >
+              Storage follows deck ownership. Unown in the deck to return this copy to a binder or storage.
+            </p>
+
+            <div
+              v-if="decksForInstance(activeInstance).length"
+              class="card-detail-instance-decks"
+            >
+              <div
+                v-for="membership in decksForInstance(activeInstance)"
+                :key="membership.deckCardId"
+                class="card-detail-instance-deck-controls"
+              >
+                <div class="card-detail-instance-deck-head">
+                  <RouterLink
+                    class="card-detail-instance-deck-link"
+                    :to="deckRoute(membership)"
+                  >
+                    {{ membership.deckName }}
+                  </RouterLink>
+                  <DeckOwnedToggle
+                    :card="deckCardForMembership(membership)"
+                    :deck-id="String(membership.deckId)"
+                    compact
+                    @changed="onDeckChanged"
+                  />
+                </div>
+                <DeckCardQtyControl
+                  :card="deckCardForMembership(membership)"
+                  :deck-id="String(membership.deckId)"
+                  :deck-name="membership.deckName"
+                  compact
+                  inline
+                  @changed="onDeckChanged"
+                  @removed="onDeckChanged"
+                />
+              </div>
+            </div>
+
+            <DeckAddControl
+              class="card-detail-storage-deck-add"
+              :card="{ ...card, finish: activeInstance.finish }"
+              :default-deck-id="defaultDeckId"
+              compact
+              @added="onDeckChanged"
             />
           </span>
         </div>
@@ -491,7 +699,7 @@ onMounted(async () => {
                 placeholder="0.00"
                 @blur="savePurchasePrice(activeInstance)"
                 @keydown.enter="$event.target.blur()"
-              />
+              >
             </label>
           </span>
         </div>

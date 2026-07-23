@@ -1,28 +1,51 @@
+import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.db import connect
-from api.routers import backup, cards, deck_builder, decks, health, manager, meta, prices, reports, settings, stats, storage
+from api.routers import backup, cards, deck_builder, decks, favorites, health, manager, meta, prices, reports, scan, settings, stats, storage
 from lib.config import FRONTEND_DIST
+from lib.run_log import configure_logging, get_logger
 from util.schema import ensure_database_schema
 
 OPENAPI_PATH_PREFIXES = ("docs", "redoc", "openapi.json")
+log = get_logger(__name__)
+
+
+def _verbose_logging_enabled() -> bool:
+    return os.environ.get("LOTR_VERBOSE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    configure_logging(verbose=_verbose_logging_enabled())
+    log.info("API starting")
     conn = connect()
     try:
         ensure_database_schema(conn)
+        from api.services.decks_service import reconcile_all_deck_owned_storage
+
+        result = reconcile_all_deck_owned_storage(conn)
+        if result.get("claimedToDeck") or result.get("movedToStorage"):
+            log.info(
+                "Deck storage reconcile: claimed=%s released=%s rows=%s",
+                result.get("claimedToDeck"),
+                result.get("movedToStorage"),
+                result.get("ownedRows"),
+            )
         conn.commit()
+        log.info("API ready")
+    except Exception:
+        log.exception("API startup failed during schema ensure")
+        raise
     finally:
         conn.close()
     yield
+    log.info("API shutting down")
 
 
 app = FastAPI(
@@ -40,6 +63,7 @@ app = FastAPI(
         {"name": "health", "description": "Service health checks."},
         {"name": "meta", "description": "App metadata (price freshness, cache epoch)."},
         {"name": "settings", "description": "User preferences and favourites."},
+        {"name": "favorites", "description": "Favourite sets, art styles, and cards."},
         {"name": "reports", "description": "Collection report payloads for the UI."},
         {"name": "stats", "description": "Aggregated collection statistics."},
         {"name": "decks", "description": "Commander deck lists and browse data."},
@@ -51,6 +75,19 @@ app = FastAPI(
         {"name": "backup", "description": "Collection backup export and restore."},
     ],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception(
+        "Unhandled error on %s %s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 @app.get("/api/docs", include_in_schema=False)
@@ -74,6 +111,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(favorites.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(manager.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
@@ -81,6 +119,7 @@ app.include_router(stats.router, prefix="/api")
 app.include_router(decks.router, prefix="/api")
 app.include_router(deck_builder.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
+app.include_router(scan.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 

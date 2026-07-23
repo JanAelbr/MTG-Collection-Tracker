@@ -37,7 +37,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["finish-changed", "ownership-changed"]);
+const emit = defineEmits(["finish-changed", "ownership-changed", "menu-open-change"]);
 
 const panelLoading = ref(false);
 const panelError = ref("");
@@ -414,10 +414,12 @@ defineExpose({ addCopy });
           <StorageLocationSelect
             :model-value="copy.locationSlug"
             :locations="storageLocations"
+            :include-types="['storage', 'binder']"
             :disabled="panelLoading || !storageLocations.length || typeof copy.instanceId !== 'number'"
             compact
             :aria-label="`Storage for copy ${index + 1}`"
             @update:model-value="(slug) => onCopyStorageSelect(copy, slug)"
+            @open-change="emit('menu-open-change', $event)"
           />
         </div>
       </div>

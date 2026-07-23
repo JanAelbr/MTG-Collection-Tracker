@@ -24,7 +24,13 @@ export async function savePricingSettings(patch) {
   if (patch.pageSize != null) {
     localStorage.setItem(LEGACY_PAGE_SIZE_KEY, String(settings.value.pageSize));
   }
-  const strategyOnly = Object.keys(patch).length === 1 && patch.priceStrategy != null;
+  const strategyOnly = Object.keys(patch).length > 0 && Object.keys(patch).every((key) =>
+    [
+      "priceStrategy",
+      "favoritesCardsPriceStrategy",
+      "favoritesArtStylesPriceStrategy",
+    ].includes(key)
+  );
   if (!strategyOnly) {
     clearClientCache();
   }
@@ -34,13 +40,11 @@ export async function savePricingSettings(patch) {
 export function usePricingSettings() {
   const pageSize = computed(() => settings.value?.pageSize ?? 25);
   const collectionCardScale = computed(() => settings.value?.collectionCardScale ?? 100);
-  const setPickerMode = computed(() => settings.value?.setPickerMode ?? "dropdown");
 
   return {
     settings,
     pageSize,
     collectionCardScale,
-    setPickerMode,
     fetchPricingSettings,
     savePricingSettings,
   };

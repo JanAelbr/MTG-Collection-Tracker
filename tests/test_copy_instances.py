@@ -124,6 +124,80 @@ class CopyInstanceTests(unittest.TestCase):
         }
         self.assertEqual(purchases[0], 1.0)
         self.assertEqual(purchases[1], 3.0)
+        for instance in payload["ownedInstances"]:
+            self.assertEqual(instance["locationType"], "storage")
+            self.assertEqual(instance["locationSlug"], "storage:general")
+
+    def test_owned_instances_include_deck_location_metadata(self):
+        from util.deck_tables import ensure_deck_tables
+        from util.storage_tables import seed_storage_locations
+
+        ensure_deck_tables(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO decks (deck_id, name, slug, created_at, updated_at)
+            VALUES (1, 'Nekusar', 'nekusar', '2024-01-01', '2024-01-01')
+            """
+        )
+        seed_storage_locations(self.conn)
+        manager_service.adjust_copy_count(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            delta=1,
+            location_slug="storage:general",
+        )
+        instance_id = self.conn.execute(
+            "SELECT instance_id FROM card_instances WHERE set_code = 'LTR'"
+        ).fetchone()[0]
+        # Move via SQL to simulate deck reconcile (manual assign to deck is blocked).
+        self.conn.execute(
+            "UPDATE card_instances SET location_slug = 'deck:nekusar' WHERE instance_id = ?",
+            (instance_id,),
+        )
+        self.conn.commit()
+
+        payload = manager_service.load_owned_instances_for_print(
+            self.conn,
+            "LTR",
+            "1",
+            strategy="trend",
+        )
+        instance = payload["ownedInstances"][0]
+        self.assertEqual(instance["locationType"], "deck")
+        self.assertEqual(instance["locationSlug"], "deck:nekusar")
+        self.assertEqual(instance["deckId"], 1)
+        self.assertEqual(instance["deckSlug"], "nekusar")
+
+    def test_card_detail_includes_deck_memberships(self):
+        from util.deck_tables import ensure_deck_tables
+
+        ensure_deck_tables(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO decks (deck_id, name, slug, created_at, updated_at)
+            VALUES (7, 'Test Deck', 'test-deck', '2024-01-01', '2024-01-01')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish, qty, owned_qty, section, sort_order
+            ) VALUES (7, 'Dual Card', 'LTR', '1', 0, 2, 1, 'main', 0)
+            """
+        )
+        self.conn.commit()
+
+        detail = card_service.load_card_detail(self.conn, "LTR", "1")
+        self.assertEqual(len(detail["deckMemberships"]), 1)
+        membership = detail["deckMemberships"][0]
+        self.assertEqual(membership["deckId"], 7)
+        self.assertEqual(membership["deckName"], "Test Deck")
+        self.assertEqual(membership["deckSlug"], "test-deck")
+        self.assertEqual(membership["locationSlug"], "deck:test-deck")
+        self.assertEqual(membership["qty"], 2)
+        self.assertEqual(membership["ownedQty"], 1)
 
     def test_ownership_summary_averages_positive_purchases_only(self):
         self._seed_instances()

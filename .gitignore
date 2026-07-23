@@ -31,6 +31,7 @@ reports/
 data/cardmarket_price_guide.json
 data/cardmarket_price_guide.pkl
 data/scryfall_cache/
+data/lan_tls/
 
 # OS and editors
 .DS_Store

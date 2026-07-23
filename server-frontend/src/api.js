@@ -282,11 +282,12 @@ export const api = {
     }),
 
   getStorageLocationCards: (slug) =>
-
     apiRequest(`/storage/locations/${encodeURIComponent(slug)}/cards`),
 
-  deleteInstance: (instanceId) =>
+  getStorageBreakdown: (slug) =>
+    apiRequest(`/storage/locations/${encodeURIComponent(slug)}/breakdown`),
 
+  deleteInstance: (instanceId) =>
     apiRequest(`/storage/instances/${instanceId}`, {
 
       method: "DELETE",
@@ -336,6 +337,48 @@ export const api = {
     apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/favorite`, {
 
       method: "POST",
+
+    }),
+
+  getFavorites: () => apiRequest("/favorites"),
+
+  toggleFavoriteCard: (body) =>
+
+    apiRequest("/favorites/cards", {
+
+      method: "POST",
+
+      body: JSON.stringify(body),
+
+    }),
+
+  toggleFavoriteArtStyle: (body) =>
+
+    apiRequest("/favorites/art-styles", {
+
+      method: "POST",
+
+      body: JSON.stringify(body),
+
+    }),
+
+  reorderFavoriteCards: (cards) =>
+
+    apiRequest("/favorites/cards", {
+
+      method: "PUT",
+
+      body: JSON.stringify({ cards }),
+
+    }),
+
+  reorderFavoriteArtStyles: (artStyles) =>
+
+    apiRequest("/favorites/art-styles", {
+
+      method: "PUT",
+
+      body: JSON.stringify({ artStyles }),
 
     }),
 
@@ -441,6 +484,36 @@ export const api = {
 
     }),
 
+  ingestScan: (body) =>
+
+    apiRequest("/scan/ingest", {
+
+      method: "POST",
+
+      body: JSON.stringify(body),
+
+    }),
+
+  scanNameSearch: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.name) query.set("name", params.name);
+    if (params.limit != null) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest(`/scan/name-search${suffix}`);
+  },
+
+  scanArtSearch: (body) =>
+    apiRequest("/scan/art-search", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  scanArtIndex: (limit = 80) =>
+    apiRequest(`/scan/art-index?limit=${encodeURIComponent(String(limit))}`, {
+      method: "POST",
+    }),
+
   setCardCopyAllocations: (body) =>
 
     apiRequest("/manager/copies/allocations", {
@@ -489,6 +562,8 @@ export const api = {
 
     if (params.setCode) query.set("setCode", params.setCode);
 
+    if (params.family) query.set("family", "true");
+
     if (params.artStyle) query.set("artStyle", params.artStyle);
 
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
@@ -502,8 +577,6 @@ export const api = {
     if (params.colorFilters?.length) {
       query.set("colors", params.colorFilters.join(","));
     }
-
-    if (params.compareDate) query.set("compareDate", params.compareDate);
 
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
 
@@ -531,6 +604,9 @@ export const api = {
     if (params.powerMin != null) query.set("powMin", String(params.powerMin));
     if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
     if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
+    if (params.roleFilters?.length) query.set("roles", params.roleFilters.join(","));
+    if (params.sort) query.set("sort", params.sort);
+    if (params.dir) query.set("dir", params.dir);
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
     const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -563,8 +639,6 @@ export const api = {
 
     if (params.finish != null) query.set("finish", String(params.finish));
 
-    if (params.compareDate) query.set("compareDate", params.compareDate);
-
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
     return apiRequest(
@@ -580,6 +654,8 @@ export const api = {
     const query = new URLSearchParams();
 
     if (params.setCode) query.set("setCode", params.setCode);
+
+    if (params.family) query.set("family", "true");
 
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
 

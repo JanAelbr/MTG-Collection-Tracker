@@ -10,10 +10,15 @@ from report.report_queries import (
     SET_ORPHAN_PURCHASES_QUERY,
 )
 from report.serialize_helpers import str_or_empty
-from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL, MARKET_VALUE_COLUMNS
+from util.card_finishes import (
+    FINISH_ETCHED,
+    FINISH_FOIL,
+    FINISH_NONFOIL,
+    HAS_FINISH_COLUMNS,
+    MARKET_VALUE_COLUMNS,
+)
 from util.card_metadata import card_metadata_snake
 from util.db_migrate import ensure_card_columns
-from util.price_history import load_price_snapshot_payload
 
 DEFAULT_PAGE_SIZE = 25
 
@@ -44,10 +49,46 @@ def _finish_frame(source: pd.DataFrame, *, finish: int, current_value) -> pd.Dat
     return frame
 
 
+def _catalog_allows_finish(frame: pd.DataFrame, finish: int) -> pd.Series:
+    """False when Scryfall flags explicitly say this finish does not exist."""
+    column = HAS_FINISH_COLUMNS[finish]
+    if column not in frame.columns:
+        return pd.Series(True, index=frame.index)
+    raw = frame[column]
+    known = raw.notna()
+    enabled = raw.fillna(0).astype(int).ne(0)
+    return ~known | enabled
+
+
 def _priced_unowned_rows(unowned: pd.DataFrame, finish: int) -> pd.DataFrame:
     column = MARKET_VALUE_COLUMNS[finish]
     values = unowned[column]
-    return unowned[values.notna() & (values.astype(float) > 0)]
+    mask = values.notna() & (values.astype(float) > 0) & _catalog_allows_finish(unowned, finish)
+    return unowned[mask]
+
+
+def _fallback_finish_for_unpriced(row) -> int:
+    """Pick a catalog finish when a print has no usable market prices."""
+    has_nonfoil = _optional_int_flag(row.get("has_nonfoil"))
+    has_foil = _optional_int_flag(row.get("has_foil"))
+    has_etched = _optional_int_flag(row.get("has_etched"))
+    if has_nonfoil == 0 and has_foil == 1 and not has_etched:
+        return FINISH_FOIL
+    if has_nonfoil == 0 and has_etched == 1 and not has_foil:
+        return FINISH_ETCHED
+    existing = row.get("finish")
+    if existing is not None and not pd.isna(existing):
+        return int(existing)
+    return FINISH_NONFOIL
+
+
+def _optional_int_flag(value) -> int | None:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # Expand catalog rows into finish rows, including cards without prices.
@@ -62,26 +103,27 @@ def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
         parts.append(owned)
 
     if not unowned.empty:
+        covered_index: set = set()
         nonfoil = _priced_unowned_rows(unowned, FINISH_NONFOIL)
         if not nonfoil.empty:
+            covered_index.update(nonfoil.index.tolist())
             parts.append(_finish_frame(nonfoil, finish=0, current_value=nonfoil["market_value"]))
 
         foil_rows = _priced_unowned_rows(unowned, FINISH_FOIL)
         if not foil_rows.empty:
+            covered_index.update(foil_rows.index.tolist())
             parts.append(_finish_frame(foil_rows, finish=1, current_value=foil_rows["market_value_foil"]))
 
         etched_rows = _priced_unowned_rows(unowned, FINISH_ETCHED)
         if not etched_rows.empty:
+            covered_index.update(etched_rows.index.tolist())
             parts.append(_finish_frame(etched_rows, finish=2, current_value=etched_rows["market_value_etched"]))
 
-        neither = unowned[
-            unowned["market_value"].isna()
-            & unowned["market_value_foil"].isna()
-            & unowned["market_value_etched"].isna()
-        ]
-        if not neither.empty:
-            fallback = neither.copy()
-            fallback["finish"] = fallback["finish"].fillna(0).astype(int)
+        remaining = unowned.drop(index=list(covered_index), errors="ignore")
+        if not remaining.empty:
+            fallback = remaining.copy()
+            finishes = fallback.apply(_fallback_finish_for_unpriced, axis=1).astype(int)
+            fallback["finish"] = finishes
             fallback["purchase_value"] = pd.NA
             fallback["current_value"] = pd.NA
             fallback["profit_loss"] = pd.NA
@@ -157,15 +199,3 @@ def serialize_ranked_cards(cards_df: pd.DataFrame) -> list[dict]:
             **card_metadata_snake(row),
         })
     return cards
-
-
-# Build the client payload shared by top, risers, and fallers reports.
-def load_ranked_client_payload(cards_df: pd.DataFrame) -> dict:
-    with sqlite3.connect(DB_PATH) as conn:
-        snapshot_payload = load_price_snapshot_payload(conn)
-
-    return {
-        "defaultPageSize": DEFAULT_PAGE_SIZE,
-        "cards": serialize_ranked_cards(cards_df),
-        **snapshot_payload,
-    }

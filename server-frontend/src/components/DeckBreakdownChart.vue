@@ -3,7 +3,9 @@ import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { buildDonutSegments } from "../utils/deckOverview";
 import { powerCardRoute } from "../utils/deckPower";
+import { MANA_COLORS } from "../utils/manaPips";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import ManaSymbols from "./ManaSymbols.vue";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -15,7 +17,19 @@ const props = defineProps({
   cardsById: { type: Object, default: () => ({}) },
   deckId: { type: [String, Number], default: "" },
   interactive: { type: Boolean, default: false },
+  /** Show Scryfall mana pips beside legend labels when row ids are WUBRG/C. */
+  manaLegend: { type: Boolean, default: false },
 });
+
+const manaIdSet = new Set(MANA_COLORS);
+
+function legendManaColors(rowId) {
+  const id = String(rowId || "").toUpperCase();
+  if (!manaIdSet.has(id)) {
+    return null;
+  }
+  return id === "C" ? [] : [id];
+}
 
 const selectedId = ref(null);
 
@@ -147,10 +161,18 @@ watch(
             @keydown.enter.prevent="toggleRow(row)"
             @keydown.space.prevent="toggleRow(row)"
           >
-            <span
-              class="deck-breakdown-swatch"
-              :style="{ background: colorFor(row.colorIndex ?? index) }"
-            />
+            <span class="deck-breakdown-legend-mark">
+              <span
+                class="deck-breakdown-swatch"
+                :style="{ background: colorFor(row.colorIndex ?? index) }"
+              />
+              <ManaSymbols
+                v-if="manaLegend && legendManaColors(row.id)"
+                class="deck-breakdown-legend-mana"
+                :colors="legendManaColors(row.id)"
+                :size="14"
+              />
+            </span>
             <span class="deck-breakdown-legend-label">{{ row.label }}</span>
             <span class="deck-breakdown-legend-count">{{ row.count }}</span>
             <span class="deck-breakdown-legend-share">{{ formatShare(row.share) }}</span>

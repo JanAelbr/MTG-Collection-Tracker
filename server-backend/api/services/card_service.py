@@ -85,6 +85,9 @@ def load_card_detail(
     guide_prices = all_guide_prices_for_card(
         row["cardmarket_url"],
         row["cardmarket_url_foil"],
+        has_nonfoil=row["has_nonfoil"],
+        has_foil=row["has_foil"],
+        has_etched=row["has_etched"],
     )
 
     finishes: dict[str, dict] = {}
@@ -104,6 +107,9 @@ def load_card_detail(
             market_value=_float_or_none(row["market_value"]),
             market_value_foil=_float_or_none(row["market_value_foil"]),
             market_value_etched=_float_or_none(row["market_value_etched"]),
+            has_nonfoil=row["has_nonfoil"],
+            has_foil=row["has_foil"],
+            has_etched=row["has_etched"],
         )
         previous_value = previous_snapshot.get(finish_key)
         price_change = None
@@ -140,6 +146,13 @@ def load_card_detail(
         normalized_set,
         normalized_number,
         strategy=strategy,
+    )
+    from api.services import decks_service
+
+    ownership_payload["deckMemberships"] = decks_service.load_deck_memberships_for_print(
+        conn,
+        normalized_set,
+        normalized_number,
     )
 
     return {
@@ -308,6 +321,9 @@ def _load_set_gallery(
             market_value,
             market_value_foil,
             market_value_etched,
+            has_nonfoil,
+            has_foil,
+            has_etched,
             colors,
             type_line,
             card_type
@@ -352,6 +368,9 @@ def _load_variant_gallery(
             market_value,
             market_value_foil,
             market_value_etched,
+            has_nonfoil,
+            has_foil,
+            has_etched,
             colors,
             type_line,
             card_type
@@ -383,6 +402,11 @@ def _serialize_gallery_card(
     set_names: dict[str, str],
     is_current: bool,
 ) -> dict:
+    finish_flags = dict(
+        has_nonfoil=row["has_nonfoil"],
+        has_foil=row["has_foil"],
+        has_etched=row["has_etched"],
+    )
     nonfoil_value = price_from_strategy(
         row["cardmarket_url"],
         0,
@@ -391,6 +415,7 @@ def _serialize_gallery_card(
         market_value=_float_or_none(row["market_value"]),
         market_value_foil=_float_or_none(row["market_value_foil"]),
         market_value_etched=_float_or_none(row["market_value_etched"]),
+        **finish_flags,
     )
     foil_value = price_from_strategy(
         row["cardmarket_url"],
@@ -400,6 +425,7 @@ def _serialize_gallery_card(
         market_value=_float_or_none(row["market_value"]),
         market_value_foil=_float_or_none(row["market_value_foil"]),
         market_value_etched=_float_or_none(row["market_value_etched"]),
+        **finish_flags,
     )
     etched_value = price_from_strategy(
         row["cardmarket_url"],
@@ -409,6 +435,7 @@ def _serialize_gallery_card(
         market_value=_float_or_none(row["market_value"]),
         market_value_foil=_float_or_none(row["market_value_foil"]),
         market_value_etched=_float_or_none(row["market_value_etched"]),
+        **finish_flags,
     )
     return {
         "setCode": row["set_code"],

@@ -106,21 +106,31 @@ export function hasFinish(card, finish) {
   return finishHasPricing(card, finish);
 }
 
-export function cardHasCatalogFinish(card, finish) {
+function catalogFinishFlag(card, finish) {
   if (!card) {
-    return false;
+    return undefined;
   }
   const normalized = normalizeFinish(finish);
   if (normalized === FINISH_NONFOIL) {
-    return Boolean(card.hasNonfoil ?? card.has_nonfoil);
+    return card.hasNonfoil ?? card.has_nonfoil;
   }
   if (normalized === FINISH_FOIL) {
-    return Boolean(card.hasFoil ?? card.has_foil);
+    return card.hasFoil ?? card.has_foil;
   }
   if (normalized === FINISH_ETCHED) {
-    return Boolean(card.hasEtched ?? card.has_etched);
+    return card.hasEtched ?? card.has_etched;
   }
-  return false;
+  return undefined;
+}
+
+export function cardHasCatalogFinish(card, finish) {
+  return Boolean(catalogFinishFlag(card, finish));
+}
+
+/** True when Scryfall flags are present and say this finish does not exist. */
+export function catalogDeniesFinish(card, finish) {
+  const flag = catalogFinishFlag(card, finish);
+  return flag === false || flag === 0 || flag === "0";
 }
 
 export function isFinishOwnedOnCard(card, finish) {
@@ -165,11 +175,14 @@ export function isFinishOwnedOnCard(card, finish) {
 }
 
 export function canManageFinish(card, finish) {
-  return (
-    hasFinish(card, finish)
-    || isFinishOwnedOnCard(card, finish)
-    || cardHasCatalogFinish(card, finish)
-  );
+  if (isFinishOwnedOnCard(card, finish)) {
+    return true;
+  }
+  // Explicit foil-only / nonfoil-only catalog flags beat stale market prices.
+  if (catalogDeniesFinish(card, finish)) {
+    return false;
+  }
+  return hasFinish(card, finish) || cardHasCatalogFinish(card, finish);
 }
 
 export function cardSupportsNonfoilFoilToggle(card) {

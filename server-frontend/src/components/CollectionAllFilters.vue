@@ -14,8 +14,10 @@ import {
   COLLECTION_RARITY_LABELS,
   COLLECTION_RARITY_ORDER,
 } from "../utils/collectionRarities";
+import { SEARCH_ROLE_OPTIONS } from "../utils/deckPower";
+import { hasSelectableArtStyles } from "../utils/format";
 
-defineProps({
+const props = defineProps({
   isAllView: { type: Boolean, default: true },
   isAllSetsView: { type: Boolean, default: false },
   artStyles: { type: Array, default: () => [] },
@@ -26,6 +28,7 @@ defineProps({
   typeFilter: { type: String, default: "all" },
   colorFilters: { type: Array, default: () => [] },
   storageFilters: { type: Array, default: () => [] },
+  roleFilters: { type: Array, default: () => [] },
   rarityFilter: { type: String, default: "all" },
   cmcMin: { type: String, default: "" },
   cmcMax: { type: String, default: "" },
@@ -36,7 +39,14 @@ defineProps({
   allCardsSort: { type: String, default: "value" },
   allCardsSortDir: { type: String, default: "desc" },
   showSort: { type: Boolean, default: true },
+  /** collection: number/value; search: newest/name/value/cmc */
+  sortMode: { type: String, default: "collection" },
   showStorageFilter: { type: Boolean, default: true },
+  showRoleFilter: { type: Boolean, default: false },
+  /** When false, hide the Unowned ownership option (search uses Owned / All only). */
+  showUnownedFilter: { type: Boolean, default: true },
+  /** When false, ownership controls are provided elsewhere (e.g. search toolbar). */
+  showOwnershipFilter: { type: Boolean, default: true },
   priceIssuesOnly: { type: Boolean, default: false },
   priceIssueCount: { type: Number, default: 0 },
   showPriceHealth: { type: Boolean, default: false },
@@ -52,6 +62,8 @@ const emit = defineEmits([
   "clear-color-filters",
   "toggle-storage-filter",
   "clear-storage-filters",
+  "toggle-role-filter",
+  "clear-role-filters",
   "rarity-filter-change",
   "update:cmcMin",
   "update:cmcMax",
@@ -77,6 +89,8 @@ const sectionedStorageLocations = computed(() =>
   })).filter((section) => section.locations.length),
 );
 
+const showArtStylePicker = computed(() => hasSelectableArtStyles(props.artStyles));
+
 onMounted(async () => {
   storageLoading.value = true;
   try {
@@ -90,7 +104,7 @@ onMounted(async () => {
 
 <template>
   <div class="collection-all-filters">
-    <div v-if="!isAllSetsView && artStyles.length" class="filter-sidebar-section">
+    <div v-if="!isAllSetsView" class="filter-sidebar-section">
       <div class="filter-sidebar-label-row">
         <p class="filter-sidebar-label">Art style</p>
         <button
@@ -120,6 +134,7 @@ onMounted(async () => {
         </button>
       </div>
       <ArtStylePicker
+        v-if="showArtStylePicker"
         :model-value="artStyle"
         layout="list"
         :set-code="setCode"
@@ -129,9 +144,12 @@ onMounted(async () => {
     </div>
 
     <div v-if="isAllView && !isTableView" class="filter-sidebar-section filter-sidebar-section--compact-filters">
-      <div class="filter-sidebar-compact-filter">
+      <div v-if="showOwnershipFilter" class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Ownership</p>
-        <div class="button-group collection-ownership-group">
+        <div
+          class="button-group collection-ownership-group"
+          :class="{ 'collection-ownership-group--binary': !showUnownedFilter }"
+        >
           <button
             type="button"
             class="filter-button"
@@ -149,6 +167,7 @@ onMounted(async () => {
             All
           </button>
           <button
+            v-if="showUnownedFilter"
             type="button"
             class="filter-button"
             :class="{ active: ownedFilter === 'unowned' }"
@@ -266,6 +285,34 @@ onMounted(async () => {
             <span class="collection-storage-filter-label">{{ location.label }}</span>
           </label>
         </template>
+      </div>
+    </div>
+
+    <div v-if="isAllView && !isTableView && showRoleFilter" class="filter-sidebar-section">
+      <div class="filter-sidebar-label-row">
+        <p class="filter-sidebar-label">Role</p>
+        <button
+          v-if="roleFilters.length"
+          type="button"
+          class="filter-button collection-storage-filter-clear"
+          @click="emit('clear-role-filters')"
+        >
+          Clear
+        </button>
+      </div>
+      <div class="collection-storage-filter-list collection-role-filter-list">
+        <label
+          v-for="role in SEARCH_ROLE_OPTIONS"
+          :key="role.id"
+          class="collection-storage-filter-item"
+        >
+          <input
+            type="checkbox"
+            :checked="roleFilters.includes(role.id)"
+            @change="emit('toggle-role-filter', role.id)"
+          >
+          <span class="collection-storage-filter-label">{{ role.label }}</span>
+        </label>
       </div>
     </div>
 
@@ -417,13 +464,21 @@ onMounted(async () => {
       </p>
     </div>
 
-    <div v-if="isAllView && showSort && !isTableView" class="filter-sidebar-section">
+    <div v-if="showSort && !isTableView" class="filter-sidebar-section">
       <label class="manager-filter">
         <span>Sort by</span>
         <div class="collection-sort-row">
           <select :value="allCardsSort" @change="emit('update-sort', $event)">
-            <option value="number">Collector number</option>
-            <option value="value">Value</option>
+            <template v-if="sortMode === 'search'">
+              <option value="newest">Newest set</option>
+              <option value="name">Name</option>
+              <option value="value">Value</option>
+              <option value="cmc">CMC</option>
+            </template>
+            <template v-else>
+              <option value="number">Collector number</option>
+              <option value="value">Value</option>
+            </template>
           </select>
           <button
             type="button"

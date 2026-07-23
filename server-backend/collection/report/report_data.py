@@ -14,7 +14,13 @@ from report.report_queries import (
 )
 from report.set_order import SET_SORT_ALPHABETICAL, sort_set_codes
 from util.set_catalog import load_set_display_names as query_set_display_names
-from util.set_catalog import load_set_icon_uris
+from util.set_catalog import load_set_icon_uris, load_sets_catalog
+from util.set_families import (
+    build_family_index,
+    effective_family_root,
+    load_set_relations,
+    ordered_set_codes_by_family,
+)
 from util.tracked_sets import list_tracked_set_codes
 from util.alchemy_cards import (
     exclude_alchemy_art_style_sql,
@@ -64,20 +70,37 @@ def build_set_option(
     owned_count: int | None = None,
     catalog_count: int | None = None,
     icon_uri: str | None = None,
+    set_type: str | None = None,
+    parent_set_code: str | None = None,
+    family_root: str | None = None,
+    family_members: list[str] | None = None,
+    family_owned_count: int | None = None,
+    family_catalog_count: int | None = None,
 ) -> dict:
     favorite_upper = {code.upper() for code in (favorite_sets or [])}
     normalized = set_code.upper() if set_code != "All" else set_code
     label = "All sets" if set_code == "All" else format_set_option_label(set_code, set_names)
+    members = [code.upper() for code in (family_members or [])]
+    root = (family_root or normalized).upper() if normalized != "All" else None
     option = {
         "setCode": set_code,
         "label": label,
         "favorite": normalized != "All" and normalized in favorite_upper,
         "iconUri": icon_uri or scryfall_set_icon_uri(set_code),
+        "setType": set_type,
+        "parentSetCode": parent_set_code.upper() if parent_set_code else None,
+        "familyRoot": root,
+        "familyMembers": members,
+        "isFamilyRoot": bool(root and normalized == root and len(members) > 1),
     }
     if owned_count is not None:
         option["ownedCount"] = owned_count
     if catalog_count is not None:
         option["catalogCount"] = catalog_count
+    if family_owned_count is not None:
+        option["familyOwnedCount"] = family_owned_count
+    if family_catalog_count is not None:
+        option["familyCatalogCount"] = family_catalog_count
     return option
 
 
@@ -140,11 +163,39 @@ def build_sorted_set_options(
     owned_counts = load_owned_count_by_set(conn)
     catalog_counts = load_catalog_count_by_set(conn)
     icon_uris = load_set_icon_uris(conn)
-    sorted_codes = sort_set_codes(
-        get_all_set_codes(),
-        favorites,
+    catalog = load_sets_catalog(conn)
+    relations = load_set_relations(conn)
+    all_codes = get_all_set_codes()
+    known = {code.upper() for code in all_codes}
+    families = build_family_index(known, relations)
+
+    roots = sorted(
+        {
+            effective_family_root(code, relations, known)
+            for code in known
+        }
+    )
+    favorite_roots: list[str] = []
+    seen_favorite_roots: set[str] = set()
+    for favorite in favorites:
+        root = effective_family_root(str(favorite), relations, known)
+        if not root or root not in known or root in seen_favorite_roots:
+            continue
+        favorite_roots.append(root)
+        seen_favorite_roots.add(root)
+    sorted_roots = sort_set_codes(
+        roots,
+        favorite_roots,
         sort_mode=sort_mode,
-        owned_counts=owned_counts,
+        owned_counts={
+            root: sum(owned_counts.get(member, 0) for member in (families.get(root) or [root]))
+            for root in roots
+        },
+    )
+    ordered_codes = ordered_set_codes_by_family(
+        all_codes,
+        relations,
+        sorted_roots=sorted_roots,
     )
 
     options: list[dict] = []
@@ -158,8 +209,14 @@ def build_sorted_set_options(
                 catalog_count=sum(catalog_counts.values()),
             )
         )
-    for set_code in sorted_codes:
+    for set_code in ordered_codes:
         code_upper = set_code.upper()
+        meta = catalog.get(code_upper) or {}
+        rel = relations.get(code_upper) or {}
+        root = effective_family_root(code_upper, relations, known)
+        members = families.get(root) or [code_upper]
+        family_owned = sum(owned_counts.get(member, 0) for member in members)
+        family_catalog = sum(catalog_counts.get(member, 0) for member in members)
         options.append(
             build_set_option(
                 set_code,
@@ -167,7 +224,13 @@ def build_sorted_set_options(
                 favorites,
                 owned_count=owned_counts.get(code_upper, 0),
                 catalog_count=catalog_counts.get(code_upper, 0),
-                icon_uri=icon_uris.get(code_upper),
+                icon_uri=icon_uris.get(code_upper) or meta.get("icon_svg_uri"),
+                set_type=rel.get("set_type") or meta.get("set_type"),
+                parent_set_code=rel.get("parent_set_code") or meta.get("parent_set_code"),
+                family_root=root,
+                family_members=members,
+                family_owned_count=family_owned if len(members) > 1 else None,
+                family_catalog_count=family_catalog if len(members) > 1 else None,
             )
         )
     return options

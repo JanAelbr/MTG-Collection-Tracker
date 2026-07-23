@@ -74,7 +74,7 @@ class CardLocationTests(unittest.TestCase):
             "deck:food_and_fellowship",
         )
 
-    def test_sync_assigns_lotr_to_binders_and_other_sets_to_decks(self):
+    def test_sync_assigns_deck_owned_including_lotr_to_deck_storage(self):
         self.conn.execute(
             """
             INSERT INTO deck_cards (deck_id, set_code, collector_number, finish, owned_qty)
@@ -101,12 +101,26 @@ class CardLocationTests(unittest.TestCase):
         self.assertEqual(
             rows,
             [
-                ("LTC", "5", "binder:ltc-green", 1),
-                ("LTR", "10", "binder:ltr-black", 2),
-                ("LTR", "400", "binder:ltr-blue", 1),
+                ("LTC", "5", "deck:food_and_fellowship", 1),
+                ("LTR", "10", "deck:food_and_fellowship", 2),
+                ("LTR", "400", "deck:food_and_fellowship", 1),
                 ("MH3", "100", "deck:food_and_fellowship", 2),
             ],
         )
+
+    def test_sync_lotr_purchase_without_deck_stays_in_binder(self):
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, finish, purchase_value)
+            VALUES ('LTR', '50', 0, 1.0)
+            """
+        )
+        self.conn.commit()
+        sync_card_instances(self.conn)
+        row = self.conn.execute(
+            "SELECT location_slug, COUNT(*) FROM card_instances GROUP BY location_slug"
+        ).fetchone()
+        self.assertEqual(row, ("binder:ltr-black", 1))
 
     def test_sync_orphan_purchase_goes_to_general_storage(self):
         self.conn.execute(

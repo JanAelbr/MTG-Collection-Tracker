@@ -18,6 +18,13 @@ const props = defineProps({
   mobileFiltersOpen: { type: Boolean, default: false },
   viewMode: { type: String, default: "gallery" },
   tableModeAvailable: { type: Boolean, default: false },
+  showLenses: { type: Boolean, default: true },
+  showBulk: { type: Boolean, default: true },
+  showFiltersButton: { type: Boolean, default: true },
+  /** When set, replaces the default collection match summary text. */
+  summaryText: { type: String, default: "" },
+  showSummaryInTable: { type: Boolean, default: false },
+  searchPlaceholder: { type: String, default: "" },
 });
 
 const emit = defineEmits([
@@ -33,7 +40,20 @@ const emit = defineEmits([
 
 const isTableView = computed(() => props.viewMode === "table");
 
+const resolvedPlaceholder = computed(() => {
+  if (props.searchPlaceholder) {
+    return props.searchPlaceholder;
+  }
+  return isTableView.value ? "Search cards…" : "Search name or #…";
+});
+
 const matchSummary = computed(() => {
+  if (props.summaryText) {
+    if (isTableView.value && !props.showSummaryInTable) {
+      return null;
+    }
+    return props.summaryText;
+  }
   if (isTableView.value) {
     return null;
   }
@@ -48,7 +68,7 @@ const matchSummary = computed(() => {
 });
 
 const missingValueLabel = computed(() => {
-  if (isTableView.value) {
+  if (props.summaryText || isTableView.value) {
     return "";
   }
   const value = props.scopeStats?.missingValue ?? 0;
@@ -69,11 +89,11 @@ function setViewMode(mode) {
   <div class="collection-all-toolbar">
     <div class="collection-all-toolbar-row">
       <label class="collection-all-search">
-        <span class="visually-hidden">Search in set</span>
+        <span class="visually-hidden">Search cards</span>
         <input
           :value="searchQuery"
           type="search"
-          :placeholder="isTableView ? 'Search cards…' : 'Search name or #…'"
+          :placeholder="resolvedPlaceholder"
           autocomplete="off"
           @input="emit('update:searchQuery', $event.target.value)"
         >
@@ -103,6 +123,7 @@ function setViewMode(mode) {
         </button>
       </div>
       <button
+        v-if="showFiltersButton"
         type="button"
         class="btn btn-secondary btn-small collection-all-filters-btn"
         :aria-expanded="mobileFiltersOpen ? 'true' : 'false'"
@@ -111,7 +132,7 @@ function setViewMode(mode) {
         Filters
       </button>
       <button
-        v-if="!isTableView"
+        v-if="showBulk && !isTableView"
         type="button"
         class="btn btn-secondary btn-small"
         :class="{ 'is-active': bulkSelectMode }"
@@ -128,7 +149,7 @@ function setViewMode(mode) {
       />
     </div>
 
-    <div v-if="!isTableView" class="collection-all-toolbar-row collection-all-lenses">
+    <div v-if="showLenses && !isTableView" class="collection-all-toolbar-row collection-all-lenses">
       <button
         v-for="lens in COLLECTION_LENSES"
         :key="lens.id"
@@ -148,7 +169,7 @@ function setViewMode(mode) {
       </p>
     </div>
 
-    <div v-if="!isTableView && bulkSelectMode && selectedCount" class="collection-bulk-bar">
+    <div v-if="showBulk && !isTableView && bulkSelectMode && selectedCount" class="collection-bulk-bar">
       <span>{{ selectedCount }} selected</span>
       <button
         type="button"

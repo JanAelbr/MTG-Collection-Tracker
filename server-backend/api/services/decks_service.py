@@ -1,29 +1,19 @@
 import sqlite3
 
-
-
 from report.deck_queries import enrich_deck_cards_df, load_deck_cards_df, load_deck_list
-
 from report.deck_stats_data import compute_deck_stats_page
-
 from api.services import settings_service
-
 from api.services.pricing_helpers import apply_strategy_to_deck_df
-
+from lib.run_log import get_logger
 from util.price_history import load_price_snapshot_cache
 
-
-
+log = get_logger(__name__)
 
 
 class DeckError(Exception):
-
     def __init__(self, message: str, status_code: int = 404):
-
         super().__init__(message)
-
         self.message = message
-
         self.status_code = status_code
 
 
@@ -33,6 +23,55 @@ class DeckError(Exception):
 def list_decks(conn: sqlite3.Connection) -> dict:
 
     return {"decks": load_deck_list(conn)}
+
+
+def load_deck_memberships_for_print(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+) -> list[dict]:
+    """Return every deck list row for this print (any finish/section)."""
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    normalized_set = str(set_code or "").strip().upper()
+    normalized_number = str(collector_number or "").strip()
+    if not normalized_set or not normalized_number:
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            d.deck_id,
+            d.name,
+            d.slug,
+            dc.deck_card_id,
+            dc.finish,
+            dc.qty,
+            dc.owned_qty,
+            dc.section
+        FROM deck_cards dc
+        JOIN decks d ON d.deck_id = dc.deck_id
+        WHERE UPPER(dc.set_code) = ?
+          AND dc.collector_number = ?
+        ORDER BY d.name COLLATE NOCASE, dc.finish, dc.section, dc.deck_card_id
+        """,
+        (normalized_set, normalized_number),
+    ).fetchall()
+    memberships = []
+    for row in rows:
+        slug = str(row["slug"] or "").strip().lower()
+        memberships.append({
+            "deckId": int(row["deck_id"]),
+            "deckName": row["name"],
+            "deckSlug": slug,
+            "locationSlug": f"deck:{slug}" if slug else "",
+            "deckCardId": int(row["deck_card_id"]),
+            "finish": int(row["finish"] or 0),
+            "qty": int(row["qty"] or 0),
+            "ownedQty": int(row["owned_qty"] or 0),
+            "section": str(row["section"] or "main").strip().lower() or "main",
+        })
+    return memberships
 
 
 def _slugify_deck_name(name: str) -> str:
@@ -156,6 +195,7 @@ def create_deck(
 
     conn.commit()
     bump_cache_epoch()
+    log.info("Created deck %s (%r, format=%s)", deck_id, deck_name, format_name)
 
     decks = load_deck_list(conn)
     deck = next((item for item in decks if int(item["id"]) == int(deck_id)), None)
@@ -677,6 +717,100 @@ def _ensure_owned_copies_at_deck(
     return placed
 
 
+def _reconcile_deck_owned_storage(
+    conn: sqlite3.Connection,
+    *,
+    deck_slug: str,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+    owned_qty: int,
+) -> dict:
+    """Make card_instances at deck:{slug} match owned_qty for this print."""
+    target = max(0, int(owned_qty))
+    deck_location = f"deck:{str(deck_slug).lower()}"
+    current = _count_instances_at_location(
+        conn,
+        set_code=set_code,
+        collector_number=collector_number,
+        finish=finish,
+        location_slug=deck_location,
+    )
+    claimed = 0
+    released = {"movedToStorage": 0, "storageLocation": ""}
+    if current < target:
+        claimed = _ensure_owned_copies_at_deck(
+            conn,
+            deck_slug=deck_slug,
+            set_code=set_code,
+            collector_number=collector_number,
+            finish=finish,
+            target_count=target,
+        )
+    elif current > target:
+        released = _release_owned_copies_to_storage(
+            conn,
+            deck_slug=deck_slug,
+            set_code=set_code,
+            collector_number=collector_number,
+            finish=finish,
+            count=current - target,
+        )
+    return {
+        "claimedToDeck": claimed,
+        "movedToStorage": released["movedToStorage"],
+        "storageLocation": released.get("storageLocation", ""),
+    }
+
+
+def reconcile_all_deck_owned_storage(conn: sqlite3.Connection) -> dict:
+    """Align every deck-owned print's instances with owned_qty (incl. LOTR)."""
+    from util.app_tables import ensure_app_tables
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_app_tables(conn)
+    ensure_deck_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT d.slug, dc.set_code, dc.collector_number, dc.finish, dc.owned_qty
+        FROM deck_cards dc
+        JOIN decks d ON d.deck_id = dc.deck_id
+        WHERE dc.owned_qty > 0
+          AND dc.set_code IS NOT NULL
+          AND dc.collector_number IS NOT NULL
+        """
+    ).fetchall()
+    claimed = 0
+    released = 0
+    for slug, set_code, collector_number, finish, owned_qty in rows:
+        result = _reconcile_deck_owned_storage(
+            conn,
+            deck_slug=str(slug).lower(),
+            set_code=str(set_code).upper(),
+            collector_number=str(collector_number).strip(),
+            finish=int(finish or 0),
+            owned_qty=int(owned_qty or 0),
+        )
+        claimed += int(result["claimedToDeck"] or 0)
+        released += int(result["movedToStorage"] or 0)
+    if claimed or released:
+        conn.commit()
+        from api.cache import bump_cache_epoch
+
+        bump_cache_epoch()
+        log.info(
+            "Reconciled deck storage: claimed=%s released=%s across %s owned row(s)",
+            claimed,
+            released,
+            len(rows),
+        )
+    return {
+        "ownedRows": len(rows),
+        "claimedToDeck": claimed,
+        "movedToStorage": released,
+    }
+
+
 def set_deck_card_owned(
     conn: sqlite3.Connection,
     *,
@@ -727,32 +861,15 @@ def set_deck_card_owned(
         raise DeckError("Card not in deck", status_code=404)
 
     current_qty = int(existing[1])
-    current_owned = int(existing[2])
-    storage_result = {"movedToStorage": 0, "storageLocation": ""}
-    claimed = 0
-
-    if owned:
-        new_owned = current_qty
-        if new_owned > current_owned:
-            claimed = _ensure_owned_copies_at_deck(
-                conn,
-                deck_slug=deck_row[2],
-                set_code=normalized_set,
-                collector_number=normalized_number,
-                finish=finish_id,
-                target_count=new_owned,
-            )
-    else:
-        new_owned = 0
-        if current_owned > 0:
-            storage_result = _release_owned_copies_to_storage(
-                conn,
-                deck_slug=deck_row[2],
-                set_code=normalized_set,
-                collector_number=normalized_number,
-                finish=finish_id,
-                count=current_owned,
-            )
+    new_owned = current_qty if owned else 0
+    storage_result = _reconcile_deck_owned_storage(
+        conn,
+        deck_slug=deck_row[2],
+        set_code=normalized_set,
+        collector_number=normalized_number,
+        finish=finish_id,
+        owned_qty=new_owned,
+    )
 
     conn.execute(
         "UPDATE deck_cards SET owned_qty = ? WHERE deck_card_id = ?",
@@ -768,7 +885,7 @@ def set_deck_card_owned(
         "qty": current_qty,
         "ownedQty": new_owned,
         "section": section_name,
-        "claimedToDeck": claimed,
+        "claimedToDeck": storage_result["claimedToDeck"],
         "movedToStorage": storage_result["movedToStorage"],
         "storageLocation": storage_result["storageLocation"],
         "card": {
@@ -1034,6 +1151,7 @@ def rename_deck(conn: sqlite3.Connection, *, deck_id: str, name: str) -> dict:
     )
     conn.commit()
     bump_cache_epoch()
+    log.info("Renamed deck %s from %r to %r", deck_key, deck_row[1], cleaned)
 
     decks = load_deck_list(conn)
     deck = next((item for item in decks if item["id"] == deck_key), None)
@@ -1076,6 +1194,7 @@ def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
     )
     conn.commit()
     bump_cache_epoch()
+    log.info("Deleted deck %s (slug=%s)", deck_key, deck_row[1])
     return {"deletedDeckId": str(deck_key)}
 
 
@@ -1190,13 +1309,32 @@ def bulk_add_cards_to_deck(
         raise DeckError("Deck not found", status_code=404) from exc
 
     deck_row = conn.execute(
-        "SELECT deck_id, name FROM decks WHERE deck_id = ?",
+        "SELECT deck_id, name, slug FROM decks WHERE deck_id = ?",
         (deck_key,),
     ).fetchone()
     if deck_row is None:
         raise DeckError("Deck not found", status_code=404)
 
+    deck_slug = str(deck_row[2]).lower()
+
     if replace_main:
+        owned_rows = conn.execute(
+            """
+            SELECT set_code, collector_number, finish, owned_qty
+            FROM deck_cards
+            WHERE deck_id = ? AND section = 'main' AND owned_qty > 0
+            """,
+            (deck_key,),
+        ).fetchall()
+        for set_code, collector_number, finish, owned_qty in owned_rows:
+            _reconcile_deck_owned_storage(
+                conn,
+                deck_slug=deck_slug,
+                set_code=str(set_code).upper(),
+                collector_number=str(collector_number).strip(),
+                finish=int(finish or 0),
+                owned_qty=0,
+            )
         conn.execute(
             "DELETE FROM deck_cards WHERE deck_id = ? AND section = 'main'",
             (deck_key,),
@@ -1255,6 +1393,15 @@ def bulk_add_cards_to_deck(
                 resolved.get("in_catalog") or 0,
             ),
         )
+        if owned_qty > 0 and resolved.get("set_code") and resolved.get("collector_number"):
+            _reconcile_deck_owned_storage(
+                conn,
+                deck_slug=deck_slug,
+                set_code=str(resolved["set_code"]).upper(),
+                collector_number=str(resolved["collector_number"]).strip(),
+                finish=int(resolved.get("finish") or 0),
+                owned_qty=owned_qty,
+            )
         sort_order += 1
         added += 1
 
@@ -1394,6 +1541,15 @@ def apply_deck_csv_import(
         applied["update"] += 1
 
     bump_cache_epoch()
+    log.info(
+        "Applied CSV import to deck %s (%r): add=%s update=%s remove=%s mode=%s",
+        deck_key,
+        preview["deckName"],
+        applied["add"],
+        applied["update"],
+        applied["remove"],
+        preview["mode"],
+    )
     return {
         "deckId": str(deck_key),
         "deckName": preview["deckName"],

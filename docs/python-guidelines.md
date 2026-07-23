@@ -255,7 +255,7 @@ except ValueError as exc:
 
 ## Logging and user output
 
-CLI scripts use `lib/run_log.py`:
+CLI scripts and the FastAPI app use `lib/run_log.py`:
 
 ```python
 from lib.run_log import configure_logging, get_logger
@@ -267,6 +267,7 @@ def main() -> None:
     log.info("Starting …")
 ```
 
+- The API lifespan in `api/main.py` must call `configure_logging()` on startup (set `LOTR_VERBOSE=1` for debug).
 - Pass `-v` / `--verbose` on user-facing scripts for debug detail.
 - **English** for log messages and user-facing report labels.
 

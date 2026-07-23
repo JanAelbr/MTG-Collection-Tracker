@@ -43,7 +43,9 @@ Set codes referenced by deck cards are included in price-update set discovery (`
 
 ## Ownership
 
-Deck reports use `purchases` for owned value and ROI. Mark cards as owned in **Set Manager** or assign copies in **Storage**. The `owned_qty` column on `deck_cards` tracks how many deck slots you consider filled from your collection.
+Deck reports use `purchases` for owned value and ROI. Mark cards as owned in **Set Manager** or on the deck with the owned toggle. The `owned_qty` column on `deck_cards` tracks how many deck slots you consider filled from your collection.
+
+**Deck storage** (`deck:{slug}` locations on the Storage page) is calculated automatically from that ownership: when you mark a deck card owned, matching copies move into that deck’s storage (including LTR/LTC prints); when you unown or remove them, copies return to default storage or binders. You cannot assign copies to deck storage manually — use binders and general storage for physical placement outside decks.
 
 Deck `purchase_price` is stored on the deck row for aggregate invested/ROI figures in deck stats.
 

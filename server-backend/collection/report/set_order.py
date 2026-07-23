@@ -4,23 +4,12 @@ SET_SORT_ALPHABETICAL = "alphabetical"
 SET_SORT_OWNED = "owned"
 SET_SORT_MODES = frozenset({SET_SORT_ALPHABETICAL, SET_SORT_OWNED})
 
-SET_PICKER_DROPDOWN = "dropdown"
-SET_PICKER_BROWSER = "browser"
-SET_PICKER_MODES = frozenset({SET_PICKER_DROPDOWN, SET_PICKER_BROWSER})
-
 
 def normalize_set_sort_mode(value) -> str:
     mode = str(value or SET_SORT_ALPHABETICAL).strip().lower()
     if mode in SET_SORT_MODES:
         return mode
     return SET_SORT_ALPHABETICAL
-
-
-def normalize_set_picker_mode(value) -> str:
-    mode = str(value or SET_PICKER_DROPDOWN).strip().lower()
-    if mode in SET_PICKER_MODES:
-        return mode
-    return SET_PICKER_DROPDOWN
 
 
 def normalize_favorite_sets(

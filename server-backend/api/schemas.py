@@ -3,13 +3,34 @@ from pydantic import BaseModel, Field, model_validator
 
 class SettingsUpdate(BaseModel):
     priceStrategy: str | None = None
+    favoritesCardsPriceStrategy: str | None = None
+    favoritesArtStylesPriceStrategy: str | None = None
     favoriteSets: list[str] | None = None
-    compareDate: str | None = None
+    favoriteCards: list[dict] | None = None
+    favoriteArtStyles: list[dict] | None = None
     pageSize: int | None = Field(default=None, ge=25, le=100)
     collectionCardScale: int | None = Field(default=None, ge=75, le=150)
     setSortMode: str | None = None
-    setPickerMode: str | None = None
     defaultStorageLocation: str | None = None
+
+
+class FavoriteCardToggle(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int = Field(ge=0, le=2)
+
+
+class FavoriteArtStyleToggle(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    artStyle: str = Field(min_length=1, max_length=120)
+
+
+class FavoriteCardsReorder(BaseModel):
+    cards: list[FavoriteCardToggle] = Field(default_factory=list)
+
+
+class FavoriteArtStylesReorder(BaseModel):
+    artStyles: list[FavoriteArtStyleToggle] = Field(default_factory=list)
 
 
 class StorageLocationCreate(BaseModel):
@@ -124,6 +145,35 @@ class CopyAdjust(BaseModel):
         if isinstance(values, dict):
             return _resolve_finish_field(values)
         return values
+
+
+class ScanIngest(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str | None = Field(default=None, max_length=32)
+    finish: int | None = Field(default=0, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    nameHint: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+    @model_validator(mode="after")
+    def require_name_or_number(self):
+        number = str(self.collectorNumber or "").strip()
+        hint = str(self.nameHint or "").strip()
+        if not number and not hint:
+            raise ValueError("nameHint or collectorNumber is required")
+        return self
+
+
+class ScanArtSearch(BaseModel):
+    artHash: str = Field(min_length=8, max_length=32)
+    limit: int | None = Field(default=12, ge=1, le=40)
+    buildMissing: bool | None = Field(default=True)
 
 
 class CopyStorageUpdate(BaseModel):

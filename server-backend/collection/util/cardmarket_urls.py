@@ -263,6 +263,10 @@ def normalize_cardmarket_url_columns(
     cardmarket_url: str | None,
     cardmarket_url_foil: str | None,
     guide: dict[int, dict],
+    *,
+    has_nonfoil: bool | int | None = None,
+    has_foil: bool | int | None = None,
+    has_etched: bool | int | None = None,
 ) -> tuple[str | None, str | None]:
     nonfoil_url = coerce_cardmarket_url(cardmarket_url)
     foil_url = coerce_cardmarket_url(cardmarket_url_foil)
@@ -296,6 +300,54 @@ def normalize_cardmarket_url_columns(
                 if paired is not None and _is_plausible_nonfoil_product(paired, guide):
                     nonfoil_url = build_product_url(paired)
 
+    return _apply_finish_flag_url_constraints(
+        nonfoil_url,
+        foil_url,
+        guide,
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
+    )
+
+
+def _truthy_flag(value: bool | int | None) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
+
+
+def _apply_finish_flag_url_constraints(
+    nonfoil_url: str | None,
+    foil_url: str | None,
+    guide: dict[int, dict],
+    *,
+    has_nonfoil: bool | int | None = None,
+    has_foil: bool | int | None = None,
+    has_etched: bool | int | None = None,
+) -> tuple[str | None, str | None]:
+    """Clear invented URLs for finishes the print does not have."""
+    nf = _truthy_flag(has_nonfoil)
+    foil = _truthy_flag(has_foil)
+    etched = _truthy_flag(has_etched)
+    if nf is None and foil is None and etched is None:
+        return nonfoil_url, foil_url
+
+    if nf is False:
+        if nonfoil_url and not foil_url:
+            product_id = parse_id_product(nonfoil_url)
+            bias = guide_entry_finish_bias(guide.get(product_id)) if product_id else "unknown"
+            if bias in ("foil", "both"):
+                foil_url = nonfoil_url
+        nonfoil_url = None
+
+    if foil is False and etched is not True:
+        if foil_url and not nonfoil_url:
+            product_id = parse_id_product(foil_url)
+            bias = guide_entry_finish_bias(guide.get(product_id)) if product_id else "unknown"
+            if bias in ("nonfoil", "both"):
+                nonfoil_url = foil_url
+        foil_url = None
+
     return nonfoil_url, foil_url
 
 
@@ -307,6 +359,21 @@ def cardmarket_url_for_finish(
     finish_id = normalize_finish(finish)
     nonfoil_url = coerce_cardmarket_url(_row_value(row, "cardmarket_url"))
     foil_url = coerce_cardmarket_url(_row_value(row, "cardmarket_url_foil"))
+    has_nonfoil = _truthy_flag(
+        _row_value(row, "has_nonfoil")
+        if _row_value(row, "has_nonfoil") is not None
+        else _row_value(row, "hasNonfoil")
+    )
+    has_foil = _truthy_flag(
+        _row_value(row, "has_foil")
+        if _row_value(row, "has_foil") is not None
+        else _row_value(row, "hasFoil")
+    )
+    has_etched = _truthy_flag(
+        _row_value(row, "has_etched")
+        if _row_value(row, "has_etched") is not None
+        else _row_value(row, "hasEtched")
+    )
 
     if finish_id == FINISH_ETCHED:
         if foil_url:
@@ -320,6 +387,8 @@ def cardmarket_url_for_finish(
         return nonfoil_url
 
     if finish_id == FINISH_FOIL:
+        if has_foil is False and has_etched is not True:
+            return None
         if foil_url:
             return foil_url
         if nonfoil_url and guide:
@@ -331,6 +400,9 @@ def cardmarket_url_for_finish(
                     if paired is not None:
                         return build_product_url(paired)
         return nonfoil_url
+
+    if has_nonfoil is False:
+        return None
 
     if nonfoil_url and guide:
         product_id = parse_id_product(nonfoil_url)
@@ -754,18 +826,335 @@ def load_existing_cardmarket_urls(
     return row[0], row[1]
 
 
-def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -> int:
+AUDIT_SAMPLE_LIMIT = 25
+AUDIT_ISSUE_CODES = (
+    "foil_only_has_nonfoil_url",
+    "nonfoil_only_has_foil_url",
+    "nonfoil_url_is_foil_biased",
+    "foil_url_is_nonfoil_biased",
+    "duplicate_product_in_set",
+    "missing_url_for_enabled_finish",
+)
+
+
+def _audit_card_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
+
+
+def _load_cards_for_url_audit(conn: sqlite3.Connection) -> list[tuple]:
+    columns = _audit_card_columns(conn)
+    has_name = "name" in columns
+    if "has_nonfoil" in columns:
+        finish_select = (
+            "COALESCE(has_nonfoil, 1), COALESCE(has_foil, 0), COALESCE(has_etched, 0)"
+        )
+    else:
+        finish_select = "1, 0, 0"
+    name_select = "name" if has_name else "'' AS name"
+    return conn.execute(
+        f"""
+        SELECT set_code, collector_number, {name_select},
+               cardmarket_url, cardmarket_url_foil,
+               {finish_select}
+        FROM cards
+        """
+    ).fetchall()
+
+
+def _append_audit_finding(
+    findings: dict[str, list[dict]],
+    counts: dict[str, int],
+    code: str,
+    *,
+    set_code: str,
+    collector_number: str,
+    name: str,
+    cardmarket_url: str | None,
+    cardmarket_url_foil: str | None,
+    detail: str = "",
+    sample_limit: int,
+) -> None:
+    counts[code] = counts.get(code, 0) + 1
+    bucket = findings.setdefault(code, [])
+    if len(bucket) >= sample_limit:
+        return
+    bucket.append({
+        "setCode": set_code,
+        "collectorNumber": str(collector_number),
+        "name": name or "",
+        "cardmarketUrl": cardmarket_url,
+        "cardmarketUrlFoil": cardmarket_url_foil,
+        "detail": detail,
+    })
+
+
+def audit_cardmarket_urls(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+    *,
+    sample_limit: int = AUDIT_SAMPLE_LIMIT,
+) -> dict:
+    """Classify Cardmarket URL mismatches using finish flags + guide bias."""
+    counts = {code: 0 for code in AUDIT_ISSUE_CODES}
+    findings: dict[str, list[dict]] = {code: [] for code in AUDIT_ISSUE_CODES}
+    product_owners: dict[tuple[str, int], list[tuple[str, str, str]]] = {}
+
+    for (
+        set_code,
+        collector_number,
+        name,
+        cardmarket_url,
+        cardmarket_url_foil,
+        has_nonfoil,
+        has_foil,
+        has_etched,
+    ) in _load_cards_for_url_audit(conn):
+        nonfoil_url = coerce_cardmarket_url(cardmarket_url)
+        foil_url = coerce_cardmarket_url(cardmarket_url_foil)
+        nf = bool(has_nonfoil)
+        foil = bool(has_foil)
+        etched = bool(has_etched)
+
+        if not nf and foil and nonfoil_url:
+            _append_audit_finding(
+                findings,
+                counts,
+                "foil_only_has_nonfoil_url",
+                set_code=set_code,
+                collector_number=collector_number,
+                name=name,
+                cardmarket_url=nonfoil_url,
+                cardmarket_url_foil=foil_url,
+                sample_limit=sample_limit,
+            )
+        if nf and not foil and not etched and foil_url:
+            _append_audit_finding(
+                findings,
+                counts,
+                "nonfoil_only_has_foil_url",
+                set_code=set_code,
+                collector_number=collector_number,
+                name=name,
+                cardmarket_url=nonfoil_url,
+                cardmarket_url_foil=foil_url,
+                sample_limit=sample_limit,
+            )
+
+        nonfoil_id = parse_id_product(nonfoil_url)
+        if nonfoil_id is not None:
+            bias = guide_entry_finish_bias(guide.get(nonfoil_id))
+            if bias == "foil":
+                _append_audit_finding(
+                    findings,
+                    counts,
+                    "nonfoil_url_is_foil_biased",
+                    set_code=set_code,
+                    collector_number=collector_number,
+                    name=name,
+                    cardmarket_url=nonfoil_url,
+                    cardmarket_url_foil=foil_url,
+                    detail=f"idProduct={nonfoil_id}",
+                    sample_limit=sample_limit,
+                )
+            product_owners.setdefault((str(set_code).upper(), nonfoil_id), []).append(
+                (str(collector_number), name or "", "nonfoil")
+            )
+
+        foil_id = parse_id_product(foil_url)
+        if foil_id is not None:
+            bias = guide_entry_finish_bias(guide.get(foil_id))
+            if bias == "nonfoil":
+                _append_audit_finding(
+                    findings,
+                    counts,
+                    "foil_url_is_nonfoil_biased",
+                    set_code=set_code,
+                    collector_number=collector_number,
+                    name=name,
+                    cardmarket_url=nonfoil_url,
+                    cardmarket_url_foil=foil_url,
+                    detail=f"idProduct={foil_id}",
+                    sample_limit=sample_limit,
+                )
+            product_owners.setdefault((str(set_code).upper(), foil_id), []).append(
+                (str(collector_number), name or "", "foil")
+            )
+
+        if nf and not nonfoil_url:
+            _append_audit_finding(
+                findings,
+                counts,
+                "missing_url_for_enabled_finish",
+                set_code=set_code,
+                collector_number=collector_number,
+                name=name,
+                cardmarket_url=nonfoil_url,
+                cardmarket_url_foil=foil_url,
+                detail="nonfoil",
+                sample_limit=sample_limit,
+            )
+        if (foil or etched) and not foil_url:
+            _append_audit_finding(
+                findings,
+                counts,
+                "missing_url_for_enabled_finish",
+                set_code=set_code,
+                collector_number=collector_number,
+                name=name,
+                cardmarket_url=nonfoil_url,
+                cardmarket_url_foil=foil_url,
+                detail="foil" if foil else "etched",
+                sample_limit=sample_limit,
+            )
+
+    for (set_code, product_id), owners in product_owners.items():
+        collector_numbers = {cn for cn, _name, _side in owners}
+        if len(collector_numbers) < 2:
+            continue
+        sample_owner = owners[0]
+        _append_audit_finding(
+            findings,
+            counts,
+            "duplicate_product_in_set",
+            set_code=set_code,
+            collector_number=sample_owner[0],
+            name=sample_owner[1],
+            cardmarket_url=build_product_url(product_id),
+            cardmarket_url_foil=None,
+            detail=(
+                f"idProduct={product_id} shared by "
+                f"{', '.join(sorted(collector_numbers)[:8])}"
+            ),
+            sample_limit=sample_limit,
+        )
+
+    return {
+        "counts": counts,
+        "findings": findings,
+        "totalIssues": sum(counts.values()),
+    }
+
+
+def repair_finish_flag_url_mismatches(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+) -> int:
+    """Clear unambiguous finish/URL mismatches (safe auto-repair classes)."""
+    columns = _audit_card_columns(conn)
+    if "has_nonfoil" not in columns:
+        return 0
+
+    updated = 0
     rows = conn.execute(
         """
-        SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil
+        SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+               COALESCE(has_nonfoil, 1), COALESCE(has_foil, 0), COALESCE(has_etched, 0)
         FROM cards
         WHERE (cardmarket_url IS NOT NULL AND TRIM(cardmarket_url) != '')
            OR (cardmarket_url_foil IS NOT NULL AND TRIM(cardmarket_url_foil) != '')
         """
     ).fetchall()
+    for (
+        set_code,
+        collector_number,
+        cardmarket_url,
+        cardmarket_url_foil,
+        has_nonfoil,
+        has_foil,
+        has_etched,
+    ) in rows:
+        normalized = normalize_cardmarket_url_columns(
+            cardmarket_url,
+            cardmarket_url_foil,
+            guide,
+            has_nonfoil=has_nonfoil,
+            has_foil=has_foil,
+            has_etched=has_etched,
+        )
+        # Also clear foil-biased nonfoil / nonfoil-biased foil when finishes conflict
+        nonfoil_url, foil_url = normalized
+        nonfoil_id = parse_id_product(nonfoil_url)
+        if nonfoil_id is not None and guide_entry_finish_bias(guide.get(nonfoil_id)) == "foil":
+            if bool(has_foil) or bool(has_etched):
+                if not foil_url:
+                    foil_url = nonfoil_url
+                nonfoil_url = None
+            elif not bool(has_nonfoil):
+                nonfoil_url = None
+        foil_id = parse_id_product(foil_url)
+        if (
+            foil_id is not None
+            and guide_entry_finish_bias(guide.get(foil_id)) == "nonfoil"
+            and bool(has_nonfoil)
+            and not bool(has_foil)
+            and not bool(has_etched)
+        ):
+            if not nonfoil_url:
+                nonfoil_url = foil_url
+            foil_url = None
+
+        current = (
+            (cardmarket_url or "").strip() or None,
+            (cardmarket_url_foil or "").strip() or None,
+        )
+        repaired = (nonfoil_url, foil_url)
+        if current == repaired:
+            continue
+        conn.execute(
+            """
+            UPDATE cards
+            SET cardmarket_url = ?, cardmarket_url_foil = ?
+            WHERE set_code = ? AND collector_number = ?
+            """,
+            (repaired[0], repaired[1], set_code, collector_number),
+        )
+        updated += 1
+    return updated
+
+
+def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -> int:
+    columns = _audit_card_columns(conn)
+    has_finish_flags = "has_nonfoil" in columns
+    if has_finish_flags:
+        rows = conn.execute(
+            """
+            SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                   COALESCE(has_nonfoil, 1), COALESCE(has_foil, 0), COALESCE(has_etched, 0)
+            FROM cards
+            WHERE (cardmarket_url IS NOT NULL AND TRIM(cardmarket_url) != '')
+               OR (cardmarket_url_foil IS NOT NULL AND TRIM(cardmarket_url_foil) != '')
+            """
+        ).fetchall()
+    else:
+        rows = [
+            (*row, None, None, None)
+            for row in conn.execute(
+                """
+                SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil
+                FROM cards
+                WHERE (cardmarket_url IS NOT NULL AND TRIM(cardmarket_url) != '')
+                   OR (cardmarket_url_foil IS NOT NULL AND TRIM(cardmarket_url_foil) != '')
+                """
+            ).fetchall()
+        ]
     updated = 0
-    for set_code, collector_number, cardmarket_url, cardmarket_url_foil in rows:
-        normalized = normalize_cardmarket_url_columns(cardmarket_url, cardmarket_url_foil, guide)
+    for (
+        set_code,
+        collector_number,
+        cardmarket_url,
+        cardmarket_url_foil,
+        has_nonfoil,
+        has_foil,
+        has_etched,
+    ) in rows:
+        normalized = normalize_cardmarket_url_columns(
+            cardmarket_url,
+            cardmarket_url_foil,
+            guide,
+            has_nonfoil=has_nonfoil,
+            has_foil=has_foil,
+            has_etched=has_etched,
+        )
         current = (
             (cardmarket_url or "").strip() or None,
             (cardmarket_url_foil or "").strip() or None,
@@ -783,4 +1172,6 @@ def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -
         updated += 1
     updated += _repair_known_ltc_ring_urls(conn, guide)
     updated += repair_mislinked_cardmarket_urls(conn, guide)
+    if has_finish_flags:
+        updated += repair_finish_flag_url_mismatches(conn, guide)
     return updated

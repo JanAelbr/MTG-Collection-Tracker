@@ -1,6 +1,5 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import BrowseSelect from "./BrowseSelect.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import {
   formatSetCountLabel,
@@ -11,45 +10,211 @@ import {
 import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 
+/** Max set tiles shown while searching (tracked + Scryfall candidates). */
+const SET_GALLERY_SEARCH_LIMIT = 12;
+
 const props = defineProps({
   sets: { type: Array, default: () => [] },
   activeSetCode: { type: String, default: "" },
+  activeFamily: { type: Boolean, default: false },
   activeArtStyle: { type: String, default: "" },
   showFavorites: { type: Boolean, default: false },
-  manageSets: { type: Boolean, default: false },
   showReloadCatalog: { type: Boolean, default: true },
-  deletingSetCode: { type: String, default: "" },
   reloadingSetCode: { type: String, default: "" },
-  availableSetOptions: { type: Array, default: () => [] },
-  loadingAvailableSets: { type: Boolean, default: false },
+  searchSets: { type: Array, default: () => [] },
+  loadingSearchSets: { type: Boolean, default: false },
   addingSetCode: { type: String, default: "" },
-  collapsed: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["select", "toggleFavorite", "add-set", "remove-set", "reload-catalog"]);
+const emit = defineEmits([
+  "select",
+  "select-family",
+  "toggleFavorite",
+  "reload-catalog",
+]);
 
 const { setGalleryFilter } = useSetGalleryFilter();
 const galleryRef = ref(null);
 
-const visibleSets = computed(() => {
-  const query = setGalleryFilter.value.trim().toLowerCase();
-  return props.sets.filter((set) => {
-    if (!set?.setCode) {
-      return false;
+const setsByCode = computed(() => {
+  const map = new Map();
+  for (const set of props.sets) {
+    if (set?.setCode) {
+      map.set(set.setCode, set);
     }
-    if (!query || set.setCode === "All") {
-      return true;
-    }
-    const haystack = [
-      set.setCode,
-      set.label,
-      setDisplayName(set),
-    ].filter(Boolean).join(" ").toLowerCase();
-    return haystack.includes(query);
-  });
+  }
+  return map;
 });
 
-const addSetDisabled = computed(() => Boolean(props.addingSetCode));
+function setMatchesQuery(set, query) {
+  if (!query || set.setCode === "All") {
+    return true;
+  }
+  const members = set.familyMembers || [set.setCode];
+  const haystack = [
+    set.setCode,
+    set.label,
+    set.name,
+    setDisplayName(set),
+    set.setType,
+    ...members,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(query);
+}
+
+function isBrowserRoot(set) {
+  if (!set?.setCode) {
+    return false;
+  }
+  if (set.setCode === "All") {
+    return true;
+  }
+  const root = set.familyRoot || set.setCode;
+  return set.setCode === root;
+}
+
+function familyOwnedTotal(set) {
+  if (set?.familyOwnedCount != null) {
+    return Number(set.familyOwnedCount) || 0;
+  }
+  return Number(set?.ownedCount) || 0;
+}
+
+function rootMatchesQuery(set, query) {
+  if (!query || set.setCode === "All") {
+    return !query || set.setCode === "All";
+  }
+  if (setMatchesQuery(set, query)) {
+    return true;
+  }
+  const members = set.familyMembers || [];
+  return members.some((code) => {
+    const member = setsByCode.value.get(code);
+    return member ? setMatchesQuery(member, query) : String(code).toLowerCase().includes(query);
+  });
+}
+
+const activeFamilyRoot = computed(() => {
+  if (!props.activeSetCode || props.activeSetCode === "All") {
+    return "";
+  }
+  const active = setsByCode.value.get(props.activeSetCode);
+  if (active?.familyRoot) {
+    return active.familyRoot;
+  }
+  for (const set of props.sets) {
+    if (!set?.setCode || set.setCode === "All" || !isBrowserRoot(set)) {
+      continue;
+    }
+    const members = set.familyMembers || [];
+    if (members.includes(props.activeSetCode)) {
+      return set.setCode;
+    }
+  }
+  return props.activeSetCode;
+});
+
+function isPinnedRoot(set) {
+  if (!set?.setCode || set.setCode === "All") {
+    return set?.setCode === "All";
+  }
+  return (
+    set.setCode === props.activeSetCode
+    || set.setCode === activeFamilyRoot.value
+    || (set.familyMembers || []).includes(props.activeSetCode)
+  );
+}
+
+const visibleFamilies = computed(() => {
+  const query = setGalleryFilter.value.trim().toLowerCase();
+  const roots = props.sets.filter((set) => isBrowserRoot(set));
+
+  if (!query) {
+    return roots.filter((set) => {
+      if (set.setCode === "All" || isPinnedRoot(set)) {
+        return true;
+      }
+      return familyOwnedTotal(set) > 0;
+    });
+  }
+
+  const matchedTracked = roots.filter((set) => rootMatchesQuery(set, query));
+  const trackedCodes = new Set();
+  for (const set of roots) {
+    for (const code of set.familyMembers || [set.setCode]) {
+      if (code) {
+        trackedCodes.add(String(code).toUpperCase());
+      }
+    }
+    if (set.setCode) {
+      trackedCodes.add(String(set.setCode).toUpperCase());
+    }
+  }
+
+  const matchedSearch = (props.searchSets || [])
+    .filter((set) => {
+      if (!set?.setCode || trackedCodes.has(String(set.setCode).toUpperCase())) {
+        return false;
+      }
+      return setMatchesQuery(set, query);
+    })
+    .map((set) => ({
+      ...set,
+      pendingImport: true,
+      familyRoot: set.familyRoot || set.setCode,
+      familyMembers: set.familyMembers || [set.setCode],
+      isFamilyRoot: true,
+      ownedCount: set.ownedCount ?? 0,
+      catalogCount: set.catalogCount ?? 0,
+    }));
+
+  const combined = [...matchedTracked, ...matchedSearch];
+  const limited = [];
+  const seen = new Set();
+  for (const set of combined) {
+    if (!set?.setCode || seen.has(set.setCode)) {
+      continue;
+    }
+    seen.add(set.setCode);
+    limited.push(set);
+    if (limited.length >= SET_GALLERY_SEARCH_LIMIT) {
+      break;
+    }
+  }
+  return limited;
+});
+
+function familyTagMembers(set) {
+  if (!set?.setCode || set.setCode === "All" || set.pendingImport) {
+    return [];
+  }
+  const members = set.familyMembers || [];
+  if (members.length <= 1) {
+    return [];
+  }
+  const ordered = [
+    set.setCode,
+    ...members.filter((code) => code && code !== set.setCode),
+  ];
+  const seen = new Set();
+  return ordered
+    .filter((code) => {
+      if (seen.has(code)) {
+        return false;
+      }
+      seen.add(code);
+      return true;
+    })
+    .map((code) => setsByCode.value.get(code) || {
+      setCode: code,
+      familyRoot: set.setCode,
+      familyMembers: members,
+    });
+}
+
+function showFamilyChildren(set) {
+  return Boolean(isCardActive(set) && familyTagMembers(set).length > 1);
+}
 
 function setIconUri(set) {
   return resolveSetGalleryIconUri(set);
@@ -59,28 +224,96 @@ function onSetIconError(event, set) {
   applySetGalleryIconFallback(event.target, set);
 }
 
+function displayOwnedCount(set) {
+  if (
+    props.activeFamily
+    && set?.isFamilyRoot
+    && set.familyOwnedCount != null
+    && (set.setCode === props.activeSetCode || set.setCode === activeFamilyRoot.value)
+  ) {
+    return set.familyOwnedCount;
+  }
+  return set?.ownedCount;
+}
+
+function displayCatalogCount(set) {
+  if (
+    props.activeFamily
+    && set?.isFamilyRoot
+    && set.familyCatalogCount != null
+    && (set.setCode === props.activeSetCode || set.setCode === activeFamilyRoot.value)
+  ) {
+    return set.familyCatalogCount;
+  }
+  return set?.catalogCount;
+}
+
 function countLabel(set) {
-  return formatSetCountLabel(set);
+  if (set?.pendingImport) {
+    return "Add";
+  }
+  const owned = displayOwnedCount(set);
+  const catalog = displayCatalogCount(set);
+  if (owned == null || catalog == null) {
+    return formatSetCountLabel(set);
+  }
+  return `${owned}/${catalog}`;
 }
 
 function completionRarityClass(set) {
-  const rarity = setCompletionRarity(set);
+  if (set?.pendingImport) {
+    return "";
+  }
+  const owned = displayOwnedCount(set);
+  const catalog = displayCatalogCount(set);
+  const rarity = setCompletionRarity({ ownedCount: owned, catalogCount: catalog });
   return rarity ? `set-gallery-rarity--${rarity}` : "";
 }
 
-function isActiveSet(set) {
-  return set?.setCode && set.setCode === props.activeSetCode;
+function isFamilyActive(set) {
+  if (!set?.setCode || set.setCode === "All" || set.pendingImport) {
+    return false;
+  }
+  if (props.activeFamily && (set.setCode === props.activeSetCode || set.setCode === activeFamilyRoot.value)) {
+    return true;
+  }
+  return Boolean(
+    !props.activeFamily
+    && activeFamilyRoot.value === set.setCode
+    && props.activeSetCode
+    && props.activeSetCode !== "All"
+    && props.activeSetCode !== set.setCode,
+  );
+}
+
+function isSetActive(set) {
+  if (!set?.setCode || set.pendingImport) {
+    return false;
+  }
+  if (set.setCode === "All") {
+    return props.activeSetCode === "All";
+  }
+  return !props.activeFamily && set.setCode === props.activeSetCode;
+}
+
+function isCardActive(set) {
+  return isFamilyActive(set) || isSetActive(set);
 }
 
 function missingCount(set) {
-  if (set?.ownedCount == null || set?.catalogCount == null) {
+  const owned = displayOwnedCount(set);
+  const catalog = displayCatalogCount(set);
+  if (owned == null || catalog == null) {
     return null;
   }
-  return Math.max(0, set.catalogCount - set.ownedCount);
+  return Math.max(0, catalog - owned);
 }
 
 function flooredCompletionPercent(set) {
-  const percent = setCompletionPercent(set);
+  const percent = setCompletionPercent({
+    ownedCount: displayOwnedCount(set),
+    catalogCount: displayCatalogCount(set),
+  });
   if (percent == null) {
     return null;
   }
@@ -89,16 +322,29 @@ function flooredCompletionPercent(set) {
 
 function activeTitleLine(set) {
   const name = setDisplayName(set);
-  if (!name || name === set.setCode) {
-    return set.setCode;
+  const code = set.setCode;
+  if (set.isFamilyRoot && (set.familyMembers || []).length > 1) {
+    const suffix = props.activeFamily || isFamilyActive(set) ? " family" : "";
+    if (!name || name === code) {
+      return `${code}${suffix}`;
+    }
+    return `${code}${suffix} · ${name}`;
   }
-  return `${set.setCode} · ${name}`;
+  if (!name || name === code) {
+    return code;
+  }
+  return `${code} · ${name}`;
 }
 
 function activeStatsLine(set) {
+  if (set?.pendingImport) {
+    return "Not in library yet";
+  }
   const parts = [];
-  if (set.ownedCount != null && set.catalogCount != null) {
-    parts.push(`${set.ownedCount}/${set.catalogCount}`);
+  const owned = displayOwnedCount(set);
+  const catalog = displayCatalogCount(set);
+  if (owned != null && catalog != null) {
+    parts.push(`${owned}/${catalog}`);
   }
   const floored = flooredCompletionPercent(set);
   if (floored != null) {
@@ -108,29 +354,31 @@ function activeStatsLine(set) {
   if (missing != null && missing > 0) {
     parts.push(`${missing} missing`);
   }
-  if (props.activeArtStyle && isActiveSet(set)) {
+  if (props.activeArtStyle && isSetActive(set)) {
     parts.push(props.activeArtStyle);
   }
   return parts.join(" · ");
 }
 
-function canDelete(set) {
-  if (!props.manageSets || !set?.setCode || set.setCode === "All") {
-    return false;
-  }
-  return (set.ownedCount ?? 0) === 0;
-}
-
 function canReload(set) {
-  return props.showReloadCatalog && props.manageSets && set?.setCode && set.setCode !== "All";
+  return (
+    props.showReloadCatalog
+    && set?.setCode
+    && set.setCode !== "All"
+    && !set.pendingImport
+  );
 }
 
 function isReloading(set) {
-  return props.reloadingSetCode && props.reloadingSetCode === set.setCode;
+  if (!props.reloadingSetCode) {
+    return false;
+  }
+  const members = set.familyMembers || [set.setCode];
+  return members.includes(props.reloadingSetCode) || props.reloadingSetCode === set.setCode;
 }
 
-function isDeleting(set) {
-  return props.deletingSetCode && props.deletingSetCode === set.setCode;
+function isAdding(set) {
+  return Boolean(props.addingSetCode && set?.setCode === props.addingSetCode);
 }
 
 function positionActiveSet() {
@@ -152,25 +400,40 @@ function positionActiveSet() {
   });
 }
 
-function onSelect(setCode) {
+function onSelectFamilyOrSet(set) {
+  if (!set?.setCode || props.addingSetCode) {
+    return;
+  }
+  emit("select", set.setCode);
+}
+
+function onSelectMember(setCode) {
+  if (props.addingSetCode) {
+    return;
+  }
   emit("select", setCode);
 }
 
-function onCardKeydown(event, setCode) {
+function onCardKeydown(event, set) {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    onSelect(setCode);
+    onSelectFamilyOrSet(set);
+  }
+}
+
+function onMemberKeydown(event, setCode) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    onSelectMember(setCode);
   }
 }
 
 function onToggleFavorite(event, set) {
   event.stopPropagation();
+  if (set?.pendingImport) {
+    return;
+  }
   emit("toggleFavorite", set);
-}
-
-function onRemove(event, set) {
-  event.stopPropagation();
-  emit("remove-set", set);
 }
 
 function onReload(event, set) {
@@ -178,152 +441,150 @@ function onReload(event, set) {
   emit("reload-catalog", set);
 }
 
-function onAddSetSelect(setCode) {
-  if (!setCode || props.addingSetCode) {
-    return;
-  }
-  emit("add-set", setCode);
-}
-
 watch(() => props.activeSetCode, positionActiveSet);
+watch(() => props.activeFamily, positionActiveSet);
 watch(
-  () => visibleSets.value.map((set) => set.setCode).join("|"),
+  () => visibleFamilies.value.map((set) => set.setCode).join("|"),
   positionActiveSet,
 );
-watch(() => props.collapsed, positionActiveSet);
 
 onMounted(positionActiveSet);
 </script>
 
 <template>
-  <div
-    ref="galleryRef"
-    class="set-gallery"
-    :class="{ 'set-gallery--collapsed': collapsed }"
-    aria-label="Sets"
-  >
+  <div class="set-gallery-stack">
     <div
-      v-if="manageSets"
-      class="set-gallery-add-slot"
-      :class="{ 'is-loading': addingSetCode }"
+      ref="galleryRef"
+      class="set-gallery"
+      aria-label="Set families"
     >
-      <div v-if="addingSetCode" class="set-gallery-add-loading" aria-live="polite">
-        <LoadingIndicator compact :label="`Adding ${addingSetCode}…`" />
-      </div>
-      <BrowseSelect
-        v-else
-        model-value=""
-        class="set-gallery-add-select"
-        :options="availableSetOptions"
-        :disabled="addSetDisabled"
-        filterable
-        show-icons
-        hide-arrows
-        empty-icon-label="+"
-        placeholder="Add"
-        aria-label="Add set"
-        portal-panel
-        @update:model-value="onAddSetSelect"
-      />
-    </div>
-
-    <div
-      v-for="set in visibleSets"
-      :key="set.setCode"
-      class="set-gallery-card"
-      :class="{
-        active: isActiveSet(set),
-        'has-delete-action': canDelete(set),
-      }"
-      role="button"
-      tabindex="0"
-      :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
-      :title="collapsed && !isActiveSet(set) ? (activeTitleLine(set) || set.setCode) : undefined"
-      :aria-current="isActiveSet(set) ? 'true' : undefined"
-      @click="onSelect(set.setCode)"
-      @keydown="onCardKeydown($event, set.setCode)"
-    >
-      <button
-        v-if="showFavorites && set.setCode !== 'All'"
-        type="button"
-        class="set-gallery-favorite set-gallery-favorite--left"
-        :class="{ 'is-favorite': set.favorite }"
-        :aria-pressed="set.favorite ? 'true' : 'false'"
-        :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
-        :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
-        @click.stop="onToggleFavorite($event, set)"
+      <div
+        v-for="set in visibleFamilies"
+        :key="set.setCode"
+        class="set-gallery-card"
+        :class="{
+          active: isCardActive(set),
+          'set-gallery-card--all': set.setCode === 'All',
+          'set-gallery-card--expanded': showFamilyChildren(set),
+          'set-gallery-card--pending': set.pendingImport,
+          'is-importing': isAdding(set),
+        }"
+        role="button"
+        tabindex="0"
+        :aria-label="set.pendingImport
+          ? `Add and select ${setDisplayName(set) || set.setCode}`
+          : `Select ${setDisplayName(set) || set.setCode}`"
+        :aria-current="isCardActive(set) ? 'true' : undefined"
+        :aria-busy="isAdding(set) ? 'true' : undefined"
+        @click="onSelectFamilyOrSet(set)"
+        @keydown="onCardKeydown($event, set)"
       >
-        {{ set.favorite ? "★" : "☆" }}
-      </button>
+        <div class="set-gallery-card-main">
+          <div v-if="isAdding(set)" class="set-gallery-importing" aria-live="polite">
+            <LoadingIndicator compact :label="`Adding ${set.setCode}…`" />
+          </div>
 
-      <button
-        v-if="canReload(set)"
-        type="button"
-        class="set-gallery-reload"
-        :class="{ 'is-loading': isReloading(set) }"
-        :aria-label="`Reload ${set.setCode} catalog from Scryfall`"
-        :aria-busy="isReloading(set) ? 'true' : 'false'"
-        title="Reload catalog from Scryfall"
-        @click.stop="onReload($event, set)"
-      >
-        <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
-        <span v-else aria-hidden="true">↻</span>
-      </button>
+          <template v-else>
+            <button
+              v-if="showFavorites && set.setCode !== 'All' && !set.pendingImport"
+              type="button"
+              class="set-gallery-favorite set-gallery-favorite--left"
+              :class="{ 'is-favorite': set.favorite }"
+              :aria-pressed="set.favorite ? 'true' : 'false'"
+              :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
+              :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
+              @click.stop="onToggleFavorite($event, set)"
+            >
+              {{ set.favorite ? "★" : "☆" }}
+            </button>
 
-      <button
-        v-if="canDelete(set)"
-        type="button"
-        class="set-gallery-delete"
-        :class="{ 'is-loading': isDeleting(set) }"
-        :aria-label="`Remove set ${set.setCode}`"
-        :aria-busy="isDeleting(set) ? 'true' : 'false'"
-        title="Remove set (catalog is kept)"
-        @click.stop="onRemove($event, set)"
-      >
-        <span v-if="isDeleting(set)" class="loading-spinner set-gallery-delete-spinner" aria-hidden="true" />
-        <span v-else aria-hidden="true">×</span>
-      </button>
+            <button
+              v-if="canReload(set)"
+              type="button"
+              class="set-gallery-reload"
+              :class="{ 'is-loading': isReloading(set) }"
+              :aria-label="`Reload ${set.setCode} family catalog from Scryfall`"
+              :aria-busy="isReloading(set) ? 'true' : 'false'"
+              title="Reload family catalog from Scryfall"
+              @click.stop="onReload($event, set)"
+            >
+              <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
+              <span v-else aria-hidden="true">↻</span>
+            </button>
 
-      <div class="set-gallery-icon-wrap">
-        <img
-          v-if="setIconUri(set)"
-          :src="setIconUri(set)"
-          :alt="`${set.setCode} set icon`"
-          class="set-gallery-icon"
-          loading="lazy"
-          @error="onSetIconError($event, set)"
+            <div class="set-gallery-icon-wrap">
+              <img
+                v-if="setIconUri(set)"
+                :src="setIconUri(set)"
+                :alt="`${set.setCode} set icon`"
+                class="set-gallery-icon"
+                loading="lazy"
+                @error="onSetIconError($event, set)"
+              >
+              <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
+                All
+              </div>
+            </div>
+
+            <div class="set-gallery-meta">
+              <template v-if="isCardActive(set) && set.setCode !== 'All'">
+                <span
+                  class="set-gallery-title"
+                  :class="completionRarityClass(set)"
+                  :title="activeTitleLine(set)"
+                >
+                  {{ activeTitleLine(set) }}
+                </span>
+                <span v-if="activeStatsLine(set)" class="set-gallery-stats">{{ activeStatsLine(set) }}</span>
+              </template>
+              <template v-else>
+                <span class="set-gallery-code" :class="completionRarityClass(set)">
+                  {{ set.setCode === "All" ? "All" : set.setCode }}
+                </span>
+                <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
+              </template>
+            </div>
+          </template>
+        </div>
+
+        <div
+          v-if="showFamilyChildren(set)"
+          class="set-gallery-subtiles"
+          @click.stop
         >
-        <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
-          All
+          <button
+            v-for="member in familyTagMembers(set)"
+            :key="member.setCode"
+            type="button"
+            class="set-gallery-subtile"
+            :class="{
+              active: isSetActive(member),
+              'set-gallery-subtile--root': member.setCode === set.setCode,
+            }"
+            :aria-pressed="isSetActive(member) ? 'true' : 'false'"
+            :aria-label="`Select ${member.setCode}`"
+            :title="setDisplayName(member) || member.setCode"
+            @click.stop="onSelectMember(member.setCode)"
+            @keydown="onMemberKeydown($event, member.setCode)"
+          >
+            <img
+              v-if="setIconUri(member)"
+              :src="setIconUri(member)"
+              alt=""
+              class="set-gallery-subtile-icon"
+              loading="lazy"
+              @error="onSetIconError($event, member)"
+            >
+            <span class="set-gallery-subtile-code">{{ member.setCode }}</span>
+          </button>
         </div>
       </div>
-
-      <div v-if="!collapsed || isActiveSet(set)" class="set-gallery-meta">
-        <template v-if="isActiveSet(set) && collapsed">
-          <span class="set-gallery-code" :class="completionRarityClass(set)">
-            {{ set.setCode === "All" ? "All" : set.setCode }}
-          </span>
-          <span v-if="set.setCode !== 'All' && activeStatsLine(set)" class="set-gallery-stats">
-            {{ activeStatsLine(set) }}
-          </span>
-        </template>
-        <template v-else-if="isActiveSet(set) && set.setCode !== 'All'">
-          <span
-            class="set-gallery-title"
-            :class="completionRarityClass(set)"
-            :title="activeTitleLine(set)"
-          >
-            {{ activeTitleLine(set) }}
-          </span>
-          <span v-if="activeStatsLine(set)" class="set-gallery-stats">{{ activeStatsLine(set) }}</span>
-        </template>
-        <template v-else>
-          <span class="set-gallery-code" :class="completionRarityClass(set)">
-            {{ set.setCode === "All" ? "All" : set.setCode }}
-          </span>
-          <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
-        </template>
-      </div>
     </div>
+    <p
+      v-if="setGalleryFilter.trim() && loadingSearchSets && !visibleFamilies.length"
+      class="set-gallery-search-hint"
+    >
+      Searching sets…
+    </p>
   </div>
 </template>

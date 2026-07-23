@@ -11,12 +11,14 @@ from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL  # noq
 from util.cardmarket_urls import (  # noqa: E402
     _infer_product_from_neighbors,
     _nonfoil_product_points,
+    audit_cardmarket_urls,
     backfill_cardmarket_urls,
     cardmarket_url_for_finish,
     coerce_cardmarket_url,
     find_paired_product_id,
     merge_cardmarket_urls,
     normalize_cardmarket_url_columns,
+    repair_finish_flag_url_mismatches,
     scryfall_url_targets,
 )
 
@@ -155,6 +157,21 @@ class CardmarketUrlTests(unittest.TestCase):
         }
         url = cardmarket_url_for_finish(row, FINISH_NONFOIL, guide)
         self.assertIn("738284", url or "")
+
+    def test_cardmarket_url_for_finish_skips_invented_nonfoil_on_foil_only(self):
+        guide = {
+            752693: {"trend": 0.35, "trend-foil": 0},
+            752694: {"trend": 0, "trend-foil": 19.22},
+        }
+        row = {
+            "cardmarket_url": None,
+            "cardmarket_url_foil": "https://www.cardmarket.com/en/Magic/Products?idProduct=752694",
+            "has_nonfoil": 0,
+            "has_foil": 1,
+            "has_etched": 0,
+        }
+        self.assertIsNone(cardmarket_url_for_finish(row, FINISH_NONFOIL, guide))
+        self.assertIn("752694", cardmarket_url_for_finish(row, FINISH_FOIL, guide) or "")
 
     def test_cardmarket_url_for_finish_returns_foil_url_for_etched_only(self):
         row = {
@@ -480,6 +497,130 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertIn("718037", row408[0] or "")
         self.assertIn("718045", row408z[1] or "")
         self.assertIsNone(row408z[0])
+
+    def test_normalize_does_not_invent_nonfoil_for_foil_only_print(self):
+        guide = {
+            752693: {"trend": 0.35, "trend-foil": 0},
+            752694: {"trend": 0, "trend-foil": 19.22},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            None,
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=752694",
+            guide,
+            has_nonfoil=0,
+            has_foil=1,
+            has_etched=0,
+        )
+        self.assertIsNone(nonfoil)
+        self.assertIn("752694", foil or "")
+
+    def test_normalize_without_flags_still_pairs_sparse_foil(self):
+        guide = {
+            752693: {"trend": 0.35, "trend-foil": 0},
+            752694: {"trend": 0, "trend-foil": 19.22},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            None,
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=752694",
+            guide,
+        )
+        self.assertIn("752693", nonfoil or "")
+        self.assertIn("752694", foil or "")
+
+    def test_audit_flags_foil_only_with_nonfoil_url(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                name TEXT,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, cardmarket_url, cardmarket_url_foil,
+                has_nonfoil, has_foil, has_etched
+            ) VALUES (
+                'CLU', '279', 'Sacred Foundry',
+                'https://www.cardmarket.com/en/Magic/Products?idProduct=752693',
+                'https://www.cardmarket.com/en/Magic/Products?idProduct=752694',
+                0, 1, 0
+            )
+            """
+        )
+        guide = {
+            752693: {"trend": 0.35, "trend-foil": 0},
+            752694: {"trend": 0, "trend-foil": 19.22},
+        }
+        report = audit_cardmarket_urls(conn, guide)
+        self.assertEqual(report["counts"]["foil_only_has_nonfoil_url"], 1)
+        sample = report["findings"]["foil_only_has_nonfoil_url"][0]
+        self.assertEqual(sample["setCode"], "CLU")
+        self.assertEqual(sample["collectorNumber"], "279")
+
+        repaired = repair_finish_flag_url_mismatches(conn, guide)
+        row = conn.execute(
+            "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '279'"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(repaired, 1)
+        self.assertIsNone(row[0])
+        self.assertIn("752694", row[1] or "")
+
+    def test_backfill_does_not_reinvent_nonfoil_for_foil_only(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                name TEXT,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, cardmarket_url, cardmarket_url_foil,
+                has_nonfoil, has_foil, has_etched
+            ) VALUES (
+                'CLU', '279', 'Sacred Foundry',
+                'https://www.cardmarket.com/en/Magic/Products?idProduct=752693',
+                'https://www.cardmarket.com/en/Magic/Products?idProduct=752694',
+                0, 1, 0
+            )
+            """
+        )
+        guide = {
+            752693: {"trend": 0.35, "trend-foil": 0},
+            752694: {"trend": 0, "trend-foil": 19.22},
+        }
+        backfill_cardmarket_urls(conn, guide)
+        row = conn.execute(
+            "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '279'"
+        ).fetchone()
+        report = audit_cardmarket_urls(conn, guide)
+        conn.close()
+        self.assertIsNone(row[0])
+        self.assertIn("752694", row[1] or "")
+        self.assertEqual(report["counts"]["foil_only_has_nonfoil_url"], 0)
 
 
 if __name__ == "__main__":

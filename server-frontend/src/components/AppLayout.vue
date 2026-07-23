@@ -4,23 +4,22 @@ import { useRoute } from "vue-router";
 
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
-import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
 const route = useRoute();
-const { setPickerMode } = usePricingSettings();
 const { setGalleryFilter } = useSetGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
-  { to: "/collection/top", label: "Top owned" },
   { to: "/collection/search", label: "Search" },
   { to: "/stats", label: "Stats" },
 ];
 
 const navItems = [
+  { to: "/", label: "Favourites", matchPrefix: false },
   {
     to: "/collection/all",
     label: "Collection",
@@ -28,6 +27,7 @@ const navItems = [
     subnav: collectionSubnav,
   },
   { to: "/storage", label: "Storage", matchPrefix: false },
+  { to: "/scan", label: "Scan", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
   { to: "/settings", label: "Settings", matchPrefix: false },
 ];
@@ -36,18 +36,20 @@ const showCollectionSubnav = computed(() =>
   route.path.startsWith("/collection") || route.path === "/stats",
 );
 
-const showSetGalleryFilter = computed(
-  () => showCollectionSubnav.value && setPickerMode.value === "browser",
+const showSetGalleryFilter = computed(() => showCollectionSubnav.value);
+
+const showNavbarSearch = computed(() =>
+  route.path !== "/collection/search" && route.path !== "/scan",
 );
 
-const showNavbarSearch = computed(() => route.path !== "/collection/search");
-
 const brandLink = computed(() => ({
-  path: "/collection/all",
-  query: collectionNavQuery(route, "/collection/all"),
+  path: "/",
 }));
 
 function isNavActive(item) {
+  if (item.to === "/") {
+    return route.path === "/";
+  }
   if (item.matchPrefix === "/collection") {
     return route.path.startsWith(item.matchPrefix) || route.path === "/stats";
   }
@@ -62,6 +64,9 @@ function isSubnavActive(item) {
 }
 
 function navLinkTo(item) {
+  if (item.to === "/") {
+    return "/";
+  }
   const query = item.matchPrefix === "/collection"
     ? collectionNavQuery(route, item.to)
     : setScopeQueryFromRoute(route);
@@ -132,11 +137,11 @@ onMounted(() => {
             v-if="index === 0 && showSetGalleryFilter"
             class="app-subnav-set-filter"
           >
-            <span class="sr-only">Filter sets</span>
+            <span class="sr-only">Search sets</span>
             <input
               v-model="setGalleryFilter"
               type="search"
-              placeholder="Filter sets"
+              placeholder="Search sets"
               autocomplete="off"
               spellcheck="false"
             />

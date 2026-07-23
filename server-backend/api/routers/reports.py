@@ -8,6 +8,7 @@ from api.services.reports_service import ReportsError, load_reports_meta, list_r
 from api.services.search_service import (
     _parse_color_filters,
     _parse_optional_float,
+    _parse_role_filters,
     _parse_storage_filters,
     list_name_variants,
     search_cards,
@@ -34,8 +35,9 @@ def reports_meta(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 @router.get("/cards")
 def report_cards(
     conn: sqlite3.Connection = Depends(get_db),
-    report: str = Query(default="top"),
+    report: str = Query(default="all"),
     setCode: str = Query(default="All"),
+    family: bool = Query(default=False),
     artStyle: str = Query(default=""),
     ownedFilter: str = Query(default="owned"),
     foilFilter: str = Query(default="all"),
@@ -49,6 +51,7 @@ def report_cards(
             conn,
             report=report,
             set_code=setCode,
+            family=family,
             art_style=artStyle,
             owned_filter=ownedFilter,
             foil_filter=foilFilter,
@@ -80,6 +83,9 @@ def report_search(
     powMin: str = Query(default=""),
     tghMin: str = Query(default=""),
     storage: str = Query(default=""),
+    roles: str = Query(default=""),
+    sort: str = Query(default="newest"),
+    dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     pageSize: int = Query(default=50, ge=1, le=100),
 ):
@@ -102,6 +108,9 @@ def report_search(
             power_min=_parse_optional_float(powMin),
             toughness_min=_parse_optional_float(tghMin),
             storage_filters=_parse_storage_filters(storage),
+            role_filters=_parse_role_filters(roles),
+            sort=sort,
+            sort_dir=dir,
             page=page,
             page_size=pageSize,
         )

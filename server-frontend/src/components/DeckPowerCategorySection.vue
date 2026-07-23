@@ -43,7 +43,6 @@ const countLabel = computed(() => formatComponentCount(props.component.id, props
         class="deck-power-card"
       >
         <div class="deck-power-card-image-wrap">
-          <CardFinishBadge :card="card" variant="overlay" compact />
           <RouterLink
             v-if="powerCardRoute(card, deckId)"
             :to="powerCardRoute(card, deckId)"
@@ -71,15 +70,18 @@ const countLabel = computed(() => formatComponentCount(props.component.id, props
         </div>
 
         <figcaption class="deck-power-card-caption">
-          <RouterLink
-            v-if="powerCardRoute(card, deckId)"
-            :to="powerCardRoute(card, deckId)"
-            class="deck-power-card-name"
-          >
-            {{ card.cardName }}
-          </RouterLink>
-          <span v-else class="deck-power-card-name is-plain">{{ card.cardName }}</span>
-          <span v-if="card.qty > 1" class="deck-power-card-meta">×{{ card.qty }}</span>
+          <span class="deck-power-card-name-row">
+            <RouterLink
+              v-if="powerCardRoute(card, deckId)"
+              :to="powerCardRoute(card, deckId)"
+              class="deck-power-card-name"
+            >
+              {{ card.cardName }}
+            </RouterLink>
+            <span v-else class="deck-power-card-name is-plain">{{ card.cardName }}</span>
+            <CardFinishBadge :card="card" compact />
+            <span v-if="card.qty > 1" class="deck-power-card-meta">×{{ card.qty }}</span>
+          </span>
         </figcaption>
       </figure>
     </div>

@@ -39,6 +39,9 @@ def _price_row_for_finish(row, finish: int, strategy: str) -> float | None:
         market_value=_nullable_float(row.get("market_value")),
         market_value_foil=_nullable_float(row.get("market_value_foil")),
         market_value_etched=_nullable_float(row.get("market_value_etched")),
+        has_nonfoil=row.get("has_nonfoil", row.get("hasNonfoil")),
+        has_foil=row.get("has_foil", row.get("hasFoil")),
+        has_etched=row.get("has_etched", row.get("hasEtched")),
     )
 
 
@@ -250,6 +253,9 @@ def apply_strategy_to_deck_df(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
             market_value=_nullable_float(row.get("market_value")),
             market_value_foil=_nullable_float(row.get("market_value_foil")),
             market_value_etched=_nullable_float(row.get("market_value_etched")),
+            has_nonfoil=row.get("has_nonfoil", row.get("hasNonfoil")),
+            has_foil=row.get("has_foil", row.get("hasFoil")),
+            has_etched=row.get("has_etched", row.get("hasEtched")),
         )
         qty = int(row["qty"])
         owned_qty = int(row["owned_qty"])

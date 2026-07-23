@@ -16,7 +16,7 @@ import FilterSidebar from "../components/FilterSidebar.vue";
 import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
-import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute } from "../utils/setScope";
+import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 
 const PAGE_SIZE = 25;
 const SEARCH_SET_CODE = "All";
@@ -40,11 +40,12 @@ const searchInput = ref("");
 const textSearchInput = ref("");
 const creatureTypeInput = ref("");
 const searchInputRef = ref(null);
-const ownedFilter = ref("all");
+const ownedFilter = ref("owned");
 const foilFilter = ref(getStoredFoilFilter());
 const typeFilter = ref("all");
 const colorFilters = ref([]);
 const storageFilters = ref([]);
+const roleFilters = ref([]);
 const rarityFilter = ref("all");
 const cmcMin = ref("");
 const cmcMax = ref("");
@@ -54,6 +55,8 @@ const powerMin = ref("");
 const toughnessMin = ref("");
 const mobileFiltersOpen = ref(false);
 const searchViewMode = ref("gallery");
+const searchSort = ref("newest");
+const searchSortDir = ref("desc");
 const routeSyncReady = ref(false);
 const virtualGridRef = ref(null);
 const { loading, run } = useAsyncLoad();
@@ -66,7 +69,10 @@ const totalMatches = computed(() => searchTotalMatches.value);
 const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
 const hasActiveSearch = computed(() => Boolean(
-  searchQuery.value.trim() || textSearchQuery.value.trim() || creatureTypeQuery.value.trim(),
+  searchQuery.value.trim()
+  || textSearchQuery.value.trim()
+  || creatureTypeQuery.value.trim()
+  || roleFilters.value.length,
 ));
 const isListView = computed(() => searchViewMode.value === "list");
 
@@ -86,6 +92,7 @@ function searchApiParams() {
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
     storageFilters: storageFilters.value,
+    roleFilters: roleFilters.value,
     rarityFilter: rarityFilter.value,
     cmcMin: parseOptionalNumber(cmcMin.value),
     cmcMax: parseOptionalNumber(cmcMax.value),
@@ -93,6 +100,8 @@ function searchApiParams() {
     priceMax: parseOptionalNumber(priceMax.value),
     powerMin: parseOptionalNumber(powerMin.value),
     toughnessMin: parseOptionalNumber(toughnessMin.value),
+    sort: searchSort.value,
+    dir: searchSortDir.value,
   };
 }
 
@@ -103,6 +112,7 @@ function syncFiltersFromRoute() {
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...filters.colorFilters];
   storageFilters.value = [...filters.storageFilters];
+  roleFilters.value = [...filters.roleFilters];
   searchQuery.value = filters.searchQuery;
   textSearchQuery.value = filters.textSearchQuery;
   creatureTypeQuery.value = filters.creatureTypeQuery;
@@ -117,6 +127,8 @@ function syncFiltersFromRoute() {
   powerMin.value = filters.powerMin != null ? String(filters.powerMin) : "";
   toughnessMin.value = filters.toughnessMin != null ? String(filters.toughnessMin) : "";
   searchViewMode.value = filters.viewMode;
+  searchSort.value = filters.sort;
+  searchSortDir.value = filters.sortDir;
 }
 
 function setLabel(code) {
@@ -143,6 +155,7 @@ function syncSearchRoute() {
       searchQuery: searchQuery.value.trim(),
       textSearchQuery: textSearchQuery.value.trim(),
       creatureTypeQuery: creatureTypeQuery.value.trim(),
+      roleFilters: roleFilters.value,
       rarityFilter: rarityFilter.value,
       cmcMin: parseOptionalNumber(cmcMin.value),
       cmcMax: parseOptionalNumber(cmcMax.value),
@@ -151,6 +164,8 @@ function syncSearchRoute() {
       powerMin: parseOptionalNumber(powerMin.value),
       toughnessMin: parseOptionalNumber(toughnessMin.value),
       viewMode: searchViewMode.value,
+      sort: searchSort.value,
+      sortDir: searchSortDir.value,
     }),
   });
 }
@@ -182,7 +197,7 @@ async function fetchSearchPage(pageNum) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
   const creatureTypeTerm = creatureTypeQuery.value.trim();
-  if (!nameTerm && !textTerm && !creatureTypeTerm) {
+  if (!nameTerm && !textTerm && !creatureTypeTerm && !roleFilters.value.length) {
     return null;
   }
   const token = ++searchRequestToken;
@@ -211,7 +226,7 @@ async function loadResults({ autoSelectFirst = false } = {}) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
   const creatureTypeTerm = creatureTypeQuery.value.trim();
-  if (!nameTerm && !textTerm && !creatureTypeTerm) {
+  if (!nameTerm && !textTerm && !creatureTypeTerm && !roleFilters.value.length) {
     resetSearchResults();
     if (autoSelectFirst) {
       closeArtExplorer();
@@ -281,10 +296,11 @@ async function autoSelectFirstResult() {
 }
 
 function setOwnedFilter(value) {
-  if (ownedFilter.value === value) {
+  const next = value === "unowned" ? "all" : value;
+  if (ownedFilter.value === next) {
     return;
   }
-  ownedFilter.value = value;
+  ownedFilter.value = next;
 }
 
 function setFoilFilter(value) {
@@ -327,12 +343,37 @@ function clearStorageFilters() {
   storageFilters.value = [];
 }
 
+function toggleRoleFilter(role) {
+  if (roleFilters.value.includes(role)) {
+    roleFilters.value = roleFilters.value.filter((item) => item !== role);
+  } else {
+    roleFilters.value = [...roleFilters.value, role];
+  }
+}
+
+function clearRoleFilters() {
+  roleFilters.value = [];
+}
+
 function onRarityFilterChange(event) {
   const next = event.target.value || "all";
   if (rarityFilter.value === next) {
     return;
   }
   rarityFilter.value = next;
+}
+
+function updateSearchSort(event) {
+  const next = normalizeSearchSort(event?.target?.value);
+  if (searchSort.value === next) {
+    return;
+  }
+  searchSort.value = next;
+  searchSortDir.value = defaultSearchSortDirForField(next);
+}
+
+function toggleSearchSortDir() {
+  searchSortDir.value = searchSortDir.value === "asc" ? "desc" : "asc";
 }
 
 function updateDetailFilter(field, value) {
@@ -426,7 +467,7 @@ async function submitSearch() {
   creatureTypeQuery.value = nextCreatureType;
   closeArtExplorer();
   syncSearchRoute();
-  if (sameQuery && (nextName || nextText || nextCreatureType)) {
+  if (sameQuery && (nextName || nextText || nextCreatureType || roleFilters.value.length)) {
     await loadResults({ autoSelectFirst: true });
   }
 }
@@ -446,7 +487,7 @@ async function onArtOwnershipChanged() {
   await reloadLoadedSearchResults();
 }
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, roleFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode, searchSort, searchSortDir], () => {
   if (!routeSyncReady.value) {
     return;
   }
@@ -477,6 +518,7 @@ watch(
     route.query.type,
     route.query.colors,
     route.query.storage,
+    route.query.roles,
     route.query.rarity,
     route.query.cmcMin,
     route.query.cmcMax,
@@ -484,6 +526,8 @@ watch(
     route.query.priceMax,
     route.query.powMin,
     route.query.tghMin,
+    route.query.sort,
+    route.query.dir,
   ],
   async (_value, _oldValue, onCleanup) => {
     if (!routeSyncReady.value) {
@@ -492,6 +536,7 @@ watch(
     const prevName = searchQuery.value;
     const prevText = textSearchQuery.value;
     const prevCreatureType = creatureTypeQuery.value;
+    const prevRoles = roleFilters.value.join(",");
     syncFiltersFromRoute();
     let cancelled = false;
     onCleanup(() => {
@@ -504,7 +549,8 @@ watch(
     }
     const searchChanged = searchQuery.value !== prevName
       || textSearchQuery.value !== prevText
-      || creatureTypeQuery.value !== prevCreatureType;
+      || creatureTypeQuery.value !== prevCreatureType
+      || roleFilters.value.join(",") !== prevRoles;
     await loadResults({ autoSelectFirst: searchChanged });
     if (cancelled) {
       return;
@@ -535,6 +581,28 @@ onMounted(async () => {
           @submit.prevent="submitSearch"
         >
           <div class="collection-search-toolbar-row">
+            <div
+              class="button-group collection-ownership-group collection-ownership-group--binary collection-search-ownership"
+              role="group"
+              aria-label="Ownership"
+            >
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'owned' }"
+                @click="setOwnedFilter('owned')"
+              >
+                Owned
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: ownedFilter === 'all' }"
+                @click="setOwnedFilter('all')"
+              >
+                All
+              </button>
+            </div>
             <input
               id="collection-search-page-input"
               ref="searchInputRef"
@@ -700,6 +768,7 @@ onMounted(async () => {
           :type-filter="typeFilter"
           :color-filters="colorFilters"
           :storage-filters="storageFilters"
+          :role-filters="roleFilters"
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
           :cmc-max="cmcMax"
@@ -707,7 +776,13 @@ onMounted(async () => {
           :price-max="priceMax"
           :power-min="powerMin"
           :toughness-min="toughnessMin"
-          :show-sort="false"
+          :show-sort="true"
+          sort-mode="search"
+          :all-cards-sort="searchSort"
+          :all-cards-sort-dir="searchSortDir"
+          :show-role-filter="true"
+          :show-ownership-filter="false"
+          :show-unowned-filter="false"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
           @type-filter-change="onTypeFilterChange"
@@ -715,6 +790,8 @@ onMounted(async () => {
           @clear-color-filters="clearColorFilters"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
+          @toggle-role-filter="toggleRoleFilter"
+          @clear-role-filters="clearRoleFilters"
           @rarity-filter-change="onRarityFilterChange"
           @update:cmc-min="updateDetailFilter('cmcMin', $event)"
           @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -722,6 +799,8 @@ onMounted(async () => {
           @update:price-max="updateDetailFilter('priceMax', $event)"
           @update:power-min="updateDetailFilter('powerMin', $event)"
           @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
+          @update-sort="updateSearchSort"
+          @toggle-sort-dir="toggleSearchSortDir"
         />
       </FilterSidebar>
     </div>
@@ -739,6 +818,7 @@ onMounted(async () => {
         :type-filter="typeFilter"
         :color-filters="colorFilters"
         :storage-filters="storageFilters"
+        :role-filters="roleFilters"
         :rarity-filter="rarityFilter"
         :cmc-min="cmcMin"
         :cmc-max="cmcMax"
@@ -746,7 +826,12 @@ onMounted(async () => {
         :price-max="priceMax"
         :power-min="powerMin"
         :toughness-min="toughnessMin"
-        :show-sort="false"
+        :show-sort="true"
+        sort-mode="search"
+        :all-cards-sort="searchSort"
+        :all-cards-sort-dir="searchSortDir"
+        :show-role-filter="true"
+        :show-unowned-filter="false"
         @set-owned-filter="setOwnedFilter"
         @set-foil-filter="setFoilFilter"
         @type-filter-change="onTypeFilterChange"
@@ -754,6 +839,8 @@ onMounted(async () => {
         @clear-color-filters="clearColorFilters"
         @toggle-storage-filter="toggleStorageFilter"
         @clear-storage-filters="clearStorageFilters"
+        @toggle-role-filter="toggleRoleFilter"
+        @clear-role-filters="clearRoleFilters"
         @rarity-filter-change="onRarityFilterChange"
         @update:cmc-min="updateDetailFilter('cmcMin', $event)"
         @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -761,6 +848,8 @@ onMounted(async () => {
         @update:price-max="updateDetailFilter('priceMax', $event)"
         @update:power-min="updateDetailFilter('powerMin', $event)"
         @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
+        @update-sort="updateSearchSort"
+        @toggle-sort-dir="toggleSearchSortDir"
       />
     </CollectionMobileFilterSheet>
   </div>

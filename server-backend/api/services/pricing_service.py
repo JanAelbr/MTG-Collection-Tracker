@@ -87,6 +87,10 @@ def guide_prices_for_url(cardmarket_url: str | None) -> dict[str, float | None]:
 def all_guide_prices_for_card(
     cardmarket_url: str | None,
     cardmarket_url_foil: str | None = None,
+    *,
+    has_nonfoil: bool | int | None = None,
+    has_foil: bool | int | None = None,
+    has_etched: bool | int | None = None,
 ) -> dict[str, dict]:
     cardmarket_url = coerce_cardmarket_url(cardmarket_url)
     cardmarket_url_foil = coerce_cardmarket_url(cardmarket_url_foil)
@@ -95,12 +99,21 @@ def all_guide_prices_for_card(
         cardmarket_url,
         cardmarket_url_foil,
         guide,
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
     )
     nonfoil_prices = guide_prices_for_url(cardmarket_url)
     foil_lookup_url = cardmarket_url_foil
     if not foil_lookup_url and cardmarket_url:
         foil_lookup_url = cardmarket_url_for_finish(
-            _cardmarket_row(cardmarket_url, cardmarket_url_foil),
+            {
+                "cardmarket_url": cardmarket_url,
+                "cardmarket_url_foil": cardmarket_url_foil,
+                "has_nonfoil": has_nonfoil,
+                "has_foil": has_foil,
+                "has_etched": has_etched,
+            },
             FINISH_FOIL,
             _load_guide(),
         )
@@ -112,6 +125,8 @@ def all_guide_prices_for_card(
         if foil_value is None:
             foil_value = nonfoil_prices.get(f"{strategy}_foil")
         grouped["foil"][strategy] = foil_value
+    if has_nonfoil is not None and not bool(has_nonfoil):
+        grouped["nonfoil"] = {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
     return grouped
 
 
@@ -128,6 +143,9 @@ def price_from_strategy(
     market_value: float | None = None,
     market_value_foil: float | None = None,
     market_value_etched: float | None = None,
+    has_nonfoil: bool | int | None = None,
+    has_foil: bool | int | None = None,
+    has_etched: bool | int | None = None,
 ) -> float | None:
     values = values_by_strategy_for_finish(
         {
@@ -136,6 +154,9 @@ def price_from_strategy(
             "market_value": market_value,
             "market_value_foil": market_value_foil,
             "market_value_etched": market_value_etched,
+            "has_nonfoil": has_nonfoil,
+            "has_foil": has_foil,
+            "has_etched": has_etched,
         },
         finish,
     )
@@ -151,10 +172,16 @@ def price_from_strategy(
 
 def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | None]:
     finish_id = int(finish)
+    has_nonfoil = card.get("has_nonfoil", card.get("hasNonfoil"))
+    has_foil = card.get("has_foil", card.get("hasFoil"))
+    has_etched = card.get("has_etched", card.get("hasEtched"))
     if finish_id == FINISH_ETCHED:
         guide_prices = all_guide_prices_for_card(
             coerce_cardmarket_url(card.get("cardmarket_url") or card.get("cardmarketUrl")),
             coerce_cardmarket_url(card.get("cardmarket_url_foil") or card.get("cardmarketUrlFoil")),
+            has_nonfoil=has_nonfoil,
+            has_foil=has_foil,
+            has_etched=has_etched,
         )
         # Cardmarket has no etched metrics. Etched-only prints are sold as foil
         # products — use those real foil fields. Otherwise leave unknown.
@@ -165,6 +192,9 @@ def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | 
     guide_prices = all_guide_prices_for_card(
         coerce_cardmarket_url(card.get("cardmarket_url") or card.get("cardmarketUrl")),
         coerce_cardmarket_url(card.get("cardmarket_url_foil") or card.get("cardmarketUrlFoil")),
+        has_nonfoil=has_nonfoil,
+        has_foil=has_foil,
+        has_etched=has_etched,
     )
     group = GUIDE_PRICE_GROUPS.get(finish_id, "nonfoil")
     return dict(guide_prices.get(group, {}))

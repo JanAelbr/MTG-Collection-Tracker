@@ -33,19 +33,26 @@ const totalCount = computed(() => {
   return allocationRows.value.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
 });
 
+const assignableStorageLocations = computed(() =>
+  storageLocations.value.filter(
+    (location) =>
+      location.locationType === "storage" || location.locationType === "binder",
+  ),
+);
+
 const canAddStorageRow = computed(() => {
-  if (!storageLocations.value.length) {
+  if (!assignableStorageLocations.value.length) {
     return false;
   }
   const used = new Set(allocationRows.value.map((row) => row.locationSlug));
-  return used.size < storageLocations.value.length;
+  return used.size < assignableStorageLocations.value.length;
 });
 
 function defaultStorageSlug(settings) {
   if (settings?.defaultStorageLocation) {
     return settings.defaultStorageLocation;
   }
-  return storageLocations.value[0]?.slug || "storage:general";
+  return assignableStorageLocations.value[0]?.slug || storageLocations.value[0]?.slug || "storage:general";
 }
 
 function nextUnusedStorageSlug(excludeIndex = -1) {
@@ -54,8 +61,8 @@ function nextUnusedStorageSlug(excludeIndex = -1) {
       .filter((_, index) => index !== excludeIndex)
       .map((row) => row.locationSlug),
   );
-  const available = storageLocations.value.find((location) => !used.has(location.slug));
-  return available?.slug || storageLocations.value[0]?.slug || "storage:general";
+  const available = assignableStorageLocations.value.find((location) => !used.has(location.slug));
+  return available?.slug || assignableStorageLocations.value[0]?.slug || "storage:general";
 }
 
 function createRow(locationSlug, count = 0) {
@@ -87,7 +94,7 @@ function availableLocations(rowIndex) {
       .filter((_, index) => index !== rowIndex)
       .map((row) => row.locationSlug),
   );
-  return storageLocations.value.filter((location) => !used.has(location.slug));
+  return assignableStorageLocations.value.filter((location) => !used.has(location.slug));
 }
 
 function buildAllocationsPayload() {
@@ -216,6 +223,7 @@ watch(
           class="card-owned-qty-tile-storage-picker"
           :model-value="row.locationSlug"
           :locations="availableLocations(index)"
+          :include-types="['storage', 'binder']"
           :disabled="busy"
           :aria-label="`Storage location ${index + 1}`"
           @update:model-value="(slug) => onStorageSelect(index, slug)"

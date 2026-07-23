@@ -144,7 +144,7 @@ The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db`
 
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
-| **Collection** | `/collection/all` | All cards, Top owned, Search, Stats |
+| **Collection** | `/collection/all` | All cards, Search, Stats |
 | **Storage** | `/storage` | — |
 | **Decks** | `/decks` | — |
 | **Settings** | `/settings` | — |
@@ -156,10 +156,9 @@ The top bar and collection subnav stay fixed while scrolling.
 #### Settings (`/settings`)
 
 - **Backup & restore** — export/import `.mtgbackup.zip` (purchases, decks, storage, art-style rules, settings). **Export before upgrading** the app.
-- **Set picker mode** — horizontal set browser or dropdown list
 - **Price sync** — apply Cardmarket prices only (fast; typically a few seconds). Does not re-run the full Scryfall catalog pipeline.
 - **Price strategy** — which EUR field to use (applies everywhere: Collection, Stats, Storage, Decks, card detail)
-- **Compare date** — global baseline for price change columns and card detail charts
+- **Set dropdown order** — alphabetical or most-owned (favourites still sort first)
 
 When prices are older than today, Collection also shows a **Sync prices** banner until you sync or prices catch up.
 
@@ -178,7 +177,7 @@ In **All cards**, star a set in the set picker to favourite it. Favourited sets 
 | View | Route |
 |------|-------|
 | **Collection — all cards** | `/` or `/collection/all` |
-| **Collection — top owned** | `/collection/top` |
+| **Collection — all cards** | `/collection/all` |
 | **Collection — search** | `/collection/search` |
 | **Collection stats** | `/stats` |
 | **Storage** | `/storage` |
@@ -191,10 +190,10 @@ Default landing page: **`/collection/all`**. Old `/reports/*` and `/collection/r
 ### Filters and behaviour
 
 - **Filter sidebar** on Collection, Search, and Stats (collapsible; width toggle on wide screens)
-- **Set filter** — URL query (`?set=LTR`); full set name in sidebar when using set browser; favourited sets sort first with ★
+- **Set filter** — URL query (`?set=LTR`); full set name in sidebar; favourited sets sort first with ★
 - **Art style** — per-set list filter; edit link (✎) on All cards opens the inline art-style rules editor
 - **All cards** — Gallery/Table toggle; gallery has ownership, finish, type, colour, and sort filters with a virtualized card grid; table mode (single set only) has per-finish ownership checkboxes, price health, bulk storage assign, and infinite scroll
-- **Price change** sort columns use the **compare date** from Settings
+- **Price change** sort columns compare against the previous price snapshot automatically
 - Collection filter changes are cached in memory on the server for fast repeat loads (~50 ms after warm-up)
 
 Old `/manager` URLs redirect to `/collection/all?view=table`.
@@ -219,9 +218,9 @@ When a specific set is selected on **All cards**, switch to **Table** view to:
 
 - Per-copy ownership (quantity, finish, purchase price, storage location) when multiple copies exist
 - Variant gallery (alternate printings) and prev/next navigation within the set
-- Foil/non-foil/etched prices, change vs compare date, purchase and profit/loss
+- Foil/non-foil/etched prices, change vs previous snapshot, purchase and profit/loss
 - Price chart and history table per finish
-- Uses global **price strategy** and **compare date** from Settings
+- Uses global **price strategy** from Settings
 
 ### Card metadata (API)
 

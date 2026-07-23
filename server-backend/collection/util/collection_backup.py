@@ -24,11 +24,14 @@ ART_STYLES_ZIP_DIR = "art_styles"
 
 EXPORT_SETTING_KEYS = frozenset({
     "price_strategy",
+    "price_strategy_favorites_cards",
+    "price_strategy_favorites_art_styles",
     "favorite_sets",
+    "favorite_cards",
+    "favorite_art_styles",
     "page_size",
     "collection_card_scale",
     "set_sort_mode",
-    "set_picker_mode",
     "default_storage_location",
 })
 

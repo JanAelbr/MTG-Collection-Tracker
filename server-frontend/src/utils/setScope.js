@@ -6,6 +6,15 @@ export function setScopeFromRoute(route) {
   return "All";
 }
 
+export function familyFromRoute(route) {
+  const family = route.query?.family;
+  if (family === "1" || family === "true" || family === true) {
+    const setCode = setScopeFromRoute(route);
+    return setCode.toLowerCase() !== "all";
+  }
+  return false;
+}
+
 export function artStyleFromRoute(route) {
   const art = route.query?.art;
   if (typeof art === "string" && art.trim()) {
@@ -15,23 +24,35 @@ export function artStyleFromRoute(route) {
 }
 
 export function collectionScopeFromRoute(route) {
+  const setCode = setScopeFromRoute(route);
+  const family = familyFromRoute(route);
   return {
-    setCode: setScopeFromRoute(route),
-    artStyle: artStyleFromRoute(route),
+    setCode,
+    family,
+    artStyle: family ? "" : artStyleFromRoute(route),
   };
 }
 
 const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "name", "artStyle"]);
+const SEARCH_SORT_FIELDS = new Set(["newest", "name", "value", "cmc"]);
+const SEARCH_SORT_DIR_DEFAULTS = {
+  newest: "desc",
+  name: "asc",
+  value: "desc",
+  cmc: "asc",
+};
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
 import { COLLECTION_RARITY_FILTER_VALUES } from "./collectionRarities";
 import { collectionLensFromRoute } from "./collectionLenses";
 import { parseOptionalNumber } from "./collectionFilters";
+import { SEARCH_ROLE_OPTIONS } from "./deckPower";
 
 const ALL_CARDS_TYPE_FILTERS = COLLECTION_TYPE_FILTER_VALUES;
 const ALL_CARDS_COLOR_FILTERS = new Set(["W", "U", "B", "R", "G", "C"]);
 const ALL_CARDS_RARITY_FILTERS = COLLECTION_RARITY_FILTER_VALUES;
+const SEARCH_ROLE_FILTERS = new Set(SEARCH_ROLE_OPTIONS.map((role) => role.id));
 
 function parseStorageFiltersFromRoute(route) {
   const storageParam = route.query?.storage;
@@ -44,8 +65,42 @@ function parseStorageFiltersFromRoute(route) {
     .filter(Boolean);
 }
 
+function parseRoleFiltersFromRoute(route) {
+  const rolesParam = route.query?.roles;
+  if (typeof rolesParam !== "string" || !rolesParam.trim()) {
+    return [];
+  }
+  const seen = new Set();
+  const roles = [];
+  for (const value of rolesParam.split(",")) {
+    const role = value.trim().toLowerCase();
+    if (!SEARCH_ROLE_FILTERS.has(role) || seen.has(role)) {
+      continue;
+    }
+    seen.add(role);
+    roles.push(role);
+  }
+  return roles;
+}
+
 export function defaultAllCardsSortDirForField(sort) {
   return sort === "number" ? "asc" : "desc";
+}
+
+export function defaultSearchSortDirForField(sort) {
+  return SEARCH_SORT_DIR_DEFAULTS[sort] || "asc";
+}
+
+export function normalizeSearchSort(sort) {
+  return typeof sort === "string" && SEARCH_SORT_FIELDS.has(sort) ? sort : "newest";
+}
+
+export function normalizeSearchSortDir(sort, dir) {
+  const normalizedSort = normalizeSearchSort(sort);
+  if (dir === "asc" || dir === "desc") {
+    return dir;
+  }
+  return defaultSearchSortDirForField(normalizedSort);
 }
 
 export function allCardsFiltersFromRoute(route) {
@@ -132,6 +187,7 @@ export function allCardsFiltersFromRoute(route) {
 export function allCardsRouteQuery({
   setCode,
   artStyle = "",
+  family = false,
   ownedFilter = "owned",
   foilFilter = "all",
   typeFilter = "all",
@@ -152,7 +208,7 @@ export function allCardsRouteQuery({
   viewMode = "gallery",
   editArtStyles = false,
 } = {}) {
-  const query = collectionScopeToQuery(setCode, artStyle);
+  const query = collectionScopeToQuery(setCode, family ? "" : artStyle, family);
   if (ownedFilter !== "owned") {
     query.owned = ownedFilter;
   }
@@ -214,35 +270,47 @@ export function allCardsRouteQuery({
   return query;
 }
 
-export function setScopeToQuery(setCode) {
+export function setScopeToQuery(setCode, family = false) {
   if (!setCode || String(setCode).toLowerCase() === "all") {
     return {};
   }
-  return { set: String(setCode) };
+  const query = { set: String(setCode) };
+  if (family) {
+    query.family = "1";
+  }
+  return query;
 }
 
-export function collectionScopeToQuery(setCode, artStyle = "") {
-  const query = setScopeToQuery(setCode);
-  if (artStyle) {
+export function collectionScopeToQuery(setCode, artStyle = "", family = false) {
+  const query = setScopeToQuery(setCode, family);
+  if (!family && artStyle) {
     query.art = artStyle;
   }
   return query;
 }
 
-export function collectionRouteForSet(setCode, artStyle = "") {
+export function collectionRouteForSet(setCode, artStyle = "", family = false) {
   const code = String(setCode || "").trim();
   if (!code || code.toLowerCase() === "all") {
     return { path: "/collection/all" };
   }
   return {
     path: "/collection/all",
-    query: collectionScopeToQuery(code, artStyle),
+    query: collectionScopeToQuery(code, artStyle, family),
   };
 }
 
 export function searchFiltersFromRoute(route) {
   const owned = route.query?.owned;
-  const ownedFilter = ALL_CARDS_OWNED_FILTERS.has(owned) ? owned : "all";
+  let ownedFilter = "owned";
+  if (owned === "all") {
+    ownedFilter = "all";
+  } else if (owned === "owned") {
+    ownedFilter = "owned";
+  } else if (owned === "unowned") {
+    // Search no longer exposes Unowned; treat legacy links as All.
+    ownedFilter = "all";
+  }
 
   const finish = route.query?.finish;
   const foilFilter = ALL_CARDS_FINISH_FILTERS.has(finish) ? finish : "all";
@@ -285,9 +353,13 @@ export function searchFiltersFromRoute(route) {
   const toughnessMin = parseOptionalNumber(route.query?.tghMin);
 
   const storageFilters = parseStorageFiltersFromRoute(route);
+  const roleFilters = parseRoleFiltersFromRoute(route);
 
   const viewParam = route.query?.view;
   const viewMode = viewParam === "list" ? "list" : "gallery";
+
+  const sort = normalizeSearchSort(route.query?.sort);
+  const sortDir = normalizeSearchSortDir(sort, route.query?.dir);
 
   return {
     ownedFilter,
@@ -306,12 +378,15 @@ export function searchFiltersFromRoute(route) {
     powerMin,
     toughnessMin,
     storageFilters,
+    roleFilters,
     viewMode,
+    sort,
+    sortDir,
   };
 }
 
 export function searchRouteQuery({
-  ownedFilter = "all",
+  ownedFilter = "owned",
   foilFilter = "all",
   typeFilter = "all",
   colorFilters = [],
@@ -326,8 +401,11 @@ export function searchRouteQuery({
   powerMin = null,
   toughnessMin = null,
   storageFilters = [],
+  roleFilters = [],
   page = 1,
   viewMode = "gallery",
+  sort = "newest",
+  sortDir = "",
 } = {}) {
   const query = {};
   if (searchQuery) {
@@ -339,8 +417,8 @@ export function searchRouteQuery({
   if (creatureTypeQuery) {
     query.creature = creatureTypeQuery;
   }
-  if (ownedFilter !== "all") {
-    query.owned = ownedFilter;
+  if (ownedFilter !== "owned") {
+    query.owned = ownedFilter === "unowned" ? "all" : ownedFilter;
   }
   if (foilFilter !== "all") {
     query.finish = foilFilter;
@@ -375,6 +453,17 @@ export function searchRouteQuery({
   if (storageFilters.length) {
     query.storage = storageFilters.join(",");
   }
+  if (roleFilters.length) {
+    query.roles = roleFilters.join(",");
+  }
+  const normalizedSort = normalizeSearchSort(sort);
+  const normalizedDir = normalizeSearchSortDir(normalizedSort, sortDir);
+  if (normalizedSort !== "newest") {
+    query.sort = normalizedSort;
+  }
+  if (normalizedDir !== defaultSearchSortDirForField(normalizedSort)) {
+    query.dir = normalizedDir;
+  }
   if (page > 1) {
     query.page = String(page);
   }
@@ -405,7 +494,7 @@ export function searchNavQuery(route) {
 }
 
 export function collectionNavQuery(route, targetPath) {
-  const { setCode, artStyle } = collectionScopeFromRoute(route);
+  const { setCode, artStyle, family } = collectionScopeFromRoute(route);
   if (targetPath === "/collection/search") {
     return searchNavQuery(route);
   }
@@ -423,22 +512,23 @@ export function collectionNavQuery(route, targetPath) {
         searchQuery: "",
         lens: "",
       };
-    return allCardsRouteQuery({ setCode, artStyle, ...filters });
+    return allCardsRouteQuery({ setCode, artStyle, family, ...filters });
   }
-  return collectionScopeToQuery(setCode, artStyle);
+  return collectionScopeToQuery(setCode, artStyle, family);
 }
 
 export function setScopeQueryFromRoute(route) {
   if (route.path === "/collection/all") {
-    const { setCode, artStyle } = collectionScopeFromRoute(route);
+    const { setCode, artStyle, family } = collectionScopeFromRoute(route);
     return allCardsRouteQuery({
       setCode,
       artStyle,
+      family,
       ...allCardsFiltersFromRoute(route),
     });
   }
-  const { setCode, artStyle } = collectionScopeFromRoute(route);
-  return collectionScopeToQuery(setCode, artStyle);
+  const { setCode, artStyle, family } = collectionScopeFromRoute(route);
+  return collectionScopeToQuery(setCode, artStyle, family);
 }
 
 export function managerArtStylesEditorRoute(setCode) {

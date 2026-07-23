@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   effectiveDeckOwnedQty,
@@ -17,6 +17,7 @@ const props = defineProps({
   imgClass: { type: [String, Array, Object], default: "" },
   loading: { type: String, default: "lazy" },
   showDetails: { type: Boolean, default: true },
+  showZoom: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["finish-changed", "ownership-changed"]);
@@ -25,6 +26,7 @@ const router = useRouter();
 const rootRef = ref(null);
 const isHovered = ref(false);
 const hoverPinned = ref(false);
+const imageZoomOpen = ref(false);
 const copyControlsRef = ref(null);
 let leaveTimer = null;
 
@@ -39,6 +41,7 @@ const effectivelyOwned = computed(() => {
   ownershipRevision.value;
   return isEffectivelyOwned(props.card);
 });
+const zoomImageSrc = computed(() => props.src || props.card?.imageUri || "");
 
 watch(
   () => [
@@ -85,8 +88,28 @@ function onPointerLeave(event) {
   if (related instanceof Node && root?.contains(related)) {
     return;
   }
+  if (related instanceof Element && related.closest(".storage-location-picker-menu")) {
+    pinHover();
+    return;
+  }
   clearLeaveTimer();
   leaveTimer = setTimeout(() => {
+    hoverPinned.value = false;
+    isHovered.value = false;
+  }, 220);
+}
+
+function onMenuOpenChange(isOpen) {
+  if (isOpen) {
+    pinHover();
+    return;
+  }
+  clearLeaveTimer();
+  leaveTimer = setTimeout(() => {
+    const root = rootRef.value;
+    if (root?.matches(":hover")) {
+      return;
+    }
     hoverPinned.value = false;
     isHovered.value = false;
   }, 220);
@@ -127,6 +150,43 @@ function onViewDetails(event) {
     query: cardRouteQuery(cardFinish(props.card)),
   });
 }
+
+function openImageZoom(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!zoomImageSrc.value) {
+    return;
+  }
+  imageZoomOpen.value = true;
+}
+
+function closeImageZoom() {
+  imageZoomOpen.value = false;
+}
+
+function onImageZoomKeydown(event) {
+  if (event.key === "Escape") {
+    closeImageZoom();
+  }
+}
+
+watch(imageZoomOpen, (open) => {
+  if (open) {
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onImageZoomKeydown);
+    return;
+  }
+  document.body.style.overflow = "";
+  window.removeEventListener("keydown", onImageZoomKeydown);
+});
+
+onUnmounted(() => {
+  clearLeaveTimer();
+  window.removeEventListener("keydown", onImageZoomKeydown);
+  if (imageZoomOpen.value) {
+    document.body.style.overflow = "";
+  }
+});
 </script>
 
 <template>
@@ -160,6 +220,33 @@ function onViewDetails(event) {
       @mousedown.stop="stopNavigation"
     >
       <button
+        v-if="showZoom && zoomImageSrc"
+        type="button"
+        class="card-interactive-action card-interactive-zoom"
+        aria-label="View larger image"
+        title="Zoom"
+        @click="openImageZoom"
+      >
+        <svg class="card-interactive-zoom-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="10.5" cy="10.5" r="6.25" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path
+            d="M15.2 15.2 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+          <path
+            d="M10.5 7.75v5.5M7.75 10.5h5.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+
+      <button
         v-if="showDetails"
         type="button"
         class="card-interactive-action card-interactive-details"
@@ -175,7 +262,33 @@ function onViewDetails(event) {
         variant="overlay"
         @finish-changed="emit('finish-changed', $event)"
         @ownership-changed="emit('ownership-changed')"
+        @menu-open-change="onMenuOpenChange"
       />
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="imageZoomOpen && zoomImageSrc"
+        class="card-image-zoom-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Card image preview"
+        @click.self="closeImageZoom"
+      >
+        <button
+          type="button"
+          class="card-image-zoom-close"
+          aria-label="Close image preview"
+          @click="closeImageZoom"
+        >
+          ×
+        </button>
+        <img
+          :src="zoomImageSrc"
+          :alt="alt || card?.name || 'Card'"
+          class="card-image-zoom-image"
+        >
+      </div>
+    </Teleport>
   </div>
 </template>

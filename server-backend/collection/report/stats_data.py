@@ -8,7 +8,17 @@ from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.price_history import PriceSnapshotCache, load_price_snapshot_cache
 
 
-from util.set_completion import count_completion_keys
+from util.set_completion import count_completion_keys, count_completion_keys_by_rarity
+
+RARITY_ORDER = (
+    "common",
+    "uncommon",
+    "rare",
+    "mythic",
+    "special",
+    "bonus",
+    "unknown",
+)
 
 
 def _float_or_none(value):
@@ -85,6 +95,44 @@ def _lookup_catalog_art_count(
     art_style: str,
 ) -> int:
     return catalog_art_lookup.get((str(set_code), str(art_style)), 0)
+
+
+def _owned_rarity_counts(owned: pd.DataFrame, *, set_code: str) -> dict[str, int]:
+    if owned.empty or "rarity" not in owned.columns:
+        return {}
+    rows = list(
+        zip(
+            owned["set_code"].tolist(),
+            owned["collector_number"].tolist(),
+            owned["rarity"].tolist(),
+        )
+    )
+    return count_completion_keys_by_rarity(rows, set_code=set_code)
+
+
+def _compute_rarity_breakdown(
+    owned: pd.DataFrame,
+    catalog_by_rarity: dict[str, int],
+    *,
+    set_code: str,
+) -> list[dict]:
+    owned_by_rarity = _owned_rarity_counts(owned, set_code=set_code)
+    rarity_keys = [
+        rarity
+        for rarity in RARITY_ORDER
+        if catalog_by_rarity.get(rarity) or owned_by_rarity.get(rarity)
+    ]
+    for rarity in sorted({*catalog_by_rarity, *owned_by_rarity}):
+        if rarity not in rarity_keys:
+            rarity_keys.append(rarity)
+    return [
+        {
+            "rarity": rarity,
+            "owned": int(owned_by_rarity.get(rarity, 0)),
+            "catalog": int(catalog_by_rarity.get(rarity, 0)),
+        }
+        for rarity in rarity_keys
+    ]
 
 
 def _compute_stats_from_owned(
@@ -231,12 +279,22 @@ def compute_stats_page(
     *,
     include_client_drilldowns: bool = True,
 ) -> dict:
+    from report.report_stats import load_catalog_rarity_counts
+
     owned, catalog = stats_scope(page, owned_df, catalog_df)
     catalog_count = int(catalog["catalog_cards"].sum()) if not catalog.empty else 0
     stats = _compute_stats_from_owned(owned, catalog_count, conn, snapshot_cache)
     stats["artStyles"] = _compute_art_style_stats(owned, page)
     if page == "All":
         stats["setBreakdown"] = _compute_set_stats(owned, catalog_df)
+        stats["rarityBreakdown"] = []
+    else:
+        catalog_by_rarity = load_catalog_rarity_counts(conn, page)
+        stats["rarityBreakdown"] = _compute_rarity_breakdown(
+            owned,
+            catalog_by_rarity,
+            set_code=page,
+        )
     if include_client_drilldowns:
         stats["byArtStyle"] = _build_by_art_style(
             page,

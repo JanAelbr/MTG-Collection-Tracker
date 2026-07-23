@@ -16,8 +16,8 @@ import {
   canManageFinish,
   normalizeFinish,
 } from "../utils/finishes";
-import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
+import { fetchFavorites, useFavorites } from "../composables/favorites";
 
 const route = useRoute();
 const router = useRouter();
@@ -26,7 +26,7 @@ const card = ref(null);
 const selectedFinish = ref(FINISH_NONFOIL);
 const priceStrategy = ref("trend");
 const { loading, run } = useAsyncLoad();
-
+const { isCardFavorite, toggleCardFavorite } = useFavorites();
 const availableFinishes = computed(() =>
   Array.from(
     new Set(
@@ -81,11 +81,11 @@ const showVariantGallery = computed(
   () => (card.value?.variantGallery?.cards?.length || 0) > 1,
 );
 
-const defaultDeckId = computed(() =>
+const routeDeckId = computed(() =>
   typeof route.query.deck === "string" ? route.query.deck : "",
 );
-const activeDeckLabel = ref("");
-const deckCardSlot = ref(null);
+const sessionDeckId = ref("");
+const activeDeckId = computed(() => routeDeckId.value || sessionDeckId.value);
 const imageZoomOpen = ref(false);
 const showBackFace = ref(false);
 
@@ -107,46 +107,12 @@ function toggleCardFace() {
   showBackFace.value = !showBackFace.value;
 }
 
-watch(
-  defaultDeckId,
-  async (deckId) => {
-    if (!deckId) {
-      activeDeckLabel.value = "";
-      return;
-    }
-    try {
-      const payload = await api.listDecks();
-      const deck = (payload.decks || []).find((item) => String(item.id) === String(deckId));
-      activeDeckLabel.value = deck?.label || deck?.name || "";
-    } catch {
-      activeDeckLabel.value = "";
-    }
-  },
-  { immediate: true },
-);
-
-async function onDeckCardRemoved() {
-  clearClientCache();
-  deckCardSlot.value = null;
-  await loadCard();
-}
-
-async function onDeckCardChanged() {
-  clearClientCache();
-  await loadCard();
-}
-
-function findDeckCardSlot(cards, setCode, collectorNumber, finish) {
-  const matches = (cards || []).filter(
-    (row) =>
-      row.setCode === setCode &&
-      String(row.collectorNumber) === String(collectorNumber) &&
-      normalizeFinish(row.finish ?? row.foil ?? 0) === finish,
-  );
-  if (!matches.length) {
-    return null;
+async function onDeckCardChanged(result) {
+  if (result?.deckId != null) {
+    sessionDeckId.value = String(result.deckId);
   }
-  return matches.find((row) => row.section === "main") || matches[0];
+  clearClientCache();
+  await loadCard();
 }
 
 function closeImageZoom() {
@@ -186,22 +152,6 @@ async function loadCard() {
     showBackFace.value = false;
     selectedFinish.value = normalizeFinish(card.value.selectedFinish ?? FINISH_NONFOIL);
     priceStrategy.value = card.value.priceStrategy || "trend";
-    deckCardSlot.value = null;
-    if (defaultDeckId.value) {
-      try {
-        const browse = await api.getDeckBrowse(defaultDeckId.value);
-        if (isCurrent()) {
-          deckCardSlot.value = findDeckCardSlot(
-            browse.cards,
-            card.value.setCode,
-            card.value.collectorNumber,
-            selectedFinish.value,
-          );
-        }
-      } catch {
-        deckCardSlot.value = null;
-      }
-    }
   });
 }
 
@@ -227,6 +177,13 @@ async function onFinishSelected(finish) {
   });
 }
 
+async function onToggleFavorite() {
+  if (!card.value) {
+    return;
+  }
+  await toggleCardFavorite(card.value, selectedFinish.value);
+}
+
 watch(
   () => [route.params.setCode, route.params.collectorNumber, route.query.finish],
   () => {
@@ -234,7 +191,10 @@ watch(
   },
 );
 
-onMounted(loadCard);
+onMounted(async () => {
+  await fetchFavorites();
+  await loadCard();
+});
 
 onUnmounted(() => {
   document.body.style.overflow = "";
@@ -275,7 +235,20 @@ onUnmounted(() => {
       </div>
 
       <div class="card-detail-meta">
-        <h1>{{ card.name }}</h1>
+        <div class="card-detail-title-row">
+          <h1>{{ card.name }}</h1>
+          <button
+            type="button"
+            class="card-detail-favorite"
+            :class="{ 'is-favorite': isCardFavorite(card, selectedFinish) }"
+            :aria-pressed="isCardFavorite(card, selectedFinish) ? 'true' : 'false'"
+            :aria-label="isCardFavorite(card, selectedFinish) ? `Unfavourite ${card.name}` : `Favourite ${card.name}`"
+            :title="isCardFavorite(card, selectedFinish) ? 'Unfavourite card' : 'Favourite card'"
+            @click="onToggleFavorite"
+          >
+            {{ isCardFavorite(card, selectedFinish) ? "★" : "☆" }}
+          </button>
+        </div>
         <p class="card-detail-set">
           <CollectionSetLink
             :set-code="card.setCode"
@@ -287,22 +260,15 @@ onUnmounted(() => {
         <p v-if="card.artStyle" class="card-detail-art-style">{{ card.artStyle }}</p>
 
         <div class="card-detail-actions">
-          <DeckCardQtyControl
-            v-if="menuCard && defaultDeckId && deckCardSlot"
-            :card="{ ...menuCard, ...deckCardSlot }"
-            :deck-id="defaultDeckId"
-            :deck-name="activeDeckLabel"
-            @changed="onDeckCardChanged"
-            @removed="onDeckCardRemoved"
-          />
-
           <CardDetailOwnershipPanel
             v-if="menuCard"
             :card="menuCard"
             :manageable-finishes="manageableFinishes"
             :loading="loading"
+            :default-deck-id="activeDeckId"
             @ownership-changed="onOwnershipChanged"
             @finish-selected="onFinishSelected"
+            @deck-changed="onDeckCardChanged"
           />
         </div>
       </div>

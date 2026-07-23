@@ -75,8 +75,8 @@ class StatsApiServiceTests(unittest.TestCase):
                 set_code, collector_number, name, art_style,
                 market_value, market_value_foil, market_value_etched,
                 has_nonfoil, has_foil, has_etched,
-                colors, type_line, card_type, cardmarket_url
-            ) VALUES ('LTR', '1', 'Test Card', 'Main', 2.0, 3.0, NULL, 1, 1, 0, NULL, NULL, NULL, NULL)
+                colors, type_line, card_type, cardmarket_url, rarity
+            ) VALUES ('LTR', '1', 'Test Card', 'Main', 2.0, 3.0, NULL, 1, 1, 0, NULL, NULL, NULL, NULL, 'rare')
             """
         )
         self.conn.execute(
@@ -107,6 +107,10 @@ class StatsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["stats"]["profit"], 1.0)
         self.assertEqual(len(payload["stats"]["artStyles"]), 1)
         self.assertEqual(payload["stats"]["setBreakdown"], [])
+        rarity = {row["rarity"]: row for row in payload["stats"]["rarityBreakdown"]}
+        self.assertIn("rare", rarity)
+        self.assertEqual(rarity["rare"]["owned"], 1)
+        self.assertEqual(rarity["rare"]["catalog"], 1)
 
     @patch("api.services.pricing_helpers.values_by_strategy_for_finish")
     def test_all_sets_stats_group_by_set(self, values_mock):
@@ -139,6 +143,7 @@ class StatsApiServiceTests(unittest.TestCase):
         payload = stats_service.load_collection_stats(self.conn, set_code="All")
         breakdown = payload["stats"]["setBreakdown"]
         self.assertEqual(len(breakdown), 2)
+        self.assertEqual(payload["stats"]["rarityBreakdown"], [])
         self.assertEqual(
             {row["setCode"] for row in breakdown},
             {"LTR", "LTC"},

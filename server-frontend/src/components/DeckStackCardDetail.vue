@@ -42,7 +42,6 @@ function cardRoute(card) {
 
     <div v-else class="deck-stacks-detail-panel">
       <div class="deck-stacks-detail-image-wrap">
-        <CardFinishBadge :card="card" variant="overlay" compact />
         <RouterLink
           v-if="card.imageUri && cardRoute(card)"
           :to="cardRoute(card)"

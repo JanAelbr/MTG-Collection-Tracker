@@ -674,7 +674,8 @@ def sync_prices_from_guide(
     missing_only: bool = False,
     log=None,
 ) -> dict:
-    guide = load_price_guide_index(force_download=force_download, logger=log)
+    out = log if log is not None else get_logger(__name__)
+    guide = load_price_guide_index(force_download=force_download, logger=out)
     from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -682,10 +683,8 @@ def sync_prices_from_guide(
         conn.row_factory = sqlite3.Row
         ensure_card_columns(conn)
         backfilled_urls = backfill_cardmarket_urls(conn, guide)
-        if backfilled_urls and log:
-            log.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
-        elif backfilled_urls:
-            print(f"Backfilled Cardmarket URLs for {backfilled_urls} cards")
+        if backfilled_urls:
+            out.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
         context = load_price_sync_context(conn, set_codes)
         cleared_unowned = clear_unowned_prices_for_non_qualifying_sets(
             conn, context, set_codes,
@@ -696,24 +695,15 @@ def sync_prices_from_guide(
             conn=conn,
         )
 
-        if log and cleared_unowned:
-            log.info(
+        if cleared_unowned:
+            out.info(
                 "Cleared %s unowned price value(s) in sets below the unowned sync threshold",
                 cleared_unowned,
-            )
-        elif cleared_unowned:
-            print(
-                "Cleared "
-                f"{cleared_unowned} unowned price value(s) in sets below the unowned sync threshold"
             )
 
         if not rows:
             conn.commit()
-            message = "No cards with a Cardmarket URL to price."
-            if log:
-                log.info(message)
-            else:
-                print(message)
+            out.info("No cards with a Cardmarket URL to price.")
             return {
                 "queried_cards": 0,
                 "updated_fields": 0,
@@ -725,18 +715,12 @@ def sync_prices_from_guide(
             }
 
         mode = "missing values" if missing_only else "owned plus qualifying unowned cards"
-        if log:
-            log.info(
-                "Updating Cardmarket prices for %s cards (%s; %s qualifying set(s))...",
-                len(rows),
-                mode,
-                len(context.qualifying_sets),
-            )
-        else:
-            print(
-                f"Updating Cardmarket prices for {len(rows)} cards "
-                f"({mode}; {len(context.qualifying_sets)} qualifying set(s))..."
-            )
+        out.info(
+            "Updating Cardmarket prices for %s cards (%s; %s qualifying set(s))...",
+            len(rows),
+            mode,
+            len(context.qualifying_sets),
+        )
         totals = {
             "queried_cards": len(rows),
             "updated_fields": 0,
@@ -827,27 +811,23 @@ def sync_prices_from_guide(
 
     for card_set in sorted(set_stats):
         stats = set_stats[card_set]
-        message = (
-            f"Set {card_set}: queried {stats['queried']} cards, "
-            f"updated {stats['updated']} prices, unchanged {stats['unchanged']}, "
-            f"still missing {stats['still_missing']}"
+        out.info(
+            "Set %s: queried %s cards, updated %s prices, unchanged %s, still missing %s",
+            card_set,
+            stats["queried"],
+            stats["updated"],
+            stats["unchanged"],
+            stats["still_missing"],
         )
-        if log:
-            log.info(message)
-        else:
-            print(message)
 
-    summary = (
-        f"Cardmarket sync: updated {totals['updated_fields']}, "
-        f"cleared {totals['cleared_fields']}, "
-        f"unchanged {totals['unchanged_fields']}, "
-        f"still missing {totals['still_missing_fields']}, "
-        f"{totals['qualifying_sets']} qualifying set(s)."
+    out.info(
+        "Cardmarket sync: updated %s, cleared %s, unchanged %s, still missing %s, %s qualifying set(s).",
+        totals["updated_fields"],
+        totals["cleared_fields"],
+        totals["unchanged_fields"],
+        totals["still_missing_fields"],
+        totals["qualifying_sets"],
     )
-    if log:
-        log.info(summary)
-    else:
-        print(summary)
     return totals
 
 

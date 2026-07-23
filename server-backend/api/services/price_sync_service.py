@@ -2,7 +2,10 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 
+from lib.run_log import get_logger
 from util.price_history import load_last_updated_display, prices_are_outdated
+
+log = get_logger(__name__)
 
 _lock = threading.Lock()
 _state = {
@@ -26,6 +29,7 @@ def _utc_now() -> str:
 
 
 def _run_price_sync() -> None:
+    log.info("Price sync running")
     try:
         from util.price_sync import update_cardmarket_prices_only
 
@@ -40,7 +44,9 @@ def _run_price_sync() -> None:
             _state["finished_at"] = _utc_now()
             _state["message"] = "Price sync completed"
             _state["error"] = None
+        log.info("Price sync completed")
     except Exception as exc:
+        log.exception("Price sync failed")
         with _lock:
             _state["status"] = "failed"
             _state["finished_at"] = _utc_now()
@@ -58,6 +64,7 @@ def start_price_sync() -> dict:
         _state["message"] = "Price sync started"
         _state["error"] = None
 
+    log.info("Price sync started")
     thread = threading.Thread(target=_run_price_sync, daemon=True)
     thread.start()
     return {"started": True}

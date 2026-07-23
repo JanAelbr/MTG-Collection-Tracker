@@ -201,6 +201,7 @@ class ApiEndpointTests(unittest.TestCase):
             "/api/health",
             "/api/meta",
             "/api/settings",
+            "/api/favorites",
             "/api/stats/collection",
             "/api/stats/collection?setCode=LTR&finishFilter=nonfoil",
             "/api/reports/meta",
@@ -225,7 +226,7 @@ class ApiEndpointTests(unittest.TestCase):
                 self._get(path)
 
     def test_reports_cards_returns_payload(self):
-        response = self.client.get("/api/reports/cards?report=top&setCode=LTR")
+        response = self.client.get("/api/reports/cards?report=all&setCode=LTR")
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIn("cards", payload)

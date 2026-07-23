@@ -13,6 +13,7 @@ if str(SCRIPTS) not in sys.path:
 from report.report_data import format_set_option_label  # noqa: E402
 from util.set_catalog import (  # noqa: E402
     SETS_TABLE_SQL,
+    ensure_sets_columns,
     load_catalog_set_codes,
     load_owned_set_codes,
     load_set_display_names,
@@ -30,6 +31,7 @@ class SetCatalogTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.conn = sqlite3.connect(Path(self.temp_dir.name) / "test.db")
         self.conn.executescript(SETS_TABLE_SQL)
+        ensure_sets_columns(self.conn)
         self.cursor = self.conn.cursor()
 
     def tearDown(self):
@@ -88,6 +90,8 @@ class SetCatalogTests(unittest.TestCase):
             "released_at": "2026-06-13",
             "scryfall_uri": "https://scryfall.com/sets/hob",
             "icon_svg_uri": "https://svgs.scryfall.io/sets/hob.svg?1782705600",
+            "set_type": "commander",
+            "parent_set_code": "ltr",
         }
         with patch("util.set_catalog.fetch_scryfall_set", return_value=payload):
             synced = sync_set_metadata(
@@ -103,6 +107,9 @@ class SetCatalogTests(unittest.TestCase):
             icon_uris["HOB"],
             "https://svgs.scryfall.io/sets/hob.svg?1782705600",
         )
+        catalog = load_sets_catalog(self.conn)
+        self.assertEqual(catalog["HOB"]["set_type"], "commander")
+        self.assertEqual(catalog["HOB"]["parent_set_code"], "LTR")
 
     def test_format_set_option_label_uses_catalog(self):
         upsert_set_row(

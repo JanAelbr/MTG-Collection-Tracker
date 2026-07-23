@@ -573,6 +573,69 @@ class DecksApiServiceTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 400)
 
+    def test_bulk_add_owned_syncs_deck_storage(self):
+        created = decks_service.create_deck(
+            self.conn,
+            deck_format="commander",
+            name="Bulk Owned Deck",
+            commanders=[
+                {
+                    "set_code": "LTC",
+                    "collector_number": "284",
+                    "finish": 0,
+                }
+            ],
+        )
+        deck_id = str(created["deck"]["id"])
+        deck_slug = created["deck"]["slug"].lower()
+
+        # Clear instances from commander add so we only assert bulk-owned placement.
+        self.conn.execute("DELETE FROM card_instances")
+        self.conn.execute(
+            """
+            UPDATE deck_cards SET owned_qty = 0
+            WHERE deck_id = ?
+            """,
+            (created["deck"]["id"],),
+        )
+        self.conn.commit()
+
+        result = decks_service.bulk_add_cards_to_deck(
+            self.conn,
+            deck_id=deck_id,
+            cards=[
+                {
+                    "setCode": "LTC",
+                    "collectorNumber": "284",
+                    "finish": 0,
+                    "qty": 2,
+                    "section": "main",
+                    "owned": True,
+                }
+            ],
+        )
+        self.assertEqual(result["added"], 1)
+
+        owned_qty = self.conn.execute(
+            """
+            SELECT owned_qty FROM deck_cards
+            WHERE deck_id = ? AND set_code = 'LTC' AND collector_number = '284'
+              AND section = 'main'
+            """,
+            (created["deck"]["id"],),
+        ).fetchone()[0]
+        self.assertEqual(owned_qty, 1)
+
+        deck_instances = self.conn.execute(
+            """
+            SELECT COUNT(*) FROM card_instances
+            WHERE set_code = 'LTC' AND collector_number = '284' AND finish = 0
+              AND location_slug = ?
+            """,
+            (f"deck:{deck_slug}",),
+        ).fetchone()[0]
+        self.assertEqual(deck_instances, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

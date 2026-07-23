@@ -8,6 +8,8 @@ import DecksView from "./views/DecksView.vue";
 import DeckBuilderView from "./views/DeckBuilderView.vue";
 import CardDetailView from "./views/CardDetailView.vue";
 import HomeView from "./views/HomeView.vue";
+import FavoritesHomeView from "./views/FavoritesHomeView.vue";
+import ScanView from "./views/ScanView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -21,7 +23,7 @@ const router = createRouter({
     return { top: 0 };
   },
   routes: [
-    { path: "/", redirect: "/collection/all" },
+    { path: "/", name: "home", component: FavoritesHomeView, meta: { title: "Favourites" } },
     { path: "/collection", redirect: "/collection/all" },
     {
       path: "/collection/search",
@@ -30,17 +32,18 @@ const router = createRouter({
       meta: { title: "Collection" },
     },
     {
-      path: "/collection/:view(top|all)",
+      path: "/collection/all",
       name: "collection",
       component: CollectionView,
       meta: { title: "Collection" },
     },
+    { path: "/collection/top", redirect: "/collection/all" },
     { path: "/collection/risers", redirect: "/collection/all" },
     { path: "/collection/fallers", redirect: "/collection/all" },
     { path: "/reports", redirect: "/collection/all" },
     {
       path: "/reports/:view(top|all)",
-      redirect: (to) => `/collection/${to.params.view}`,
+      redirect: "/collection/all",
     },
     { path: "/reports/risers", redirect: "/collection/all" },
     { path: "/reports/fallers", redirect: "/collection/all" },
@@ -50,12 +53,18 @@ const router = createRouter({
       component: HomeView,
       meta: { title: "Settings" },
     },
-    { path: "/home", redirect: "/settings" },
+    { path: "/home", redirect: "/" },
     {
       path: "/storage",
       name: "storage",
       component: StorageView,
       meta: { title: "Storage" },
+    },
+    {
+      path: "/scan",
+      name: "scan",
+      component: ScanView,
+      meta: { title: "Scan" },
     },
     {
       path: "/manager",

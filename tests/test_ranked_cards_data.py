@@ -124,6 +124,62 @@ class RankedCardsDataTests(unittest.TestCase):
         self.assertEqual(len(expanded), 2)
         self.assertEqual(finishes, [0, 1])
 
+    def test_foil_only_with_stale_nonfoil_price_lists_foil_only(self):
+        cards_df = pd.DataFrame([
+            {
+                "set_code": "CLU",
+                "collector_number": "279",
+                "name": "Sacred Foundry",
+                "art_style": "Main",
+                "image_uri": "",
+                "cardmarket_url": "",
+                "market_value": 0.35,
+                "market_value_foil": 19.22,
+                "market_value_etched": None,
+                "has_nonfoil": 0,
+                "has_foil": 1,
+                "has_etched": 0,
+                "finish": pd.NA,
+                "purchase_value": None,
+                "current_value": None,
+                "profit_loss": None,
+            }
+        ])
+
+        expanded = expand_cards_for_ranking(cards_df)
+        finishes = [int(finish) for finish in expanded["finish"]]
+
+        self.assertEqual(len(expanded), 1)
+        self.assertEqual(finishes, [1])
+        self.assertEqual(float(expanded.iloc[0]["current_value"]), 19.22)
+
+    def test_foil_only_without_prices_uses_foil_fallback(self):
+        cards_df = pd.DataFrame([
+            {
+                "set_code": "CLU",
+                "collector_number": "279",
+                "name": "Sacred Foundry",
+                "art_style": "Main",
+                "image_uri": "",
+                "cardmarket_url": "",
+                "market_value": None,
+                "market_value_foil": None,
+                "market_value_etched": None,
+                "has_nonfoil": 0,
+                "has_foil": 1,
+                "has_etched": 0,
+                "finish": pd.NA,
+                "purchase_value": None,
+                "current_value": None,
+                "profit_loss": None,
+            }
+        ])
+
+        expanded = expand_cards_for_ranking(cards_df)
+
+        self.assertEqual(len(expanded), 1)
+        self.assertEqual(int(expanded.iloc[0]["finish"]), 1)
+
     def test_all_cards_query_selects_finish_flags(self):
         from report.report_queries import ALL_CARDS_QUERY, ORPHAN_PURCHASES_QUERY
 

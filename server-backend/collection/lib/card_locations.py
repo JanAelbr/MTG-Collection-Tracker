@@ -136,36 +136,8 @@ def sync_card_instances(conn: sqlite3.Connection) -> int:
     cursor.execute("DELETE FROM card_instances")
     inserted = 0
 
-    lotr_prints: set[tuple[str, str, int]] = set()
-    for print_key in set(purchases) | set(deck_totals):
-        if print_key[0] in LOTR_SETS:
-            lotr_prints.add(print_key)
-
-    for set_code, collector_number, finish in sorted(lotr_prints):
-        count = _lotr_instance_count(
-            (set_code, collector_number, finish),
-            deck_totals,
-            purchases,
-        )
-        if count <= 0:
-            continue
-        location_slug = binder_location_for_print(set_code, collector_number)
-        if not location_slug:
-            continue
-        purchase_value = purchases.get((set_code, collector_number, finish))
-        inserted += _insert_instances(
-            cursor,
-            set_code,
-            collector_number,
-            finish,
-            location_slug,
-            count,
-            purchase_value,
-        )
-
+    # Deck-owned copies (all sets, including LOTR) live at their deck location.
     for (set_code, collector_number, finish, deck_slug), owned_qty in sorted(deck_counts.items()):
-        if set_code in LOTR_SETS:
-            continue
         location_slug = deck_location_slug(deck_slug)
         exists = cursor.execute(
             "SELECT 1 FROM storage_locations WHERE location_slug = ?",
@@ -181,6 +153,33 @@ def sync_card_instances(conn: sqlite3.Connection) -> int:
             finish,
             location_slug,
             owned_qty,
+            purchase_value,
+        )
+
+    # Remaining LOTR owned copies (not claimed by a deck) stay in binders.
+    lotr_prints: set[tuple[str, str, int]] = set()
+    for print_key in set(purchases) | set(deck_totals):
+        if print_key[0] in LOTR_SETS:
+            lotr_prints.add(print_key)
+
+    for set_code, collector_number, finish in sorted(lotr_prints):
+        print_key = (set_code, collector_number, finish)
+        desired = _lotr_instance_count(print_key, deck_totals, purchases)
+        claimed = deck_totals.get(print_key, 0)
+        binder_count = max(0, desired - claimed)
+        if binder_count <= 0:
+            continue
+        location_slug = binder_location_for_print(set_code, collector_number)
+        if not location_slug:
+            continue
+        purchase_value = purchases.get(print_key)
+        inserted += _insert_instances(
+            cursor,
+            set_code,
+            collector_number,
+            finish,
+            location_slug,
+            binder_count,
             purchase_value,
         )
 

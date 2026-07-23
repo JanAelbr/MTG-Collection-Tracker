@@ -67,6 +67,73 @@ class StorageApiServiceTests(unittest.TestCase):
         slugs = [item["slug"] for item in locations]
         self.assertNotIn(created["slug"], slugs)
 
+    def test_storage_breakdown_aggregates_value_and_mix(self):
+        from unittest.mock import patch
+
+        from util.db_migrate import ensure_card_columns
+
+        ensure_card_columns(self.conn)
+        general = next(
+            loc for loc in storage_service.list_locations(self.conn)
+            if loc["slug"] == "storage:general"
+        )
+        binder = storage_service.create_location(
+            self.conn,
+            label="LTR binder",
+            location_type="binder",
+        )
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style, image_uri,
+                market_value, market_value_foil, cardmarket_url
+            ) VALUES
+                ('LTR', '1', 'Card A', '', '', 10.0, 20.0, NULL),
+                ('LTR', '2', 'Card B', '', '', 5.0, NULL, NULL)
+            """
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("LTR", "1", 0, general["slug"], 4.0),
+                ("LTR", "1", 1, binder["slug"], 8.0),
+                ("LTR", "2", 0, general["slug"], 2.0),
+            ],
+        )
+        self.conn.commit()
+
+        def fake_price(_url, finish, _strategy, **_kwargs):
+            return 20.0 if int(finish) == 1 else 10.0
+
+        with patch("api.services.storage_service.price_from_strategy", side_effect=fake_price):
+            result = storage_service.get_storage_breakdown(
+                self.conn,
+                general["slug"],
+                price_strategy="trend",
+            )
+            binder_result = storage_service.get_storage_breakdown(
+                self.conn,
+                binder["slug"],
+                price_strategy="trend",
+            )
+
+        totals = result["totals"]
+        self.assertEqual(result["location"]["slug"], general["slug"])
+        self.assertEqual(totals["copies"], 2)
+        self.assertEqual(totals["uniquePrints"], 2)
+        self.assertEqual(totals["current"], 20.0)
+        self.assertEqual(totals["invested"], 6.0)
+        self.assertNotIn("byType", result)
+        self.assertNotIn("byLocation", result)
+        self.assertTrue(result["byFinish"])
+        self.assertEqual(result["bySet"][0]["setCode"], "LTR")
+        self.assertEqual(len(result["topCards"]), 2)
+        self.assertEqual(binder_result["totals"]["copies"], 1)
+
     def test_create_custom_binder(self):
         created = storage_service.create_location(
             self.conn,
@@ -110,9 +177,25 @@ class StorageApiServiceTests(unittest.TestCase):
     def test_default_price_strategy(self):
         settings = settings_service.get_settings(self.conn)
         self.assertEqual(settings["priceStrategy"], "trend")
+        self.assertIsNone(settings["favoritesCardsPriceStrategy"])
+        self.assertIsNone(settings["favoritesArtStylesPriceStrategy"])
         self.assertGreater(len(settings["priceStrategies"]), 0)
         self.assertEqual(settings["pageSize"], 25)
         self.assertEqual(settings["pageSizeOptions"], [25, 50, 100])
+
+    def test_favorites_price_strategy_overrides(self):
+        updated = settings_service.update_settings(
+            self.conn,
+            favorites_cards_price_strategy="avg",
+            favorites_art_styles_price_strategy="low",
+        )
+        self.assertEqual(updated["favoritesCardsPriceStrategy"], "avg")
+        self.assertEqual(updated["favoritesArtStylesPriceStrategy"], "low")
+        self.assertEqual(updated["priceStrategy"], "trend")
+
+        settings = settings_service.get_settings(self.conn)
+        self.assertEqual(settings["favoritesCardsPriceStrategy"], "avg")
+        self.assertEqual(settings["favoritesArtStylesPriceStrategy"], "low")
 
     def test_page_size_setting(self):
         updated = settings_service.update_settings(self.conn, page_size=100)
@@ -123,6 +206,44 @@ class StorageApiServiceTests(unittest.TestCase):
 
         with self.assertRaises(settings_service.SettingsError):
             settings_service.update_settings(self.conn, page_size=75)
+
+    def test_assert_location_assignable_rejects_deck(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description, is_system
+            ) VALUES ('deck:sample', 'Sample', 'deck', 10, '', 1)
+            """
+        )
+        self.conn.commit()
+        with self.assertRaises(storage_service.StorageError) as ctx:
+            storage_service.assert_location_assignable(self.conn, "deck:sample")
+        self.assertIn("deck ownership", ctx.exception.message.lower())
+
+        ok = storage_service.assert_location_assignable(self.conn, "storage:general")
+        self.assertEqual(ok["slug"], "storage:general")
+
+    def test_delete_instance_rejects_deck_storage(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description, is_system
+            ) VALUES ('deck:sample', 'Sample', 'deck', 10, '', 1)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTR', '1', 0, 'deck:sample', 1.0)
+            """
+        )
+        self.conn.commit()
+        instance_id = self.conn.execute(
+            "SELECT instance_id FROM card_instances LIMIT 1"
+        ).fetchone()[0]
+        with self.assertRaises(storage_service.StorageError):
+            storage_service.delete_instance(self.conn, instance_id)
 
 
 if __name__ == "__main__":

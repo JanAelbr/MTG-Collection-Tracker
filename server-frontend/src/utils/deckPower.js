@@ -42,6 +42,11 @@ export const CARD_ROLE_LABELS = {
 
 const HIDDEN_TABLE_ROLES = new Set(["land"]);
 
+/** Role options for Collection Search (skip redundant land). */
+export const SEARCH_ROLE_OPTIONS = Object.entries(CARD_ROLE_LABELS)
+  .filter(([id]) => !HIDDEN_TABLE_ROLES.has(id))
+  .map(([id, label]) => ({ id, label }));
+
 export function formatCardRoleLabel(role) {
   const key = String(role || "").trim();
   if (!key) {

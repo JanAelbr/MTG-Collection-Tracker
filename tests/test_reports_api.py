@@ -137,7 +137,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         load_ranked.return_value = pd.DataFrame(self.ranked_rows)
         payload = reports_service.list_report_cards(
             self.conn,
-            report="top",
+            report="all",
             set_code="LTR",
             page_size=25,
         )
@@ -380,7 +380,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         ])
         payload = reports_service.list_report_cards(
             self.conn,
-            report="top",
+            report="all",
             set_code="HOB",
             owned_filter="all",
             page_size=25,
@@ -395,7 +395,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         load_ranked.return_value = pd.DataFrame(self.ranked_rows)
         reports_service.list_report_cards(
             self.conn,
-            report="top",
+            report="all",
             set_code="All",
             page_size=25,
         )
@@ -512,6 +512,83 @@ class ReportsApiServiceTests(unittest.TestCase):
         payload = search_service.search_cards(self.conn, creature_type_search="halfling")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
+
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_filters_by_role_or_match(self, load_enriched):
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Cultivate",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Sorcery",
+                    "roles": ["ramp"],
+                    "currentValue": 2.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "2",
+                    "name": "Brainstorm",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Instant",
+                    "roles": ["draw"],
+                    "currentValue": 1.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "3",
+                    "name": "Swords to Plowshares",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Instant",
+                    "roles": ["removal"],
+                    "currentValue": 3.0,
+                },
+            ],
+            "2024-01-01",
+        )
+        payload = search_service.search_cards(
+            self.conn,
+            role_filters=["ramp", "draw"],
+        )
+        self.assertEqual(payload["totalMatches"], 2)
+        names = {card["name"] for card in payload["cards"]}
+        self.assertEqual(names, {"Cultivate", "Brainstorm"})
+
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_role_only_without_name(self, load_enriched):
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Sol Ring",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "typeLine": "Artifact",
+                    "roles": ["ramp", "fast_mana"],
+                    "currentValue": 2.0,
+                },
+            ],
+            "2024-01-01",
+        )
+        payload = search_service.search_cards(self.conn, role_filters=["ramp"])
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Sol Ring")
+        self.assertEqual(payload["roleFilters"], ["ramp"])
+
+    def test_parse_role_filters_normalizes_and_dedupes(self):
+        self.assertEqual(
+            search_service._parse_role_filters("ramp, DRAW, Ramp, bogus"),
+            ["ramp", "draw"],
+        )
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_filters_by_storage(self, load_enriched):
@@ -691,6 +768,8 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         search_payload = search_service.search_cards(self.conn, search="lightning")
         self.assertEqual(search_payload["totalMatches"], 1)
+        self.assertEqual(search_payload["sort"], "newest")
+        self.assertEqual(search_payload["dir"], "desc")
         self.assertEqual(
             [card["setCode"] for card in search_payload["cards"]],
             ["MH3"],
@@ -704,6 +783,95 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(
             [variant["setCode"] for variant in variants_payload["variants"]],
             ["MH3", "LTR"],
+        )
+
+    @patch("api.services.search_service._resolve_set_codes", return_value=["LTR", "MH3"])
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_sort_by_name_and_value(self, load_enriched, _resolve_sets):
+        ensure_sets_table(self.conn)
+        self.conn.executemany(
+            """
+            INSERT INTO sets (set_code, name, released_at, scryfall_uri, updated_at)
+            VALUES (?, ?, ?, NULL, '2026-01-01')
+            """,
+            [
+                ("LTR", "The Lord of the Rings", "2023-06-09"),
+                ("MH3", "Modern Horizons 3", "2024-06-14"),
+            ],
+        )
+        self.conn.commit()
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Lightning Bolt",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": False,
+                    "typeLine": "Instant",
+                    "currentValue": 1.0,
+                    "cmc": 1.0,
+                },
+                {
+                    "setCode": "MH3",
+                    "collectorNumber": "120",
+                    "name": "Lightning Bolt",
+                    "artStyle": "Borderless",
+                    "finish": 0,
+                    "owned": False,
+                    "typeLine": "Instant",
+                    "currentValue": 5.0,
+                    "cmc": 1.0,
+                },
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "2",
+                    "name": "Shock",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": False,
+                    "typeLine": "Instant",
+                    "currentValue": 3.0,
+                    "cmc": 1.0,
+                },
+                {
+                    "setCode": "MH3",
+                    "collectorNumber": "121",
+                    "name": "Shock",
+                    "artStyle": "Borderless",
+                    "finish": 0,
+                    "owned": False,
+                    "typeLine": "Instant",
+                    "currentValue": 0.5,
+                    "cmc": 1.0,
+                },
+            ],
+            None,
+        )
+
+        by_name = search_service.search_cards(
+            self.conn, creature_type_search="instant", sort="name", sort_dir="asc"
+        )
+        self.assertEqual(by_name["sort"], "name")
+        self.assertEqual(by_name["dir"], "asc")
+        self.assertEqual(
+            [card["name"] for card in by_name["cards"]],
+            ["Lightning Bolt", "Shock"],
+        )
+
+        by_value = search_service.search_cards(
+            self.conn, creature_type_search="instant", sort="value", sort_dir="desc"
+        )
+        self.assertEqual(by_value["sort"], "value")
+        self.assertEqual(by_value["dir"], "desc")
+        # Sort before name dedupe: highest-value print per name is kept.
+        self.assertEqual(
+            [(card["name"], card["setCode"], card["currentValue"]) for card in by_value["cards"]],
+            [
+                ("Lightning Bolt", "MH3", 5.0),
+                ("Shock", "LTR", 3.0),
+            ],
         )
 
     @patch("api.services.reports_service.values_by_strategy_for_finish")
@@ -749,7 +917,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         load_ranked.return_value = pd.DataFrame(self.ranked_rows)
         trend_payload = reports_service.list_report_cards(
             self.conn,
-            report="top",
+            report="all",
             set_code="LTR",
             page_size=25,
         )
@@ -763,7 +931,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.conn.commit()
         low_payload = reports_service.list_report_cards(
             self.conn,
-            report="top",
+            report="all",
             set_code="LTR",
             page_size=25,
         )

@@ -41,7 +41,13 @@ export function removeAvailableSet(setCode) {
   if (!normalized) {
     return;
   }
-  availableSets.value = availableSets.value.filter((set) => set.setCode !== normalized);
+  availableSets.value = availableSets.value.filter((set) => {
+    if (set.setCode === normalized) {
+      return false;
+    }
+    const members = set.familyMembers || [];
+    return !members.includes(normalized);
+  });
 }
 
 export function useAvailableManagerSets() {

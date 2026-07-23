@@ -2,17 +2,10 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH
-from report.deck_queries import (
-    build_deck_filter_payload,
-    deck_scope,
-    enrich_deck_cards_df,
-    load_deck_cards_df,
-    load_deck_list,
-)
+from report.deck_queries import deck_scope
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_metadata_snake
-from util.price_history import PriceSnapshotCache, load_price_snapshot_payload, load_price_snapshot_cache
+from util.price_history import PriceSnapshotCache
 
 
 def _float_or_none(value):
@@ -148,30 +141,3 @@ def compute_deck_stats_page(
         snapshot_cache=snapshot_cache,
         include_portfolio_history=include_portfolio_history,
     )
-
-
-def load_deck_stats_client_payload() -> dict:
-    with sqlite3.connect(DB_PATH) as conn:
-        deck_df = enrich_deck_cards_df(load_deck_cards_df(conn), conn)
-        decks = load_deck_list(conn)
-        deck_filter = build_deck_filter_payload(deck_df, decks)
-        snapshot_cache = load_price_snapshot_cache(conn)
-        snapshot_payload = load_price_snapshot_payload(conn)
-
-        deck_ids = ["All"] + [str(deck["id"]) for deck in decks]
-        pages = {
-            deck_id: compute_deck_stats_page(
-                deck_id,
-                deck_df,
-                conn,
-                snapshot_cache=snapshot_cache,
-            )
-            for deck_id in deck_ids
-        }
-
-    return {
-        "pages": pages,
-        "decks": decks,
-        **deck_filter,
-        **snapshot_payload,
-    }

@@ -213,6 +213,21 @@ export function artStyleOptionValue(style) {
   return style?.artStyle || "";
 }
 
+/** True when there is more than the default catch-all "All" style to filter on. */
+export function hasSelectableArtStyles(styles) {
+  const list = Array.isArray(styles) ? styles : [];
+  const named = list
+    .map((style) => artStyleOptionValue(style).trim())
+    .filter(Boolean);
+  if (named.length === 0) {
+    return false;
+  }
+  if (named.length === 1 && named[0].toLowerCase() === "all") {
+    return false;
+  }
+  return true;
+}
+
 export function formatArtStyleDropdownLabel(style) {
   const label = typeof style === "string" ? style : (style?.label || style?.artStyle || "");
   if (!label) {

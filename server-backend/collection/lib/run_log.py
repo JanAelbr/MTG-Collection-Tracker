@@ -1,4 +1,4 @@
-"""Shared logging setup for CLI scripts."""
+"""Shared logging setup for CLI scripts and the FastAPI app."""
 
 from __future__ import annotations
 

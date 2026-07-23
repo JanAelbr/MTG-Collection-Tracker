@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import BrowseSelect from "./BrowseSelect.vue";
+import { useFavorites } from "../composables/favorites";
 import {
   artStyleCompletionRarity,
   artStyleOptionValue,
@@ -18,9 +19,12 @@ const props = defineProps({
     default: "dropdown",
     validator: (value) => ["dropdown", "list"].includes(value),
   },
+  showFavorites: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["update:modelValue"]);
+
+const { isArtStyleFavorite, toggleArtStyleFavorite } = useFavorites();
 
 function artStyleIconSrc(style) {
   if (!props.setCode || typeof style === "string" || !style) {
@@ -54,6 +58,19 @@ function selectValue(value) {
   }
   emit("update:modelValue", value);
 }
+
+function canFavoriteOption(option) {
+  return Boolean(props.showFavorites && props.setCode && option.value);
+}
+
+async function onToggleFavorite(event, option) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!canFavoriteOption(option)) {
+    return;
+  }
+  await toggleArtStyleFavorite(props.setCode, option.value);
+}
 </script>
 
 <template>
@@ -64,32 +81,49 @@ function selectValue(value) {
       role="listbox"
       aria-label="Art style"
     >
-      <button
+      <div
         v-for="option in options"
         :key="option.value || 'all'"
-        type="button"
-        class="art-style-list-item"
-        :class="{ active: modelValue === option.value }"
-        role="option"
-        :aria-selected="modelValue === option.value"
-        :disabled="disabled"
-        :title="option.label"
-        @click="selectValue(option.value)"
+        class="art-style-list-row"
       >
-        <span
-          v-if="option.iconSrc"
-          class="art-style-list-icon-wrap"
-          aria-hidden="true"
+        <button
+          type="button"
+          class="art-style-list-item"
+          :class="{ active: modelValue === option.value }"
+          role="option"
+          :aria-selected="modelValue === option.value"
+          :disabled="disabled"
+          :title="option.label"
+          @click="selectValue(option.value)"
         >
-          <img
-            :src="option.iconSrc"
-            alt=""
-            class="art-style-list-icon"
-            loading="lazy"
+          <span
+            v-if="option.iconSrc"
+            class="art-style-list-icon-wrap"
+            aria-hidden="true"
           >
-        </span>
-        <span class="art-style-list-label">{{ option.label }}</span>
-      </button>
+            <img
+              :src="option.iconSrc"
+              alt=""
+              class="art-style-list-icon"
+              loading="lazy"
+            >
+          </span>
+          <span class="art-style-list-label">{{ option.label }}</span>
+        </button>
+        <button
+          v-if="canFavoriteOption(option)"
+          type="button"
+          class="art-style-favorite"
+          :class="{ 'is-favorite': isArtStyleFavorite(setCode, option.value) }"
+          :aria-pressed="isArtStyleFavorite(setCode, option.value) ? 'true' : 'false'"
+          :aria-label="isArtStyleFavorite(setCode, option.value) ? `Unfavourite ${option.label}` : `Favourite ${option.label}`"
+          :title="isArtStyleFavorite(setCode, option.value) ? 'Unfavourite art style' : 'Favourite art style'"
+          :disabled="disabled"
+          @click="onToggleFavorite($event, option)"
+        >
+          {{ isArtStyleFavorite(setCode, option.value) ? "★" : "☆" }}
+        </button>
+      </div>
     </div>
     <BrowseSelect
       v-else

@@ -1,23 +1,27 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api } from "../api";
+import { api, clearClientCache } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
+import StatsRarityChart from "../components/StatsRarityChart.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { formatCompletion, formatEuro, formatProfit, formatRoi, setShortName } from "../utils/format";
 import { finishLabel } from "../utils/finishes";
 import { resolveSetIconUri } from "../utils/scryfall";
-import { collectionScopeToQuery, setScopeFromRoute, setScopeToQuery } from "../utils/setScope";
+import { collectionScopeFromRoute, collectionScopeToQuery, setScopeToQuery } from "../utils/setScope";
 
 const route = useRoute();
 const router = useRouter();
 const payload = ref(null);
 const setCode = ref("All");
+const familyScope = ref(false);
+const favoriting = ref(false);
+const reloadingCatalog = ref(false);
 const { loading, run } = useAsyncLoad();
 
 const stats = computed(() => payload.value?.stats || null);
@@ -75,9 +79,36 @@ function aggregateArtStylesBySet(artStyles) {
 }
 
 const isAllSetsView = computed(() => String(setCode.value).toLowerCase() === "all");
+const showSetBreakdown = computed(() => isAllSetsView.value || familyScope.value);
+
+const activeStatsSet = computed(() => {
+  if (isAllSetsView.value) {
+    return null;
+  }
+  return sets.value.find((item) => item.setCode === setCode.value) || null;
+});
+
+const statsActionSetCode = computed(() => {
+  const set = activeStatsSet.value;
+  if (!set?.setCode || set.setCode === "All") {
+    return "";
+  }
+  return set.familyRoot || set.setCode;
+});
+
+const isActiveSetFavorite = computed(() => {
+  const code = statsActionSetCode.value;
+  if (!code) {
+    return false;
+  }
+  const set = sets.value.find((item) => item.setCode === code);
+  return Boolean(set?.favorite);
+});
+
+const showSetActions = computed(() => Boolean(statsActionSetCode.value));
 
 const setBreakdownRows = computed(() => {
-  if (!isAllSetsView.value || !stats.value) {
+  if (!showSetBreakdown.value || !stats.value) {
     return [];
   }
   const rows = stats.value.setBreakdown?.length
@@ -107,6 +138,29 @@ function valueBarPercent(row) {
 
 const unknownCards = computed(() => stats.value?.unknownCards || []);
 const hasUnknownCards = computed(() => (stats.value?.unknownCount ?? 0) > 0);
+const showInvestedTile = computed(() => {
+  const invested = stats.value?.invested;
+  return invested != null && !Number.isNaN(invested) && Number(invested) !== 0;
+});
+const showProfitTile = computed(() => {
+  const profit = stats.value?.profit;
+  return profit != null && !Number.isNaN(profit);
+});
+const showRoiTile = computed(() => {
+  const profit = stats.value?.profit;
+  const invested = stats.value?.invested;
+  return (
+    profit != null
+    && invested != null
+    && !Number.isNaN(profit)
+    && !Number.isNaN(invested)
+    && Number(invested) !== 0
+  );
+});
+const rarityBreakdown = computed(() => (
+  !isAllSetsView.value && !familyScope.value ? (stats.value?.rarityBreakdown || []) : []
+));
+const hasRarityBreakdown = computed(() => rarityBreakdown.value.length > 0);
 
 function unknownCardSetCode(card) {
   return card.setCode || card.set_code || "";
@@ -134,17 +188,19 @@ function selectSet(code) {
   if (!code || String(code).toLowerCase() === "all") {
     return;
   }
+  familyScope.value = false;
   setCode.value = code;
 }
 
 function clearSetFilter() {
+  familyScope.value = false;
   setCode.value = "All";
 }
 
 function collectionLinkForSet() {
   return {
     path: "/collection/all",
-    query: collectionScopeToQuery(setCode.value),
+    query: collectionScopeToQuery(setCode.value, "", familyScope.value),
   };
 }
 
@@ -155,23 +211,29 @@ function onSetRowClick(code) {
 function syncSetRoute() {
   router.replace({
     path: route.path,
-    query: setScopeToQuery(setCode.value),
+    query: setScopeToQuery(setCode.value, familyScope.value),
   });
 }
 
 function syncSetFromRoute() {
-  const fromRoute = setScopeFromRoute(route);
-  if (fromRoute !== setCode.value) {
-    setCode.value = fromRoute;
-    return true;
+  const fromRoute = collectionScopeFromRoute(route);
+  let changed = false;
+  if (fromRoute.setCode !== setCode.value) {
+    setCode.value = fromRoute.setCode;
+    changed = true;
   }
-  return false;
+  const nextFamily = Boolean(fromRoute.family) && String(fromRoute.setCode).toLowerCase() !== "all";
+  if (nextFamily !== familyScope.value) {
+    familyScope.value = nextFamily;
+    changed = true;
+  }
+  return changed;
 }
 
 function collectionLinkForArtStyle(row) {
   return {
     path: "/collection/all",
-    query: collectionScopeToQuery(setCode.value, row.artStyle),
+    query: collectionScopeToQuery(setCode.value, row.artStyle, false),
   };
 }
 
@@ -179,6 +241,7 @@ async function loadStats() {
   await run(async () => {
     payload.value = await api.getCollectionStats({
       setCode: setCode.value,
+      family: familyScope.value,
       foilFilter: "all",
     });
   });
@@ -195,13 +258,50 @@ async function onSetsChanged(event) {
   }
 }
 
-watch(setCode, () => {
+async function toggleActiveSetFavorite() {
+  const code = statsActionSetCode.value;
+  if (!code || favoriting.value) {
+    return;
+  }
+  favoriting.value = true;
+  try {
+    const result = await api.toggleManagerSetFavorite(code);
+    clearClientCache();
+    const nextSets = result.sets || (await api.listManagerSets()).sets || [];
+    if (payload.value) {
+      payload.value = { ...payload.value, sets: nextSets };
+    }
+  } catch (error) {
+    window.alert(error.message || "Could not update favourite set.");
+  } finally {
+    favoriting.value = false;
+  }
+}
+
+async function reloadActiveSetCatalog() {
+  const code = statsActionSetCode.value;
+  if (!code || reloadingCatalog.value) {
+    return;
+  }
+  reloadingCatalog.value = true;
+  try {
+    await api.reloadManagerSetCatalog(code);
+    clearClientCache();
+    await loadStats();
+  } catch (error) {
+    window.alert(error.message || "Could not reload catalog.");
+  } finally {
+    reloadingCatalog.value = false;
+  }
+}
+
+watch([setCode, familyScope], () => {
   syncSetRoute();
   loadStats();
 });
 
 watch(
-  () => route.query.set,
+  () => [route.query.set, route.query.family],
   () => {
     if (syncSetFromRoute()) {
       return;
@@ -221,8 +321,11 @@ onMounted(() => {
   <div class="stats-page">
     <SetPicker
       v-model="setCode"
+      v-model:family="familyScope"
       layout="banner"
       :sets="sets"
+      :show-favorites="false"
+      :show-reload-catalog="false"
       @sets-changed="onSetsChanged"
     />
 
@@ -232,8 +335,11 @@ onMounted(() => {
           <p class="filter-sidebar-label">Set</p>
           <SetPicker
             v-model="setCode"
+            v-model:family="familyScope"
             layout="dropdown"
             :sets="sets"
+            :show-favorites="false"
+            :show-reload-catalog="false"
           />
         </div>
       </FilterSidebar>
@@ -244,7 +350,32 @@ onMounted(() => {
         All sets
       </button>
       <span aria-hidden="true">›</span>
-      <strong>{{ setRowLabel(setCode) }}</strong>
+      <strong>{{ setRowLabel(setCode) }}{{ familyScope ? " family" : "" }}</strong>
+      <span v-if="showSetActions" class="stats-set-actions">
+        <button
+          type="button"
+          class="btn btn-secondary btn-small stats-set-action-btn"
+          :class="{ 'is-favorite': isActiveSetFavorite }"
+          :disabled="favoriting"
+          :aria-pressed="isActiveSetFavorite ? 'true' : 'false'"
+          :aria-label="isActiveSetFavorite ? `Unfavourite ${statsActionSetCode}` : `Favourite ${statsActionSetCode}`"
+          :title="isActiveSetFavorite ? 'Unfavourite set' : 'Favourite set'"
+          @click="toggleActiveSetFavorite"
+        >
+          {{ isActiveSetFavorite ? "★ Favourited" : "☆ Favourite" }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary btn-small stats-set-action-btn"
+          :disabled="reloadingCatalog"
+          :aria-busy="reloadingCatalog ? 'true' : 'false'"
+          :aria-label="`Reload ${statsActionSetCode} family catalog from Scryfall`"
+          title="Reload family catalog from Scryfall"
+          @click="reloadActiveSetCatalog"
+        >
+          {{ reloadingCatalog ? "Refreshing…" : "Refresh metadata" }}
+        </button>
+      </span>
       <RouterLink :to="collectionLinkForSet()" class="stats-set-collection-link">
         View collection
       </RouterLink>
@@ -260,19 +391,37 @@ onMounted(() => {
       label="Updating stats…"
     >
       <div class="stats-hero-grid">
+        <div
+          v-if="!hasUnknownCards"
+          class="stats-card stats-card-healthy"
+          aria-label="Every owned card has a current market price"
+          title="Every owned card has a current market price"
+        >
+          <span>Pricing</span>
+          <strong class="stats-healthy-tile-value">
+            <span class="stats-health-check" aria-hidden="true">✓</span>
+          </strong>
+        </div>
+        <div v-else class="stats-card stats-card-unknown">
+          <span>Unknown value</span>
+          <strong>{{ formatEuro(stats.unknownInvested) }}</strong>
+          <span class="stats-card-subtext">
+            {{ stats.unknownCount }} {{ stats.unknownCount === 1 ? "card" : "cards" }}
+          </span>
+        </div>
         <div class="stats-card">
           <span>Current value</span>
           <strong>{{ formatEuro(stats.current) }}</strong>
         </div>
-        <div class="stats-card">
+        <div v-if="showInvestedTile" class="stats-card">
           <span>Invested</span>
           <strong>{{ formatEuro(stats.invested) }}</strong>
         </div>
-        <div class="stats-card">
+        <div v-if="showProfitTile" class="stats-card">
           <span>Profit / loss</span>
           <strong :class="profitClass(stats.profit)">{{ formatProfit(stats.profit) }}</strong>
         </div>
-        <div class="stats-card">
+        <div v-if="showRoiTile" class="stats-card">
           <span>ROI</span>
           <strong>{{ formatRoi(stats.profit, stats.invested) }}</strong>
         </div>
@@ -280,14 +429,19 @@ onMounted(() => {
           <span>Owned</span>
           <strong>{{ formatCompletion(stats.ownedCount, stats.catalogCount) }}</strong>
         </div>
-        <div v-if="hasUnknownCards" class="stats-card stats-card-unknown">
-          <span>Unknown value</span>
-          <strong>{{ formatEuro(stats.unknownInvested) }}</strong>
-          <span class="stats-card-subtext">
-            {{ stats.unknownCount }} {{ stats.unknownCount === 1 ? "card" : "cards" }}
-          </span>
-        </div>
       </div>
+
+      <section
+        v-if="!isAllSetsView && hasRarityBreakdown"
+        class="table-panel stats-rarity-panel"
+        aria-label="Owned by rarity"
+      >
+        <h2>Owned by rarity</h2>
+        <p class="stats-rarity-intro">
+          Completion slots you own versus the full set catalog, by rarity.
+        </p>
+        <StatsRarityChart :rows="rarityBreakdown" />
+      </section>
 
       <details
         v-if="hasUnknownCards"
@@ -350,22 +504,7 @@ onMounted(() => {
       </table>
       </details>
 
-      <section
-        v-else
-        class="table-panel stats-healthy-panel"
-        aria-label="Pricing status"
-      >
-        <div class="stats-healthy-state">
-          <span class="stats-health-check" aria-hidden="true">✓</span>
-          <p>
-            Every owned card
-            {{ isAllSetsView ? "in your collection" : "in this set" }}
-            has a current market price.
-          </p>
-        </div>
-      </section>
-
-      <section v-if="isAllSetsView && setBreakdownRows.length" class="table-panel">
+      <section v-if="showSetBreakdown && setBreakdownRows.length" class="table-panel">
         <h2>By set</h2>
         <table class="reports-table">
           <thead>
@@ -423,7 +562,7 @@ onMounted(() => {
         </table>
       </section>
 
-      <section v-if="!isAllSetsView && stats.artStyles?.length" class="table-panel">
+      <section v-if="!isAllSetsView && !familyScope && stats.artStyles?.length" class="table-panel">
         <h2>By art style</h2>
         <table class="reports-table">
           <thead>

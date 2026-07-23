@@ -22,6 +22,42 @@ from util.set_catalog import load_sets_catalog
 
 SEARCH_PAGE_SIZE = 25
 MAX_SEARCH_PAGE_SIZE = 100
+SEARCH_SORT_FIELDS = frozenset({"newest", "name", "value", "cmc"})
+SEARCH_SORT_DIR_DEFAULTS = {
+    "newest": "desc",
+    "name": "asc",
+    "value": "desc",
+    "cmc": "asc",
+}
+
+# Keep in sync with frontend CARD_ROLE_LABELS (search UI skips "land").
+SEARCHABLE_CARD_ROLES = frozenset({
+    "ramp",
+    "draw",
+    "removal",
+    "interaction",
+    "protection",
+    "tutor",
+    "fast_mana",
+    "game_changer",
+    "combo_piece",
+    "synergy",
+    "recursion",
+    "reanimate",
+    "equipment",
+    "aura",
+    "graveyard_hate",
+    "extra_turn",
+    "mass_land_destruction",
+    "board_wipe",
+    "bounce",
+    "counterspell",
+    "land_destruction",
+    "mill",
+    "discard",
+    "sac_outlet",
+    "fog",
+})
 
 
 def _normalize_owned_filter(owned_filter: str) -> str:
@@ -53,6 +89,75 @@ def _newest_first_key(card: dict, release_dates: dict[str, str]) -> tuple:
         released_at,
         collector_sort_key(card.get("collectorNumber") or ""),
         card.get("artStyle") or "",
+    )
+
+
+def normalize_search_sort(sort: str | None) -> str:
+    text = str(sort or "").strip().lower()
+    return text if text in SEARCH_SORT_FIELDS else "newest"
+
+
+def normalize_search_sort_dir(sort: str | None, sort_dir: str | None) -> str:
+    normalized_sort = normalize_search_sort(sort)
+    text = str(sort_dir or "").strip().lower()
+    if text in {"asc", "desc"}:
+        return text
+    return SEARCH_SORT_DIR_DEFAULTS.get(normalized_sort, "asc")
+
+
+def _numeric_nulls_last_key(value, *, ascending: bool) -> tuple:
+    if value is None:
+        return (1, 0.0)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return (1, 0.0)
+    return (0, number if ascending else -number)
+
+
+def _rank_search_pool(
+    pool: list[dict],
+    *,
+    sort: str,
+    sort_dir: str,
+    release_dates: dict[str, str],
+) -> list[dict]:
+    normalized_sort = normalize_search_sort(sort)
+    normalized_dir = normalize_search_sort_dir(normalized_sort, sort_dir)
+    ascending = normalized_dir == "asc"
+
+    def tie_break(card: dict) -> tuple:
+        return (
+            (card.get("name") or "").lower(),
+            _newest_first_key(card, release_dates),
+        )
+
+    if normalized_sort == "name":
+        return sorted(
+            pool,
+            key=lambda card: ((card.get("name") or "").lower(), _newest_first_key(card, release_dates)),
+            reverse=not ascending,
+        )
+    if normalized_sort == "value":
+        return sorted(
+            pool,
+            key=lambda card: (
+                _numeric_nulls_last_key(card.get("currentValue"), ascending=ascending),
+                *tie_break(card),
+            ),
+        )
+    if normalized_sort == "cmc":
+        return sorted(
+            pool,
+            key=lambda card: (
+                _numeric_nulls_last_key(card.get("cmc"), ascending=ascending),
+                *tie_break(card),
+            ),
+        )
+    return sorted(
+        pool,
+        key=lambda card: _newest_first_key(card, release_dates),
+        reverse=not ascending,
     )
 
 
@@ -106,6 +211,31 @@ def _parse_storage_filters(storage: str | list[str] | None) -> list[str]:
     return [item.strip() for item in items if item.strip()]
 
 
+def _parse_role_filters(roles: str | list[str] | None) -> list[str]:
+    if not roles:
+        return []
+    if isinstance(roles, list):
+        items = roles
+    else:
+        items = str(roles).split(",")
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        role = str(item).strip().lower().replace(" ", "_").replace("-", "_")
+        if role not in SEARCHABLE_CARD_ROLES or role in seen:
+            continue
+        seen.add(role)
+        parsed.append(role)
+    return parsed
+
+
+def _card_matches_role_filters(card: dict, role_filters: list[str]) -> bool:
+    if not role_filters:
+        return True
+    card_roles = {str(role) for role in (card.get("roles") or []) if role}
+    return any(role in card_roles for role in role_filters)
+
+
 def _filtered_pool(
     conn: sqlite3.Connection,
     *,
@@ -125,6 +255,7 @@ def _filtered_pool(
     power_min: float | None = None,
     toughness_min: float | None = None,
     storage_filters: list[str] | None = None,
+    role_filters: list[str] | None = None,
 ) -> list[dict]:
     settings = settings_service.get_settings(conn)
     name_term = name_search.strip()
@@ -176,6 +307,12 @@ def _filtered_pool(
     if creature_type_term:
         lowered = creature_type_term.lower()
         filtered = [card for card in filtered if _card_matches_creature_type(card, lowered)]
+    selected_roles = role_filters or []
+    if selected_roles:
+        filtered = [
+            card for card in filtered
+            if _card_matches_role_filters(card, selected_roles)
+        ]
     return filtered
 
 
@@ -554,28 +691,37 @@ def search_cards(
     power_min: float | None = None,
     toughness_min: float | None = None,
     storage_filters: list[str] | None = None,
+    role_filters: list[str] | None = None,
+    sort: str = "newest",
+    sort_dir: str = "",
     page: int = 1,
     page_size: int = SEARCH_PAGE_SIZE,
 ) -> dict:
     normalized_owned = _normalize_owned_filter(owned_filter)
     normalized_foil = _normalize_foil_filter(foil_filter)
+    normalized_sort = normalize_search_sort(sort)
+    normalized_sort_dir = normalize_search_sort_dir(normalized_sort, sort_dir)
     name_term = search.strip()
     text_term = text_search.strip()
     creature_type_term = creature_type_search.strip()
+    selected_roles = list(role_filters or [])
     empty_payload = {
         "search": name_term,
         "textSearch": text_term,
         "creatureTypeSearch": creature_type_term,
+        "roleFilters": selected_roles,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
+        "sort": normalized_sort,
+        "dir": normalized_sort_dir,
         "page": 1,
         "pageSize": max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE)),
         "totalMatches": 0,
         "totalPages": 1,
         "cards": [],
     }
-    if not name_term and not text_term and not creature_type_term:
+    if not name_term and not text_term and not creature_type_term and not selected_roles:
         return empty_payload
 
     filter_kwargs = {
@@ -589,6 +735,7 @@ def search_cards(
         "power_min": power_min,
         "toughness_min": toughness_min,
         "storage_filters": storage_filters or [],
+        "role_filters": selected_roles,
     }
     pool = _filtered_pool(
         conn,
@@ -601,10 +748,11 @@ def search_cards(
         **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
-    ranked = sorted(
+    ranked = _rank_search_pool(
         pool,
-        key=lambda card: _newest_first_key(card, release_dates),
-        reverse=True,
+        sort=normalized_sort,
+        sort_dir=normalized_sort_dir,
+        release_dates=release_dates,
     )
     unique_ranked = _dedupe_ranked_by_name(ranked)
     total = len(unique_ranked)
@@ -618,9 +766,12 @@ def search_cards(
         "search": name_term,
         "textSearch": text_term,
         "creatureTypeSearch": creature_type_term,
+        "roleFilters": selected_roles,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
         "foilFilter": normalized_foil,
+        "sort": normalized_sort,
+        "dir": normalized_sort_dir,
         "page": safe_page,
         "pageSize": safe_page_size,
         "totalMatches": total,

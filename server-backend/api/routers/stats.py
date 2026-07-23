@@ -12,6 +12,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 def collection_stats(
     conn: sqlite3.Connection = Depends(get_db),
     setCode: str = Query(default="All"),
+    family: bool = Query(default=False),
     finishFilter: str = Query(default="all"),
     foilFilter: str | None = Query(default=None),
 ):
@@ -19,4 +20,5 @@ def collection_stats(
         conn,
         set_code=setCode,
         finish_filter=foilFilter or finishFilter,
+        family=family,
     )

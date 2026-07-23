@@ -1,5 +1,6 @@
 import { parseManaCostSymbols } from "./deckStackStyles.js";
 import { mainDeckCardsForOverview } from "./deckOverview.js";
+import { MANA_COLOR_HEX, MANA_SOURCE_CATEGORY_COLORS } from "./mtgTheme.js";
 
 /** Chromatic colors only — any-color sources count toward these. */
 export const CHROMATIC_COLORS = ["W", "U", "B", "R", "G"];
@@ -17,16 +18,7 @@ export const MANA_COLOR_LABELS = {
   A: "Any",
 };
 
-/** Classic MTG mana symbol palette for charts. */
-export const MANA_COLOR_HEX = {
-  W: "#e8d78a",
-  U: "#0e68ab",
-  B: "#150b00",
-  R: "#d3202a",
-  G: "#00733e",
-  C: "#bbb5af",
-  A: "#c9a227",
-};
+export { MANA_COLOR_HEX, MANA_SOURCE_CATEGORY_COLORS };
 
 export const PIP_CHART_COLORS = MANA_COLORS.map((color) => MANA_COLOR_HEX[color]);
 
@@ -39,15 +31,6 @@ export const MANA_SOURCE_CATEGORIES = [
   { id: "enchantment", label: "Enchantments" },
   { id: "other", label: "Other" },
 ];
-
-export const MANA_SOURCE_CATEGORY_COLORS = {
-  basic: "#94a3b8",
-  land: "#0f766e",
-  creature: "#2563eb",
-  artifact: "#d97706",
-  enchantment: "#7c3aed",
-  other: "#475569",
-};
 
 const BASIC_LAND_TYPES = {
   plains: "W",
