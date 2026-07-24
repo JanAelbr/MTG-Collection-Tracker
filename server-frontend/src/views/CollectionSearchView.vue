@@ -396,21 +396,6 @@ async function setCollectionCardScale(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
-async function reloadLoadedSearchResults() {
-  const pagesToLoad = Math.max(loadedPages.value, 1);
-  resetSearchResults();
-  for (let pageNum = 1; pageNum <= pagesToLoad; pageNum += 1) {
-    const payload = await fetchSearchPage(pageNum);
-    if (!payload) {
-      break;
-    }
-    applySearchPayload(payload, { append: pageNum > 1 });
-    if (pageNum >= (payload.totalPages ?? 1)) {
-      break;
-    }
-  }
-}
-
 async function loadNameVariants(name, { preserveSelection = false } = {}) {
   selectedBrowseName.value = name;
   const current = preserveSelection ? artExplorer.value?.variants?.[artSelectedIndex.value] : null;
@@ -474,17 +459,15 @@ async function submitSearch() {
 
 async function onArtOwnershipChanged() {
   const activeName = artExplorer.value?.name;
-  if (activeName) {
-    try {
-      await loadNameVariants(activeName, { preserveSelection: true });
-    } catch {
-      // Keep the current explorer state if variant refresh fails.
-    }
-  }
-  if (!hasActiveSearch.value) {
+  if (!activeName) {
     return;
   }
-  await reloadLoadedSearchResults();
+  try {
+    // Refresh the open art panel only — do not re-run the search query.
+    await loadNameVariants(activeName, { preserveSelection: true });
+  } catch {
+    // Keep the current explorer state if variant refresh fails.
+  }
 }
 
 watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, roleFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode, searchSort, searchSortDir], () => {

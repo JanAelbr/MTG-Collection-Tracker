@@ -17,6 +17,7 @@ import {
   cardFinish,
   cardRouteQuery,
   finishLabel,
+  marketValueForFinish,
   normalizeFinish,
 } from "../utils/finishes";
 
@@ -101,7 +102,7 @@ const galleryCards = computed(() =>
 );
 
 const galleryFinish = computed(() => cardFinish(selectedVariant.value || {}));
-const showVariantGallery = computed(() => props.variants.length > 1 && !props.sidebar);
+const showVariantGallery = computed(() => props.variants.length > 1);
 const canGoPrevVariant = computed(() => props.selectedIndex > 0);
 const canGoNextVariant = computed(() => props.selectedIndex < props.variants.length - 1);
 
@@ -134,10 +135,18 @@ function valueForFinish(card, finish) {
     const value = byStrategy[strategy];
     return value == null ? null : value;
   }
-  if (normalizeFinish(card.finish ?? card.foil) === normalized) {
-    return valueForStrategy(card, strategy);
+  const finishValue = card.finishValues?.[normalized];
+  if (finishValue != null && Number(finishValue) > 0) {
+    return finishValue;
   }
-  return null;
+  if (normalizeFinish(card.finish ?? card.foil) === normalized) {
+    const strategyValue = valueForStrategy(card, strategy);
+    if (strategyValue != null) {
+      return strategyValue;
+    }
+  }
+  const market = marketValueForFinish(card, normalized);
+  return market == null || Number(market) <= 0 ? null : market;
 }
 
 async function loadCardDetail() {

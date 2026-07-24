@@ -45,10 +45,15 @@ const GRID_PAD_X = 8;
 const CARD_ASPECT_RATIO = 88 / 63;
 /** Matches `.collection-card-grid-caption` margin-top. */
 const CAPTION_MARGIN_TOP = 6;
-/** Reserved caption block; keep in sync with CSS min-heights. */
-const CAPTION_HEIGHT_BASE = 32;
-const CAPTION_HEIGHT_WITH_SET = 46;
-const CAPTION_HEIGHT_WITH_BADGE = 12;
+/**
+ * Reserved caption block; must be >= rendered height or virtual rows overlap
+ * (duplicate-looking cards while scrolling). Keep in sync with CSS min-heights.
+ * Base includes name row + price row (+ gap).
+ */
+const CAPTION_HEIGHT_BASE = 52;
+const CAPTION_HEIGHT_BROWSE = 52;
+const CAPTION_HEIGHT_WITH_SET = 68;
+const CAPTION_HEIGHT_WITH_BADGE = 14;
 
 const gridStyle = computed(() => ({
   "--collection-card-scale": String(props.cardScale / 100),
@@ -91,9 +96,14 @@ const visibleCards = computed(() => props.cards.slice(visibleRange.value.start, 
 
 let lastMeasuredWidth = 0;
 let measureRaf = 0;
+let loadMorePending = false;
 
 function reservedCaptionHeight() {
-  let height = props.showSetLabel ? CAPTION_HEIGHT_WITH_SET : CAPTION_HEIGHT_BASE;
+  let height = props.browseNames
+    ? CAPTION_HEIGHT_BROWSE
+    : props.showSetLabel
+      ? CAPTION_HEIGHT_WITH_SET
+      : CAPTION_HEIGHT_BASE;
   if (props.showUnownedBadge) {
     height += CAPTION_HEIGHT_WITH_BADGE;
   }
@@ -167,11 +177,12 @@ function scheduleMeasure(options = {}) {
 function onScroll(event) {
   const el = event.target;
   scrollTop.value = el.scrollTop;
-  if (!props.hasMore) {
+  if (!props.hasMore || loadMorePending) {
     return;
   }
   const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
   if (remaining <= props.loadMoreThreshold) {
+    loadMorePending = true;
     emit("load-more");
   }
 }
@@ -190,7 +201,20 @@ function scrollToIndex(index) {
 }
 
 watch(
-  () => [props.cards.length, props.cardScale, props.showSetLabel, props.showUnownedBadge],
+  () => [props.cards.length, props.hasMore],
+  () => {
+    loadMorePending = false;
+    nextTick(() => scheduleMeasure({ force: true }));
+  },
+);
+
+watch(
+  () => [
+    props.cardScale,
+    props.showSetLabel,
+    props.showUnownedBadge,
+    props.browseNames,
+  ],
   () => {
     nextTick(() => scheduleMeasure({ force: true }));
   },

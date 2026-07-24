@@ -66,6 +66,19 @@ export function cardDisplayName(card, finish = null) {
 
 export function marketValueForFinish(card, finish) {
   const normalized = normalizeFinish(finish);
+  const finishValues = card?.finishValues;
+  if (finishValues && typeof finishValues === "object") {
+    const fromMap = finishValues[normalized] ?? finishValues[String(normalized)];
+    if (fromMap != null && Number(fromMap) > 0) {
+      return fromMap;
+    }
+  }
+  if (normalizeFinish(card?.finish ?? card?.foil) === normalized) {
+    const current = card?.currentValue ?? card?.current_value;
+    if (current != null && Number(current) > 0) {
+      return current;
+    }
+  }
   if (normalized === FINISH_FOIL) {
     return card?.currentValueFoil ?? card?.marketValueFoil ?? card?.market_value_foil;
   }

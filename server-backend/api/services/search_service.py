@@ -82,6 +82,22 @@ def _load_set_release_dates(conn: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+def _sets_for_exact_name(conn: sqlite3.Connection, name: str) -> list[str]:
+    """Sets that print this exact card name — used to avoid enriching the whole catalog."""
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT set_code
+        FROM cards
+        WHERE name = ?
+          AND {exclude_alchemy_sql()}
+          AND {exclude_alchemy_art_style_sql()}
+        ORDER BY set_code
+        """,
+        (name.strip(),),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
 def _newest_first_key(card: dict, release_dates: dict[str, str]) -> tuple:
     set_code = str(card.get("setCode") or "").upper()
     released_at = release_dates.get(set_code) or ""
@@ -236,13 +252,14 @@ def _card_matches_role_filters(card: dict, role_filters: list[str]) -> bool:
     return any(role in card_roles for role in role_filters)
 
 
-def _filtered_pool(
-    conn: sqlite3.Connection,
+def _filter_enriched_cards(
+    cards: list[dict],
     *,
     set_code: str,
     owned_filter: str,
     foil_filter: str,
     name_search: str = "",
+    exact_name: str = "",
     text_search: str = "",
     creature_type_search: str = "",
     type_filter: str = "all",
@@ -257,15 +274,6 @@ def _filtered_pool(
     storage_filters: list[str] | None = None,
     role_filters: list[str] | None = None,
 ) -> list[dict]:
-    settings = settings_service.get_settings(conn)
-    name_term = name_search.strip()
-    set_codes = _resolve_set_codes(conn, set_code=set_code, search_term=name_term or None)
-    cards, _compare_date = _load_enriched_report_cards(
-        conn,
-        set_codes=set_codes,
-        strategy=settings["priceStrategy"],
-        compare_date=settings["compareDate"],
-    )
     filtered = _apply_filters(
         cards,
         set_code=set_code,
@@ -296,6 +304,10 @@ def _filtered_pool(
             toughness_min=toughness_min,
         )
     ]
+    exact = exact_name.strip()
+    if exact:
+        filtered = [card for card in filtered if (card.get("name") or "") == exact]
+    name_term = name_search.strip()
     if name_term:
         lowered = name_term.lower()
         filtered = [card for card in filtered if _card_matches_name(card, lowered)]
@@ -314,6 +326,65 @@ def _filtered_pool(
             if _card_matches_role_filters(card, selected_roles)
         ]
     return filtered
+
+
+def _filtered_pool(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str,
+    owned_filter: str,
+    foil_filter: str,
+    name_search: str = "",
+    exact_name: str = "",
+    text_search: str = "",
+    creature_type_search: str = "",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
+    role_filters: list[str] | None = None,
+    set_codes: list[str] | None = None,
+) -> list[dict]:
+    settings = settings_service.get_settings(conn)
+    name_term = name_search.strip()
+    resolved_codes = (
+        list(set_codes)
+        if set_codes is not None
+        else _resolve_set_codes(conn, set_code=set_code, search_term=name_term or None)
+    )
+    cards, _compare_date = _load_enriched_report_cards(
+        conn,
+        set_codes=resolved_codes,
+        strategy=settings["priceStrategy"],
+        compare_date=settings["compareDate"],
+    )
+    return _filter_enriched_cards(
+        cards,
+        set_code=set_code,
+        owned_filter=owned_filter,
+        foil_filter=foil_filter,
+        name_search=name_search,
+        exact_name=exact_name,
+        text_search=text_search,
+        creature_type_search=creature_type_search,
+        type_filter=type_filter,
+        color_filters=color_filters,
+        rarity_filter=rarity_filter,
+        cmc_min=cmc_min,
+        cmc_max=cmc_max,
+        price_min=price_min,
+        price_max=price_max,
+        power_min=power_min,
+        toughness_min=toughness_min,
+        storage_filters=storage_filters,
+        role_filters=role_filters,
+    )
 
 
 def _print_key(card: dict) -> tuple:
@@ -630,11 +701,24 @@ def list_name_variants(
         "toughness_min": toughness_min,
         "storage_filters": storage_filters or [],
     }
+    # Selecting one search result must not re-enrich every set in the catalog.
+    # Scope enrichment to sets that actually print this exact name.
+    name_set_codes = _sets_for_exact_name(conn, trimmed_name)
+    if (set_code or "All").strip().upper() != "ALL":
+        scoped = set(_resolve_set_codes(conn, set_code=set_code))
+        name_set_codes = [code for code in name_set_codes if code in scoped]
+
+    # Variant browsing should always include every printing of the name (with
+    # prices), even when the search results list is scoped to owned-only.
+    # Ownership flags still come from enrichment; we simply do not drop
+    # unowned prints from the pool used for finish/price overlay.
     pool = _filtered_pool(
         conn,
         set_code=set_code,
-        owned_filter=normalized_owned,
+        owned_filter="all",
         foil_filter=normalized_foil,
+        exact_name=trimmed_name,
+        set_codes=name_set_codes,
         **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
@@ -647,13 +731,18 @@ def list_name_variants(
     if not variants:
         raise ReportsError("No variants found for this card name", status_code=404)
 
-    full_pool = _filtered_pool(
-        conn,
-        set_code=set_code,
-        owned_filter=normalized_owned,
-        foil_filter="all",
-        **filter_kwargs,
-    )
+    if normalized_foil == "all":
+        full_pool = pool
+    else:
+        full_pool = _filtered_pool(
+            conn,
+            set_code=set_code,
+            owned_filter="all",
+            foil_filter="all",
+            exact_name=trimmed_name,
+            set_codes=name_set_codes,
+            **filter_kwargs,
+        )
     print_flags = _load_print_finish_flags(conn, trimmed_name)
     finish_catalog = _finish_catalog_for_name(
         full_pool,

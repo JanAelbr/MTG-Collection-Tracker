@@ -21,6 +21,9 @@ const props = defineProps({
   showLenses: { type: Boolean, default: true },
   showBulk: { type: Boolean, default: true },
   showFiltersButton: { type: Boolean, default: true },
+  showSort: { type: Boolean, default: true },
+  allCardsSort: { type: String, default: "value" },
+  allCardsSortDir: { type: String, default: "desc" },
   /** When set, replaces the default collection match summary text. */
   summaryText: { type: String, default: "" },
   showSummaryInTable: { type: Boolean, default: false },
@@ -36,6 +39,8 @@ const emit = defineEmits([
   "bulk-clear-selection",
   "open-mobile-filters",
   "update:cardScale",
+  "update-sort",
+  "toggle-sort-dir",
 ]);
 
 const isTableView = computed(() => props.viewMode === "table");
@@ -101,6 +106,27 @@ function setViewMode(mode) {
           autocomplete="off"
           @input="emit('update:searchQuery', $event.target.value)"
         >
+      </label>
+      <label
+        v-if="showSort && !isTableView"
+        class="collection-all-sort"
+      >
+        <span class="visually-hidden">Sort by</span>
+        <div class="collection-sort-row">
+          <select :value="allCardsSort" @change="emit('update-sort', $event)">
+            <option value="number">Collector number</option>
+            <option value="value">Value</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-secondary collection-sort-dir"
+            :title="allCardsSortDir === 'asc' ? 'Ascending' : 'Descending'"
+            :aria-label="`Sort ${allCardsSortDir === 'asc' ? 'ascending' : 'descending'}`"
+            @click="emit('toggle-sort-dir')"
+          >
+            {{ allCardsSortDir === "asc" ? "↑" : "↓" }}
+          </button>
+        </div>
       </label>
       <div
         class="button-group collection-view-mode-group"

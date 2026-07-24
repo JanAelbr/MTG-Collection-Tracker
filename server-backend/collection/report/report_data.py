@@ -374,10 +374,23 @@ def _build_art_style_options_from_counts(
 
 
 def build_art_style_options_for_set(conn: sqlite3.Connection, set_code: str) -> list[dict]:
+    from api.cache import get_cache_epoch, memory_cache
+
     normalized = set_code.strip().upper()
+    epoch = get_cache_epoch()
+    cache_key = memory_cache.make_key(
+        "report_data.art_styles",
+        {"setCode": normalized},
+        epoch,
+    )
+    cached = memory_cache.get(cache_key)
+    if cached is not None:
+        return cached
     owned_counts = _load_art_style_owned_counts(conn, set_code=normalized)
     catalog_counts = _load_art_style_catalog_counts(conn, set_code=normalized)
-    return _build_art_style_options_from_counts(owned_counts, catalog_counts)
+    options = _build_art_style_options_from_counts(owned_counts, catalog_counts)
+    memory_cache.set(cache_key, options, _SET_COUNT_CACHE_TTL)
+    return options
 
 
 def build_art_style_options(conn: sqlite3.Connection, set_code: str = "All") -> list[dict]:

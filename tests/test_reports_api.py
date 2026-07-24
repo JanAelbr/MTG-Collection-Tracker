@@ -706,6 +706,55 @@ class ReportsApiServiceTests(unittest.TestCase):
         set_codes = [variant["setCode"] for variant in payload["variants"]]
         self.assertEqual(set(set_codes), {"LTR", "HOU"})
 
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_list_name_variants_keeps_unowned_prints_when_owned_filter_set(self, load_enriched):
+        """Owned search still browses every printing, with prices on unowned ones."""
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "name": "Frodo Baggins",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "currentValue": 2.0,
+                    "valuesByStrategy": {"trend": 2.0},
+                    "hasNonfoil": True,
+                    "hasFoil": False,
+                    "hasEtched": False,
+                },
+                {
+                    "setCode": "HOU",
+                    "collectorNumber": "99",
+                    "name": "Frodo Baggins",
+                    "artStyle": "Borderless",
+                    "finish": 0,
+                    "owned": False,
+                    "currentValue": 5.0,
+                    "valuesByStrategy": {"trend": 5.0},
+                    "hasNonfoil": True,
+                    "hasFoil": False,
+                    "hasEtched": False,
+                },
+            ],
+            None,
+        )
+        payload = search_service.list_name_variants(
+            self.conn,
+            name="Frodo Baggins",
+            owned_filter="owned",
+        )
+        self.assertEqual(payload["ownedFilter"], "owned")
+        self.assertEqual(payload["totalVariants"], 2)
+        by_set = {variant["setCode"]: variant for variant in payload["variants"]}
+        self.assertTrue(by_set["LTR"].get("owned"))
+        self.assertFalse(by_set["HOU"].get("owned"))
+        self.assertEqual(by_set["HOU"].get("finishValues", {}).get(0), 5.0)
+        self.assertEqual(
+            by_set["HOU"].get("finishValuesByStrategy", {}).get(0, {}).get("trend"),
+            5.0,
+        )
     @patch("api.services.search_service._resolve_set_codes", return_value=["LTR", "MH3"])
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_and_variants_order_newest_first(self, load_enriched, _resolve_sets):

@@ -64,9 +64,11 @@ function cardRoute(card) {
   };
 }
 
-function cardKey(card) {
+function cardKey(card, index = 0) {
   ownershipTick.value;
-  return `${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`;
+  // Include index so virtualized windows never reuse DOM nodes across rows when
+  // the same print appears twice (or keys collide during scroll recycling).
+  return `${props.startIndex + index}:${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`;
 }
 
 function cardIsOwned(card) {
@@ -196,7 +198,7 @@ function onDrop(index, event) {
   <div class="collection-card-grid" :class="{ 'is-reorderable': reorderable }" :style="gridStyle">
     <figure
       v-for="(card, index) in cards"
-      :key="cardKey(card)"
+      :key="cardKey(card, index)"
       class="collection-card-grid-item"
       :class="{
         'is-unowned': showUnownedBadge && !cardIsOwned(card),
@@ -259,6 +261,9 @@ function onDrop(index, event) {
           <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
         </div>
         <span class="collection-card-grid-name">{{ card.name }}</span>
+        <span class="collection-card-grid-value">
+          <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+        </span>
       </button>
       <template v-else>
       <div class="collection-card-grid-image-wrap">

@@ -592,21 +592,43 @@ async function loadMoreAllCards() {
     return;
   }
   const token = allCardsRequestToken;
+  const nextPage = allCardsLoadedPages.value + 1;
   loadingMoreCards.value = true;
   try {
     const payload = await ignoreAborted(api.getReportCards({
       report: "all",
       ...allCardsFilterParams(),
-      page: allCardsLoadedPages.value + 1,
+      page: nextPage,
       pageSize: pageSize.value,
     }));
     if (!payload || token !== allCardsRequestToken) {
       return;
     }
-    accumulatedCards.value = [...accumulatedCards.value, ...(payload.cards || [])];
+    const incoming = payload.cards || [];
+    if (!incoming.length) {
+      allCardsLoadedPages.value = payload.page ?? nextPage;
+      return;
+    }
+    // Guard against overlapping pages / duplicate appends from rapid scroll.
+    const seen = new Set(
+      accumulatedCards.value.map(
+        (card) => `${card.setCode}|${card.collectorNumber}|${card.finish ?? card.foil ?? 0}`,
+      ),
+    );
+    const unique = incoming.filter((card) => {
+      const key = `${card.setCode}|${card.collectorNumber}|${card.finish ?? card.foil ?? 0}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    if (unique.length) {
+      accumulatedCards.value = [...accumulatedCards.value, ...unique];
+    }
     cardsPayload.value = payload;
     allCardsTotalMatches.value = payload.totalMatches ?? allCardsTotalMatches.value;
-    allCardsLoadedPages.value = payload.page ?? (allCardsLoadedPages.value + 1);
+    allCardsLoadedPages.value = payload.page ?? nextPage;
     mergeOwnershipPatchesIntoCards(accumulatedCards.value);
     reconcileOwnershipPatches(accumulatedCards.value);
   } finally {
@@ -1389,6 +1411,7 @@ onUnmounted(stopPolling);
           :price-issues-only="priceIssuesOnly"
           :price-issue-count="managerTable.priceIssueCount.value"
           :show-price-health="tableModeAvailable"
+          :show-sort="false"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
@@ -1464,6 +1487,7 @@ onUnmounted(stopPolling);
           :price-issues-only="priceIssuesOnly"
           :price-issue-count="managerTable.priceIssueCount.value"
           :show-price-health="tableModeAvailable"
+          :show-sort="false"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
@@ -1506,6 +1530,8 @@ onUnmounted(stopPolling);
             :mobile-filters-open="mobileFiltersOpen"
             :view-mode="collectionViewMode"
             :table-mode-available="tableModeAvailable"
+            :all-cards-sort="allCardsSort"
+            :all-cards-sort-dir="allCardsSortDir"
             @update:search-query="updateSearchQuery"
             @update:view-mode="setCollectionViewMode"
             @select-lens="applyCollectionLens"
@@ -1514,6 +1540,8 @@ onUnmounted(stopPolling);
             @bulk-clear-selection="clearSelection"
             @open-mobile-filters="mobileFiltersOpen = true"
             @update:card-scale="setCollectionCardScale"
+            @update-sort="updateAllCardsSort"
+            @toggle-sort-dir="toggleAllCardsSortDir"
           />
           <ArtStyleRulesPanel
             v-if="tableModeAvailable"

@@ -1,4 +1,3 @@
-import functools
 import sqlite3
 
 from api.cache import get_cache_epoch, memory_cache
@@ -194,7 +193,7 @@ def list_report_cards(
         ascending = (sort_dir or "").strip().lower() == "asc"
         ranked = sorted(
             scoped,
-            key=functools.cmp_to_key(_all_view_card_comparator(normalized_sort, ascending)),
+            key=_all_view_sort_key(normalized_sort, ascending),
         )
         total = len(ranked)
         if page is None:
@@ -328,6 +327,34 @@ def _all_view_tie_break(left: dict, right: dict) -> int:
     return int(left["finish"]) - int(right["finish"])
 
 
+def _all_view_sort_key(sort: str, ascending: bool):
+    """Key function mirroring `_all_view_card_comparator` (faster than cmp_to_key)."""
+
+    if sort == "value":
+        def key(card: dict):
+            value = card.get("currentValue")
+            num = value if value is not None else float("-inf")
+            primary = num if ascending else -num
+            number_key = collector_sort_key(card["collectorNumber"])
+            return (primary, card["setCode"], number_key, int(card["finish"]))
+
+        return key
+
+    def key(card: dict):
+        number, suffix = collector_sort_key(card["collectorNumber"])
+        # Finish stays ascending even when collector number is descending.
+        if ascending:
+            return (number, suffix, int(card["finish"]))
+        return (-number, _reverse_text_sort_key(suffix), int(card["finish"]))
+
+    return key
+
+
+def _reverse_text_sort_key(text: str) -> tuple:
+    """Invert lexicographic order for a short suffix string."""
+    return tuple(-ord(char) for char in text)
+
+
 def _all_view_card_comparator(sort: str, ascending: bool):
     """Mirrors frontend `sortCollectionCards` for the two sorts the All view exposes."""
 
@@ -395,6 +422,33 @@ def _sets_matching_search(conn: sqlite3.Connection, term: str) -> list[str]:
     return [row[0] for row in rows]
 
 
+def _resolve_compare_date(
+    conn: sqlite3.Connection,
+    compare_date: str | None,
+) -> tuple[str | None, object]:
+    """Return (selected_compare, snapshot_cache_or_None).
+
+    When compare_date is omitted, resolve the default from the memoized snapshot cache.
+    """
+    if compare_date:
+        return compare_date, None
+    snapshot_cache = load_price_snapshot_cache(conn)
+    return default_compare_date(snapshot_cache.dates), snapshot_cache
+
+
+def _strategy_cache_key(set_code: str, compare_date: str | None, strategy: str) -> str:
+    return memory_cache.make_key(
+        "reports.enriched.set.strategy",
+        {
+            "setCode": set_code,
+            "compareDate": compare_date or "",
+            "strategy": strategy,
+            "roles": "v1",
+        },
+        get_cache_epoch(),
+    )
+
+
 def _load_enriched_report_cards(
     conn: sqlite3.Connection,
     *,
@@ -402,8 +456,55 @@ def _load_enriched_report_cards(
     strategy: str,
     compare_date: str | None,
 ) -> tuple[list[dict], str | None]:
-    neutral, selected_compare = _load_enriched_sets(conn, set_codes, compare_date)
-    return _apply_strategy_to_cards(neutral, strategy), selected_compare
+    """Load enriched cards with the active price strategy applied.
+
+    Neutral enrichment is cached per set; strategy projection is cached separately so
+    within-set search/filter changes do not re-copy thousands of card dicts.
+    """
+    selected_compare, snapshot_cache = _resolve_compare_date(conn, compare_date)
+    if not set_codes:
+        return [], selected_compare
+
+    normalized_codes = [code.strip().upper() for code in set_codes]
+    cached_parts = [
+        memory_cache.get(_strategy_cache_key(code, selected_compare, strategy))
+        for code in normalized_codes
+    ]
+    if all(part is not None for part in cached_parts):
+        merged: list[dict] = []
+        for part in cached_parts:
+            merged.extend(part)
+        return merged, selected_compare
+
+    locations_map = _load_card_locations(conn)
+    owned_keys = _load_owned_print_keys(conn)
+    roles_by_name = load_card_name_roles_map(conn)
+    if snapshot_cache is None:
+        snapshot_cache = load_price_snapshot_cache(conn)
+    snapshot_prices = snapshot_cache.snapshots.get(selected_compare or "", {})
+
+    merged = []
+    for code, cached in zip(normalized_codes, cached_parts, strict=True):
+        if cached is not None:
+            merged.extend(cached)
+            continue
+        neutral = _load_enriched_set(
+            conn,
+            code,
+            selected_compare,
+            locations_map=locations_map,
+            owned_keys=owned_keys,
+            snapshot_prices=snapshot_prices,
+            roles_by_name=roles_by_name,
+        )
+        applied = _apply_strategy_to_cards(neutral, strategy)
+        memory_cache.set(
+            _strategy_cache_key(code, selected_compare, strategy),
+            applied,
+            _ENRICHED_REPORTS_TTL,
+        )
+        merged.extend(applied)
+    return merged, selected_compare
 
 
 def _load_enriched_sets(
@@ -411,20 +512,15 @@ def _load_enriched_sets(
     set_codes: list[str],
     compare_date: str | None,
 ) -> tuple[list[dict], str | None]:
-    if compare_date:
-        selected_compare = compare_date
-    else:
-        selected_compare = default_compare_date(get_price_snapshot_dates(conn))
-
+    selected_compare, snapshot_cache = _resolve_compare_date(conn, compare_date)
     if not set_codes:
         return [], selected_compare
 
     locations_map = _load_card_locations(conn)
     owned_keys = _load_owned_print_keys(conn)
     roles_by_name = load_card_name_roles_map(conn)
-    snapshot_cache = load_price_snapshot_cache(conn)
-    if not compare_date:
-        selected_compare = default_compare_date(snapshot_cache.dates)
+    if snapshot_cache is None:
+        snapshot_cache = load_price_snapshot_cache(conn)
     snapshot_prices = snapshot_cache.snapshots.get(selected_compare or "", {})
 
     merged: list[dict] = []

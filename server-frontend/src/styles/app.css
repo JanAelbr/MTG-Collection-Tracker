@@ -2400,22 +2400,22 @@ body {
   flex-direction: column;
   gap: 3px;
   margin-top: 6px;
-  min-height: calc(32px * var(--collection-card-scale, 1));
+  min-height: calc(52px * var(--collection-card-scale, 1));
   font-size: 12px;
   line-height: 1.35;
   overflow: visible;
 }
 
 .collection-page .collection-card-grid-caption:has(.collection-card-grid-set) {
-  min-height: calc(46px * var(--collection-card-scale, 1));
+  min-height: calc(68px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-caption:has(.reports-unowned-badge) {
-  min-height: calc(44px * var(--collection-card-scale, 1));
+  min-height: calc(66px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-caption:has(.collection-card-grid-set):has(.reports-unowned-badge) {
-  min-height: calc(58px * var(--collection-card-scale, 1));
+  min-height: calc(82px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-name-row {
@@ -2686,6 +2686,10 @@ body {
   order: 1;
 }
 
+.collection-search-page .collection-search-page-form {
+  flex: 0 0 auto;
+}
+
 .collection-storage-filter-list {
   display: grid;
   gap: 2px;
@@ -2825,9 +2829,55 @@ body {
   align-items: flex-start;
 }
 
+/* Locked reports-page viewport: fill remaining height so the virtual gallery can scroll. */
+.collection-search-page .collection-search-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
 .collection-search-results {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.collection-search-page .collection-search-results {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.collection-search-page .collection-search-results > .collection-gallery-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.collection-search-page .collection-search-results > .collection-gallery-panel > .collection-gallery-toolbar,
+.collection-search-page .collection-search-results > .collection-gallery-panel > .collection-search-load-more-status {
+  flex: 0 0 auto;
+}
+
+.collection-search-page .collection-search-results > .collection-gallery-panel > .gallery-loading-wrap,
+.collection-search-page .collection-search-results > .collection-gallery-panel > .gallery-loading-wrap > .gallery-loading-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.collection-search-page .collection-search-results .collection-virtual-grid {
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+}
+
+.collection-search-page .collection-search-results .search-results-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .collection-search-results-hint {
@@ -2843,6 +2893,13 @@ body {
   align-self: flex-start;
   max-height: calc(100vh - 68px);
   overflow-y: auto;
+}
+
+.collection-search-page .collection-search-detail {
+  position: relative;
+  top: auto;
+  align-self: stretch;
+  max-height: none;
 }
 
 .collection-search-detail-loading {
@@ -3439,6 +3496,13 @@ body {
   font-weight: 600;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.collection-page .collection-card-grid-select .collection-card-grid-value {
+  margin-top: -2px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #444;
 }
 
 .reports-change-up {
@@ -5662,6 +5726,16 @@ button.card-variant {
     flex-direction: column;
   }
 
+  .collection-search-page .collection-search-body {
+    overflow: auto;
+    align-items: stretch;
+  }
+
+  .collection-search-page .collection-search-results {
+    flex: 1 1 auto;
+    min-height: min(60vh, 640px);
+  }
+
   .collection-search-page-layout .collection-search-filters-sidebar {
     display: none;
   }
@@ -5672,6 +5746,10 @@ button.card-variant {
     width: 100%;
     max-width: none;
     max-height: none;
+  }
+
+  .collection-search-page .collection-search-detail {
+    flex: 0 0 auto;
   }
 
   .filter-sidebar {
@@ -5849,6 +5927,33 @@ button.card-variant {
   border-radius: 8px;
   font: inherit;
   font-size: 13px;
+}
+
+.collection-all-sort {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.collection-all-sort .collection-sort-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.collection-all-sort select {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+
+.collection-all-sort .collection-sort-dir {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 6px 8px;
 }
 
 .collection-view-mode-group {
