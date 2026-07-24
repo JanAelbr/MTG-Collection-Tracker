@@ -158,10 +158,41 @@ body {
   font-weight: 600;
 }
 
+.app-topbar-search-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .app-topbar-search {
   flex: 0 0 240px;
   width: 240px;
   max-width: 34vw;
+}
+
+.app-topbar-advanced-search {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-topbar-advanced-search:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-topbar-advanced-search.is-active {
+  color: #dff3c4;
+  background: rgba(124, 179, 66, 0.22);
+  font-weight: 600;
 }
 
 .navbar-search {
@@ -2418,11 +2449,55 @@ body {
   min-height: calc(82px * var(--collection-card-scale, 1));
 }
 
+.collection-page .collection-card-grid-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.collection-page .collection-card-grid-meta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .collection-page .collection-card-grid-name-row {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+}
+
+.card-set-symbol {
+  flex: 0 0 auto;
+  display: inline-block;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-top: 2px;
+}
+
+.manager-card-name-row,
+.search-results-card-name,
+.search-results-set-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-results-set-row {
+  max-width: 100%;
+}
+
+.search-results-set-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collection-page .collection-card-grid-name {
@@ -2797,6 +2872,11 @@ body {
 
 .search-results-set-cell {
   min-width: 0;
+}
+
+.search-results-set-cell .search-results-art-style {
+  margin-top: 2px;
+  padding-left: 22px;
 }
 
 .search-results-art-style {
@@ -3491,6 +3571,17 @@ body {
   pointer-events: none;
 }
 
+.collection-page .collection-card-grid-select .collection-card-grid-meta {
+  width: 100%;
+  justify-content: center;
+}
+
+.collection-page .collection-card-grid-select .collection-card-grid-meta-text {
+  flex: 0 1 auto;
+  align-items: flex-start;
+  text-align: left;
+}
+
 .collection-page .collection-card-grid-select .collection-card-grid-name {
   color: #222;
   font-weight: 600;
@@ -3499,7 +3590,7 @@ body {
 }
 
 .collection-page .collection-card-grid-select .collection-card-grid-value {
-  margin-top: -2px;
+  margin-top: 0;
   font-size: 12px;
   line-height: 1.3;
   color: #444;
@@ -5573,6 +5664,11 @@ button.card-variant {
   line-height: 1.2;
   text-align: center;
   color: #444;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .card-variant-name {
@@ -5697,15 +5793,27 @@ button.card-variant {
     min-width: 0;
   }
 
-  .app-topbar-search {
-    flex: 0 0 180px;
-    width: 180px;
-    max-width: 42vw;
+  .app-topbar-search-cluster {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    max-width: 100%;
     align-self: flex-start;
   }
 
+  .app-topbar-search {
+    flex: 1 1 180px;
+    width: auto;
+    max-width: 42vw;
+    align-self: auto;
+  }
+
   .navbar-search {
-    max-width: 180px;
+    max-width: none;
+  }
+
+  .app-topbar-advanced-search {
+    padding: 5px 8px;
+    font-size: 12px;
   }
 
   .app-topnav {

@@ -14,6 +14,7 @@ from api.services import reports_service  # noqa: E402
 from api.services import search_service  # noqa: E402
 from api.cache import bump_cache_epoch  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
+from util.card_name_roles import ensure_card_name_roles_table  # noqa: E402
 from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.set_catalog import ensure_sets_table  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
@@ -380,7 +381,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         ])
         payload = reports_service.list_report_cards(
             self.conn,
-            report="all",
+            report="risers",
             set_code="HOB",
             owned_filter="all",
             page_size=25,
@@ -451,11 +452,27 @@ class ReportsApiServiceTests(unittest.TestCase):
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_matches_oracle_text(self, load_enriched):
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched,
+                type_line, oracle_text
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, ?, ?)
+            """,
+            [
+                ("LTR", "10", "Lightning Bolt", "Instant",
+                 "Lightning Bolt deals 3 damage to any target."),
+                ("LTR", "11", "Shock", "Instant",
+                 "Shock deals 2 damage to any target."),
+            ],
+        )
+        self.conn.commit()
         load_enriched.return_value = (
             [
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
+                    "collectorNumber": "10",
                     "name": "Lightning Bolt",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -466,7 +483,7 @@ class ReportsApiServiceTests(unittest.TestCase):
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "2",
+                    "collectorNumber": "11",
                     "name": "Shock",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -481,14 +498,29 @@ class ReportsApiServiceTests(unittest.TestCase):
         payload = search_service.search_cards(self.conn, text_search="3 damage")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
+        load_enriched.assert_called()
+        self.assertEqual(load_enriched.call_args.kwargs["set_codes"], ["LTR"])
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_matches_creature_type(self, load_enriched):
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched, type_line
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, ?)
+            """,
+            [
+                ("LTR", "20", "Frodo Baggins", "Legendary Creature — Halfling Scout"),
+                ("LTR", "21", "Lightning Bolt", "Instant"),
+            ],
+        )
+        self.conn.commit()
         load_enriched.return_value = (
             [
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
+                    "collectorNumber": "20",
                     "name": "Frodo Baggins",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -498,7 +530,7 @@ class ReportsApiServiceTests(unittest.TestCase):
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "2",
+                    "collectorNumber": "21",
                     "name": "Lightning Bolt",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -515,11 +547,37 @@ class ReportsApiServiceTests(unittest.TestCase):
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_filters_by_role_or_match(self, load_enriched):
+        ensure_card_name_roles_table(self.conn)
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched, type_line
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, ?)
+            """,
+            [
+                ("LTR", "30", "Cultivate", "Sorcery"),
+                ("LTR", "31", "Brainstorm", "Instant"),
+                ("LTR", "32", "Swords to Plowshares", "Instant"),
+            ],
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO card_name_roles (name, roles, updated_at)
+            VALUES (?, ?, '2026-01-01')
+            """,
+            [
+                ("Cultivate", '["ramp"]'),
+                ("Brainstorm", '["draw"]'),
+                ("Swords to Plowshares", '["removal"]'),
+            ],
+        )
+        self.conn.commit()
         load_enriched.return_value = (
             [
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
+                    "collectorNumber": "30",
                     "name": "Cultivate",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -530,7 +588,7 @@ class ReportsApiServiceTests(unittest.TestCase):
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "2",
+                    "collectorNumber": "31",
                     "name": "Brainstorm",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -541,7 +599,7 @@ class ReportsApiServiceTests(unittest.TestCase):
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "3",
+                    "collectorNumber": "32",
                     "name": "Swords to Plowshares",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -563,11 +621,27 @@ class ReportsApiServiceTests(unittest.TestCase):
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_role_only_without_name(self, load_enriched):
+        ensure_card_name_roles_table(self.conn)
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched, type_line
+            ) VALUES ('LTR', '40', 'Sol Ring', '01. Main set', 1.0, 1, 0, 0, 'Artifact')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_name_roles (name, roles, updated_at)
+            VALUES ('Sol Ring', '["ramp","fast_mana"]', '2026-01-01')
+            """
+        )
+        self.conn.commit()
         load_enriched.return_value = (
             [
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
+                    "collectorNumber": "40",
                     "name": "Sol Ring",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -638,11 +712,26 @@ class ReportsApiServiceTests(unittest.TestCase):
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_search_filters_by_type(self, load_enriched):
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched,
+                type_line, card_type, oracle_text
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, ?, ?, ?)
+            """,
+            [
+                ("LTR", "50", "Lightning Bolt", "Instant", "instant",
+                 "Lightning Bolt deals 3 damage to any target."),
+                ("LTR", "51", "Grizzly Bears", "Creature — Bear", "creature", ""),
+            ],
+        )
+        self.conn.commit()
         load_enriched.return_value = (
             [
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "1",
+                    "collectorNumber": "50",
                     "name": "Lightning Bolt",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -654,7 +743,7 @@ class ReportsApiServiceTests(unittest.TestCase):
                 },
                 {
                     "setCode": "LTR",
-                    "collectorNumber": "2",
+                    "collectorNumber": "51",
                     "name": "Grizzly Bears",
                     "artStyle": "01. Main set",
                     "finish": 0,
@@ -675,6 +764,59 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
+
+    @patch("api.services.search_service._load_enriched_report_cards")
+    def test_search_creature_and_colors_scopes_set_codes(self, load_enriched):
+        """Creature+color search must not enrich every set in the catalog."""
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched,
+                colors, type_line
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, ?, ?)
+            """,
+            [
+                ("IKO", "1", "Mysterious Egg", '["G"]', "Creature — Egg"),
+                ("IKO", "2", "Parcelbeast", '["U","G"]', "Creature — Elemental Beast"),
+                ("WAR", "3", "Spark Double", '["U"]', "Creature — Illusion"),
+                ("MH2", "4", "Unrelated", '["R"]', "Creature — Goblin"),
+            ],
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES (?, ?, 1.0, 0)
+            """,
+            [("IKO", "2"), ("WAR", "3")],
+        )
+        self.conn.commit()
+        load_enriched.return_value = (
+            [
+                {
+                    "setCode": "IKO",
+                    "collectorNumber": "2",
+                    "name": "Parcelbeast",
+                    "artStyle": "01. Main set",
+                    "finish": 0,
+                    "owned": True,
+                    "colors": ["U", "G"],
+                    "typeLine": "Creature — Elemental Beast",
+                    "currentValue": 2.0,
+                },
+            ],
+            None,
+        )
+        payload = search_service.search_cards(
+            self.conn,
+            creature_type_search="beast",
+            color_filters=["U", "G"],
+            owned_filter="owned",
+        )
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Parcelbeast")
+        load_enriched.assert_called_once()
+        self.assertEqual(load_enriched.call_args.kwargs["set_codes"], ["IKO"])
 
     @patch("api.services.search_service._load_enriched_report_cards")
     def test_list_name_variants(self, load_enriched):
@@ -834,9 +976,8 @@ class ReportsApiServiceTests(unittest.TestCase):
             ["MH3", "LTR"],
         )
 
-    @patch("api.services.search_service._resolve_set_codes", return_value=["LTR", "MH3"])
     @patch("api.services.search_service._load_enriched_report_cards")
-    def test_search_sort_by_name_and_value(self, load_enriched, _resolve_sets):
+    def test_search_sort_by_name_and_value(self, load_enriched):
         ensure_sets_table(self.conn)
         self.conn.executemany(
             """
@@ -846,6 +987,20 @@ class ReportsApiServiceTests(unittest.TestCase):
             [
                 ("LTR", "The Lord of the Rings", "2023-06-09"),
                 ("MH3", "Modern Horizons 3", "2024-06-14"),
+            ],
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched, type_line
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0, 'Instant')
+            """,
+            [
+                ("LTR", "1", "Lightning Bolt"),
+                ("MH3", "120", "Lightning Bolt"),
+                ("LTR", "2", "Shock"),
+                ("MH3", "121", "Shock"),
             ],
         )
         self.conn.commit()
@@ -907,6 +1062,10 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(
             [card["name"] for card in by_name["cards"]],
             ["Lightning Bolt", "Shock"],
+        )
+        self.assertEqual(
+            set(load_enriched.call_args.kwargs["set_codes"]),
+            {"LTR", "MH3"},
         )
 
         by_value = search_service.search_cards(

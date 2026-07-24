@@ -34,6 +34,16 @@ const COMPLETION_TO_VECTOR_RARITY = {
   mythic: "M",
 };
 
+/** Card print rarity → mtg-vectors folder (C/U/R/M only). */
+const CARD_RARITY_TO_VECTOR = {
+  common: "C",
+  uncommon: "U",
+  rare: "R",
+  mythic: "M",
+  special: "M",
+  bonus: "M",
+};
+
 export function mtgVectorsSymbolCode(setCode) {
   const normalized = String(setCode || "").trim().toUpperCase();
   if (!normalized || normalized === "ALL") {
@@ -47,11 +57,26 @@ export function completionRarityToVectorCode(completionRarity) {
   return COMPLETION_TO_VECTOR_RARITY[completionRarity] || "C";
 }
 
+export function cardRarityToVectorCode(rarity) {
+  const key = String(rarity || "").trim().toLowerCase();
+  return CARD_RARITY_TO_VECTOR[key] || "C";
+}
+
 export function mtgVectorsSetIconUri(setCode, completionRarity = "common") {
   const symbolCode = mtgVectorsSymbolCode(setCode);
   if (!symbolCode) {
     return null;
   }
   const vectorRarity = completionRarityToVectorCode(completionRarity);
+  return `${MTG_VECTORS_CDN}/${symbolCode}/${vectorRarity}.svg`;
+}
+
+/** Set symbol tinted by the card's print rarity. */
+export function mtgVectorsCardSetIconUri(setCode, rarity = "common") {
+  const symbolCode = mtgVectorsSymbolCode(setCode);
+  if (!symbolCode) {
+    return null;
+  }
+  const vectorRarity = cardRarityToVectorCode(rarity);
   return `${MTG_VECTORS_CDN}/${symbolCode}/${vectorRarity}.svg`;
 }

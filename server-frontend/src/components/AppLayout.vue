@@ -14,7 +14,6 @@ const { setGalleryFilter } = useSetGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
-  { to: "/collection/search", label: "Search" },
   { to: "/stats", label: "Stats" },
 ];
 
@@ -41,6 +40,15 @@ const showSetGalleryFilter = computed(() => showCollectionSubnav.value);
 const showNavbarSearch = computed(() =>
   route.path !== "/collection/search" && route.path !== "/scan",
 );
+
+const showAdvancedSearchLink = computed(() => route.path !== "/scan");
+
+const isAdvancedSearchActive = computed(() => route.path === "/collection/search");
+
+const advancedSearchLink = computed(() => ({
+  path: "/collection/search",
+  query: collectionNavQuery(route, "/collection/search"),
+}));
 
 const brandLink = computed(() => ({
   path: "/",
@@ -117,7 +125,17 @@ onMounted(() => {
           </nav>
         </div>
 
-        <NavbarSearch v-if="showNavbarSearch" class="app-topbar-search" />
+        <div v-if="showNavbarSearch || showAdvancedSearchLink" class="app-topbar-search-cluster">
+          <NavbarSearch v-if="showNavbarSearch" class="app-topbar-search" />
+          <RouterLink
+            v-if="showAdvancedSearchLink"
+            :to="advancedSearchLink"
+            class="app-topbar-advanced-search"
+            :class="{ 'is-active': isAdvancedSearchActive }"
+          >
+            Advanced search
+          </RouterLink>
+        </div>
       </header>
 
       <nav

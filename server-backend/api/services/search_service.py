@@ -98,6 +98,178 @@ def _sets_for_exact_name(conn: sqlite3.Connection, name: str) -> list[str]:
     return [row[0] for row in rows]
 
 
+def _has_card_instances_table(conn: sqlite3.Connection) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
+        ).fetchone()
+    )
+
+
+def _owned_print_exists_sql(alias: str = "c", *, include_instances: bool = True) -> str:
+    purchases = f"""
+        EXISTS (
+            SELECT 1 FROM purchases p
+            WHERE p.set_code = {alias}.set_code
+              AND CAST(p.collector_number AS TEXT) = CAST({alias}.collector_number AS TEXT)
+        )
+    """
+    if not include_instances:
+        return f"({purchases})"
+    return f"""(
+        {purchases}
+        OR EXISTS (
+            SELECT 1 FROM card_instances ci
+            WHERE ci.set_code = {alias}.set_code
+              AND CAST(ci.collector_number AS TEXT) = CAST({alias}.collector_number AS TEXT)
+        )
+    )"""
+
+
+def _sets_matching_search_filters(
+    conn: sqlite3.Connection,
+    *,
+    name_search: str = "",
+    text_search: str = "",
+    creature_type_search: str = "",
+    color_filters: list[str] | None = None,
+    type_filter: str = "all",
+    role_filters: list[str] | None = None,
+    owned_filter: str = "all",
+) -> list[str]:
+    """Distinct set codes that can match advanced search filters (SQL pre-scope)."""
+    clauses = [
+        exclude_alchemy_sql("c.collector_number"),
+        exclude_alchemy_art_style_sql("c.art_style"),
+    ]
+    params: list = []
+    joins: list[str] = []
+
+    name_term = name_search.strip()
+    if name_term:
+        clauses.append("c.name LIKE ? COLLATE NOCASE")
+        params.append(f"%{name_term}%")
+
+    text_term = text_search.strip()
+    if text_term:
+        clauses.append("c.oracle_text LIKE ? COLLATE NOCASE")
+        params.append(f"%{text_term}%")
+
+    creature_term = creature_type_search.strip()
+    if creature_term:
+        clauses.append("c.type_line LIKE ? COLLATE NOCASE")
+        params.append(f"%{creature_term}%")
+
+    normalized_type = (type_filter or "all").strip().lower()
+    if normalized_type and normalized_type != "all":
+        clauses.append("LOWER(COALESCE(c.card_type, '')) = ?")
+        params.append(normalized_type)
+
+    colors = list(color_filters or [])
+    if colors:
+        color_parts: list[str] = []
+        for color in colors:
+            if color == "C":
+                color_parts.append(
+                    "(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
+                )
+            else:
+                color_parts.append("c.colors LIKE ?")
+                params.append(f'%"{color}"%')
+        clauses.append("(" + " OR ".join(color_parts) + ")")
+
+    roles = list(role_filters or [])
+    if roles:
+        joins.append("JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE")
+        role_parts = []
+        for role in roles:
+            role_parts.append("r.roles LIKE ?")
+            params.append(f'%"{role}"%')
+        clauses.append("(" + " OR ".join(role_parts) + ")")
+
+    if (owned_filter or "").strip().lower() == "owned":
+        clauses.append(
+            _owned_print_exists_sql(
+                "c",
+                include_instances=_has_card_instances_table(conn),
+            )
+        )
+
+    join_sql = " ".join(joins)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT c.set_code
+        FROM cards c
+        {join_sql}
+        WHERE {" AND ".join(clauses)}
+        ORDER BY c.set_code
+        """,
+        params,
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def _resolve_search_pool_set_codes(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str,
+    name_search: str = "",
+    text_search: str = "",
+    creature_type_search: str = "",
+    color_filters: list[str] | None = None,
+    type_filter: str = "all",
+    role_filters: list[str] | None = None,
+    owned_filter: str = "all",
+) -> list[str]:
+    """Resolve which sets to enrich for a search — avoid loading the whole catalog."""
+    normalized_set = (set_code or "All").strip()
+    if normalized_set.upper() != "ALL":
+        return _resolve_set_codes(conn, set_code=set_code)
+
+    name_term = name_search.strip()
+    text_term = text_search.strip()
+    creature_term = creature_type_search.strip()
+    colors = list(color_filters or [])
+    roles = list(role_filters or [])
+    normalized_type = (type_filter or "all").strip().lower()
+    normalized_owned = (owned_filter or "all").strip().lower()
+
+    # Name-only searches keep the existing resolver (and its call-site mocks).
+    if (
+        name_term
+        and not text_term
+        and not creature_term
+        and not colors
+        and not roles
+        and normalized_type == "all"
+        and normalized_owned != "owned"
+    ):
+        return _resolve_set_codes(conn, set_code="All", search_term=name_term)
+
+    has_sql_scope = bool(
+        name_term
+        or text_term
+        or creature_term
+        or colors
+        or roles
+        or (normalized_type and normalized_type != "all")
+        or normalized_owned == "owned"
+    )
+    if not has_sql_scope:
+        return _resolve_set_codes(conn, set_code="All")
+
+    return _sets_matching_search_filters(
+        conn,
+        name_search=name_term,
+        text_search=text_term,
+        creature_type_search=creature_term,
+        color_filters=colors,
+        type_filter=normalized_type,
+        role_filters=roles,
+        owned_filter=normalized_owned,
+    )
+
+
 def _newest_first_key(card: dict, release_dates: dict[str, str]) -> tuple:
     set_code = str(card.get("setCode") or "").upper()
     released_at = release_dates.get(set_code) or ""
@@ -352,11 +524,20 @@ def _filtered_pool(
     set_codes: list[str] | None = None,
 ) -> list[dict]:
     settings = settings_service.get_settings(conn)
-    name_term = name_search.strip()
     resolved_codes = (
         list(set_codes)
         if set_codes is not None
-        else _resolve_set_codes(conn, set_code=set_code, search_term=name_term or None)
+        else _resolve_search_pool_set_codes(
+            conn,
+            set_code=set_code,
+            name_search=name_search,
+            text_search=text_search,
+            creature_type_search=creature_type_search,
+            color_filters=color_filters,
+            type_filter=type_filter,
+            role_filters=role_filters,
+            owned_filter=owned_filter,
+        )
     )
     cards, _compare_date = _load_enriched_report_cards(
         conn,

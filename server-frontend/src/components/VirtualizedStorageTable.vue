@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import CardPreview from "./CardPreview.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { formatEuro } from "../utils/format";
@@ -82,14 +83,7 @@ function setLabel(card) {
   if (props.setLabelFor) {
     return props.setLabelFor(card.setCode) || card.setCode;
   }
-  return card.setCode;
-}
-
-function setIcon(card) {
-  if (props.setIconFor) {
-    return props.setIconFor(card.setCode);
-  }
-  return null;
+  return card.setCode || "";
 }
 
 function sortIndicator(field) {
@@ -193,13 +187,11 @@ defineExpose({ rootRef });
         >
           <td>
             <span class="storage-table-set-cell">
-              <img
-                v-if="setIcon(entry.card)"
-                class="storage-table-set-icon"
-                :src="setIcon(entry.card)"
-                alt=""
-                loading="lazy"
-              >
+              <CardSetSymbol
+                :set-code="entry.card.setCode"
+                variant="generic"
+                :size="16"
+              />
               <CollectionSetLink
                 :set-code="entry.card.setCode"
                 :label="setLabel(entry.card)"
@@ -213,6 +205,7 @@ defineExpose({ rootRef });
               :image-uri-back="entry.card.imageUriBack || ''"
             >
               <span class="storage-card-name-row">
+                <CardSetSymbol :set-code="entry.card.setCode" :rarity="entry.card.rarity || ''" />
                 <RouterLink :to="cardRoute(entry.card)" class="reports-card-link">
                   {{ String(entry.card.collectorNumber).padStart(3, "0") }} · {{ entry.card.name || entry.card.cardName }}
                 </RouterLink>

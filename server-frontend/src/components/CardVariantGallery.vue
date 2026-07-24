@@ -3,6 +3,7 @@ import "../styles/card-detail.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import { formatEuro } from "../utils/format";
 import {
   FINISH_ETCHED,
@@ -171,10 +172,16 @@ function onSelect(card) {
               <div v-else class="card-variant-image card-variant-image-empty" />
             </div>
             <p class="card-variant-caption">
+              <CardSetSymbol
+                :set-code="card.setCode"
+                variant="generic"
+                :size="12"
+              />
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
+              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>
@@ -208,10 +215,16 @@ function onSelect(card) {
               <div v-else class="card-variant-image card-variant-image-empty" />
             </div>
             <p class="card-variant-caption">
+              <CardSetSymbol
+                :set-code="card.setCode"
+                variant="generic"
+                :size="12"
+              />
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
+              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>
@@ -241,10 +254,16 @@ function onSelect(card) {
               <div v-else class="card-variant-image card-variant-image-empty" />
             </div>
             <p class="card-variant-caption">
+              <CardSetSymbol
+                :set-code="card.setCode"
+                variant="generic"
+                :size="12"
+              />
               <CollectionSetLink :set-code="card.setCode" :art-style="card.artStyle || ''" />
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
+              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>

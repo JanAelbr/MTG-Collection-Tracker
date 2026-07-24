@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import CardPreview from "./CardPreview.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import StorageLocationSelect from "./StorageLocationSelect.vue";
 import { api } from "../api";
@@ -300,9 +301,12 @@ onBeforeUnmount(disconnectLoadMoreObserver);
                 :image-uri="row.card.imageUri"
                 :image-uri-back="row.card.imageUriBack || ''"
               >
-                <RouterLink :to="cardRoute(row.card)" class="reports-card-link">
-                  {{ row.card.name }}
-                </RouterLink>
+                <span class="manager-card-name-row">
+                  <CardSetSymbol :set-code="row.card.setCode" :rarity="row.card.rarity || ''" />
+                  <RouterLink :to="cardRoute(row.card)" class="reports-card-link">
+                    {{ row.card.name }}
+                  </RouterLink>
+                </span>
               </CardPreview>
             </td>
             <td

@@ -7,6 +7,7 @@ import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContex
 import { useFavorites } from "../composables/favorites";
 import { cardSelectionKey } from "../utils/collectionScopeStats";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import { formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
 
@@ -260,9 +261,14 @@ function onDrop(index, event) {
           />
           <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
         </div>
-        <span class="collection-card-grid-name">{{ card.name }}</span>
-        <span class="collection-card-grid-value">
-          <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+        <span class="collection-card-grid-meta">
+          <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+          <span class="collection-card-grid-meta-text">
+            <span class="collection-card-grid-name">{{ card.name }}</span>
+            <span class="collection-card-grid-value">
+              <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+            </span>
+          </span>
         </span>
       </button>
       <template v-else>
@@ -279,32 +285,37 @@ function onDrop(index, event) {
         <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
       </div>
       <figcaption class="collection-card-grid-caption">
-        <span class="collection-card-grid-name-row">
-          <RouterLink
-            :to="cardRoute(card)"
-            class="collection-card-grid-name"
-            @mousedown="onTileMouseDown"
-            @click="selectable ? onTileClick(card, index, $event) : onCardActivate(card, $event)"
-            @focus="onTileFocus(index)"
-          >
-            #{{ String(card.collectorNumber).padStart(3, "0") }} · {{ card.name || card.cardName }}
-          </RouterLink>
-          <CardFinishBadge :card="card" compact />
-        </span>
-        <span v-if="showSetLabel" class="collection-card-grid-set">
-          <CollectionSetLink
-            :set-code="card.setCode"
-            :art-style="card.artStyle || ''"
-            :label="setLabel(card)"
-          />
-        </span>
-        <span class="collection-card-grid-value">
-          <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
-          <span
-            v-if="gainBracket(card)"
-            class="collection-card-grid-gain"
-            :class="gainClass(card)"
-          >{{ gainBracket(card) }}</span>
+        <span class="collection-card-grid-meta">
+          <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+          <span class="collection-card-grid-meta-text">
+            <span class="collection-card-grid-name-row">
+              <RouterLink
+                :to="cardRoute(card)"
+                class="collection-card-grid-name"
+                @mousedown="onTileMouseDown"
+                @click="selectable ? onTileClick(card, index, $event) : onCardActivate(card, $event)"
+                @focus="onTileFocus(index)"
+              >
+                #{{ String(card.collectorNumber).padStart(3, "0") }} · {{ card.name || card.cardName }}
+              </RouterLink>
+              <CardFinishBadge :card="card" compact />
+            </span>
+            <span v-if="showSetLabel" class="collection-card-grid-set">
+              <CollectionSetLink
+                :set-code="card.setCode"
+                :art-style="card.artStyle || ''"
+                :label="setLabel(card)"
+              />
+            </span>
+            <span class="collection-card-grid-value">
+              <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+              <span
+                v-if="gainBracket(card)"
+                class="collection-card-grid-gain"
+                :class="gainClass(card)"
+              >{{ gainBracket(card) }}</span>
+            </span>
+          </span>
         </span>
         <span v-if="showUnownedBadge && !cardIsOwned(card)" class="reports-unowned-badge">
           Not owned

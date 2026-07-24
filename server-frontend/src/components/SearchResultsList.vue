@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import CardPreview from "./CardPreview.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import ManaCost from "./ManaCost.vue";
 import { usePricingSettings } from "../composables/pricingSettings";
 import {
@@ -99,11 +100,21 @@ onBeforeUnmount(disconnectLoadMoreObserver);
               :image-uri="card.imageUri || ''"
               :image-uri-back="card.imageUriBack || ''"
             >
-              <span class="reports-card-link">{{ card.name }}</span>
+              <span class="search-results-card-name">
+                <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+                <span class="reports-card-link">{{ card.name }}</span>
+              </span>
             </CardPreview>
           </td>
           <td class="search-results-set-cell">
-            <span>{{ setLabel(card) }}</span>
+            <span class="search-results-set-row">
+              <CardSetSymbol
+                :set-code="card.setCode"
+                variant="generic"
+                :size="16"
+              />
+              <span class="search-results-set-label">{{ setLabel(card) }}</span>
+            </span>
             <span v-if="card.artStyle" class="search-results-art-style">{{ card.artStyle }}</span>
           </td>
           <td>{{ formatTypeLabel(card) }}</td>
