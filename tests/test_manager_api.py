@@ -303,8 +303,9 @@ class ManagerApiServiceTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(instance[0], 1)
 
+    @patch("api.services.manager_service._scryfall_family_for_code", return_value=["LTR"])
     @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=42)
-    def test_reload_set_catalog(self, mock_import):
+    def test_reload_set_catalog(self, mock_import, _mock_family):
         self.conn.execute(
             """
             INSERT INTO cards (
@@ -325,6 +326,59 @@ class ManagerApiServiceTests(unittest.TestCase):
         with self.assertRaises(manager_service.ManagerError):
             manager_service.reload_set_catalog(self.conn, "ZZZZ")
 
+    @patch("api.services.manager_service._scryfall_family_for_code", return_value=["IMA", "TIMA"])
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall")
+    def test_add_set_continues_when_family_child_has_no_cards(self, mock_import, _mock_family):
+        def _import(_conn, set_code):
+            if str(set_code).upper() == "TIMA":
+                raise ValueError("No cards found for set TIMA on Scryfall")
+            return 100
+
+        mock_import.side_effect = _import
+
+        result = manager_service.add_set(self.conn, "IMA")
+
+        self.assertEqual(result["setCode"], "IMA")
+        self.assertEqual(result["addedSetCodes"], ["IMA"])
+        self.assertEqual(result["skippedSetCodes"], ["TIMA"])
+        self.assertEqual(result["catalogCount"], 100)
+        self.assertTrue(
+            self.conn.execute(
+                "SELECT 1 FROM tracked_sets WHERE UPPER(set_code) = 'IMA'"
+            ).fetchone()
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM tracked_sets WHERE UPPER(set_code) = 'TIMA'"
+            ).fetchone()
+        )
+
+    @patch("api.services.manager_service._scryfall_family_for_code", return_value=["IMA", "TIMA"])
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall")
+    def test_reload_set_catalog_continues_when_family_child_missing(
+        self, mock_import, _mock_family
+    ):
+        add_tracked_set(self.conn, "IMA")
+        add_tracked_set(self.conn, "TIMA")
+
+        def _import(_conn, set_code):
+            if str(set_code).upper() == "TIMA":
+                raise ValueError("No cards found for set TIMA on Scryfall")
+            return 50
+
+        mock_import.side_effect = _import
+
+        result = manager_service.reload_set_catalog(self.conn, "IMA")
+
+        self.assertEqual(result["setCode"], "IMA")
+        self.assertEqual(result["familyMembers"], ["IMA"])
+        self.assertEqual(result["skippedSetCodes"], ["TIMA"])
+        self.assertEqual(result["catalogCount"], 50)
+        self.assertTrue(
+            self.conn.execute(
+                "SELECT 1 FROM tracked_sets WHERE UPPER(set_code) = 'TIMA'"
+            ).fetchone()
+        )
     def test_bulk_assign_storage(self):
         manager_service.set_ownership(
             self.conn,

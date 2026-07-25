@@ -478,6 +478,7 @@ def _load_enriched_report_cards(
 
     locations_map = _load_card_locations(conn)
     owned_keys = _load_owned_print_keys(conn)
+    listing_prices = _load_listed_asking_prices(conn)
     roles_by_name = load_card_name_roles_map(conn)
     if snapshot_cache is None:
         snapshot_cache = load_price_snapshot_cache(conn)
@@ -494,6 +495,7 @@ def _load_enriched_report_cards(
             selected_compare,
             locations_map=locations_map,
             owned_keys=owned_keys,
+            listing_prices=listing_prices,
             snapshot_prices=snapshot_prices,
             roles_by_name=roles_by_name,
         )
@@ -518,6 +520,7 @@ def _load_enriched_sets(
 
     locations_map = _load_card_locations(conn)
     owned_keys = _load_owned_print_keys(conn)
+    listing_prices = _load_listed_asking_prices(conn)
     roles_by_name = load_card_name_roles_map(conn)
     if snapshot_cache is None:
         snapshot_cache = load_price_snapshot_cache(conn)
@@ -532,6 +535,7 @@ def _load_enriched_sets(
                 selected_compare,
                 locations_map=locations_map,
                 owned_keys=owned_keys,
+                listing_prices=listing_prices,
                 snapshot_prices=snapshot_prices,
                 roles_by_name=roles_by_name,
             )
@@ -546,6 +550,7 @@ def _load_enriched_set(
     *,
     locations_map: dict[str, list[dict]],
     owned_keys: frozenset[str],
+    listing_prices: dict[str, float],
     snapshot_prices: dict[str, float],
     roles_by_name: dict[str, list[str]] | None = None,
 ) -> list[dict]:
@@ -568,6 +573,7 @@ def _load_enriched_set(
             card,
             locations_map=locations_map,
             owned_keys=owned_keys,
+            listing_prices=listing_prices,
             snapshot_prices=snapshot_prices,
             compare_date=selected_compare,
             roles_by_name=name_roles,
@@ -626,11 +632,18 @@ def _load_owned_print_keys(conn: sqlite3.Connection) -> frozenset[str]:
     return frozenset(keys)
 
 
+def _load_listed_asking_prices(conn: sqlite3.Connection) -> dict[str, float]:
+    from api.services.sale_listings_service import listed_asking_by_print_key
+
+    return listed_asking_by_print_key(conn)
+
+
 def _enrich_card(
     card: dict,
     *,
     locations_map: dict[str, list[dict]],
     owned_keys: frozenset[str],
+    listing_prices: dict[str, float],
     snapshot_prices: dict[str, float],
     compare_date: str | None,
     roles_by_name: dict[str, list[str]] | None = None,
@@ -647,7 +660,8 @@ def _enrich_card(
     if roles_by_name:
         roles = roles_by_name.get(name) or roles_by_name.get(str(name).casefold()) or []
 
-    return {
+    listing_price = listing_prices.get(key)
+    payload = {
         "setCode": card["set_code"],
         "collectorNumber": str(card["collector_number"]),
         "name": name,
@@ -672,6 +686,10 @@ def _enrich_card(
         "owned": purchase_value is not None or key in owned_keys or bool(locations),
         "locations": locations,
     }
+    if listing_price is not None:
+        payload["listingPrice"] = listing_price
+        payload["forSale"] = True
+    return payload
 
 
 def _load_card_locations(conn: sqlite3.Connection) -> dict[str, list[dict]]:

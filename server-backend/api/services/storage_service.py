@@ -187,6 +187,9 @@ def list_location_cards(
     ensure_card_columns(conn)
     get_location(conn, slug)
     rows = conn.execute(LOCATION_CARDS_QUERY, (slug,)).fetchall()
+    from api.services.sale_listings_service import listed_listings_by_instance_id
+
+    listed_by_instance = listed_listings_by_instance_id(conn)
     grouped: dict[tuple, dict] = {}
     for row in rows:
         key = (row["set_code"], str(row["collector_number"]), int(row["finish"]))
@@ -224,7 +227,16 @@ def list_location_cards(
             }
             grouped[key] = card
         card["copyCount"] += 1
-        card["instanceIds"].append(int(row["instance_id"]))
+        instance_id = int(row["instance_id"])
+        card["instanceIds"].append(instance_id)
+        listing = listed_by_instance.get(instance_id)
+        if listing is not None:
+            current_ask = card.get("listingPrice")
+            if current_ask is None or listing["listingPrice"] < current_ask:
+                card["listingPrice"] = listing["listingPrice"]
+                card["listingId"] = listing["listingId"]
+                card["listedInstanceId"] = instance_id
+            card["forSale"] = True
 
     cards = sorted(
         grouped.values(),
@@ -262,6 +274,12 @@ def delete_instance(conn: sqlite3.Connection, instance_id: int) -> dict:
         "DELETE FROM card_instances WHERE instance_id = ?",
         (instance_id,),
     )
+    try:
+        from api.services.sale_listings_service import clear_listing_instance_link
+
+        clear_listing_instance_link(conn, instance_id)
+    except Exception:
+        pass
     bump_cache_epoch()
     return get_location(conn, location_slug)
 

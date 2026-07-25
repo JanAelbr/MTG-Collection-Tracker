@@ -29,6 +29,7 @@ export async function savePricingSettings(patch) {
       "priceStrategy",
       "favoritesCardsPriceStrategy",
       "favoritesArtStylesPriceStrategy",
+      "sellPriceStrategy",
     ].includes(key)
   );
   if (!strategyOnly) {

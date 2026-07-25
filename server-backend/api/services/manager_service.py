@@ -529,18 +529,12 @@ def _insert_copy_instance(
     collector_number: str,
     finish: int,
     location_slug: str,
+    purchase_value: float | None = None,
 ) -> None:
     normalized_set, normalized_number, normalized_finish = _normalized_print(
         set_code,
         collector_number,
         finish,
-    )
-    cursor = conn.cursor()
-    purchase_value = lookup_unit_market(
-        cursor,
-        normalized_set,
-        normalized_number,
-        normalized_finish,
     )
     conn.execute(
         """
@@ -593,16 +587,25 @@ def _load_copy_instances(
         """,
         (normalized_set, normalized_number, normalized_finish),
     ).fetchall()
-    return [
-        {
+    from api.services.sale_listings_service import listed_listings_by_instance_id
+
+    listed_by_instance = listed_listings_by_instance_id(conn)
+    copies = []
+    for instance_id, slug, label, purchase_value in rows:
+        entry = {
             "instanceId": int(instance_id),
             "locationSlug": slug,
             "label": label,
             "purchaseValue": _float_or_none(purchase_value),
             "finish": normalized_finish,
         }
-        for instance_id, slug, label, purchase_value in rows
-    ]
+        listing = listed_by_instance.get(int(instance_id))
+        if listing is not None:
+            entry["forSale"] = True
+            entry["listingId"] = listing["listingId"]
+            entry["listingPrice"] = listing["listingPrice"]
+        copies.append(entry)
+    return copies
 
 
 def _float_or_none(value) -> float | None:
@@ -950,6 +953,12 @@ def delete_copy_instance(
     finish = int(row["finish"])
 
     conn.execute("DELETE FROM card_instances WHERE instance_id = ?", (instance_id,))
+    try:
+        from api.services.sale_listings_service import clear_listing_instance_link
+
+        clear_listing_instance_link(conn, instance_id)
+    except Exception:
+        pass
     _sync_finish_purchase_aggregate(conn, set_code, collector_number, finish)
     bump_cache_epoch()
     strategy = settings_service.get_settings(conn)["priceStrategy"]
@@ -1097,6 +1106,7 @@ def adjust_copy_count(
                 collector_number=normalized_number,
                 finish=normalized_finish,
                 owned=True,
+                purchase_value=0.0,
             )
         while _instance_count(conn, normalized_set, normalized_number, normalized_finish) < target:
             _insert_copy_instance(
@@ -1193,6 +1203,7 @@ def set_copy_allocations(
                     collector_number=normalized_number,
                     finish=normalized_finish,
                     location_slug=slug,
+                    purchase_value=purchase_value,
                 )
     else:
         _apply_ownership(
@@ -1323,28 +1334,44 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
         raise ManagerError(f"Set {root} family already exists")
 
     added: list[str] = []
+    skipped: list[str] = []
     catalog_total = 0
-    try:
-        for code in family_codes:
-            if is_set_tracked(conn, code):
-                continue
+    for code in family_codes:
+        if is_set_tracked(conn, code):
+            continue
+        try:
             catalog_total += _import_tracked_set(conn, code)
             added.append(code)
-    except ValueError as exc:
-        for code in reversed(added):
-            remove_tracked_set(conn, code)
-        raise ManagerError(str(exc), status_code=404) from exc
+        except ValueError as exc:
+            log.warning(
+                "Skipping family member %s while adding %s: %s",
+                code,
+                root,
+                exc,
+            )
+            skipped.append(code)
+            # Only abort if the family root or the set the user asked for failed.
+            if code == root or code == normalized:
+                for added_code in reversed(added):
+                    remove_tracked_set(conn, added_code)
+                raise ManagerError(str(exc), status_code=404) from exc
 
     if not added:
+        if skipped:
+            raise ManagerError(
+                f"Could not load any new members for set family {root}",
+                status_code=404,
+            )
         raise ManagerError(f"Set {root} family already exists")
 
     conn.commit()
     bump_cache_epoch()
     set_names = get_set_display_names(refresh=True)
     log.info(
-        "Added tracked family %s members=%s (%s catalog card(s))",
+        "Added tracked family %s members=%s skipped=%s (%s catalog card(s))",
         root,
         ",".join(added),
+        ",".join(skipped) if skipped else "-",
         catalog_total,
     )
     return {
@@ -1352,8 +1379,9 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
         "label": format_set_option_label(root, set_names),
         "tracked": True,
         "catalogCount": catalog_total,
-        "familyMembers": family_codes,
+        "familyMembers": [code for code in family_codes if code not in skipped],
         "addedSetCodes": added,
+        "skippedSetCodes": skipped,
     }
 
 
@@ -1378,35 +1406,74 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
         raise ManagerError(f"Set {normalized} is not tracked", status_code=404)
 
     catalog_total = 0
-    try:
-        for code in reload_codes:
-            if not is_set_tracked(conn, code) and code in family_codes:
+    reloaded: list[str] = []
+    skipped: list[str] = []
+
+    def _reload_one(code: str, *, track_if_missing: bool) -> None:
+        nonlocal catalog_total
+        was_tracked = is_set_tracked(conn, code)
+        try:
+            if track_if_missing and not was_tracked and code in family_codes:
                 add_tracked_set(conn, code)
             catalog_total += import_set_catalog_from_scryfall(conn, code)
-        # Also import any Scryfall siblings not yet tracked when reloading a family root.
-        for code in family_codes:
-            if code in reload_codes:
-                continue
-            if not is_set_tracked(conn, code):
-                catalog_total += _import_tracked_set(conn, code)
-                reload_codes.append(code)
-    except ValueError as exc:
-        raise ManagerError(str(exc), status_code=404) from exc
+            reloaded.append(code)
+        except ValueError as exc:
+            log.warning(
+                "Skipping family member %s while reloading %s: %s",
+                code,
+                normalized,
+                exc,
+            )
+            skipped.append(code)
+            if track_if_missing and not was_tracked:
+                remove_tracked_set(conn, code)
+            if code == normalized:
+                raise ManagerError(str(exc), status_code=404) from exc
+
+    for code in reload_codes:
+        _reload_one(code, track_if_missing=True)
+    # Also import any Scryfall siblings not yet tracked when reloading a family root.
+    for code in family_codes:
+        if code in reload_codes or code in reloaded or code in skipped:
+            continue
+        if is_set_tracked(conn, code):
+            continue
+        try:
+            catalog_total += _import_tracked_set(conn, code)
+            reloaded.append(code)
+        except ValueError as exc:
+            log.warning(
+                "Skipping new family sibling %s while reloading %s: %s",
+                code,
+                normalized,
+                exc,
+            )
+            skipped.append(code)
+
+    if not reloaded:
+        detail = skipped[0] if skipped else normalized
+        raise ManagerError(
+            f"Could not reload catalog for set family {normalized}"
+            + (f" ({detail})" if skipped else ""),
+            status_code=404,
+        )
 
     bump_cache_epoch()
     set_names = get_set_display_names(refresh=True)
     root = family_codes[0] if family_codes else normalized
     log.info(
-        "Reloaded catalog for family %s members=%s (%s card(s))",
+        "Reloaded catalog for family %s members=%s skipped=%s (%s card(s))",
         root,
-        ",".join(reload_codes),
+        ",".join(reloaded),
+        ",".join(skipped) if skipped else "-",
         catalog_total,
     )
     return {
         "setCode": root,
         "label": format_set_option_label(root, set_names),
         "catalogCount": catalog_total,
-        "familyMembers": reload_codes,
+        "familyMembers": reloaded,
+        "skippedSetCodes": skipped,
     }
 
 

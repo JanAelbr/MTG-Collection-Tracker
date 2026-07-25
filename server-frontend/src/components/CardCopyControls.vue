@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import {
   adjustCardCopyCount,
+  applyListingResultToCard,
   applyOptimisticCopyCount,
   changeCardOwnershipFinish,
   effectiveDeckOwnedQty,
@@ -16,6 +17,7 @@ import {
 } from "../composables/cardContextMenu";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import FinishToggleButton from "./FinishToggleButton.vue";
+import ListForSaleModal from "./ListForSaleModal.vue";
 import StorageLocationSelect from "./StorageLocationSelect.vue";
 import {
   cardFinish,
@@ -43,6 +45,7 @@ const panelLoading = ref(false);
 const panelError = ref("");
 const copyState = ref(null);
 const defaultStorageSlug = ref("");
+const saleModal = ref(null);
 let loadToken = 0;
 
 const isInteractive = computed(() => Boolean(props.card && normalizeCardMenuTarget(props.card)));
@@ -349,6 +352,40 @@ async function onCopyFinishToggle(copy) {
   }
 }
 
+function openSaleModal(copy) {
+  if (!isInteractive.value || panelLoading.value || typeof copy.instanceId !== "number") {
+    return;
+  }
+  saleModal.value = {
+    card: {
+      ...props.card,
+      finish: copyFinish(copy),
+      foil: copyFinish(copy),
+    },
+    instanceId: copy.instanceId,
+    listingId: copy.listingId ?? null,
+    listingPrice: copy.listingPrice ?? null,
+  };
+}
+
+function closeSaleModal() {
+  saleModal.value = null;
+}
+
+async function onSaleModalSaved(result) {
+  applyListingResultToCard(props.card, result);
+  emit("ownership-changed");
+  try {
+    const payload = await fetchCardCopyState(props.card);
+    if (payload) {
+      copyState.value = payload.state;
+      defaultStorageSlug.value = resolveDefaultStorageSlug(payload.state, payload.settings);
+    }
+  } catch (error) {
+    panelError.value = error.message || "Could not refresh copy details.";
+  }
+}
+
 async function addCopy() {
   await onAdjust(1);
 }
@@ -421,11 +458,31 @@ defineExpose({ addCopy });
             @update:model-value="(slug) => onCopyStorageSelect(copy, slug)"
             @open-change="emit('menu-open-change', $event)"
           />
+          <button
+            v-if="typeof copy.instanceId === 'number'"
+            type="button"
+            class="btn btn-small"
+            :disabled="panelLoading"
+            :title="copy.forSale ? 'Update asking price' : 'List this copy for sale'"
+            @click="openSaleModal(copy)"
+          >
+            {{ copy.forSale ? "For sale" : "Sell" }}
+          </button>
         </div>
       </div>
     </div>
 
     <p v-if="panelLoading" class="card-interactive-status">Updating…</p>
     <p v-else-if="panelError" class="card-interactive-status error">{{ panelError }}</p>
+
+    <ListForSaleModal
+      :open="Boolean(saleModal)"
+      :card="saleModal?.card || null"
+      :instance-id="saleModal?.instanceId ?? null"
+      :listing-id="saleModal?.listingId ?? null"
+      :listing-price="saleModal?.listingPrice ?? null"
+      @close="closeSaleModal"
+      @saved="onSaleModalSaved"
+    />
   </div>
 </template>

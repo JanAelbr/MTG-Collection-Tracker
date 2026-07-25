@@ -3,12 +3,12 @@ import { computed, ref } from "vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
-import { isEffectivelyOwned, ownershipRevision } from "../composables/cardContextMenu";
+import { isEffectivelyOwned, ownershipRevision, effectiveListingPrice } from "../composables/cardContextMenu";
 import { useFavorites } from "../composables/favorites";
 import { cardSelectionKey } from "../utils/collectionScopeStats";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
-import { formatProfitBracket } from "../utils/format";
+import { formatEuro, formatProfitBracket } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
 
 const props = defineProps({
@@ -89,6 +89,23 @@ function gainClass(card) {
     return "";
   }
   return card.profitLoss >= 0 ? "reports-gain" : "reports-loss";
+}
+
+function listingPrice(card) {
+  ownershipRevision.value;
+  const price = effectiveListingPrice(card);
+  if (price == null || Number.isNaN(Number(price))) {
+    return null;
+  }
+  return Number(price);
+}
+
+function listingLabel(card) {
+  const price = listingPrice(card);
+  if (price == null) {
+    return null;
+  }
+  return `ask ${formatEuro(price)}`;
 }
 
 function setLabel(card) {
@@ -267,6 +284,11 @@ function onDrop(index, event) {
             <span class="collection-card-grid-name">{{ card.name }}</span>
             <span class="collection-card-grid-value">
               <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+              <span
+                v-if="listingLabel(card)"
+                class="collection-card-grid-listing"
+                title="Asking price (for sale)"
+              >· {{ listingLabel(card) }}</span>
             </span>
           </span>
         </span>
@@ -309,6 +331,11 @@ function onDrop(index, event) {
             </span>
             <span class="collection-card-grid-value">
               <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+              <span
+                v-if="listingLabel(card)"
+                class="collection-card-grid-listing"
+                title="Asking price (for sale)"
+              >· {{ listingLabel(card) }}</span>
               <span
                 v-if="gainBracket(card)"
                 class="collection-card-grid-gain"

@@ -50,6 +50,86 @@ export function getOwnershipPatch(card) {
   return ownershipPatches.value.get(key) ?? null;
 }
 
+const listingPatches = shallowRef(new Map());
+
+export function setListingPatch(setCode, collectorNumber, finish, patch) {
+  const key = ownershipPrintKey(setCode, collectorNumber, finish);
+  const next = new Map(listingPatches.value);
+  if (patch == null) {
+    next.delete(key);
+  } else {
+    next.set(key, patch);
+  }
+  listingPatches.value = next;
+  ownershipRevision.value += 1;
+}
+
+export function getListingPatch(card) {
+  if (!card) {
+    return null;
+  }
+  const setCode = card.setCode || card.set_code;
+  const collectorNumber = card.collectorNumber || card.collector_number;
+  if (!setCode || collectorNumber == null || collectorNumber === "") {
+    return null;
+  }
+  const key = ownershipPrintKey(setCode, collectorNumber, cardFinish(card));
+  return listingPatches.value.get(key) ?? null;
+}
+
+export function effectiveListingPrice(card) {
+  ownershipRevision.value;
+  const patch = getListingPatch(card);
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "listingPrice")) {
+    return patch.listingPrice;
+  }
+  if (card?.listingPrice == null || Number.isNaN(Number(card.listingPrice))) {
+    return null;
+  }
+  return Number(card.listingPrice);
+}
+
+export function applyListingPatchToCards(cards, setCode, collectorNumber, finish, patch) {
+  if (!Array.isArray(cards) || !patch) {
+    return;
+  }
+  const normalizedFinish = cardFinish({ finish });
+  for (const card of cards) {
+    if (
+      String(card.setCode || card.set_code).toUpperCase() === String(setCode).toUpperCase()
+      && String(card.collectorNumber || card.collector_number) === String(collectorNumber)
+      && cardFinish(card) === normalizedFinish
+    ) {
+      card.forSale = Boolean(patch.forSale);
+      card.listingPrice = patch.listingPrice;
+      if (patch.listingId != null) {
+        card.listingId = patch.listingId;
+      }
+      if (patch.listedInstanceId != null) {
+        card.listedInstanceId = patch.listedInstanceId;
+      }
+    }
+  }
+}
+
+export function applyListingResultToCard(card, result) {
+  if (!card || !result) {
+    return null;
+  }
+  const setCode = result.setCode || card.setCode || card.set_code;
+  const collectorNumber = result.collectorNumber ?? card.collectorNumber ?? card.collector_number;
+  const finish = result.finish ?? cardFinish(card);
+  const patch = {
+    forSale: true,
+    listingPrice: Number(result.listingPrice),
+    listingId: result.listingId,
+    listedInstanceId: result.instanceId ?? null,
+  };
+  setListingPatch(setCode, collectorNumber, finish, patch);
+  applyListingPatchToCards([card], setCode, collectorNumber, finish, patch);
+  return patch;
+}
+
 function finishDataForCard(card) {
   if (!card?.finishes) {
     return null;
@@ -349,12 +429,22 @@ export async function adjustCardCopyCount(card, delta, storageSlug) {
   if (!target) {
     throw new Error("Invalid card.");
   }
+  let locationSlug;
+  if (delta > 0) {
+    if (storageSlug) {
+      locationSlug = storageSlug;
+    } else {
+      await ensureStorageLocations();
+      const settings = await fetchPricingSettings();
+      locationSlug = defaultStorageSlug(null, settings);
+    }
+  }
   const state = await api.adjustCardCopyCount({
     setCode: target.setCode,
     collectorNumber: target.collectorNumber,
     finish: target.finish,
     delta,
-    locationSlug: delta > 0 ? storageSlug : undefined,
+    locationSlug,
   });
   publishOwnershipChange(target, state, card);
   return state;

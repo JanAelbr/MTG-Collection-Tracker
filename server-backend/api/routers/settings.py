@@ -35,6 +35,8 @@ def patch_settings(body: SettingsUpdate, conn: sqlite3.Connection = Depends(get_
         kwargs["favorites_art_styles_price_strategy"] = updates[
             "favoritesArtStylesPriceStrategy"
         ]
+    if "sellPriceStrategy" in updates:
+        kwargs["sell_price_strategy"] = updates["sellPriceStrategy"]
     if "favoriteCards" in updates:
         kwargs["favorite_cards"] = updates["favoriteCards"]
     if "favoriteArtStyles" in updates:

@@ -18,7 +18,7 @@ const props = defineProps({
   setIconFor: { type: Function, default: null },
 });
 
-const emit = defineEmits(["sort", "remove-one"]);
+const emit = defineEmits(["sort", "remove-one", "list-for-sale"]);
 
 const ROW_HEIGHT = 48;
 const OVERSCAN = 10;
@@ -232,6 +232,14 @@ defineExpose({ rootRef });
             </span>
           </td>
           <td v-if="showRemove" class="storage-row-actions">
+            <button
+              type="button"
+              class="btn btn-small"
+              :title="entry.card.forSale ? 'Update asking price' : 'List this card for sale'"
+              @click="emit('list-for-sale', entry.card)"
+            >
+              {{ entry.card.forSale ? "For sale" : "List for sale" }}
+            </button>
             <button
               type="button"
               class="btn btn-small"

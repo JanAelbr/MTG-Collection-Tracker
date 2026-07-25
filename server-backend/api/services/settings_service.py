@@ -32,6 +32,7 @@ DEFAULT_STORAGE_LOCATION = "storage:general"
 PRICE_STRATEGY_KEY = "price_strategy"
 FAVORITES_CARDS_PRICE_STRATEGY_KEY = "price_strategy_favorites_cards"
 FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY = "price_strategy_favorites_art_styles"
+SELL_PRICE_STRATEGY_KEY = "price_strategy_sell"
 OBSOLETE_SETTING_KEYS = ("compare_date", "set_picker_mode")
 
 _purge_lock = threading.Lock()
@@ -283,6 +284,7 @@ def get_settings(conn: sqlite3.Connection) -> dict:
         "favoritesArtStylesPriceStrategy": _optional_price_strategy(
             values, FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY
         ),
+        "sellPriceStrategy": _optional_price_strategy(values, SELL_PRICE_STRATEGY_KEY),
         "priceStrategies": list_price_strategies(),
         "favoriteSets": get_favorite_sets(conn),
         "favoriteCards": get_favorite_cards(conn),
@@ -304,6 +306,7 @@ def update_settings(
     price_strategy: str | None = None,
     favorites_cards_price_strategy: str | None = None,
     favorites_art_styles_price_strategy: str | None = None,
+    sell_price_strategy: str | None = None,
     favorite_sets: list[str] | None = None,
     favorite_cards: list | None = None,
     favorite_art_styles: list | None = None,
@@ -329,6 +332,11 @@ def update_settings(
             favorites_art_styles_price_strategy,
         )
         changed.append(f"price_strategy_favorites_art_styles={normalized}")
+    if sell_price_strategy is not None:
+        normalized = _set_price_strategy_setting(
+            conn, SELL_PRICE_STRATEGY_KEY, sell_price_strategy
+        )
+        changed.append(f"price_strategy_sell={normalized}")
     if favorite_sets is not None:
         save_favorite_sets(conn, favorite_sets)
         changed.append(f"favorite_sets={len(favorite_sets)}")

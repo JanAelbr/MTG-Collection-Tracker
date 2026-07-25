@@ -2,6 +2,7 @@ import sqlite3
 import threading
 
 from util.storage_tables import ensure_storage_tables, seed_storage_locations
+from util.sale_listings import ensure_sale_listings_table
 
 _app_tables_lock = threading.Lock()
 _ready_db_paths: set[str] = set()
@@ -29,6 +30,7 @@ def ensure_app_tables(conn: sqlite3.Connection, *, force: bool = False) -> None:
         if not force and cacheable and db_path in _ready_db_paths:
             return
         ensure_storage_tables(conn)
+        ensure_sale_listings_table(conn)
         _ensure_user_settings_table(conn)
         seed_storage_locations(conn)
         _backfill_system_location_flags(conn)

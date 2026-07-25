@@ -202,11 +202,43 @@
 }
 
 .card-detail-browser-tab-instance {
-  padding-right: 10px;
+  padding: 6px 10px;
+  gap: 4px;
 }
 
 .card-detail-browser-tab-label {
   line-height: 1.2;
+}
+
+.card-detail-browser-tab-finish-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.card-detail-browser-tab-finish-index {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.85;
+}
+
+.card-detail-browser-tab-instance.is-foil {
+  color: #8a5a00;
+}
+
+.card-detail-browser-tab-instance.is-foil.active {
+  color: #8a5a00;
+}
+
+.card-detail-browser-tab-instance.is-etched {
+  color: #5c6bc0;
+}
+
+.card-detail-browser-tab-instance.is-etched.active {
+  color: #3949ab;
 }
 
 .card-detail-browser-tab-delete {

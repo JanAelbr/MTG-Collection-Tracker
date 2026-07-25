@@ -200,6 +200,13 @@ def sync_card_instances(conn: sqlite3.Connection) -> int:
         )
 
     log.info("Synced %s card instance row(s)", inserted)
+    try:
+        from api.services.sale_listings_service import rematch_listed_instances
+
+        rematch_listed_instances(conn)
+    except Exception:
+        # Sale listings are optional; never fail ownership sync if rematch errors.
+        log.exception("Failed to rematch sale listings after instance sync")
     return inserted
 
 

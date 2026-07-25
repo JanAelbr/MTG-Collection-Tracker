@@ -294,6 +294,44 @@ export const api = {
 
     }),
 
+  getSalesListed: () => apiRequest("/sales/listed"),
+
+  getSalesSold: () => apiRequest("/sales/sold"),
+
+  createSaleListing: (body) =>
+    apiRequest("/sales/listed", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateSaleListed: (listingId, body) =>
+    apiRequest(`/sales/listed/${listingId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  sellSaleListing: (listingId, body) =>
+    apiRequest(`/sales/listed/${listingId}/sell`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  unlistSaleListing: (listingId) =>
+    apiRequest(`/sales/listed/${listingId}`, {
+      method: "DELETE",
+    }),
+
+  updateSaleSold: (listingId, body) =>
+    apiRequest(`/sales/sold/${listingId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteSaleSold: (listingId) =>
+    apiRequest(`/sales/sold/${listingId}`, {
+      method: "DELETE",
+    }),
+
   listManagerSets: () => apiRequest("/manager/sets"),
 
   listAvailableManagerSets: () => apiRequest("/manager/sets/available"),

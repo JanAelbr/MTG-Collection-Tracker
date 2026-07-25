@@ -5,6 +5,7 @@ import { APP_TITLE } from "./constants/app";
 // view the user actually lands on. ScanView pulls in tesseract.js (OCR), by
 // far the heaviest dependency, so it benefits the most from code-splitting.
 const StorageView = () => import("./views/StorageView.vue");
+const SellView = () => import("./views/SellView.vue");
 const CollectionView = () => import("./views/CollectionView.vue");
 const CollectionSearchView = () => import("./views/CollectionSearchView.vue");
 const StatsView = () => import("./views/StatsView.vue");
@@ -63,6 +64,12 @@ const router = createRouter({
       name: "storage",
       component: StorageView,
       meta: { title: "Storage" },
+    },
+    {
+      path: "/sell",
+      name: "sell",
+      component: SellView,
+      meta: { title: "Sell" },
     },
     {
       path: "/scan",

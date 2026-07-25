@@ -35,14 +35,14 @@ const activeTab = ref("summary");
 const busy = ref(false);
 const error = ref("");
 const purchaseDrafts = ref({});
-const addFinish = ref(FINISH_NONFOIL);
 const selectNewestAfterReload = ref(false);
+const pendingNewInstanceId = ref("");
 
 const instances = computed(() => props.card?.ownedInstances || []);
 const deckMemberships = computed(() => props.card?.deckMemberships || []);
 const summaryRows = computed(() => props.card?.ownershipSummary || []);
 const showSummaryTab = computed(() => instances.value.length > 1);
-const showTabBar = computed(() => finishOptions.value.length > 0);
+const showTabBar = computed(() => true);
 
 const finishOptions = computed(() => {
   const finishes = props.manageableFinishes.length
@@ -55,7 +55,7 @@ const finishOptions = computed(() => {
 });
 
 const activeInstance = computed(() => {
-  if (activeTab.value === "summary" || activeTab.value === "add") {
+  if (activeTab.value === "summary" || activeTab.value === "empty") {
     return null;
   }
   return instances.value.find(
@@ -69,16 +69,21 @@ function isDeckInstance(instance) {
   return type === "deck" || slug.startsWith("deck:");
 }
 
-function instanceTabLabel(instance) {
+function instanceFinishTitle(instance) {
   const sameFinish = instances.value.filter((row) => row.finish === instance.finish);
-  let label = instance.finishLabel;
+  let label = instance.finishLabel || finishLabel(instance.finish);
   if (sameFinish.length > 1) {
-    label = `${instance.finishLabel} #${instance.finishIndex}`;
+    label = `${label} #${instance.finishIndex}`;
   }
   if (isDeckInstance(instance) && instance.locationLabel) {
     return `${label} · ${instance.locationLabel}`;
   }
   return label;
+}
+
+function instanceFinishIndex(instance) {
+  const sameFinish = instances.value.filter((row) => row.finish === instance.finish);
+  return sameFinish.length > 1 ? instance.finishIndex : null;
 }
 
 function decksForInstance(instance) {
@@ -161,17 +166,35 @@ function tabExists(tabId) {
   if (tabId === "summary") {
     return showSummaryTab.value;
   }
-  if (tabId === "add") {
-    return true;
+  if (tabId === "empty") {
+    return !instances.value.length;
   }
   return instances.value.some((instance) => String(instance.instanceId) === String(tabId));
 }
 
 function syncDefaultTab() {
+  if (pendingNewInstanceId.value) {
+    const pendingId = pendingNewInstanceId.value;
+    if (tabExists(pendingId)) {
+      pendingNewInstanceId.value = "";
+      selectNewestAfterReload.value = false;
+      activeTab.value = pendingId;
+      const instance = instances.value.find(
+        (row) => String(row.instanceId) === pendingId,
+      );
+      if (instance) {
+        emit("finish-selected", instance.finish);
+      }
+      return;
+    }
+    // Keep waiting for the reloaded card payload to include the new copy.
+    return;
+  }
+
   if (selectNewestAfterReload.value) {
-    selectNewestAfterReload.value = false;
     const newestId = newestInstanceId();
     if (newestId) {
+      selectNewestAfterReload.value = false;
       activeTab.value = newestId;
       const instance = instances.value.find(
         (row) => String(row.instanceId) === newestId,
@@ -184,23 +207,26 @@ function syncDefaultTab() {
   }
 
   if (!instances.value.length) {
-    activeTab.value = "add";
+    activeTab.value = "empty";
     return;
   }
 
   if (instances.value.length === 1) {
-    if (activeTab.value === "add") {
+    if (activeTab.value === "empty") {
+      activeTab.value = String(instances.value[0].instanceId);
+      emit("finish-selected", instances.value[0].finish);
       return;
     }
     const soleId = String(instances.value[0].instanceId);
-    if (activeTab.value !== soleId) {
+    if (activeTab.value !== soleId && activeTab.value !== "summary") {
       activeTab.value = soleId;
       emit("finish-selected", instances.value[0].finish);
     }
     return;
   }
 
-  if (activeTab.value === "add") {
+  if (activeTab.value === "empty") {
+    activeTab.value = "summary";
     return;
   }
 
@@ -211,16 +237,14 @@ function syncDefaultTab() {
 
 function selectTab(tabId) {
   activeTab.value = tabId;
-  if (tabId === "add") {
+  if (tabId === "empty" || tabId === "summary") {
     return;
   }
-  if (tabId !== "summary") {
-    const instance = instances.value.find(
-      (row) => String(row.instanceId) === String(tabId),
-    );
-    if (instance) {
-      emit("finish-selected", instance.finish);
-    }
+  const instance = instances.value.find(
+    (row) => String(row.instanceId) === String(tabId),
+  );
+  if (instance) {
+    emit("finish-selected", instance.finish);
   }
 }
 
@@ -338,23 +362,46 @@ async function onRemoveInstance(instance) {
 }
 
 async function onAddCopy() {
+  const preferredFinish = finishOptions.value.some((option) => option.value === FINISH_NONFOIL)
+    ? FINISH_NONFOIL
+    : finishOptions.value[0]?.value;
+  if (preferredFinish == null) {
+    error.value = "No finish available to add.";
+    return;
+  }
   busy.value = true;
   error.value = "";
+  const previousIds = new Set(
+    instances.value.map((instance) => String(instance.instanceId)),
+  );
   selectNewestAfterReload.value = true;
   try {
-    await adjustCardCopyCount(
+    const state = await adjustCardCopyCount(
       {
         setCode: props.card.setCode,
         collectorNumber: props.card.collectorNumber,
-        finish: addFinish.value,
+        finish: preferredFinish,
       },
       1,
-      storageLocations.value[0]?.slug,
     );
+    const copies = state?.copies || [];
+    const created = copies.find(
+      (copy) => !previousIds.has(String(copy.instanceId)),
+    );
+    const fallback = copies.length
+      ? copies.reduce((latest, copy) =>
+          copy.instanceId > latest.instanceId ? copy : latest,
+        )
+      : null;
+    const selected = created || fallback;
+    if (selected) {
+      pendingNewInstanceId.value = String(selected.instanceId);
+    }
     clearClientCache();
     emit("ownership-changed");
   } catch (err) {
     selectNewestAfterReload.value = false;
+    pendingNewInstanceId.value = "";
     error.value = err.message || "Could not add owned copy.";
   } finally {
     busy.value = false;
@@ -365,19 +412,6 @@ function onDeckChanged(result) {
   emit("deck-changed", result);
   emit("ownership-changed");
 }
-
-watch(
-  finishOptions,
-  (options) => {
-    if (!options.length) {
-      return;
-    }
-    if (!options.some((option) => option.value === addFinish.value)) {
-      addFinish.value = options[0].value;
-    }
-  },
-  { immediate: true },
-);
 
 watch(
   () => [props.card?.ownedInstances, props.card?.ownershipSummary, props.card?.deckMemberships],
@@ -419,12 +453,76 @@ onMounted(async () => {
         role="tab"
         tabindex="0"
         class="card-detail-browser-tab card-detail-browser-tab-instance"
-        :class="{ active: activeTab === String(instance.instanceId) }"
+        :class="{
+          active: activeTab === String(instance.instanceId),
+          'is-foil': normalizeFinish(instance.finish) === FINISH_FOIL,
+          'is-etched': normalizeFinish(instance.finish) === FINISH_ETCHED,
+        }"
         :aria-selected="activeTab === String(instance.instanceId)"
+        :aria-label="instanceFinishTitle(instance)"
+        :title="instanceFinishTitle(instance)"
         @click="selectTab(String(instance.instanceId))"
         @keydown.enter.prevent="selectTab(String(instance.instanceId))"
       >
-        <span class="card-detail-browser-tab-label">{{ instanceTabLabel(instance) }}</span>
+        <svg
+          v-if="normalizeFinish(instance.finish) === FINISH_FOIL"
+          class="card-detail-browser-tab-finish-icon"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <path
+            d="M8 1.2 9.7 5.9 14.6 6.1 10.7 9.1 12.1 14 8 11.4 3.9 14 5.3 9.1 1.4 6.1 6.3 5.9Z"
+            fill="currentColor"
+          />
+        </svg>
+        <svg
+          v-else-if="normalizeFinish(instance.finish) === FINISH_ETCHED"
+          class="card-detail-browser-tab-finish-icon"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <path
+            d="M8 1.5 14 8 8 14.5 2 8Z"
+            fill="currentColor"
+          />
+        </svg>
+        <svg
+          v-else
+          class="card-detail-browser-tab-finish-icon"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <rect
+            x="3.25"
+            y="2.25"
+            width="9.5"
+            height="11.5"
+            rx="1.35"
+            fill="currentColor"
+          />
+          <rect
+            x="5.1"
+            y="5"
+            width="5.8"
+            height="1.1"
+            rx="0.35"
+            fill="#fff"
+            opacity="0.42"
+          />
+          <rect
+            x="5.1"
+            y="7.1"
+            width="4.2"
+            height="1.1"
+            rx="0.35"
+            fill="#fff"
+            opacity="0.42"
+          />
+        </svg>
+        <span
+          v-if="instanceFinishIndex(instance)"
+          class="card-detail-browser-tab-finish-index"
+        >{{ instanceFinishIndex(instance) }}</span>
         <button
           type="button"
           class="card-detail-browser-tab-delete"
@@ -439,46 +537,20 @@ onMounted(async () => {
       <button
         type="button"
         class="card-detail-browser-tab card-detail-browser-tab-add"
-        :class="{ active: activeTab === 'add' }"
-        aria-label="Add owned copy"
-        title="Add owned copy"
+        aria-label="Add non-foil copy to default storage"
+        title="Add non-foil copy to default storage"
         :disabled="busy || loading || !finishOptions.length"
-        @click="selectTab('add')"
+        @click="onAddCopy"
       >
         +
       </button>
     </div>
 
     <div class="card-detail-browser-panel">
-      <div v-if="activeTab === 'add'" class="card-detail-instance-fields">
-        <p class="card-detail-add-copy-lead">Add a new owned copy of this card.</p>
-        <div class="card-detail-pricing-stat">
-          <span class="card-detail-pricing-stat-label">Finish</span>
-          <span class="card-detail-pricing-stat-value">
-            <div class="button-group card-detail-finish-toggle" role="group" aria-label="Finish">
-              <button
-                v-for="option in finishOptions"
-                :key="option.value"
-                type="button"
-                class="filter-button"
-                :class="{ active: addFinish === option.value }"
-                :disabled="busy || loading"
-                @click="addFinish = option.value"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </span>
-        </div>
-        <button
-          type="button"
-          class="btn btn-secondary btn-small"
-          :disabled="busy || loading || !finishOptions.length"
-          @click="onAddCopy"
-        >
-          Add copy
-        </button>
-
+      <div v-if="activeTab === 'empty'" class="card-detail-instance-fields">
+        <p class="card-detail-add-copy-lead">
+          No owned copies yet. Click + to add a non-foil copy to default storage.
+        </p>
         <div
           v-if="deckMemberships.length"
           class="card-detail-instance-decks card-detail-summary-decks"
@@ -517,7 +589,7 @@ onMounted(async () => {
 
         <DeckAddControl
           class="card-detail-storage-deck-add"
-          :card="{ ...card, finish: addFinish }"
+          :card="{ ...card, finish: FINISH_NONFOIL }"
           :default-deck-id="defaultDeckId"
           compact
           @added="onDeckChanged"
@@ -697,7 +769,7 @@ onMounted(async () => {
                 inputmode="decimal"
                 class="card-detail-purchase-input"
                 :disabled="busy || loading"
-                placeholder="0.00"
+                placeholder=""
                 @blur="savePurchasePrice(activeInstance)"
                 @keydown.enter="$event.target.blur()"
               >

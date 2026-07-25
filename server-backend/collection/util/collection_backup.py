@@ -14,6 +14,7 @@ from lib.art_styles import import_art_style_rules, load_all_art_style_rules
 from util.app_tables import ensure_app_tables
 from util.card_finishes import normalize_finish
 from util.deck_tables import ensure_deck_tables
+from util.sale_listings import ensure_sale_listings_table
 from util.schema import ensure_database_schema
 from util.storage_tables import ensure_storage_tables, seed_storage_locations
 
@@ -26,6 +27,7 @@ EXPORT_SETTING_KEYS = frozenset({
     "price_strategy",
     "price_strategy_favorites_cards",
     "price_strategy_favorites_art_styles",
+    "price_strategy_sell",
     "favorite_sets",
     "favorite_cards",
     "favorite_art_styles",
@@ -139,6 +141,10 @@ def _sets_referenced(collection: dict) -> list[str]:
         code = _normalize_set_code(row.get("setCode"))
         if code:
             codes.add(code)
+    for row in collection.get("saleListings") or []:
+        code = _normalize_set_code(row.get("setCode"))
+        if code:
+            codes.add(code)
     return sorted(codes)
 
 
@@ -245,6 +251,32 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
         ).fetchall()
     ]
 
+    ensure_sale_listings_table(conn)
+    sale_listings = [
+        {
+            "status": row["status"],
+            "setCode": _normalize_set_code(row["set_code"]),
+            "collectorNumber": _normalize_collector_number(row["collector_number"]),
+            "finish": int(row["finish"]),
+            "listingPrice": float(row["listing_price"]),
+            "salePrice": _float_or_none(row["sale_price"]),
+            "purchaseValue": _float_or_none(row["purchase_value"]),
+            "locationSlug": row["location_slug"],
+            "notes": row["notes"] or "",
+            "listedAt": row["listed_at"],
+            "soldAt": row["sold_at"],
+            "sortOrder": int(row["sort_order"] or 0),
+        }
+        for row in conn.execute(
+            """
+            SELECT status, set_code, collector_number, finish, listing_price, sale_price,
+                   purchase_value, location_slug, notes, listed_at, sold_at, sort_order
+            FROM sale_listings
+            ORDER BY listing_id
+            """
+        ).fetchall()
+    ]
+
     settings = {
         row["key"]: row["value"]
         for row in conn.execute(
@@ -261,6 +293,7 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
         "deckCards": deck_cards,
         "storageLocations": storage_locations,
         "cardInstances": card_instances,
+        "saleListings": sale_listings,
         "settings": settings,
     }
 
@@ -276,6 +309,7 @@ def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
             "deckCards": len(collection.get("deckCards") or []),
             "cardInstances": len(collection.get("cardInstances") or []),
             "storageLocations": len(collection.get("storageLocations") or []),
+            "saleListings": len(collection.get("saleListings") or []),
             "artStyleSets": len(art_style_sets),
             "setsReferenced": sets_referenced,
         },
@@ -470,9 +504,16 @@ def import_collection(
     _import_deck_cards(conn, collection.get("deckCards") or [], deck_slug_map, merge=normalized_mode == "merge")
     _import_purchases(conn, collection.get("purchases") or [], merge=normalized_mode == "merge")
     _import_card_instances(conn, collection.get("cardInstances") or [], merge=normalized_mode == "merge")
+    _import_sale_listings(conn, collection.get("saleListings") or [], merge=normalized_mode == "merge")
     _import_settings(conn, collection.get("settings") or {}, merge=normalized_mode == "merge")
     _import_art_styles(conn, art_styles, merge=normalized_mode == "merge")
     seed_storage_locations(conn)
+    try:
+        from api.services.sale_listings_service import rematch_listed_instances
+
+        rematch_listed_instances(conn)
+    except Exception:
+        pass
 
     sets_referenced = _sets_referenced(collection)
     return {
@@ -491,6 +532,8 @@ def import_collection_zip(conn: sqlite3.Connection, data: bytes, *, mode: str) -
 
 
 def _clear_collection_data(conn: sqlite3.Connection) -> None:
+    ensure_sale_listings_table(conn)
+    conn.execute("DELETE FROM sale_listings")
     conn.execute("DELETE FROM card_instances")
     conn.execute("DELETE FROM deck_cards")
     conn.execute("DELETE FROM decks")
@@ -745,6 +788,50 @@ def _import_card_instances(conn: sqlite3.Connection, rows: list[dict], *, merge:
                 normalize_finish(row.get("finish")),
                 str(row["locationSlug"]).strip(),
                 _float_or_none(row.get("purchaseValue")),
+            ),
+        )
+
+
+def _import_sale_listings(conn: sqlite3.Connection, rows: list[dict], *, merge: bool) -> None:
+    ensure_sale_listings_table(conn)
+    if not merge:
+        conn.execute("DELETE FROM sale_listings")
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status not in {"listed", "sold"}:
+            continue
+        listing_price = _float_or_none(row.get("listingPrice"))
+        if listing_price is None or listing_price < 0:
+            continue
+        sale_price = _float_or_none(row.get("salePrice"))
+        if status == "sold" and (sale_price is None or sale_price < 0):
+            continue
+        listed_at = str(row.get("listedAt") or "").strip() or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        sold_at = str(row.get("soldAt") or "").strip() or None
+        if status == "listed":
+            sold_at = None
+            sale_price = None
+        conn.execute(
+            """
+            INSERT INTO sale_listings (
+                status, set_code, collector_number, finish,
+                listing_price, sale_price, purchase_value, location_slug,
+                instance_id, notes, listed_at, sold_at, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+            """,
+            (
+                status,
+                _normalize_set_code(row["setCode"]),
+                _normalize_collector_number(row["collectorNumber"]),
+                normalize_finish(row.get("finish")),
+                float(listing_price),
+                sale_price,
+                _float_or_none(row.get("purchaseValue")),
+                (str(row.get("locationSlug") or "").strip() or None),
+                str(row.get("notes") or "").strip(),
+                listed_at,
+                sold_at,
+                int(row.get("sortOrder") or 0),
             ),
         )
 

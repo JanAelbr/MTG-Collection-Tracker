@@ -5,6 +5,7 @@ class SettingsUpdate(BaseModel):
     priceStrategy: str | None = None
     favoritesCardsPriceStrategy: str | None = None
     favoritesArtStylesPriceStrategy: str | None = None
+    sellPriceStrategy: str | None = None
     favoriteSets: list[str] | None = None
     favoriteCards: list[dict] | None = None
     favoriteArtStyles: list[dict] | None = None
@@ -392,3 +393,24 @@ class DeckCsvImport(BaseModel):
         if self.mode != "replace" and not str(self.csv or "").strip():
             raise ValueError("CSV is required unless using replace mode")
         return self
+
+
+class SaleListingCreate(BaseModel):
+    instanceId: int = Field(ge=1)
+    listingPrice: float = Field(ge=0)
+    notes: str = Field(default="", max_length=500)
+
+
+class SaleListingListedUpdate(BaseModel):
+    listingPrice: float | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=500)
+    sortOrder: int | None = None
+
+
+class SaleListingSell(BaseModel):
+    salePrice: float = Field(ge=0)
+
+
+class SaleListingSoldUpdate(BaseModel):
+    salePrice: float | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=500)

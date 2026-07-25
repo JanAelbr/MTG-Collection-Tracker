@@ -26,6 +26,7 @@ const navItems = [
     subnav: collectionSubnav,
   },
   { to: "/storage", label: "Storage", matchPrefix: false },
+  { to: "/sell", label: "Sell", matchPrefix: false },
   { to: "/scan", label: "Scan", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
   { to: "/settings", label: "Settings", matchPrefix: false },

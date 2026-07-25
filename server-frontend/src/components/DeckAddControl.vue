@@ -50,8 +50,13 @@ function syncSelectedDeck() {
     selectedDeckId.value = String(props.defaultDeckId);
     return;
   }
-  if (!selectedDeckId.value && decks.value.length) {
-    selectedDeckId.value = String(decks.value[0].id);
+  // From search/card detail without a deck context, keep an empty selection
+  // so users must choose a deck explicitly.
+  if (
+    selectedDeckId.value
+    && !decks.value.some((deck) => String(deck.id) === String(selectedDeckId.value))
+  ) {
+    selectedDeckId.value = "";
   }
 }
 
@@ -121,6 +126,7 @@ onMounted(async () => {
             @click.stop
             @mousedown.stop
           >
+            <option value="">Select a deck…</option>
             <option v-for="deck in decks" :key="deck.id" :value="String(deck.id)">
               {{ deck.label || deck.name }}
             </option>
@@ -141,7 +147,7 @@ onMounted(async () => {
           <button
             type="button"
             class="deck-add-control-submit"
-            :disabled="loading"
+            :disabled="loading || !selectedDeckId"
             @click.stop="addToDeck"
           >
             {{ quickAddLabel }}

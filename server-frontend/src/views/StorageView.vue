@@ -12,7 +12,9 @@ import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import VirtualizedStorageTable from "../components/VirtualizedStorageTable.vue";
+import ListForSaleModal from "../components/ListForSaleModal.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { applyListingResultToCard } from "../composables/cardContextMenu";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { filterCollectionCards } from "../utils/collectionFilters";
 import {
@@ -65,6 +67,8 @@ const editor = reactive({
   label: "",
   description: "",
 });
+
+const saleModal = ref(null);
 
 const inlineLabel = ref("");
 const inlineDescription = ref("");
@@ -607,6 +611,40 @@ async function removeOneCopy(card) {
     return;
   }
   await api.deleteInstance(instanceId);
+  await loadLocations(selectedSlug.value);
+}
+
+function listOneForSale(card) {
+  if (card.forSale && card.listingId) {
+    saleModal.value = {
+      card,
+      instanceId: card.listedInstanceId ?? null,
+      listingId: card.listingId,
+      listingPrice: card.listingPrice ?? null,
+    };
+    return;
+  }
+  const instanceId = card.instanceIds?.[card.instanceIds.length - 1];
+  if (!instanceId) {
+    return;
+  }
+  saleModal.value = {
+    card,
+    instanceId,
+    listingId: null,
+    listingPrice: null,
+  };
+}
+
+function closeSaleModal() {
+  saleModal.value = null;
+}
+
+async function onSaleModalSaved(result) {
+  const card = saleModal.value?.card;
+  if (card) {
+    applyListingResultToCard(card, result);
+  }
   await loadLocations(selectedSlug.value);
 }
 
@@ -1153,6 +1191,7 @@ onMounted(async () => {
                 :set-icon-for="setIconForCode"
                 @sort="onColumnSort"
                 @remove-one="removeOneCopy"
+                @list-for-sale="listOneForSale"
               />
             </div>
           </section>
@@ -1172,6 +1211,7 @@ onMounted(async () => {
             :set-icon-for="setIconForCode"
             @sort="onColumnSort"
             @remove-one="removeOneCopy"
+            @list-for-sale="listOneForSale"
           />
         </div>
       </div>
@@ -1203,5 +1243,15 @@ onMounted(async () => {
         </div>
       </form>
     </div>
+
+    <ListForSaleModal
+      :open="Boolean(saleModal)"
+      :card="saleModal?.card || null"
+      :instance-id="saleModal?.instanceId ?? null"
+      :listing-id="saleModal?.listingId ?? null"
+      :listing-price="saleModal?.listingPrice ?? null"
+      @close="closeSaleModal"
+      @saved="onSaleModalSaved"
+    />
   </div>
 </template>

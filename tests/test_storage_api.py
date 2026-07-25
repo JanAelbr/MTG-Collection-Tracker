@@ -179,6 +179,7 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertEqual(settings["priceStrategy"], "trend")
         self.assertIsNone(settings["favoritesCardsPriceStrategy"])
         self.assertIsNone(settings["favoritesArtStylesPriceStrategy"])
+        self.assertIsNone(settings["sellPriceStrategy"])
         self.assertGreater(len(settings["priceStrategies"]), 0)
         self.assertEqual(settings["pageSize"], 25)
         self.assertEqual(settings["pageSizeOptions"], [25, 50, 100])
@@ -196,6 +197,17 @@ class StorageApiServiceTests(unittest.TestCase):
         settings = settings_service.get_settings(self.conn)
         self.assertEqual(settings["favoritesCardsPriceStrategy"], "avg")
         self.assertEqual(settings["favoritesArtStylesPriceStrategy"], "low")
+
+    def test_sell_price_strategy_override(self):
+        updated = settings_service.update_settings(
+            self.conn,
+            sell_price_strategy="avg7",
+        )
+        self.assertEqual(updated["sellPriceStrategy"], "avg7")
+        self.assertEqual(updated["priceStrategy"], "trend")
+
+        settings = settings_service.get_settings(self.conn)
+        self.assertEqual(settings["sellPriceStrategy"], "avg7")
 
     def test_page_size_setting(self):
         updated = settings_service.update_settings(self.conn, page_size=100)
