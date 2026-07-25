@@ -66,9 +66,21 @@ class CardFinishesTests(unittest.TestCase):
             "market_value_foil": 7.0,
             "market_value_etched": None,
         }
-        self.assertTrue(finish_available(row, FINISH_NONFOIL))
+        # Explicit has_*=0 denies the finish even when a stale price remains.
+        self.assertFalse(finish_available(row, FINISH_NONFOIL))
         self.assertTrue(finish_available(row, FINISH_FOIL))
         self.assertFalse(finish_available(row, FINISH_ETCHED))
+
+    def test_finish_available_denies_foil_on_etched_only_print(self):
+        row = {
+            "has_nonfoil": 0,
+            "has_foil": 0,
+            "has_etched": 1,
+            "market_value_etched": None,
+        }
+        guide = {"foil": {"trend": 5.41}, "etched": {}}
+        self.assertFalse(finish_available(row, FINISH_FOIL, guide_prices=guide))
+        self.assertTrue(finish_available(row, FINISH_ETCHED, guide_prices=guide))
 
     def test_finish_available_requires_price_not_catalog_flag(self):
         row = {
@@ -98,6 +110,14 @@ class CardFinishesTests(unittest.TestCase):
     def test_price_from_guide_entry_uses_foil_keys_for_etched_only_product(self):
         entry = {"trend": 0, "trend-foil": 0.34, "avg-foil": 0.35}
         self.assertEqual(price_from_guide_entry(entry, FINISH_ETCHED), 0.34)
+
+    def test_price_from_guide_entry_etched_only_scryfall_uses_foil_despite_nonfoil_trend(self):
+        entry = {"trend": 2.42, "trend-foil": 5.41}
+        self.assertIsNone(price_from_guide_entry(entry, FINISH_ETCHED))
+        self.assertEqual(
+            price_from_guide_entry(entry, FINISH_ETCHED, etched_only=True),
+            5.41,
+        )
 
     def test_finish_has_pricing_uses_foil_guide_for_etched_only_print(self):
         row = {

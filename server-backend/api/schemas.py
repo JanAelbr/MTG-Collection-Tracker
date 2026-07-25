@@ -351,6 +351,20 @@ class BuilderGenerateRequest(BaseModel):
     landCount: int = Field(default=38, ge=20, le=45)
     budgetCap: float | None = Field(default=None, ge=0)
     excludeCategories: list[str] = Field(default_factory=list)
+    slotCounts: dict[str, int] | None = None
+    preset: str | None = None
+
+
+class BuilderImproveRequest(BaseModel):
+    deckId: str = Field(min_length=1)
+    locationSlugs: list[str] = Field(default_factory=list)
+    includeDeckStorage: bool = False
+    landCount: int = Field(default=38, ge=20, le=45)
+    budgetCap: float | None = Field(default=None, ge=0)
+    excludeCategories: list[str] = Field(default_factory=list)
+    slotCounts: dict[str, int] | None = None
+    preset: str | None = None
+    rebuild: bool = False
 
 
 class BuilderAssessPowerRequest(BaseModel):
@@ -376,6 +390,11 @@ class DeckBulkCardItem(BaseModel):
         if values.get("finish") is None and values.get("foil") is not None:
             values["finish"] = values["foil"]
         return values
+
+
+class DeckApplyProposal(BaseModel):
+    cards: list[DeckBulkCardItem] = Field(min_length=1)
+    mode: str = Field(default="improve", pattern="^(improve|rebuild)$")
 
 
 class DeckBulkCardsAdd(BaseModel):

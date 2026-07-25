@@ -125,6 +125,8 @@ def load_owned_commanders(
     search: str = "",
     page: int = 1,
     page_size: int = 50,
+    colors: list[str] | None = None,
+    unique_prints: bool = True,
 ) -> dict:
     params: list[object] = []
     search_clause = ""
@@ -159,17 +161,24 @@ def load_owned_commanders(
         AND c.collector_number = ci.collector_number
     WHERE {exclude_alchemy_sql("c.collector_number")}
       {search_clause}
-    ORDER BY c.name, c.set_code, c.collector_number, ci.finish
+    ORDER BY c.name, ci.finish, c.set_code, c.collector_number
     """
     rows = conn.execute(query, params).fetchall()
+    color_filters = [str(color).upper() for color in (colors or []) if str(color).strip()]
     cards = []
     seen = set()
     for row in rows:
         card = _row_to_card(row, owned=True)
         if not is_legendary_commander_candidate(card.get("typeLine") or ""):
             continue
-        key = (card["name"], card["setCode"], card["collectorNumber"], card["finish"])
-        if key in seen:
+        if not _commander_matches_color_filters(card, color_filters):
+            continue
+        if unique_prints:
+            # One tile per card name (collapse alternate arts / finishes).
+            key = str(card["name"] or "").casefold()
+        else:
+            key = (card["name"], card["setCode"], card["collectorNumber"], card["finish"])
+        if not key or key in seen:
             continue
         seen.add(key)
         cards.append(card)
@@ -183,6 +192,31 @@ def load_owned_commanders(
         "page": max(1, page),
         "pageSize": max(1, page_size),
     }
+
+
+def _commander_matches_color_filters(card: dict, color_filters: list[str]) -> bool:
+    """Match commanders by exact color-identity AND.
+
+    Selected pips must equal the commander's identity set (no missing colors,
+    no extras). Colorless (C) alone matches empty identity.
+    """
+    if not color_filters:
+        return True
+    identity = sorted({
+        str(color).upper()
+        for color in (card.get("colorIdentity") or card.get("colors") or [])
+        if str(color).strip() and str(color).upper() in {"W", "U", "B", "R", "G"}
+    })
+    wants_colorless = "C" in color_filters
+    pip_filters = sorted({
+        color for color in color_filters
+        if color in {"W", "U", "B", "R", "G"}
+    })
+    if wants_colorless and not pip_filters:
+        return len(identity) == 0
+    if not pip_filters:
+        return True
+    return identity == pip_filters
 
 
 def load_catalog_candidates(

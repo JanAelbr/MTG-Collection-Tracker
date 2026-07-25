@@ -16,7 +16,9 @@ import {
   canManageFinish,
   cardFinish,
   cardRouteQuery,
+  catalogDeniesFinish,
   finishLabel,
+  isFinishOwnedOnCard,
   marketValueForFinish,
   normalizeFinish,
 } from "../utils/finishes";
@@ -76,9 +78,18 @@ const detailAvailableFinishes = computed(() =>
 );
 
 const manageableFinishes = computed(() =>
-  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter(
-    (finish) => canManageFinish(cardDetail.value, finish) || detailAvailableFinishes.value.includes(finish),
-  ),
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => {
+    if (
+      catalogDeniesFinish(cardDetail.value, finish)
+      && !isFinishOwnedOnCard(cardDetail.value, finish)
+    ) {
+      return false;
+    }
+    return (
+      canManageFinish(cardDetail.value, finish)
+      || detailAvailableFinishes.value.includes(finish)
+    );
+  }),
 );
 
 const menuCard = computed(() => {

@@ -16,6 +16,8 @@ import {
   FINISH_FOIL,
   FINISH_NONFOIL,
   canManageFinish,
+  catalogDeniesFinish,
+  isFinishOwnedOnCard,
   normalizeFinish,
 } from "../utils/finishes";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
@@ -41,9 +43,13 @@ const availableFinishes = computed(() =>
 );
 
 const manageableFinishes = computed(() =>
-  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter(
-    (finish) => canManageFinish(card.value, finish) || availableFinishes.value.includes(finish),
-  ),
+  [FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED].filter((finish) => {
+    // Cardmarket foil prices on etched-only prints must not unlock a Foil toggle.
+    if (catalogDeniesFinish(card.value, finish) && !isFinishOwnedOnCard(card.value, finish)) {
+      return false;
+    }
+    return canManageFinish(card.value, finish) || availableFinishes.value.includes(finish);
+  }),
 );
 
 const showNonfoilGuidePrices = computed(() =>

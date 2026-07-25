@@ -805,6 +805,20 @@ onActivated(async () => {
               >
                 Quick import
               </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                @click="router.push({ path: '/decks/build', query: { deck: String(deckId), mode: 'improve' } })"
+              >
+                Improve deck
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                @click="router.push({ path: '/decks/build', query: { deck: String(deckId), mode: 'rebuild' } })"
+              >
+                Rebuild deck
+              </button>
               </div>
             </div>
 

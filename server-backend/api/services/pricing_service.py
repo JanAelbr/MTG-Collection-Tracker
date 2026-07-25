@@ -121,6 +121,20 @@ def all_guide_prices_for_card(
         grouped["foil"][strategy] = foil_value
     if has_nonfoil is not None and not bool(has_nonfoil):
         grouped["nonfoil"] = {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
+    etched_only = is_etched_only_print(
+        {
+            "has_nonfoil": has_nonfoil,
+            "has_foil": has_foil,
+            "has_etched": has_etched,
+        }
+    )
+    if etched_only:
+        # Cardmarket sells etched-only prints as foil products. Attribute those
+        # foil metrics to etched and hide the non-existent foil finish.
+        grouped["etched"] = dict(grouped["foil"])
+        grouped["foil"] = {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
+    elif has_foil is not None and not bool(has_foil):
+        grouped["foil"] = {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
     return grouped
 
 
@@ -178,8 +192,11 @@ def values_by_strategy_for_finish(card: dict, finish: int) -> dict[str, float | 
             has_etched=has_etched,
         )
         # Cardmarket has no etched metrics. Etched-only prints are sold as foil
-        # products — use those real foil fields. Otherwise leave unknown.
+        # products — use those real foil fields (mapped onto etched). Otherwise leave unknown.
         if is_etched_only_print(card):
+            etched = guide_prices.get("etched") or {}
+            if any(value is not None for value in etched.values()):
+                return dict(etched)
             return dict(guide_prices.get("foil", {}))
         return {strategy_id: None for strategy_id in STRATEGY_KEY_MAP}
 

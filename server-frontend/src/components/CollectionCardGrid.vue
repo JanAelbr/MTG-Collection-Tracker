@@ -17,7 +17,10 @@ const props = defineProps({
   showSetLabel: { type: Boolean, default: false },
   setLabelFor: { type: Function, default: null },
   browseNames: { type: Boolean, default: false },
+  /** Emit full card on pick (print-accurate). Uses browse-style tiles. */
+  pickPrints: { type: Boolean, default: false },
   selectedName: { type: String, default: "" },
+  selectedKey: { type: String, default: "" },
   cardScale: { type: Number, default: 100 },
   /** When set, lock to this column count (needed for virtualized scrolling). */
   columns: { type: Number, default: 0 },
@@ -29,10 +32,13 @@ const props = defineProps({
   reorderable: { type: Boolean, default: false },
   /** Optional section override for displayed / tooltip-active price strategy. */
   priceStrategy: { type: String, default: "" },
+  /** Hover overlay shows zoom only (no copy/add controls). */
+  zoomOnly: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "browse-name",
+  "pick-card",
   "ownership-changed",
   "toggle-select",
   "focus-index",
@@ -119,13 +125,25 @@ function setLabel(card) {
 }
 
 function onCardActivate(card, event) {
+  if (props.pickPrints && card) {
+    event?.preventDefault();
+    emit("pick-card", card);
+    return;
+  }
   if (props.browseNames && card?.name) {
     event?.preventDefault();
     emit("browse-name", card.name);
   }
 }
 
+function printKey(card) {
+  return `${card?.setCode || ""}|${card?.collectorNumber || ""}|${cardFinish(card)}`;
+}
+
 function isCardSelected(card) {
+  if (props.pickPrints && props.selectedKey) {
+    return printKey(card) === props.selectedKey;
+  }
   return Boolean(props.browseNames && props.selectedName && card.name === props.selectedName);
 }
 
@@ -226,7 +244,7 @@ function onDrop(index, event) {
         'is-dragging': reorderable && dragFromIndex === index,
         'is-drop-target': reorderable && dragOverIndex === index && dragFromIndex !== index,
       }"
-      :draggable="reorderable && !browseNames"
+      :draggable="reorderable && !browseNames && !pickPrints"
       :tabindex="!selectable && focusedIndex === startIndex + index ? 0 : -1"
       @mousedown="onTileMouseDown"
       @click="onTileClick(card, index, $event)"
@@ -237,13 +255,13 @@ function onDrop(index, event) {
       @dragend="clearDragState"
     >
       <span
-        v-if="reorderable && !browseNames"
+        v-if="reorderable && !browseNames && !pickPrints"
         class="collection-card-drag-handle"
         title="Drag to reorder"
         aria-hidden="true"
       >⋮⋮</span>
       <button
-        v-if="showFavorites && !browseNames"
+        v-if="showFavorites && !browseNames && !pickPrints"
         type="button"
         class="collection-card-favorite"
         :class="{ 'is-favorite': isCardFavorite(card) }"
@@ -255,10 +273,10 @@ function onDrop(index, event) {
         {{ isCardFavorite(card) ? "★" : "☆" }}
       </button>
       <button
-        v-if="browseNames"
+        v-if="browseNames || pickPrints"
         type="button"
         class="collection-card-grid-select"
-        @click="emit('browse-name', card.name)"
+        @click="pickPrints ? emit('pick-card', card) : emit('browse-name', card.name)"
       >
         <div class="collection-card-grid-image-wrap">
           <span
@@ -273,6 +291,7 @@ function onDrop(index, event) {
             :alt="card.name"
             :card="card"
             :show-details="false"
+            :show-copy-controls="!zoomOnly"
             img-class="collection-card-grid-image"
             @ownership-changed="emit('ownership-changed')"
           />
@@ -302,6 +321,7 @@ function onDrop(index, event) {
           :alt="card.name"
           :card="card"
           :show-details="false"
+          :show-copy-controls="!zoomOnly"
           @ownership-changed="emit('ownership-changed')"
         />
         <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>

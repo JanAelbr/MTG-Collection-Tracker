@@ -1,0 +1,48 @@
+{
+  "Lathril, Blade of the Elves": {
+    "primary": { "tokens": 0.9, "tribal:elf": 1.0, "aristocrats": 0.5 },
+    "tribal": { "elf": 1.0 },
+    "needs": ["token_makers", "anthems", "tribal_lords", "sac_outlets"]
+  },
+  "Wilhelt, the Rotcleaver": {
+    "primary": { "tokens": 1.0, "tribal:zombie": 1.0, "aristocrats": 0.7 },
+    "tribal": { "zombie": 1.0 },
+    "needs": ["token_makers", "sac_outlets", "tribal_lords"]
+  },
+  "The Scarab God": {
+    "primary": { "graveyard": 0.9, "tribal:zombie": 0.7 },
+    "tribal": { "zombie": 0.8 },
+    "needs": ["self_mill", "reanimation", "tribal_payoffs"]
+  },
+  "Atraxa, Praetors' Voice": {
+    "primary": { "counters": 1.0, "proliferate": 0.9 },
+    "needs": ["counter_synergy", "proliferate", "planeswalkers"]
+  },
+  "Krenko, Mob Boss": {
+    "primary": { "tokens": 1.0, "tribal:goblin": 1.0 },
+    "tribal": { "goblin": 1.0 },
+    "needs": ["token_makers", "anthems", "tribal_lords", "haste_enablers"]
+  },
+  "Edgar Markov": {
+    "primary": { "tribal:vampire": 1.0, "aggro": 0.7, "tokens": 0.5 },
+    "tribal": { "vampire": 1.0 },
+    "needs": ["tribal_lords", "anthems", "aggro_payoffs"]
+  },
+  "Meren of Clan Nel Toth": {
+    "primary": { "graveyard": 1.0, "aristocrats": 0.8, "reanimation": 0.9 },
+    "needs": ["sac_outlets", "self_mill", "reanimation", "etb_value"]
+  },
+  "Miirym, Sentinel Wyrm": {
+    "primary": { "tribal:dragon": 1.0, "tokens": 0.8 },
+    "tribal": { "dragon": 1.0 },
+    "needs": ["tribal_payoffs", "token_makers", "blink"]
+  },
+  "Chulane, Teller of Tales": {
+    "primary": { "etb": 0.9, "value_engine": 0.8, "landfall": 0.5 },
+    "needs": ["etb_creatures", "bounce", "ramp"]
+  },
+  "Korvold, Fae-Cursed King": {
+    "primary": { "aristocrats": 1.0, "treasure": 0.8, "draw": 0.7 },
+    "needs": ["sac_outlets", "token_makers", "treasure"]
+  }
+}

@@ -11,6 +11,7 @@ from api.deps import get_db
 from api.http_cache import serve_cached_json, with_price_strategy
 
 from api.schemas import (
+    DeckApplyProposal,
     DeckBulkCardsAdd,
     DeckCardAdd,
     DeckCardOwnedUpdate,
@@ -204,6 +205,36 @@ def bulk_add_deck_cards(
                 for card in body.cards
             ],
             replace_main=body.replaceMain,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/apply-proposal")
+def apply_deck_proposal(
+    deck_id: str,
+    body: DeckApplyProposal,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.apply_deck_proposal(
+            conn,
+            deck_id=deck_id,
+            cards=[
+                {
+                    "setCode": card.setCode,
+                    "collectorNumber": card.collectorNumber,
+                    "finish": card.finish,
+                    "section": card.section,
+                    "qty": card.qty,
+                    "owned": card.owned,
+                    "cardName": card.cardName,
+                    "suggested": not card.owned if card.owned is not None else None,
+                    "name": card.cardName,
+                }
+                for card in body.cards
+            ],
+            mode=body.mode,
         )
     except DeckError as exc:
         raise _deck_error(exc) from exc

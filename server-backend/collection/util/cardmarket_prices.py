@@ -329,11 +329,20 @@ def _nonfoil_low_is_reliable(entry: dict, low: float) -> bool:
 
 # Return the Cardmarket trend for a finish, or None when that exact field is missing.
 # Never cascades to avg/low or across finish key groups — missing trend means unknown.
-def price_from_guide_entry(entry: dict, finish: int | bool) -> float | None:
+def price_from_guide_entry(
+    entry: dict,
+    finish: int | bool,
+    *,
+    etched_only: bool = False,
+) -> float | None:
     finish_id = normalize_finish(finish)
     if finish_id == FINISH_ETCHED:
-        # No dedicated etched metric. Only accept foil trend when the product has
-        # no nonfoil trend (etched-only Cardmarket product shape).
+        # No dedicated etched metric. Scryfall etched-only prints are sold as
+        # foil Cardmarket products — trust foil trend even when the guide also
+        # has a nonfoil field. Otherwise only accept foil when nonfoil is empty
+        # (etched-only Cardmarket product shape).
+        if etched_only:
+            return _price_from_guide_keys(entry, use_foil_keys=True)
         nonfoil_trend = entry.get("trend")
         foil_trend = entry.get("trend-foil")
         if nonfoil_trend not in (None, 0) and float(nonfoil_trend) > 0:
@@ -537,10 +546,12 @@ def list_cards_for_price_sync(
 def lookup_guide_price(
     entry: dict | None,
     finish: int | bool,
+    *,
+    etched_only: bool = False,
 ) -> float | None:
     if not entry:
         return None
-    return price_from_guide_entry(entry, finish)
+    return price_from_guide_entry(entry, finish, etched_only=etched_only)
 
 
 # Try to resolve one finish from the in-memory Cardmarket guide.
@@ -750,6 +761,11 @@ def sync_prices_from_guide(
             )
             card_set = row["set_code"]
             collector_number = str(row["collector_number"])
+            etched_only = (
+                _finish_enabled(row, FINISH_ETCHED)
+                and not _finish_enabled(row, FINISH_NONFOIL)
+                and not _finish_enabled(row, FINISH_FOIL)
+            )
             stats = set_stats.setdefault(
                 card_set,
                 {"queried": 0, "updated": 0, "still_missing": 0, "unchanged": 0},
@@ -779,7 +795,11 @@ def sync_prices_from_guide(
                     continue
                 product_id = parse_id_product(finish_url)
                 guide_entry = guide.get(product_id) if product_id is not None else None
-                price = lookup_guide_price(guide_entry, finish_id)
+                price = lookup_guide_price(
+                    guide_entry,
+                    finish_id,
+                    etched_only=etched_only and finish_id == FINISH_ETCHED,
+                )
                 if price is None:
                     if not missing_only and current_value is not None:
                         clears_by_finish[finish_id].append((card_set, collector_number))

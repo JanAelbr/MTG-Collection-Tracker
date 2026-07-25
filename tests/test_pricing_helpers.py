@@ -7,7 +7,10 @@ import pandas as pd
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
-from api.services.pricing_helpers import apply_strategy_to_owned_df  # noqa: E402
+from api.services.pricing_helpers import (  # noqa: E402
+    apply_strategy_to_deck_df,
+    apply_strategy_to_owned_df,
+)
 
 
 class PricingHelpersTests(unittest.TestCase):
@@ -34,6 +37,34 @@ class PricingHelpersTests(unittest.TestCase):
         updated = apply_strategy_to_owned_df(df, "trend")
         self.assertEqual(updated.iloc[0]["current_value"], 4.81)
         self.assertAlmostEqual(updated.iloc[0]["profit_loss"], 4.81 - 3.9)
+
+    @patch("api.services.pricing_helpers.price_from_strategy")
+    def test_apply_strategy_to_deck_df_passes_finish_flags(self, price_mock):
+        price_mock.return_value = 5.41
+        df = pd.DataFrame([
+            {
+                "in_catalog": 1,
+                "finish": 2,
+                "qty": 1,
+                "owned_qty": 1,
+                "purchase_value": None,
+                "cardmarket_url": None,
+                "cardmarket_url_foil": "https://www.cardmarket.com/en/Magic/Products?idProduct=511260",
+                "market_value": None,
+                "market_value_foil": None,
+                "market_value_etched": 5.41,
+                "has_nonfoil": 0,
+                "has_foil": 0,
+                "has_etched": 1,
+            },
+        ])
+        updated = apply_strategy_to_deck_df(df, "trend")
+        self.assertEqual(updated.iloc[0]["unit_value"], 5.41)
+        self.assertEqual(updated.iloc[0]["current_value"], 5.41)
+        kwargs = price_mock.call_args.kwargs
+        self.assertEqual(kwargs["has_nonfoil"], 0)
+        self.assertEqual(kwargs["has_foil"], 0)
+        self.assertEqual(kwargs["has_etched"], 1)
 
 
 if __name__ == "__main__":

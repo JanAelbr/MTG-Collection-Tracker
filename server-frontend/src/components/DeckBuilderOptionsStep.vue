@@ -12,6 +12,7 @@ const props = defineProps({
   landCount: { type: Number, default: 38 },
   budgetCap: { type: [Number, String, null], default: null },
   excludeCategories: { type: Array, default: () => [] },
+  preset: { type: String, default: "balanced" },
 });
 
 const emit = defineEmits([
@@ -20,7 +21,15 @@ const emit = defineEmits([
   "update:landCount",
   "update:budgetCap",
   "update:excludeCategories",
+  "update:preset",
 ]);
+
+const PRESET_OPTIONS = [
+  { id: "balanced", label: "Balanced" },
+  { id: "theme_first", label: "Theme-first" },
+  { id: "optimized", label: "Optimized" },
+  { id: "budget_casual", label: "Budget casual" },
+];
 
 const locations = ref([]);
 const poolPreview = ref(null);
@@ -158,6 +167,23 @@ watch(
 
       <div class="deck-builder-option-grid">
         <label class="deck-builder-field">
+          <span>Build preset</span>
+          <select
+            :value="preset"
+            @change="emit('update:preset', $event.target.value || 'balanced')"
+          >
+            <option
+              v-for="option in PRESET_OPTIONS"
+              :key="option.id"
+              :value="option.id"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <span class="deck-builder-field-hint">Theme-first raises synergy density.</span>
+        </label>
+
+        <label class="deck-builder-field">
           <span>Land count</span>
           <input
             type="number"
@@ -166,7 +192,7 @@ watch(
             :value="landCount"
             @input="emit('update:landCount', Number($event.target.value) || 38)"
           />
-          <span class="deck-builder-field-hint">Basic lands are included automatically.</span>
+          <span class="deck-builder-field-hint">Utility lands from your pool, then pip-aware basics.</span>
         </label>
 
         <label class="deck-builder-field">

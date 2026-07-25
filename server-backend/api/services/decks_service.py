@@ -1656,3 +1656,141 @@ def load_deck_power(conn: sqlite3.Connection, deck_id: str) -> dict:
         status_code = 404 if message == "Deck not found" else 500
         raise DeckError(message, status_code=status_code) from exc
 
+
+def _deck_cards_for_builder(conn: sqlite3.Connection, deck_id: str) -> tuple[list[dict], list[dict]]:
+    """Return (commanders, main_cards) for builder improve/rebuild."""
+    from report.deck_queries import enrich_deck_cards_df, load_deck_cards_df
+
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    cards_df = enrich_deck_cards_df(load_deck_cards_df(conn, deck_id=deck_key), conn)
+    commanders: list[dict] = []
+    main_cards: list[dict] = []
+    if cards_df is None or cards_df.empty:
+        return commanders, main_cards
+
+    for _, row in cards_df.iterrows():
+        section = str(row.get("section") or "main").lower()
+        payload = {
+            "name": row.get("card_name") or row.get("name") or "",
+            "cardName": row.get("card_name") or row.get("name") or "",
+            "setCode": str(row.get("set_code") or "").upper(),
+            "collectorNumber": str(row.get("collector_number") or ""),
+            "finish": int(row.get("finish") or 0),
+            "qty": int(row.get("qty") or 1),
+            "owned": int(row.get("owned_qty") or 0) > 0,
+            "section": section,
+            "typeLine": row.get("type_line") or "",
+            "oracleText": row.get("oracle_text") or "",
+            "cardType": row.get("card_type") or "",
+            "cmc": row.get("cmc"),
+            "manaCost": row.get("mana_cost") or "",
+            "isBasicLand": bool(row.get("is_basic_land")),
+            "colorIdentity": row.get("color_identity"),
+        }
+        if section == "commander":
+            commanders.append(payload)
+        elif section == "main":
+            main_cards.append(payload)
+    return commanders, main_cards
+
+
+def improve_existing_deck(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    location_slugs: list[str],
+    include_deck_storage: bool = False,
+    land_count: int = 38,
+    budget_cap: float | None = None,
+    exclude_categories: list[str] | None = None,
+    slot_counts: dict[str, int] | None = None,
+    preset: str | None = None,
+    rebuild: bool = False,
+) -> dict:
+    from api.services.deck_generation_service import improve_deck_proposal
+
+    commanders, main_cards = _deck_cards_for_builder(conn, deck_id)
+    if not commanders:
+        raise DeckError("Deck has no commander", status_code=400)
+
+    proposal = improve_deck_proposal(
+        conn,
+        commanders=[
+            {
+                "setCode": card["setCode"],
+                "collectorNumber": card["collectorNumber"],
+                "finish": card["finish"],
+            }
+            for card in commanders
+        ],
+        existing_cards=main_cards,
+        location_slugs=location_slugs,
+        include_deck_storage=include_deck_storage,
+        land_count=land_count,
+        budget_cap=budget_cap,
+        exclude_categories=exclude_categories,
+        slot_counts=slot_counts,
+        preset=preset,
+        rebuild=rebuild,
+    )
+    proposal["deckId"] = str(deck_id)
+    return proposal
+
+
+def apply_deck_proposal(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    cards: list[dict],
+    mode: str = "improve",
+) -> dict:
+    """Apply a builder proposal to an existing deck.
+
+    rebuild → replace main
+    improve → replace main with proposal list (keeps commander section)
+    """
+    main_cards = [
+        {
+            **card,
+            "section": "main",
+            "owned": bool(card.get("owned")) and not card.get("suggested"),
+        }
+        for card in cards
+        if str(card.get("section") or "main").lower() == "main"
+        and not card.get("infiniteBasic")
+    ]
+    # Infinite basics: keep as named cards without set when possible
+    for card in cards:
+        if card.get("infiniteBasic"):
+            main_cards.append(
+                {
+                    "cardName": card.get("name"),
+                    "name": card.get("name"),
+                    "setCode": "",
+                    "collectorNumber": "",
+                    "finish": 0,
+                    "qty": int(card.get("qty") or 1),
+                    "section": "main",
+                    "owned": False,
+                }
+            )
+    result = bulk_add_cards_to_deck(
+        conn,
+        deck_id=deck_id,
+        cards=main_cards,
+        replace_main=True,
+    )
+    result["mode"] = mode
+    return result
+

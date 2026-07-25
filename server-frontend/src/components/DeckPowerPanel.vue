@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { api } from "../api";
 import DeckPowerCategorySection from "./DeckPowerCategorySection.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
@@ -16,6 +17,8 @@ const props = defineProps({
   powerPayload: { type: Object, default: null },
 });
 
+const router = useRouter();
+
 const displayPayload = ref(null);
 const loading = ref(false);
 const error = ref("");
@@ -24,6 +27,16 @@ const bracket = computed(() => displayPayload.value?.bracket || 1);
 const components = computed(() => displayPayload.value?.components || {});
 const counts = computed(() => displayPayload.value?.counts || {});
 const categoryCards = computed(() => displayPayload.value?.categoryCards || {});
+
+function openImprove(mode = "improve") {
+  if (!props.deckId) {
+    return;
+  }
+  router.push({
+    path: "/decks/build",
+    query: { deck: String(props.deckId), mode },
+  });
+}
 
 async function loadPower() {
   if (props.powerPayload) {
@@ -104,6 +117,15 @@ watch(
         >
           {{ item }}
         </span>
+      </div>
+
+      <div v-if="deckId" class="deck-power-actions">
+        <button type="button" class="btn btn-secondary btn-small" @click="openImprove('improve')">
+          Strengthen theme / fill gaps
+        </button>
+        <button type="button" class="btn btn-secondary btn-small" @click="openImprove('rebuild')">
+          Rebuild with theme engine
+        </button>
       </div>
 
       <div class="deck-power-categories">

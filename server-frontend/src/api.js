@@ -798,6 +798,8 @@ export const api = {
     if (params.q) query.set("q", params.q);
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
+    if (params.colors) query.set("colors", String(params.colors));
+    if (params.uniquePrints != null) query.set("uniquePrints", params.uniquePrints ? "true" : "false");
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/builder/commanders${suffix}`);
   },
@@ -810,6 +812,20 @@ export const api = {
 
   generateDeck: (body) =>
     apiRequest("/builder/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  improveDeck: (body) =>
+    apiRequest("/builder/improve", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  getBuilderPresets: () => apiRequest("/builder/presets"),
+
+  applyDeckProposal: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/apply-proposal`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

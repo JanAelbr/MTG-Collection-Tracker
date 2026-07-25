@@ -18,6 +18,8 @@ const props = defineProps({
   loading: { type: String, default: "lazy" },
   showDetails: { type: Boolean, default: true },
   showZoom: { type: Boolean, default: true },
+  /** When false, hover overlay only shows zoom (and details if enabled). */
+  showCopyControls: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["finish-changed", "ownership-changed"]);
@@ -35,8 +37,18 @@ const ownedCount = computed(() => {
   ownershipRevision.value;
   return effectiveDeckOwnedQty(props.card);
 });
-const canClickToAdd = computed(() => isInteractive.value && ownedCount.value === 0);
-const showOverlay = computed(() => isInteractive.value && (isHovered.value || hoverPinned.value));
+const canClickToAdd = computed(
+  () => props.showCopyControls && isInteractive.value && ownedCount.value === 0,
+);
+const showOverlay = computed(() => {
+  if (!isInteractive.value) {
+    return false;
+  }
+  if (!props.showZoom && !props.showDetails && !props.showCopyControls) {
+    return false;
+  }
+  return isHovered.value || hoverPinned.value;
+});
 const effectivelyOwned = computed(() => {
   ownershipRevision.value;
   return isEffectivelyOwned(props.card);
@@ -256,6 +268,7 @@ onUnmounted(() => {
       </button>
 
       <CardCopyControls
+        v-if="showCopyControls"
         ref="copyControlsRef"
         :card="card"
         :visible="showOverlay"

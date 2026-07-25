@@ -146,10 +146,29 @@ def finish_has_pricing(row, finish: int, guide_prices: dict | None = None) -> bo
     return False
 
 
+def _optional_finish_flag(row, finish: int) -> int | None:
+    column = HAS_FINISH_COLUMNS[finish]
+    raw = row.get(column) if isinstance(row, dict) else row[column]
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def finish_available(row, finish: int, *, owned: bool = False, guide_prices: dict | None = None) -> bool:
-    """A finish is available for adding when priced, or always when already owned."""
+    """A finish is available for adding when priced, or always when already owned.
+
+    Explicit Scryfall ``has_* = 0`` flags deny the finish even when Cardmarket
+    still exposes a price under a neighboring finish group (common for etched
+    prints sold as foil products).
+    """
     if owned:
         return True
+    flag = _optional_finish_flag(row, finish)
+    if flag == 0:
+        return False
     return finish_has_pricing(row, finish, guide_prices)
 
 

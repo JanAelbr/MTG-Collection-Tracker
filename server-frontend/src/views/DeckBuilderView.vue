@@ -1,7 +1,7 @@
 <script setup>
 import "../styles/decks.css";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache } from "../api";
 import DeckBuilderCommanderStep from "../components/DeckBuilderCommanderStep.vue";
 import DeckBuilderOptionsStep from "../components/DeckBuilderOptionsStep.vue";
@@ -12,6 +12,7 @@ import { cardFinish } from "../utils/finishes";
 const STEPS = ["commander", "options", "preview"];
 
 const router = useRouter();
+const route = useRoute();
 
 const step = ref("commander");
 const selectedCommander = ref(null);
@@ -21,10 +22,24 @@ const includeDeckStorage = ref(false);
 const landCount = ref(38);
 const budgetCap = ref(null);
 const excludeCategories = ref([]);
+const preset = ref("balanced");
 const proposal = ref(null);
 const generating = ref(false);
 const applying = ref(false);
 const error = ref("");
+
+const targetDeckId = computed(() => {
+  const raw = route.query.deck;
+  return raw != null && String(raw).trim() ? String(raw).trim() : "";
+});
+const builderMode = computed(() => {
+  const mode = String(route.query.mode || "generate").toLowerCase();
+  if (mode === "rebuild" || mode === "improve") {
+    return mode;
+  }
+  return targetDeckId.value ? "improve" : "generate";
+});
+const isExistingDeckFlow = computed(() => Boolean(targetDeckId.value));
 
 const stepIndex = computed(() => STEPS.indexOf(step.value));
 const canContinue = computed(() => {
@@ -37,10 +52,40 @@ const canContinue = computed(() => {
   return Boolean(proposal.value?.cards?.length);
 });
 
+const pageTitle = computed(() => {
+  if (builderMode.value === "rebuild") {
+    return "Rebuild Commander deck";
+  }
+  if (builderMode.value === "improve") {
+    return "Improve Commander deck";
+  }
+  return "Build Commander deck";
+});
+
+const primaryActionLabel = computed(() => {
+  if (step.value !== "preview") {
+    return "";
+  }
+  if (applying.value) {
+    return "Applying…";
+  }
+  if (builderMode.value === "rebuild") {
+    return "Replace main deck";
+  }
+  if (builderMode.value === "improve") {
+    return "Apply improvements";
+  }
+  return "Create deck";
+});
+
 function goBack() {
   const index = stepIndex.value;
-  if (index <= 0) {
-    router.push("/decks");
+  if (index <= 0 || (isExistingDeckFlow.value && step.value === "options")) {
+    if (targetDeckId.value) {
+      router.push({ path: "/decks", query: { deck: targetDeckId.value } });
+    } else {
+      router.push("/decks");
+    }
     return;
   }
   step.value = STEPS[index - 1];
@@ -65,27 +110,42 @@ async function goNext() {
   await applyProposal();
 }
 
+function proposalBody() {
+  return {
+    locationSlugs: locationSlugs.value,
+    includeDeckStorage: includeDeckStorage.value,
+    landCount: landCount.value,
+    budgetCap: budgetCap.value,
+    excludeCategories: excludeCategories.value,
+    preset: preset.value,
+  };
+}
+
 async function generateProposal() {
-  if (!selectedCommander.value) {
-    return;
-  }
   generating.value = true;
   error.value = "";
   try {
-    proposal.value = await api.generateDeck({
-      commanders: [
-        {
-          setCode: selectedCommander.value.setCode,
-          collectorNumber: selectedCommander.value.collectorNumber,
-          finish: cardFinish(selectedCommander.value),
-        },
-      ],
-      locationSlugs: locationSlugs.value,
-      includeDeckStorage: includeDeckStorage.value,
-      landCount: landCount.value,
-      budgetCap: budgetCap.value,
-      excludeCategories: excludeCategories.value,
-    });
+    if (isExistingDeckFlow.value) {
+      proposal.value = await api.improveDeck({
+        deckId: targetDeckId.value,
+        rebuild: builderMode.value === "rebuild",
+        ...proposalBody(),
+      });
+    } else {
+      if (!selectedCommander.value) {
+        return;
+      }
+      proposal.value = await api.generateDeck({
+        commanders: [
+          {
+            setCode: selectedCommander.value.setCode,
+            collectorNumber: selectedCommander.value.collectorNumber,
+            finish: cardFinish(selectedCommander.value),
+          },
+        ],
+        ...proposalBody(),
+      });
+    }
   } catch (err) {
     error.value = err?.message || "Could not generate deck.";
     proposal.value = null;
@@ -94,13 +154,37 @@ async function generateProposal() {
   }
 }
 
+function proposalCardsPayload() {
+  return (proposal.value?.cards || []).map((card) => ({
+    setCode: card.setCode || "",
+    collectorNumber: card.collectorNumber || "",
+    finish: cardFinish(card),
+    section: "main",
+    qty: card.qty || 1,
+    owned: !card.suggested && !card.infiniteBasic,
+    cardName: card.name,
+  }));
+}
+
 async function applyProposal() {
-  if (!proposal.value || !selectedCommander.value) {
+  if (!proposal.value) {
     return;
   }
   applying.value = true;
   error.value = "";
   try {
+    if (isExistingDeckFlow.value) {
+      await api.applyDeckProposal(targetDeckId.value, {
+        mode: builderMode.value === "rebuild" ? "rebuild" : "improve",
+        cards: proposalCardsPayload(),
+      });
+      clearClientCache();
+      router.push({ path: "/decks", query: { deck: targetDeckId.value } });
+      return;
+    }
+    if (!selectedCommander.value) {
+      return;
+    }
     const created = await api.createDeck({
       format: "commander",
       name: deckName.value.trim() || selectedCommander.value.name,
@@ -118,15 +202,7 @@ async function applyProposal() {
     }
     await api.bulkAddDeckCards(deckId, {
       replaceMain: false,
-      cards: (proposal.value.cards || []).map((card) => ({
-        setCode: card.setCode || "",
-        collectorNumber: card.collectorNumber || "",
-        finish: cardFinish(card),
-        section: "main",
-        qty: card.qty || 1,
-        owned: !card.suggested && !card.infiniteBasic,
-        cardName: card.name,
-      })),
+      cards: proposalCardsPayload(),
     });
     clearClientCache();
     router.push({ path: "/decks", query: { deck: String(deckId) } });
@@ -142,33 +218,51 @@ watch(selectedCommander, (commander) => {
     deckName.value = commander.name;
   }
 });
+
+onMounted(() => {
+  if (isExistingDeckFlow.value) {
+    step.value = "options";
+    if (builderMode.value === "rebuild") {
+      preset.value = "theme_first";
+    }
+  }
+});
 </script>
 
 <template>
   <div class="deck-builder-page">
     <header class="deck-builder-page-head">
       <div>
-        <h2>Build Commander deck</h2>
-        <p>Owned-first generation with purchase suggestions for gaps.</p>
+        <h2>{{ pageTitle }}</h2>
+        <p v-if="isExistingDeckFlow">
+          Multi-phase packages with commander theme scoring, then apply to this deck.
+        </p>
+        <p v-else>
+          Owned-first generation with theme synergy and purchase suggestions for gaps.
+        </p>
       </div>
-      <button type="button" class="btn btn-secondary btn-small" @click="router.push('/decks')">
+      <button type="button" class="btn btn-secondary btn-small" @click="goBack">
         Cancel
       </button>
     </header>
 
     <nav class="deck-builder-steps" aria-label="Builder steps">
-      <span :class="{ active: step === 'commander' }">1. Commander</span>
-      <span :class="{ active: step === 'options' }">2. Options</span>
-      <span :class="{ active: step === 'preview' }">3. Preview</span>
+      <span v-if="!isExistingDeckFlow" :class="{ active: step === 'commander' }">1. Commander</span>
+      <span :class="{ active: step === 'options' }">
+        {{ isExistingDeckFlow ? "1. Options" : "2. Options" }}
+      </span>
+      <span :class="{ active: step === 'preview' }">
+        {{ isExistingDeckFlow ? "2. Preview" : "3. Preview" }}
+      </span>
     </nav>
 
-    <label v-if="step !== 'preview'" class="deck-builder-field deck-builder-name-field">
+    <label v-if="step !== 'preview' && !isExistingDeckFlow" class="deck-builder-field deck-builder-name-field">
       <span>Deck name</span>
-      <input v-model="deckName" type="text" maxlength="120" placeholder="Deck name" />
+      <input v-model="deckName" type="text" maxlength="120" placeholder="Deck name">
     </label>
 
     <DeckBuilderCommanderStep
-      v-if="step === 'commander'"
+      v-if="step === 'commander' && !isExistingDeckFlow"
       :selected-commander="selectedCommander"
       @select="selectedCommander = $event"
     />
@@ -180,6 +274,7 @@ watch(selectedCommander, (commander) => {
       v-model:land-count="landCount"
       v-model:budget-cap="budgetCap"
       v-model:exclude-categories="excludeCategories"
+      v-model:preset="preset"
     />
 
     <DeckBuilderPreviewStep
@@ -193,7 +288,7 @@ watch(selectedCommander, (commander) => {
 
     <footer class="deck-builder-actions">
       <button type="button" class="btn btn-secondary" @click="goBack">
-        {{ stepIndex === 0 ? "Back to decks" : "Back" }}
+        {{ stepIndex === 0 || (isExistingDeckFlow && step === 'options') ? "Back to decks" : "Back" }}
       </button>
       <button
         type="button"
@@ -202,7 +297,7 @@ watch(selectedCommander, (commander) => {
         @click="goNext"
       >
         <LoadingIndicator v-if="generating || applying" label="" />
-        <span v-if="step === 'preview'">{{ applying ? "Applying…" : "Create deck" }}</span>
+        <span v-if="step === 'preview'">{{ primaryActionLabel }}</span>
         <span v-else-if="step === 'options'">{{ generating ? "Generating…" : "Generate" }}</span>
         <span v-else>Continue</span>
       </button>
