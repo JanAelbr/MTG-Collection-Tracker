@@ -10,7 +10,7 @@ class SettingsUpdate(BaseModel):
     favoriteCards: list[dict] | None = None
     favoriteArtStyles: list[dict] | None = None
     pageSize: int | None = Field(default=None, ge=25, le=100)
-    collectionCardScale: int | None = Field(default=None, ge=75, le=150)
+    collectionCardScale: int | None = Field(default=None, ge=75, le=250)
     setSortMode: str | None = None
     defaultStorageLocation: str | None = None
 

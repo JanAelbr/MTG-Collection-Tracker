@@ -114,22 +114,6 @@ const galleryCards = computed(() =>
 
 const galleryFinish = computed(() => cardFinish(selectedVariant.value || {}));
 const showVariantGallery = computed(() => props.variants.length > 1);
-const canGoPrevVariant = computed(() => props.selectedIndex > 0);
-const canGoNextVariant = computed(() => props.selectedIndex < props.variants.length - 1);
-
-function goPrevVariant() {
-  if (!canGoPrevVariant.value) {
-    return;
-  }
-  emit("update:selectedIndex", props.selectedIndex - 1);
-}
-
-function goNextVariant() {
-  if (!canGoNextVariant.value) {
-    return;
-  }
-  emit("update:selectedIndex", props.selectedIndex + 1);
-}
 
 function setLabel(code) {
   if (props.setLabelFor) {
@@ -289,16 +273,6 @@ onBeforeUnmount(() => {
     <div class="collection-search-art-header">
       <div class="collection-search-art-heading">
         <div class="collection-search-art-title-row">
-          <button
-            v-if="variants.length > 1"
-            type="button"
-            class="collection-search-art-nav-btn"
-            :disabled="!canGoPrevVariant"
-            aria-label="Previous version"
-            @click="goPrevVariant"
-          >
-            ‹
-          </button>
           <div class="collection-search-art-heading-text">
             <h2 class="collection-search-art-title">
               <RouterLink
@@ -311,24 +285,9 @@ onBeforeUnmount(() => {
               <span v-else>{{ name }}</span>
             </h2>
           </div>
-          <button
-            v-if="variants.length > 1"
-            type="button"
-            class="collection-search-art-nav-btn"
-            :disabled="!canGoNextVariant"
-            aria-label="Next version"
-            @click="goNextVariant"
-          >
-            ›
-          </button>
         </div>
         <p class="collection-search-art-meta">
-          <template v-if="variants.length > 1">
-            Version {{ selectedIndex + 1 }} of {{ variants.length }}
-          </template>
-          <template v-else>
-            {{ variants.length }} version{{ variants.length === 1 ? "" : "s" }} across sets
-          </template>
+          {{ variants.length }} version{{ variants.length === 1 ? "" : "s" }} across sets
         </p>
       </div>
       <div v-if="!sidebar" class="collection-search-art-actions">

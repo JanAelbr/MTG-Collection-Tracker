@@ -1055,7 +1055,7 @@ onMounted(async () => {
                 v-if="viewMode === 'gallery'"
                 class="collection-gallery-toolbar-scale"
                 :model-value="collectionCardScale"
-                :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+                :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150, 175, 200, 225, 250]"
                 @update:model-value="onCardScaleChange"
               />
             </div>

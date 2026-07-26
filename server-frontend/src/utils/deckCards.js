@@ -203,6 +203,26 @@ export function splitCommanderCards(cards) {
   return { commanders, deckCards };
 }
 
+/** Combined WUBRG identity from commander cards. Returns null when there are no commanders. */
+export function commanderColorIdentity(commanders) {
+  if (!commanders?.length) {
+    return null;
+  }
+  const order = "WUBRG";
+  const colors = new Set();
+  for (const card of commanders) {
+    const identity = card.colorIdentity?.length
+      ? card.colorIdentity
+      : (card.colors || []);
+    for (const color of identity) {
+      if (order.includes(color)) {
+        colors.add(color);
+      }
+    }
+  }
+  return [...colors].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
 export function buildEmptyDeckCardGroups(section = "main") {
   const sectionLabel = section === "sideboard" ? "Sideboard" : "Main deck";
   return [

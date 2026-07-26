@@ -20,6 +20,8 @@ const props = defineProps({
   section: { type: String, default: "main" },
   cardType: { type: String, default: "" },
   typeLabel: { type: String, default: "" },
+  /** Commander color identity; null skips filtering. Empty array = colorless only. */
+  colorIdentity: { type: Array, default: null },
 });
 
 const emit = defineEmits(["close", "added"]);
@@ -205,6 +207,7 @@ async function loadResults({ autoSelectFirst = false } = {}) {
       setCode: SEARCH_SET_CODE,
       ownedFilter: ownedFilter.value,
       foilFilter: foilFilter.value,
+      colorIdentity: props.colorIdentity,
       page: page.value,
       pageSize: PAGE_SIZE,
     });
@@ -234,6 +237,7 @@ async function loadNameVariants(name) {
     setCode: SEARCH_SET_CODE,
     ownedFilter: ownedFilter.value,
     foilFilter: foilFilter.value,
+    colorIdentity: props.colorIdentity,
   });
   const variants = (payload.variants || []).filter(matchesType);
   if (!variants.length) {

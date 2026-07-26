@@ -14,7 +14,7 @@ from report.builder_queries import (
     resolve_commander_rows,
 )
 from util.card_role_seed import SLOT_ROLES, card_has_excluded_role_for, card_roles_for
-from util.commander_rules import validate_commander_deck
+from util.commander_rules import card_is_legal_for_deck, validate_commander_deck
 from util.commander_themes import (
     OWNED_BONUS,
     build_commander_theme_profile,
@@ -372,7 +372,12 @@ def _build_candidate_pool(
         location_slugs,
         include_deck_storage=include_deck_storage,
     )
-    owned_by_name = dedupe_pool_by_name(owned_pool, prefer_owned=True)
+    # Owned cards previously bypassed identity checks and leaked off-color picks.
+    owned_legal = [
+        card for card in owned_pool
+        if card_is_legal_for_deck(card, allowed_identity)
+    ]
+    owned_by_name = dedupe_pool_by_name(owned_legal, prefer_owned=True)
     commander_names = {row.get("name") for row in commander_rows if row.get("name")}
     catalog = load_catalog_candidates(
         conn,
@@ -513,6 +518,8 @@ def construct_deck_proposal(
             name = card.get("name") or card.get("cardName")
             if not name or name in commander_names:
                 continue
+            if not card_is_legal_for_deck(card, allowed_identity):
+                continue
             existing_by_name[name] = card
             # Prefer existing prints when present in pool
             if name in combined_candidates:
@@ -526,6 +533,8 @@ def construct_deck_proposal(
         # Seed keepers: lands, on-theme cards, and package staples already in deck.
         for name, card in existing_by_name.items():
             pool_card = combined_candidates.get(name) or card
+            if not card_is_legal_for_deck(pool_card, allowed_identity):
+                continue
             hits = card_theme_hits(pool_card, profile)
             slot = _classify_slot(pool_card)
             keep = False

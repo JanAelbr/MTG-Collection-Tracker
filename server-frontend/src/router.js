@@ -8,6 +8,7 @@ const StorageView = () => import("./views/StorageView.vue");
 const SellView = () => import("./views/SellView.vue");
 const CollectionView = () => import("./views/CollectionView.vue");
 const CollectionSearchView = () => import("./views/CollectionSearchView.vue");
+const CollectionRolesView = () => import("./views/CollectionRolesView.vue");
 const StatsView = () => import("./views/StatsView.vue");
 const DecksView = () => import("./views/DecksView.vue");
 const DeckBuilderView = () => import("./views/DeckBuilderView.vue");
@@ -35,6 +36,12 @@ const router = createRouter({
       name: "collection-search",
       component: CollectionSearchView,
       meta: { title: "Collection" },
+    },
+    {
+      path: "/collection/roles",
+      name: "collection-roles",
+      component: CollectionRolesView,
+      meta: { title: "Roles" },
     },
     {
       path: "/collection/all",

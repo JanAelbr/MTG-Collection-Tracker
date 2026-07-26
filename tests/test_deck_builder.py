@@ -391,6 +391,15 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
             card_type="land",
             is_basic_land=1,
         )
+        self._seed_card(
+            "LTR", "5", "Counterspell",
+            type_line="Instant",
+            color_identity='["U"]',
+            oracle_text="Counter target spell.",
+            cmc=2,
+            card_type="instant",
+            market_value=1.0,
+        )
         self.conn.execute(
             "INSERT INTO tracked_sets (set_code, created_at) VALUES ('LTR', '2026-01-01T00:00:00Z')",
         )
@@ -399,7 +408,8 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
             INSERT INTO card_instances (set_code, collector_number, finish, location_slug, purchase_value)
             VALUES ('LTR', '1', 0, 'storage:general', 5),
                    ('LTR', '2', 0, 'storage:general', 2),
-                   ('LTR', '3', 0, 'storage:general', 1)
+                   ('LTR', '3', 0, 'storage:general', 1),
+                   ('LTR', '5', 0, 'storage:general', 1)
             """,
         )
         self.conn.commit()
@@ -418,6 +428,7 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
         names = {card["name"] for card in proposal["cards"]}
         self.assertIn("Sol Ring", names)
         self.assertIn("Cultivate", names)
+        self.assertNotIn("Counterspell", names)
         self.assertGreaterEqual(proposal["stats"]["ownedCount"], 2)
         self.assertEqual(proposal["stats"]["basicLandCount"], 36)
         self.assertGreaterEqual(proposal["stats"]["totalCards"], 36)

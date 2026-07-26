@@ -9,6 +9,7 @@ import {
 } from "../composables/cardContextMenu";
 import CardCopyControls from "./CardCopyControls.vue";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
+import { formatCardRoles } from "../utils/deckPower";
 
 const props = defineProps({
   src: { type: String, default: "" },
@@ -40,11 +41,13 @@ const ownedCount = computed(() => {
 const canClickToAdd = computed(
   () => props.showCopyControls && isInteractive.value && ownedCount.value === 0,
 );
+const roleLabels = computed(() => formatCardRoles(props.card?.roles || []));
+const hasRoles = computed(() => roleLabels.value.length > 0);
 const showOverlay = computed(() => {
   if (!isInteractive.value) {
     return false;
   }
-  if (!props.showZoom && !props.showDetails && !props.showCopyControls) {
+  if (!props.showZoom && !props.showDetails && !props.showCopyControls && !hasRoles.value) {
     return false;
   }
   return isHovered.value || hoverPinned.value;
@@ -257,6 +260,22 @@ onUnmounted(() => {
           />
         </svg>
       </button>
+
+      <div
+        v-if="hasRoles"
+        class="card-interactive-roles"
+        aria-label="Card roles"
+        @click.stop
+        @mousedown.stop="stopNavigation"
+      >
+        <span
+          v-for="label in roleLabels"
+          :key="label"
+          class="card-interactive-role"
+        >
+          {{ label }}
+        </span>
+      </div>
 
       <button
         v-if="showDetails"

@@ -14,14 +14,17 @@ const props = defineProps({
   selectedCount: { type: Number, default: 0 },
   bulkBusy: { type: Boolean, default: false },
   cardScale: { type: Number, default: 100 },
-  scaleOptions: { type: Array, default: () => [75, 100, 125, 150] },
+  scaleOptions: { type: Array, default: () => [75, 100, 125, 150, 175, 200, 225, 250] },
   mobileFiltersOpen: { type: Boolean, default: false },
   viewMode: { type: String, default: "gallery" },
   tableModeAvailable: { type: Boolean, default: false },
   showLenses: { type: Boolean, default: true },
   showBulk: { type: Boolean, default: true },
   showFiltersButton: { type: Boolean, default: true },
+  showViewMode: { type: Boolean, default: true },
   showSort: { type: Boolean, default: true },
+  /** collection: number/value; search|roles: name/value/cmc/rarity (+ newest for search) */
+  sortMode: { type: String, default: "collection" },
   allCardsSort: { type: String, default: "value" },
   allCardsSortDir: { type: String, default: "desc" },
   /** When set, replaces the default collection match summary text. */
@@ -114,8 +117,24 @@ function setViewMode(mode) {
         <span class="visually-hidden">Sort by</span>
         <div class="collection-sort-row">
           <select :value="allCardsSort" @change="emit('update-sort', $event)">
-            <option value="number">Collector number</option>
-            <option value="value">Value</option>
+            <template v-if="sortMode === 'search'">
+              <option value="newest">Newest set</option>
+              <option value="name">Name</option>
+              <option value="value">Value</option>
+              <option value="cmc">CMC</option>
+              <option value="power">Power</option>
+              <option value="rarity">Rarity</option>
+            </template>
+            <template v-else-if="sortMode === 'roles'">
+              <option value="name">Name</option>
+              <option value="value">Value</option>
+              <option value="cmc">CMC</option>
+              <option value="rarity">Rarity</option>
+            </template>
+            <template v-else>
+              <option value="number">Collector number</option>
+              <option value="value">Value</option>
+            </template>
           </select>
           <button
             type="button"
@@ -129,6 +148,7 @@ function setViewMode(mode) {
         </div>
       </label>
       <div
+        v-if="showViewMode"
         class="button-group collection-view-mode-group"
         role="group"
         aria-label="View mode"

@@ -43,6 +43,7 @@ import {
   buildEmptyDeckCardGroups,
   cardTypeGroup,
   collectDeckCardTypes,
+  commanderColorIdentity,
   deckTypeCounts,
   deckTypeIconType,
   deckTypeLabel,
@@ -113,6 +114,8 @@ const commanderCards = computed(() => {
   const { commanders } = splitCommanderCards(source);
   return sortDeckCards(commanders, "name");
 });
+
+const deckColorIdentity = computed(() => commanderColorIdentity(commanderCards.value));
 
 const mainDeckCards = computed(() => {
   const { deckCards } = splitCommanderCards(browseStats.value?.cards || []);
@@ -969,6 +972,7 @@ onActivated(async () => {
                   :default-deck-id="deckId"
                   :show-deck-remove="true"
                   :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+                  :color-identity="deckColorIdentity"
                   @deck-added="onDeckCardAdded"
                   @deck-removed="onDeckCardRemoved"
                   @deck-changed="onDeckCardChanged"
@@ -987,6 +991,7 @@ onActivated(async () => {
                   :default-deck-id="deckId"
                   :show-deck-remove="true"
                   :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+                  :color-identity="deckColorIdentity"
                   @deck-added="onDeckCardAdded"
                   @deck-removed="onDeckCardRemoved"
                   @deck-changed="onDeckCardChanged"
@@ -1157,6 +1162,7 @@ onActivated(async () => {
       :section="deckAddModal.section"
       :card-type="deckAddModal.cardType"
       :type-label="deckAddModal.typeLabel"
+      :color-identity="deckColorIdentity"
       @close="closeEmptyDeckAdd"
       @added="onDeckCardAdded"
     />

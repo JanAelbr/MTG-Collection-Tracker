@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ignoreAborted } from "../api";
+import BrowseSelect from "../components/BrowseSelect.vue";
 import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionMobileFilterSheet from "../components/CollectionMobileFilterSheet.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
@@ -13,9 +14,9 @@ import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
-import { getStoredFoilFilter, storeFoilFilter } from "../utils/filterStorage";
 import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
+import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 
 const PAGE_SIZE = 25;
@@ -25,6 +26,7 @@ const route = useRoute();
 const router = useRouter();
 
 const meta = ref(null);
+const searchFacets = ref({ creatureTypes: [], keywords: [] });
 const accumulatedCards = ref([]);
 const searchTotalMatches = ref(0);
 const loadedPages = ref(0);
@@ -33,15 +35,18 @@ const artExplorer = ref(null);
 const artPanelLoading = ref(false);
 const selectedBrowseName = ref("");
 const artSelectedIndex = ref(0);
+const variantCache = ref({});
 const searchQuery = ref("");
 const textSearchQuery = ref("");
 const creatureTypeQuery = ref("");
+const keywordQuery = ref("");
 const searchInput = ref("");
 const textSearchInput = ref("");
 const creatureTypeInput = ref("");
+const keywordInput = ref("");
 const searchInputRef = ref(null);
 const ownedFilter = ref("owned");
-const foilFilter = ref(getStoredFoilFilter());
+const foilFilter = ref("all");
 const typeFilter = ref("all");
 const colorFilters = ref([]);
 const storageFilters = ref([]);
@@ -59,6 +64,7 @@ const searchSort = ref("newest");
 const searchSortDir = ref("desc");
 const routeSyncReady = ref(false);
 const virtualGridRef = ref(null);
+const filterSidebarRef = ref(null);
 const { loading, run } = useAsyncLoad();
 const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
 let searchRequestToken = 0;
@@ -72,9 +78,64 @@ const hasActiveSearch = computed(() => Boolean(
   searchQuery.value.trim()
   || textSearchQuery.value.trim()
   || creatureTypeQuery.value.trim()
-  || roleFilters.value.length,
+  || keywordQuery.value.trim()
+  || roleFilters.value.length
+  || typeFilter.value !== "all",
 ));
 const isListView = computed(() => searchViewMode.value === "list");
+const showCreatureTypeFilter = computed(() => typeFilter.value === "creature");
+
+const cardTypeOptions = computed(() => [
+  { value: "all", label: "Any card type" },
+  ...COLLECTION_TYPE_ORDER.map((type) => ({
+    value: type,
+    label: COLLECTION_TYPE_LABELS[type] || type,
+  })),
+]);
+
+const creatureTypeOptions = computed(() => {
+  const options = [{ value: "", label: "Any creature type" }];
+  const seen = new Set([""]);
+  for (const type of searchFacets.value.creatureTypes || []) {
+    const value = String(type || "").trim();
+    if (!value) {
+      continue;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    options.push({ value, label: value });
+  }
+  const current = creatureTypeInput.value.trim();
+  if (current && !seen.has(current.toLowerCase())) {
+    options.push({ value: current, label: current });
+  }
+  return options;
+});
+
+const keywordOptions = computed(() => {
+  const options = [{ value: "", label: "Any keyword" }];
+  const seen = new Set([""]);
+  for (const keyword of searchFacets.value.keywords || []) {
+    const value = String(keyword || "").trim();
+    if (!value) {
+      continue;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    options.push({ value, label: value });
+  }
+  const current = keywordInput.value.trim();
+  if (current && !seen.has(current.toLowerCase())) {
+    options.push({ value: current, label: current });
+  }
+  return options;
+});
 
 const setLabels = computed(() => {
   const labels = new Map();
@@ -88,7 +149,7 @@ function searchApiParams() {
   return {
     setCode: SEARCH_SET_CODE,
     ownedFilter: ownedFilter.value,
-    foilFilter: foilFilter.value,
+    foilFilter: "all",
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
     storageFilters: storageFilters.value,
@@ -105,20 +166,40 @@ function searchApiParams() {
   };
 }
 
+function matchFacetValue(value, catalog) {
+  const needle = String(value || "").trim();
+  if (!needle) {
+    return "";
+  }
+  const lower = needle.toLowerCase();
+  for (const item of catalog || []) {
+    if (String(item).toLowerCase() === lower) {
+      return String(item);
+    }
+  }
+  return needle;
+}
+
 function syncFiltersFromRoute() {
   const filters = searchFiltersFromRoute(route);
   ownedFilter.value = filters.ownedFilter;
-  foilFilter.value = filters.foilFilter;
+  foilFilter.value = "all";
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...filters.colorFilters];
   storageFilters.value = [...filters.storageFilters];
   roleFilters.value = [...filters.roleFilters];
   searchQuery.value = filters.searchQuery;
   textSearchQuery.value = filters.textSearchQuery;
-  creatureTypeQuery.value = filters.creatureTypeQuery;
+  const creatureType = typeFilter.value === "creature"
+    ? matchFacetValue(filters.creatureTypeQuery, searchFacets.value.creatureTypes)
+    : "";
+  const keyword = matchFacetValue(filters.keywordQuery || "", searchFacets.value.keywords);
+  creatureTypeQuery.value = creatureType;
+  keywordQuery.value = keyword;
   searchInput.value = filters.searchQuery;
   textSearchInput.value = filters.textSearchQuery;
-  creatureTypeInput.value = filters.creatureTypeQuery;
+  creatureTypeInput.value = creatureType;
+  keywordInput.value = keyword;
   rarityFilter.value = filters.rarityFilter;
   cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
   cmcMax.value = filters.cmcMax != null ? String(filters.cmcMax) : "";
@@ -148,13 +229,14 @@ function syncSearchRoute() {
     path: route.path,
     query: searchRouteQuery({
       ownedFilter: ownedFilter.value,
-      foilFilter: foilFilter.value,
+      foilFilter: "all",
       typeFilter: typeFilter.value,
       colorFilters: colorFilters.value,
       storageFilters: storageFilters.value,
       searchQuery: searchQuery.value.trim(),
       textSearchQuery: textSearchQuery.value.trim(),
-      creatureTypeQuery: creatureTypeQuery.value.trim(),
+      creatureTypeQuery: typeFilter.value === "creature" ? creatureTypeQuery.value.trim() : "",
+      keywordQuery: keywordQuery.value.trim(),
       roleFilters: roleFilters.value,
       rarityFilter: rarityFilter.value,
       cmcMin: parseOptionalNumber(cmcMin.value),
@@ -182,6 +264,7 @@ function resetSearchResults() {
   accumulatedCards.value = [];
   searchTotalMatches.value = 0;
   loadedPages.value = 0;
+  variantCache.value = {};
 }
 
 function applySearchPayload(payload, { append = false } = {}) {
@@ -196,8 +279,16 @@ function applySearchPayload(payload, { append = false } = {}) {
 async function fetchSearchPage(pageNum) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
-  const creatureTypeTerm = creatureTypeQuery.value.trim();
-  if (!nameTerm && !textTerm && !creatureTypeTerm && !roleFilters.value.length) {
+  const creatureTypeTerm = showCreatureTypeFilter.value ? creatureTypeQuery.value.trim() : "";
+  const keywordTerm = keywordQuery.value.trim();
+  if (
+    !nameTerm
+    && !textTerm
+    && !creatureTypeTerm
+    && !keywordTerm
+    && !roleFilters.value.length
+    && typeFilter.value === "all"
+  ) {
     return null;
   }
   const token = ++searchRequestToken;
@@ -205,6 +296,7 @@ async function fetchSearchPage(pageNum) {
     q: nameTerm,
     text: textTerm,
     creatureType: creatureTypeTerm,
+    keyword: keywordTerm,
     ...searchApiParams(),
     page: pageNum,
     pageSize: PAGE_SIZE,
@@ -222,11 +314,72 @@ async function loadMeta() {
   }
 }
 
+async function loadSearchFacets() {
+  const next = await ignoreAborted(api.getSearchFacets());
+  if (next) {
+    searchFacets.value = {
+      creatureTypes: next.creatureTypes || [],
+      keywords: next.keywords || [],
+    };
+  }
+}
+
+async function onCreatureTypeSelect(value) {
+  const next = String(value || "").trim();
+  creatureTypeInput.value = next;
+  if (next === creatureTypeQuery.value.trim()) {
+    return;
+  }
+  creatureTypeQuery.value = next;
+  closeArtExplorer();
+  syncSearchRoute();
+}
+
+function clearCreatureTypeFilter() {
+  if (!creatureTypeInput.value && !creatureTypeQuery.value) {
+    return;
+  }
+  creatureTypeInput.value = "";
+  creatureTypeQuery.value = "";
+}
+
+async function onCardTypeSelect(value) {
+  const next = String(value || "all").trim() || "all";
+  if (typeFilter.value === next) {
+    return;
+  }
+  typeFilter.value = next;
+  if (next !== "creature") {
+    clearCreatureTypeFilter();
+  }
+  closeArtExplorer();
+  syncSearchRoute();
+}
+
+async function onKeywordSelect(value) {
+  const next = String(value || "").trim();
+  keywordInput.value = next;
+  if (next === keywordQuery.value.trim()) {
+    return;
+  }
+  keywordQuery.value = next;
+  closeArtExplorer();
+  syncSearchRoute();
+}
+
 async function loadResults({ autoSelectFirst = false } = {}) {
   const nameTerm = searchQuery.value.trim();
   const textTerm = textSearchQuery.value.trim();
-  const creatureTypeTerm = creatureTypeQuery.value.trim();
-  if (!nameTerm && !textTerm && !creatureTypeTerm && !roleFilters.value.length) {
+  const creatureTypeTerm = showCreatureTypeFilter.value ? creatureTypeQuery.value.trim() : "";
+  const keywordTerm = keywordQuery.value.trim();
+  if (
+    !nameTerm
+    && !textTerm
+    && !creatureTypeTerm
+    && !keywordTerm
+    && !roleFilters.value.length
+    && typeFilter.value === "all"
+  ) {
     resetSearchResults();
     if (autoSelectFirst) {
       closeArtExplorer();
@@ -290,6 +443,7 @@ async function autoSelectFirstResult() {
   }
   try {
     await loadNameVariants(first.name);
+    minimizeSearchFilters();
   } catch {
     closeArtExplorer();
   }
@@ -303,20 +457,15 @@ function setOwnedFilter(value) {
   ownedFilter.value = next;
 }
 
-function setFoilFilter(value) {
-  if (foilFilter.value === value) {
-    return;
-  }
-  foilFilter.value = value;
-  storeFoilFilter(value);
-}
-
 function onTypeFilterChange(event) {
   const next = event.target.value || "all";
   if (typeFilter.value === next) {
     return;
   }
   typeFilter.value = next;
+  if (next !== "creature") {
+    clearCreatureTypeFilter();
+  }
 }
 
 function toggleColorFilter(color) {
@@ -343,6 +492,10 @@ function clearStorageFilters() {
   storageFilters.value = [];
 }
 
+function setStorageFilters(values) {
+  storageFilters.value = Array.isArray(values) ? [...values] : [];
+}
+
 function toggleRoleFilter(role) {
   if (roleFilters.value.includes(role)) {
     roleFilters.value = roleFilters.value.filter((item) => item !== role);
@@ -353,6 +506,10 @@ function toggleRoleFilter(role) {
 
 function clearRoleFilters() {
   roleFilters.value = [];
+}
+
+function setRoleFilters(values) {
+  roleFilters.value = Array.isArray(values) ? [...values] : [];
 }
 
 function onRarityFilterChange(event) {
@@ -396,30 +553,146 @@ async function setCollectionCardScale(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
+function variantPrintKey(card) {
+  return `${card?.setCode || ""}|${String(card?.collectorNumber ?? "")}|${card?.artStyle || ""}`;
+}
+
+function cheapestValueKey(card) {
+  const raw = Number(card?.currentValue);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return [1, 0];
+  }
+  return [0, raw];
+}
+
+function sortVariantsCheapestFirst(variants) {
+  return [...(variants || [])].sort((left, right) => {
+    const leftKey = cheapestValueKey(left);
+    const rightKey = cheapestValueKey(right);
+    if (leftKey[0] !== rightKey[0]) {
+      return leftKey[0] - rightKey[0];
+    }
+    if (leftKey[1] !== rightKey[1]) {
+      return leftKey[1] - rightKey[1];
+    }
+    return variantPrintKey(left).localeCompare(variantPrintKey(right));
+  });
+}
+
+function findVariantIndex(variants, card) {
+  if (!card || !variants?.length) {
+    return 0;
+  }
+  const key = variantPrintKey(card);
+  const index = variants.findIndex((variant) => variantPrintKey(variant) === key);
+  return index >= 0 ? index : 0;
+}
+
+function displayedCardForName(name) {
+  return accumulatedCards.value.find((card) => card.name === name) || null;
+}
+
+function replaceDisplayedVariant(name, variant, variantCount) {
+  const index = accumulatedCards.value.findIndex((card) => card.name === name);
+  if (index < 0 || !variant) {
+    return;
+  }
+  const previous = accumulatedCards.value[index];
+  const next = {
+    ...variant,
+    variantCount: Number(variantCount || previous.variantCount || 1),
+  };
+  accumulatedCards.value = [
+    ...accumulatedCards.value.slice(0, index),
+    next,
+    ...accumulatedCards.value.slice(index + 1),
+  ];
+}
+
+async function ensureVariantsCached(name) {
+  const cached = variantCache.value[name];
+  if (cached?.variants?.length) {
+    return cached;
+  }
+  const payload = await api.getSearchNameVariants({
+    name,
+    ...searchApiParams(),
+  });
+  const variants = sortVariantsCheapestFirst(payload?.variants || []);
+  const entry = {
+    variants,
+    index: findVariantIndex(variants, displayedCardForName(name)),
+  };
+  variantCache.value = {
+    ...variantCache.value,
+    [name]: entry,
+  };
+  const displayed = displayedCardForName(name);
+  if (displayed && Number(displayed.variantCount || 0) !== variants.length) {
+    replaceDisplayedVariant(name, displayed, variants.length);
+  }
+  return entry;
+}
+
+async function cycleCardVariant({ name, direction }) {
+  const cardName = String(name || "").trim();
+  if (!cardName || !direction) {
+    return;
+  }
+  try {
+    const entry = await ensureVariantsCached(cardName);
+    if (!entry.variants.length) {
+      return;
+    }
+    const count = entry.variants.length;
+    const nextIndex = (entry.index + direction + count) % count;
+    entry.index = nextIndex;
+    variantCache.value = {
+      ...variantCache.value,
+      [cardName]: { ...entry },
+    };
+    replaceDisplayedVariant(cardName, entry.variants[nextIndex], count);
+    if (artExplorer.value?.name === cardName) {
+      artExplorer.value = {
+        ...artExplorer.value,
+        variants: entry.variants,
+      };
+      artSelectedIndex.value = nextIndex;
+    }
+  } catch (error) {
+    window.alert(error.message || "Could not load card versions.");
+  }
+}
+
 async function loadNameVariants(name, { preserveSelection = false } = {}) {
   selectedBrowseName.value = name;
-  const current = preserveSelection ? artExplorer.value?.variants?.[artSelectedIndex.value] : null;
+  const current = preserveSelection
+    ? artExplorer.value?.variants?.[artSelectedIndex.value]
+    : displayedCardForName(name);
   artPanelLoading.value = true;
   if (!preserveSelection && artExplorer.value?.name !== name) {
     artExplorer.value = null;
   }
   try {
-    const payload = await api.getSearchNameVariants({
+    const entry = await ensureVariantsCached(name);
+    const variants = entry.variants;
+    artExplorer.value = {
       name,
-      ...searchApiParams(),
-    });
-    artExplorer.value = payload;
+      variants,
+      totalVariants: variants.length,
+    };
     if (preserveSelection && current) {
-      const nextIndex = payload.variants.findIndex(
-        (variant) =>
-          variant.setCode === current.setCode
-          && String(variant.collectorNumber) === String(current.collectorNumber)
-          && (variant.artStyle || "") === (current.artStyle || ""),
-      );
-      artSelectedIndex.value = nextIndex >= 0 ? nextIndex : 0;
+      artSelectedIndex.value = findVariantIndex(variants, current);
+    } else if (current) {
+      artSelectedIndex.value = findVariantIndex(variants, current);
     } else {
-      artSelectedIndex.value = 0;
+      artSelectedIndex.value = entry.index || 0;
     }
+    entry.index = artSelectedIndex.value;
+    variantCache.value = {
+      ...variantCache.value,
+      [name]: { ...entry },
+    };
   } finally {
     artPanelLoading.value = false;
   }
@@ -428,9 +701,14 @@ async function loadNameVariants(name, { preserveSelection = false } = {}) {
 async function browseCardName(name) {
   try {
     await loadNameVariants(name);
+    minimizeSearchFilters();
   } catch (error) {
     window.alert(error.message || "Could not load card variants.");
   }
+}
+
+function minimizeSearchFilters() {
+  filterSidebarRef.value?.collapse?.({ persist: false });
 }
 
 function closeArtExplorer() {
@@ -440,21 +718,61 @@ function closeArtExplorer() {
   selectedBrowseName.value = "";
 }
 
+function onArtSelectedIndexChange(index) {
+  const nextIndex = Number(index) || 0;
+  artSelectedIndex.value = nextIndex;
+  const name = artExplorer.value?.name;
+  const variants = artExplorer.value?.variants || [];
+  if (!name || !variants.length) {
+    return;
+  }
+  const variant = variants[nextIndex];
+  if (!variant) {
+    return;
+  }
+  const cached = variantCache.value[name];
+  if (cached) {
+    variantCache.value = {
+      ...variantCache.value,
+      [name]: { ...cached, index: nextIndex, variants },
+    };
+  }
+  replaceDisplayedVariant(name, variant, variants.length);
+}
+
 async function submitSearch() {
   const nextName = searchInput.value.trim();
   const nextText = textSearchInput.value.trim();
-  const nextCreatureType = creatureTypeInput.value.trim();
+  const nextCreatureType = showCreatureTypeFilter.value ? creatureTypeInput.value.trim() : "";
+  const nextKeyword = keywordInput.value.trim();
   const sameQuery = nextName === searchQuery.value.trim()
     && nextText === textSearchQuery.value.trim()
-    && nextCreatureType === creatureTypeQuery.value.trim();
+    && nextCreatureType === creatureTypeQuery.value.trim()
+    && nextKeyword === keywordQuery.value.trim();
   searchQuery.value = nextName;
   textSearchQuery.value = nextText;
   creatureTypeQuery.value = nextCreatureType;
+  creatureTypeInput.value = nextCreatureType;
+  keywordQuery.value = nextKeyword;
   closeArtExplorer();
-  syncSearchRoute();
-  if (sameQuery && (nextName || nextText || nextCreatureType || roleFilters.value.length)) {
+  const hasQuery = Boolean(
+    nextName
+    || nextText
+    || nextCreatureType
+    || nextKeyword
+    || roleFilters.value.length
+    || typeFilter.value !== "all",
+  );
+  if (sameQuery && hasQuery) {
     await loadResults({ autoSelectFirst: true });
+    return;
   }
+  if (hasQuery) {
+    syncSearchRoute();
+    return;
+  }
+  resetSearchResults();
+  syncSearchRoute();
 }
 
 async function onArtOwnershipChanged() {
@@ -496,6 +814,7 @@ watch(
     route.query.q,
     route.query.text,
     route.query.creature,
+    route.query.keyword,
     route.query.owned,
     route.query.finish,
     route.query.type,
@@ -519,6 +838,7 @@ watch(
     const prevName = searchQuery.value;
     const prevText = textSearchQuery.value;
     const prevCreatureType = creatureTypeQuery.value;
+    const prevKeyword = keywordQuery.value;
     const prevRoles = roleFilters.value.join(",");
     syncFiltersFromRoute();
     let cancelled = false;
@@ -533,6 +853,7 @@ watch(
     const searchChanged = searchQuery.value !== prevName
       || textSearchQuery.value !== prevText
       || creatureTypeQuery.value !== prevCreatureType
+      || keywordQuery.value !== prevKeyword
       || roleFilters.value.join(",") !== prevRoles;
     await loadResults({ autoSelectFirst: searchChanged });
     if (cancelled) {
@@ -543,7 +864,8 @@ watch(
 
 onMounted(async () => {
   syncFiltersFromRoute();
-  await Promise.all([fetchPricingSettings(), loadMeta()]);
+  await Promise.all([fetchPricingSettings(), loadMeta(), loadSearchFacets()]);
+  syncFiltersFromRoute();
   routeSyncReady.value = true;
   stripSetScopeFromRoute();
   if (hasActiveSearch.value) {
@@ -597,16 +919,31 @@ onMounted(async () => {
               spellcheck="false"
               aria-label="Search cards by name"
             >
-            <input
+            <BrowseSelect
+              id="collection-search-page-type-input"
+              class="collection-search-page-input collection-search-page-select"
+              :model-value="typeFilter"
+              :options="cardTypeOptions"
+              filterable
+              hide-arrows
+              portal-panel
+              placeholder="Card type…"
+              aria-label="Filter by card type"
+              @update:model-value="onCardTypeSelect"
+            />
+            <BrowseSelect
+              v-if="showCreatureTypeFilter"
               id="collection-search-page-creature-input"
-              v-model="creatureTypeInput"
-              type="search"
-              class="collection-search-input collection-search-page-input"
+              class="collection-search-page-input collection-search-page-select"
+              :model-value="creatureTypeInput"
+              :options="creatureTypeOptions"
+              filterable
+              hide-arrows
+              portal-panel
               placeholder="Creature type…"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Search cards by creature type"
-            >
+              aria-label="Filter by creature type"
+              @update:model-value="onCreatureTypeSelect"
+            />
             <input
               id="collection-search-page-text-input"
               v-model="textSearchInput"
@@ -617,6 +954,18 @@ onMounted(async () => {
               spellcheck="false"
               aria-label="Search cards by oracle text"
             >
+            <BrowseSelect
+              id="collection-search-page-keyword-input"
+              class="collection-search-page-input collection-search-page-select"
+              :model-value="keywordInput"
+              :options="keywordOptions"
+              filterable
+              hide-arrows
+              portal-panel
+              placeholder="Keyword…"
+              aria-label="Filter by keyword ability"
+              @update:model-value="onKeywordSelect"
+            />
             <button type="submit" class="btn btn-primary collection-search-page-submit">
               Search
             </button>
@@ -673,13 +1022,37 @@ onMounted(async () => {
                     List
                   </button>
                 </div>
-                <CollectionGalleryScaleControl
-                  v-if="!isListView"
-                  class="collection-gallery-toolbar-scale"
-                  :model-value="collectionCardScale"
-                  :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
-                  @update:model-value="setCollectionCardScale"
-                />
+                <div class="search-results-toolbar-end">
+                  <label class="collection-all-sort">
+                    <span class="visually-hidden">Sort by</span>
+                    <div class="collection-sort-row">
+                      <select :value="searchSort" @change="updateSearchSort">
+                        <option value="newest">Newest set</option>
+                        <option value="name">Name</option>
+                        <option value="value">Value</option>
+                        <option value="cmc">CMC</option>
+                        <option value="power">Power</option>
+                        <option value="rarity">Rarity</option>
+                      </select>
+                      <button
+                        type="button"
+                        class="btn btn-secondary collection-sort-dir"
+                        :title="searchSortDir === 'asc' ? 'Ascending' : 'Descending'"
+                        :aria-label="`Sort ${searchSortDir === 'asc' ? 'ascending' : 'descending'}`"
+                        @click="toggleSearchSortDir"
+                      >
+                        {{ searchSortDir === "asc" ? "↑" : "↓" }}
+                      </button>
+                    </div>
+                  </label>
+                  <CollectionGalleryScaleControl
+                    v-if="!isListView"
+                    class="collection-gallery-toolbar-scale"
+                    :model-value="collectionCardScale"
+                    :options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150, 175, 200, 225, 250]"
+                    @update:model-value="setCollectionCardScale"
+                  />
+                </div>
               </div>
               <GalleryLoadingOverlay :loading="loading && !loadingMore" label="Searching cards…">
                 <VirtualizedCollectionCardGrid
@@ -692,6 +1065,7 @@ onMounted(async () => {
                   browse-names
                   :selected-name="selectedBrowseName"
                   @browse-name="browseCardName"
+                  @cycle-variant="cycleCardVariant"
                   @load-more="loadMoreResults"
                   @ownership-changed="onArtOwnershipChanged"
                 />
@@ -715,7 +1089,7 @@ onMounted(async () => {
               v-else-if="!hasActiveSearch"
               class="collection-search-results-hint collection-search-empty-prompt"
             >
-              Search for a card name, creature type, or rules text to browse art versions across your collection.
+              Search for a card name, card type, keyword, or rules text to browse art versions across your collection.
             </p>
           </div>
 
@@ -733,7 +1107,7 @@ onMounted(async () => {
               :variants="artExplorer.variants"
               :selected-index="artSelectedIndex"
               :set-label-for="setLabel"
-              @update:selected-index="artSelectedIndex = $event"
+              @update:selected-index="onArtSelectedIndexChange"
               @close="closeArtExplorer"
               @ownership-changed="onArtOwnershipChanged"
             />
@@ -741,7 +1115,10 @@ onMounted(async () => {
         </div>
       </div>
 
-      <FilterSidebar class="collection-desktop-filters collection-search-filters-sidebar">
+      <FilterSidebar
+        ref="filterSidebarRef"
+        class="collection-desktop-filters collection-search-filters-sidebar"
+      >
         <CollectionAllFilters
           :is-all-view="true"
           :is-all-sets-view="true"
@@ -759,22 +1136,24 @@ onMounted(async () => {
           :price-max="priceMax"
           :power-min="powerMin"
           :toughness-min="toughnessMin"
-          :show-sort="true"
+          :show-sort="false"
           sort-mode="search"
           :all-cards-sort="searchSort"
           :all-cards-sort-dir="searchSortDir"
           :show-role-filter="true"
+          :show-finish-filter="false"
           :show-ownership-filter="false"
           :show-unowned-filter="false"
           @set-owned-filter="setOwnedFilter"
-          @set-foil-filter="setFoilFilter"
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
+          @set-storage-filters="setStorageFilters"
           @toggle-role-filter="toggleRoleFilter"
           @clear-role-filters="clearRoleFilters"
+          @set-role-filters="setRoleFilters"
           @rarity-filter-change="onRarityFilterChange"
           @update:cmc-min="updateDetailFilter('cmcMin', $event)"
           @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -782,8 +1161,6 @@ onMounted(async () => {
           @update:price-max="updateDetailFilter('priceMax', $event)"
           @update:power-min="updateDetailFilter('powerMin', $event)"
           @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
-          @update-sort="updateSearchSort"
-          @toggle-sort-dir="toggleSearchSortDir"
         />
       </FilterSidebar>
     </div>
@@ -809,21 +1186,23 @@ onMounted(async () => {
         :price-max="priceMax"
         :power-min="powerMin"
         :toughness-min="toughnessMin"
-        :show-sort="true"
+        :show-sort="false"
         sort-mode="search"
         :all-cards-sort="searchSort"
         :all-cards-sort-dir="searchSortDir"
         :show-role-filter="true"
+        :show-finish-filter="false"
         :show-unowned-filter="false"
         @set-owned-filter="setOwnedFilter"
-        @set-foil-filter="setFoilFilter"
         @type-filter-change="onTypeFilterChange"
         @toggle-color-filter="toggleColorFilter"
         @clear-color-filters="clearColorFilters"
         @toggle-storage-filter="toggleStorageFilter"
         @clear-storage-filters="clearStorageFilters"
+        @set-storage-filters="setStorageFilters"
         @toggle-role-filter="toggleRoleFilter"
         @clear-role-filters="clearRoleFilters"
+        @set-role-filters="setRoleFilters"
         @rarity-filter-change="onRarityFilterChange"
         @update:cmc-min="updateDetailFilter('cmcMin', $event)"
         @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -831,8 +1210,6 @@ onMounted(async () => {
         @update:price-max="updateDetailFilter('priceMax', $event)"
         @update:power-min="updateDetailFilter('powerMin', $event)"
         @update:toughness-min="updateDetailFilter('toughnessMin', $event)"
-        @update-sort="updateSearchSort"
-        @toggle-sort-dir="toggleSearchSortDir"
       />
     </CollectionMobileFilterSheet>
   </div>

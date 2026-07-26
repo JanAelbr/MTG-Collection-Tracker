@@ -875,6 +875,10 @@ function clearStorageFilters() {
   storageFilters.value = [];
 }
 
+function setStorageFilters(values) {
+  storageFilters.value = Array.isArray(values) ? [...values] : [];
+}
+
 function setRarityFilter(value) {
   const next = value || "all";
   if (rarityFilter.value === next) {
@@ -1420,6 +1424,7 @@ onUnmounted(stopPolling);
           @clear-color-filters="clearColorFilters"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
+          @set-storage-filters="setStorageFilters"
           @rarity-filter-change="onRarityFilterChange"
           @update:cmc-min="updateDetailFilter('cmcMin', $event)"
           @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -1496,6 +1501,7 @@ onUnmounted(stopPolling);
           @clear-color-filters="clearColorFilters"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
+          @set-storage-filters="setStorageFilters"
           @rarity-filter-change="onRarityFilterChange"
           @update:cmc-min="updateDetailFilter('cmcMin', $event)"
           @update:cmc-max="updateDetailFilter('cmcMax', $event)"
@@ -1526,7 +1532,7 @@ onUnmounted(stopPolling);
             :selected-count="selectedKeys.size"
             :bulk-busy="bulkBusy"
             :card-scale="collectionCardScale"
-            :scale-options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150]"
+            :scale-options="pricingSettings?.collectionCardScaleOptions ?? [75, 100, 125, 150, 175, 200, 225, 250]"
             :mobile-filters-open="mobileFiltersOpen"
             :view-mode="collectionViewMode"
             :table-mode-available="tableModeAvailable"

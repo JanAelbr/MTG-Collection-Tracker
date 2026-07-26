@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { api } from "../api";
 import ArtStylePicker from "./ArtStylePicker.vue";
 import ManaSymbols from "./ManaSymbols.vue";
-import StorageLocationIcon from "./StorageLocationIcon.vue";
+import MultiBrowseSelect from "./MultiBrowseSelect.vue";
 import { DECK_COLOR_ORDER } from "../utils/deckCards";
 import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 import {
@@ -43,6 +43,7 @@ const props = defineProps({
   sortMode: { type: String, default: "collection" },
   showStorageFilter: { type: Boolean, default: true },
   showRoleFilter: { type: Boolean, default: false },
+  showFinishFilter: { type: Boolean, default: true },
   /** When false, hide the Unowned ownership option (search uses Owned / All only). */
   showUnownedFilter: { type: Boolean, default: true },
   /** When false, ownership controls are provided elsewhere (e.g. search toolbar). */
@@ -62,8 +63,10 @@ const emit = defineEmits([
   "clear-color-filters",
   "toggle-storage-filter",
   "clear-storage-filters",
+  "set-storage-filters",
   "toggle-role-filter",
   "clear-role-filters",
+  "set-role-filters",
   "rarity-filter-change",
   "update:cmcMin",
   "update:cmcMax",
@@ -89,7 +92,33 @@ const sectionedStorageLocations = computed(() =>
   })).filter((section) => section.locations.length),
 );
 
+const storageSelectOptions = computed(() =>
+  sectionedStorageLocations.value.flatMap((section) =>
+    section.locations.map((location) => ({
+      value: location.slug,
+      label: location.label,
+      group: section.label,
+      locationType: location.locationType,
+    })),
+  ),
+);
+
+const roleSelectOptions = computed(() =>
+  SEARCH_ROLE_OPTIONS.map((role) => ({
+    value: role.id,
+    label: role.label,
+  })),
+);
+
 const showArtStylePicker = computed(() => hasSelectableArtStyles(props.artStyles));
+
+function onStorageFiltersChange(values) {
+  emit("set-storage-filters", Array.isArray(values) ? [...values] : []);
+}
+
+function onRoleFiltersChange(values) {
+  emit("set-role-filters", Array.isArray(values) ? [...values] : []);
+}
 
 onMounted(async () => {
   storageLoading.value = true;
@@ -143,7 +172,10 @@ onMounted(async () => {
       />
     </div>
 
-    <div v-if="isAllView && !isTableView" class="filter-sidebar-section filter-sidebar-section--compact-filters">
+    <div
+      v-if="isAllView && !isTableView && (showOwnershipFilter || showFinishFilter)"
+      class="filter-sidebar-section filter-sidebar-section--compact-filters"
+    >
       <div v-if="showOwnershipFilter" class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Ownership</p>
         <div
@@ -178,7 +210,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="filter-sidebar-compact-filter">
+      <div v-if="showFinishFilter" class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Finish</p>
         <div class="button-group collection-finish-group">
           <button
@@ -217,7 +249,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView && isTableView" class="filter-sidebar-section">
+    <div v-if="isAllView && isTableView && showFinishFilter" class="filter-sidebar-section">
       <p class="filter-sidebar-label">Finish</p>
       <div class="button-group collection-finish-group">
         <button
@@ -256,64 +288,33 @@ onMounted(async () => {
     </div>
 
     <div v-if="isAllView && !isTableView && showStorageFilter" class="filter-sidebar-section">
-      <div class="filter-sidebar-label-row">
-        <p class="filter-sidebar-label">Storage</p>
-        <button
-          v-if="storageFilters.length"
-          type="button"
-          class="filter-button collection-storage-filter-clear"
-          @click="emit('clear-storage-filters')"
-        >
-          Clear
-        </button>
-      </div>
+      <p class="filter-sidebar-label">Storage</p>
       <p v-if="storageLoading" class="collection-storage-filter-status">Loading…</p>
-      <div v-else class="collection-storage-filter-list">
-        <template v-for="section in sectionedStorageLocations" :key="section.type">
-          <p class="collection-storage-filter-section">{{ section.label }}</p>
-          <label
-            v-for="location in section.locations"
-            :key="location.slug"
-            class="collection-storage-filter-item"
-          >
-            <input
-              type="checkbox"
-              :checked="storageFilters.includes(location.slug)"
-              @change="emit('toggle-storage-filter', location.slug)"
-            >
-            <StorageLocationIcon :location-type="location.locationType" />
-            <span class="collection-storage-filter-label">{{ location.label }}</span>
-          </label>
-        </template>
-      </div>
+      <MultiBrowseSelect
+        v-else
+        class="collection-multi-filter-select"
+        :model-value="storageFilters"
+        :options="storageSelectOptions"
+        filterable
+        portal-panel
+        placeholder="Any storage"
+        aria-label="Filter by storage location"
+        @update:model-value="onStorageFiltersChange"
+      />
     </div>
 
     <div v-if="isAllView && !isTableView && showRoleFilter" class="filter-sidebar-section">
-      <div class="filter-sidebar-label-row">
-        <p class="filter-sidebar-label">Role</p>
-        <button
-          v-if="roleFilters.length"
-          type="button"
-          class="filter-button collection-storage-filter-clear"
-          @click="emit('clear-role-filters')"
-        >
-          Clear
-        </button>
-      </div>
-      <div class="collection-storage-filter-list collection-role-filter-list">
-        <label
-          v-for="role in SEARCH_ROLE_OPTIONS"
-          :key="role.id"
-          class="collection-storage-filter-item"
-        >
-          <input
-            type="checkbox"
-            :checked="roleFilters.includes(role.id)"
-            @change="emit('toggle-role-filter', role.id)"
-          >
-          <span class="collection-storage-filter-label">{{ role.label }}</span>
-        </label>
-      </div>
+      <p class="filter-sidebar-label">Role</p>
+      <MultiBrowseSelect
+        class="collection-multi-filter-select"
+        :model-value="roleFilters"
+        :options="roleSelectOptions"
+        filterable
+        portal-panel
+        placeholder="Any role"
+        aria-label="Filter by card role"
+        @update:model-value="onRoleFiltersChange"
+      />
     </div>
 
     <div v-if="isAllView && !isTableView" class="filter-sidebar-section">
@@ -474,6 +475,8 @@ onMounted(async () => {
               <option value="name">Name</option>
               <option value="value">Value</option>
               <option value="cmc">CMC</option>
+              <option value="power">Power</option>
+              <option value="rarity">Rarity</option>
             </template>
             <template v-else>
               <option value="number">Collector number</option>

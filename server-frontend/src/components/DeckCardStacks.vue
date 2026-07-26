@@ -17,6 +17,7 @@ const props = defineProps({
   defaultDeckId: { type: String, default: "" },
   showDeckRemove: { type: Boolean, default: false },
   deckName: { type: String, default: "" },
+  colorIdentity: { type: Array, default: null },
 });
 
 const emit = defineEmits(["deck-added", "deck-removed", "deck-changed"]);
@@ -183,6 +184,7 @@ function closeAddModal() {
         :section="addModal.section"
         :card-type="addModal.cardType"
         :type-label="addModal.typeLabel"
+        :color-identity="colorIdentity"
         @close="closeAddModal"
         @added="$emit('deck-added', $event)"
       />

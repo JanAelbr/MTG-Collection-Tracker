@@ -3,7 +3,7 @@ import { computed } from "vue";
 
 const props = defineProps({
   modelValue: { type: Number, default: 100 },
-  options: { type: Array, default: () => [75, 100, 125, 150] },
+  options: { type: Array, default: () => [75, 100, 125, 150, 175, 200, 225, 250] },
 });
 
 const emit = defineEmits(["update:modelValue"]);

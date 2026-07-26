@@ -17,7 +17,72 @@ class DeckError(Exception):
         self.status_code = status_code
 
 
+def _assert_card_matches_deck_color_identity(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: int,
+    set_code: str,
+    collector_number: str,
+    card_name: str = "",
+) -> None:
+    """Reject maindeck adds outside the commander's color identity."""
+    from util.commander_rules import card_is_legal_for_deck, commander_color_identity
 
+    commander_rows = conn.execute(
+        """
+        SELECT
+            COALESCE(c.name, dc.card_name) AS name,
+            c.color_identity,
+            c.colors,
+            c.legalities
+        FROM deck_cards dc
+        LEFT JOIN cards c
+          ON c.set_code = dc.set_code
+         AND c.collector_number = dc.collector_number
+        WHERE dc.deck_id = ? AND dc.section = 'commander'
+        """,
+        (deck_id,),
+    ).fetchall()
+    if not commander_rows:
+        return
+
+    commanders = [
+        {
+            "name": row["name"],
+            "color_identity": row["color_identity"],
+            "colors": row["colors"],
+            "legalities": row["legalities"],
+        }
+        for row in commander_rows
+    ]
+    allowed = commander_color_identity(commanders)
+
+    card_row = conn.execute(
+        """
+        SELECT name, color_identity, colors, legalities
+        FROM cards
+        WHERE set_code = ? AND collector_number = ?
+        LIMIT 1
+        """,
+        (str(set_code).upper(), str(collector_number)),
+    ).fetchone()
+    if card_row is None:
+        return
+
+    card = {
+        "name": card_row["name"] or card_name,
+        "color_identity": card_row["color_identity"],
+        "colors": card_row["colors"],
+        "legalities": card_row["legalities"],
+    }
+    if card_is_legal_for_deck(card, allowed):
+        return
+
+    identity_label = "".join(allowed) if allowed else "colorless"
+    raise DeckError(
+        f"{card['name']} is outside the commander's color identity ({identity_label}).",
+        status_code=400,
+    )
 
 
 def list_decks(conn: sqlite3.Connection) -> dict:
@@ -435,6 +500,15 @@ def add_card_to_deck(
 
     if not resolved.get("set_code") or not resolved.get("collector_number"):
         raise DeckError("Card print is required", status_code=400)
+
+    if section_name == "main":
+        _assert_card_matches_deck_color_identity(
+            conn,
+            deck_id=deck_row[0],
+            set_code=resolved["set_code"],
+            collector_number=resolved["collector_number"],
+            card_name=resolved.get("card_name") or "",
+        )
 
     owned_default = 0
 
@@ -1222,6 +1296,7 @@ def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, 
         "imageUri": card.get("image_uri"),
         "imageUriBack": card.get("image_uri_back") or "",
         "colors": card.get("colors") or [],
+        "colorIdentity": card.get("color_identity") or card.get("colorIdentity") or [],
         "typeLine": card.get("type_line") or "",
         "cardType": card.get("card_type") or "",
         "cardTypes": card.get("card_types") or [],

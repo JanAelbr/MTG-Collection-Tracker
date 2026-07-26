@@ -39,6 +39,7 @@ const props = defineProps({
 const emit = defineEmits([
   "browse-name",
   "pick-card",
+  "cycle-variant",
   "ownership-changed",
   "toggle-select",
   "focus-index",
@@ -145,6 +146,19 @@ function isCardSelected(card) {
     return printKey(card) === props.selectedKey;
   }
   return Boolean(props.browseNames && props.selectedName && card.name === props.selectedName);
+}
+
+function canCycleVariants(card) {
+  return props.browseNames && Number(card?.variantCount || 0) > 1;
+}
+
+function onCycleVariant(event, card, direction) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!canCycleVariants(card) || !card?.name) {
+    return;
+  }
+  emit("cycle-variant", { name: card.name, direction });
 }
 
 function isBulkSelected(card) {
@@ -272,35 +286,60 @@ function onDrop(index, event) {
       >
         {{ isCardFavorite(card) ? "★" : "☆" }}
       </button>
-      <button
+      <div
         v-if="browseNames || pickPrints"
-        type="button"
         class="collection-card-grid-select"
-        @click="pickPrints ? emit('pick-card', card) : emit('browse-name', card.name)"
       >
-        <div class="collection-card-grid-image-wrap">
-          <span
-            v-if="isCardSelected(card)"
-            class="collection-card-grid-browse-selected-badge"
+        <button
+          type="button"
+          class="collection-card-grid-select-hit"
+          :aria-label="pickPrints ? `Select ${card.name}` : `Browse ${card.name}`"
+          @click="pickPrints ? emit('pick-card', card) : emit('browse-name', card.name)"
+        >
+          <div class="collection-card-grid-image-wrap">
+            <span
+              v-if="isCardSelected(card)"
+              class="collection-card-grid-browse-selected-badge"
+            >
+              Selected
+            </span>
+            <CardInteractiveImage
+              v-if="card.imageUri"
+              :src="card.imageUri"
+              :alt="card.name"
+              :card="card"
+              :show-details="false"
+              :show-copy-controls="!zoomOnly"
+              img-class="collection-card-grid-image"
+              @ownership-changed="emit('ownership-changed')"
+            />
+            <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
+          </div>
+        </button>
+        <span
+          class="collection-card-grid-meta"
+          :class="{ 'collection-card-grid-meta--browse-cycle': canCycleVariants(card) }"
+        >
+          <button
+            v-if="canCycleVariants(card)"
+            type="button"
+            class="collection-card-grid-variant-nav collection-card-grid-variant-nav--prev"
+            aria-label="Previous art version"
+            @click="onCycleVariant($event, card, -1)"
           >
-            Selected
-          </span>
-          <CardInteractiveImage
-            v-if="card.imageUri"
-            :src="card.imageUri"
-            :alt="card.name"
-            :card="card"
-            :show-details="false"
-            :show-copy-controls="!zoomOnly"
-            img-class="collection-card-grid-image"
-            @ownership-changed="emit('ownership-changed')"
-          />
-          <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
-        </div>
-        <span class="collection-card-grid-meta">
-          <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+            ‹
+          </button>
           <span class="collection-card-grid-meta-text">
-            <span class="collection-card-grid-name">{{ card.name }}</span>
+            <span class="collection-card-grid-name-row collection-card-grid-browse-name-row">
+              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+              <button
+                type="button"
+                class="collection-card-grid-name collection-card-grid-name-button"
+                @click="pickPrints ? emit('pick-card', card) : emit('browse-name', card.name)"
+              >
+                {{ card.name }}
+              </button>
+            </span>
             <span class="collection-card-grid-value">
               <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
               <span
@@ -310,8 +349,17 @@ function onDrop(index, event) {
               >· {{ listingLabel(card) }}</span>
             </span>
           </span>
+          <button
+            v-if="canCycleVariants(card)"
+            type="button"
+            class="collection-card-grid-variant-nav collection-card-grid-variant-nav--next"
+            aria-label="Next art version"
+            @click="onCycleVariant($event, card, 1)"
+          >
+            ›
+          </button>
         </span>
-      </button>
+      </div>
       <template v-else>
       <div class="collection-card-grid-image-wrap">
         <span v-if="selectable && isBulkSelected(card)" class="collection-card-grid-check" aria-hidden="true">✓</span>

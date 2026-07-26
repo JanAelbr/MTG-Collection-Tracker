@@ -1,4 +1,5 @@
 import sqlite3
+import re
 
 from report.card_detail_data import collector_sort_key
 
@@ -22,12 +23,22 @@ from util.set_catalog import load_sets_catalog
 
 SEARCH_PAGE_SIZE = 25
 MAX_SEARCH_PAGE_SIZE = 100
-SEARCH_SORT_FIELDS = frozenset({"newest", "name", "value", "cmc"})
+SEARCH_SORT_FIELDS = frozenset({"newest", "name", "value", "cmc", "rarity", "power"})
 SEARCH_SORT_DIR_DEFAULTS = {
     "newest": "desc",
     "name": "asc",
     "value": "desc",
     "cmc": "asc",
+    "rarity": "asc",
+    "power": "desc",
+}
+RARITY_SORT_RANK = {
+    "common": 0,
+    "uncommon": 1,
+    "rare": 2,
+    "mythic": 3,
+    "special": 4,
+    "bonus": 5,
 }
 
 # Keep in sync with frontend CARD_ROLE_LABELS (search UI skips "land").
@@ -132,6 +143,7 @@ def _sets_matching_search_filters(
     name_search: str = "",
     text_search: str = "",
     creature_type_search: str = "",
+    keyword_search: str = "",
     color_filters: list[str] | None = None,
     type_filter: str = "all",
     role_filters: list[str] | None = None,
@@ -159,6 +171,10 @@ def _sets_matching_search_filters(
     if creature_term:
         clauses.append("c.type_line LIKE ? COLLATE NOCASE")
         params.append(f"%{creature_term}%")
+
+    for keyword in parse_keyword_search_terms(keyword_search):
+        clauses.append("c.oracle_text LIKE ? COLLATE NOCASE")
+        params.append(f"%{keyword}%")
 
     normalized_type = (type_filter or "all").strip().lower()
     if normalized_type and normalized_type != "all":
@@ -216,6 +232,7 @@ def _resolve_search_pool_set_codes(
     name_search: str = "",
     text_search: str = "",
     creature_type_search: str = "",
+    keyword_search: str = "",
     color_filters: list[str] | None = None,
     type_filter: str = "all",
     role_filters: list[str] | None = None,
@@ -229,6 +246,7 @@ def _resolve_search_pool_set_codes(
     name_term = name_search.strip()
     text_term = text_search.strip()
     creature_term = creature_type_search.strip()
+    keyword_terms = parse_keyword_search_terms(keyword_search)
     colors = list(color_filters or [])
     roles = list(role_filters or [])
     normalized_type = (type_filter or "all").strip().lower()
@@ -239,6 +257,7 @@ def _resolve_search_pool_set_codes(
         name_term
         and not text_term
         and not creature_term
+        and not keyword_terms
         and not colors
         and not roles
         and normalized_type == "all"
@@ -250,6 +269,7 @@ def _resolve_search_pool_set_codes(
         name_term
         or text_term
         or creature_term
+        or keyword_terms
         or colors
         or roles
         or (normalized_type and normalized_type != "all")
@@ -263,6 +283,7 @@ def _resolve_search_pool_set_codes(
         name_search=name_term,
         text_search=text_term,
         creature_type_search=creature_term,
+        keyword_search=keyword_search,
         color_filters=colors,
         type_filter=normalized_type,
         role_filters=roles,
@@ -301,6 +322,12 @@ def _numeric_nulls_last_key(value, *, ascending: bool) -> tuple:
     except (TypeError, ValueError):
         return (1, 0.0)
     return (0, number if ascending else -number)
+
+
+def _power_sort_value(card: dict) -> float | None:
+    from util.card_metadata import _parse_numeric_stat
+
+    return _parse_numeric_stat(card.get("power"))
 
 
 def _rank_search_pool(
@@ -342,6 +369,21 @@ def _rank_search_pool(
                 *tie_break(card),
             ),
         )
+    if normalized_sort == "power":
+        return sorted(
+            pool,
+            key=lambda card: (
+                _numeric_nulls_last_key(_power_sort_value(card), ascending=ascending),
+                *tie_break(card),
+            ),
+        )
+    if normalized_sort == "rarity":
+        def rarity_key(card: dict) -> tuple:
+            rarity = str(card.get("rarity") or "").strip().lower()
+            rank = RARITY_SORT_RANK.get(rarity, 99)
+            return (rank if ascending else -rank, *tie_break(card))
+
+        return sorted(pool, key=rarity_key)
     return sorted(
         pool,
         key=lambda card: _newest_first_key(card, release_dates),
@@ -389,6 +431,36 @@ def _card_matches_creature_type(card: dict, term: str) -> bool:
     return term in (card.get("typeLine") or "").lower()
 
 
+def parse_keyword_search_terms(raw: str | list[str] | None) -> list[str]:
+    """Split keyword search into terms (comma-separated). Phrases like 'first strike' stay intact."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        items = raw
+    else:
+        items = str(raw).split(",")
+    terms: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        term = " ".join(str(item).strip().lower().split())
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+    return terms
+
+
+def _card_matches_keyword_terms(card: dict, terms: list[str]) -> bool:
+    if not terms:
+        return True
+    text = (card.get("oracleText") or "").lower()
+    for term in terms:
+        pattern = r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])"
+        if not re.search(pattern, text):
+            return False
+    return True
+
+
 def _parse_storage_filters(storage: str | list[str] | None) -> list[str]:
     if not storage:
         return []
@@ -424,6 +496,21 @@ def _card_matches_role_filters(card: dict, role_filters: list[str]) -> bool:
     return any(role in card_roles for role in role_filters)
 
 
+def _card_matches_allowed_color_identity(
+    card: dict,
+    allowed_identity: list[str] | None,
+) -> bool:
+    """When allowed_identity is set, card CI must be a subset (empty = colorless only)."""
+    if allowed_identity is None:
+        return True
+    from util.card_metadata import card_matches_color_identity, parse_card_colors
+
+    identity = card.get("colorIdentity") or card.get("color_identity") or []
+    if isinstance(identity, str):
+        identity = parse_card_colors(identity)
+    return card_matches_color_identity(identity, allowed_identity)
+
+
 def _filter_enriched_cards(
     cards: list[dict],
     *,
@@ -434,8 +521,10 @@ def _filter_enriched_cards(
     exact_name: str = "",
     text_search: str = "",
     creature_type_search: str = "",
+    keyword_search: str = "",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
@@ -491,11 +580,22 @@ def _filter_enriched_cards(
     if creature_type_term:
         lowered = creature_type_term.lower()
         filtered = [card for card in filtered if _card_matches_creature_type(card, lowered)]
+    keyword_terms = parse_keyword_search_terms(keyword_search)
+    if keyword_terms:
+        filtered = [
+            card for card in filtered
+            if _card_matches_keyword_terms(card, keyword_terms)
+        ]
     selected_roles = role_filters or []
     if selected_roles:
         filtered = [
             card for card in filtered
             if _card_matches_role_filters(card, selected_roles)
+        ]
+    if color_identity is not None:
+        filtered = [
+            card for card in filtered
+            if _card_matches_allowed_color_identity(card, color_identity)
         ]
     return filtered
 
@@ -510,8 +610,10 @@ def _filtered_pool(
     exact_name: str = "",
     text_search: str = "",
     creature_type_search: str = "",
+    keyword_search: str = "",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
@@ -533,6 +635,7 @@ def _filtered_pool(
             name_search=name_search,
             text_search=text_search,
             creature_type_search=creature_type_search,
+            keyword_search=keyword_search,
             color_filters=color_filters,
             type_filter=type_filter,
             role_filters=role_filters,
@@ -554,8 +657,10 @@ def _filtered_pool(
         exact_name=exact_name,
         text_search=text_search,
         creature_type_search=creature_type_search,
+        keyword_search=keyword_search,
         type_filter=type_filter,
         color_filters=color_filters,
+        color_identity=color_identity,
         rarity_filter=rarity_filter,
         cmc_min=cmc_min,
         cmc_max=cmc_max,
@@ -834,16 +939,75 @@ def _unique_names(pool: list[dict]) -> list[str]:
     return sorted({card["name"] for card in pool if card.get("name")})
 
 
+def _current_value_sort_key(card: dict) -> tuple:
+    """Lower is cheaper. Missing/non-positive prices sort after priced prints."""
+    raw = card.get("currentValue")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return (1, 0.0)
+    if value <= 0:
+        return (1, 0.0)
+    return (0, value)
+
+
+def _is_cheaper_print(candidate: dict, current: dict) -> bool:
+    return _current_value_sort_key(candidate) < _current_value_sort_key(current)
+
+
 def _dedupe_ranked_by_name(cards: list[dict]) -> list[dict]:
-    seen: dict[str, dict] = {}
+    """Keep name order from the ranked list; prefer the cheapest print per name."""
+    best: dict[str, dict] = {}
     order: list[str] = []
     for card in cards:
         name = card.get("name")
-        if not name or name in seen:
+        if not name:
             continue
-        seen[name] = card
-        order.append(name)
-    return [seen[name] for name in order]
+        if name not in best:
+            best[name] = card
+            order.append(name)
+            continue
+        if _is_cheaper_print(card, best[name]):
+            best[name] = card
+    return [best[name] for name in order]
+
+
+def _variant_counts_by_name(pool: list[dict]) -> dict[str, int]:
+    prints_by_name: dict[str, set[tuple]] = {}
+    for card in pool:
+        name = card.get("name")
+        if not name:
+            continue
+        prints_by_name.setdefault(name, set()).add(_print_key(card))
+    return {name: len(keys) for name, keys in prints_by_name.items()}
+
+
+def _catalog_variant_counts_for_names(
+    conn: sqlite3.Connection,
+    names: list[str],
+) -> dict[str, int]:
+    """Count distinct printings per name in the catalog (ignores owned/storage filters)."""
+    cleaned = [str(name).strip() for name in names if str(name or "").strip()]
+    if not cleaned:
+        return {}
+    unique_names = list(dict.fromkeys(cleaned))
+    placeholders = ", ".join("?" for _ in unique_names)
+    rows = conn.execute(
+        f"""
+        SELECT name, set_code, collector_number, COALESCE(art_style, '')
+        FROM cards
+        WHERE name IN ({placeholders})
+          AND {exclude_alchemy_sql("collector_number")}
+          AND {exclude_alchemy_art_style_sql("art_style")}
+        """,
+        unique_names,
+    ).fetchall()
+    prints_by_name: dict[str, set[tuple]] = {}
+    for name, set_code, collector_number, art_style in rows:
+        prints_by_name.setdefault(name, set()).add(
+            (set_code, str(collector_number), art_style or "")
+        )
+    return {name: len(keys) for name, keys in prints_by_name.items()}
 
 
 def list_name_variants(
@@ -855,6 +1019,7 @@ def list_name_variants(
     foil_filter: str = "all",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
@@ -873,6 +1038,7 @@ def list_name_variants(
     filter_kwargs = {
         "type_filter": type_filter,
         "color_filters": color_filters or [],
+        "color_identity": color_identity,
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,
         "cmc_max": cmc_max,
@@ -948,11 +1114,13 @@ def search_cards(
     search: str = "",
     text_search: str = "",
     creature_type_search: str = "",
+    keyword_search: str = "",
     set_code: str = "All",
     owned_filter: str = "all",
     foil_filter: str = "all",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
     cmc_max: float | None = None,
@@ -974,11 +1142,15 @@ def search_cards(
     name_term = search.strip()
     text_term = text_search.strip()
     creature_type_term = creature_type_search.strip()
+    keyword_terms = parse_keyword_search_terms(keyword_search)
+    keyword_term = ", ".join(keyword_terms)
     selected_roles = list(role_filters or [])
+    normalized_type = (type_filter or "all").strip().lower() or "all"
     empty_payload = {
         "search": name_term,
         "textSearch": text_term,
         "creatureTypeSearch": creature_type_term,
+        "keywordSearch": keyword_term,
         "roleFilters": selected_roles,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
@@ -991,12 +1163,20 @@ def search_cards(
         "totalPages": 1,
         "cards": [],
     }
-    if not name_term and not text_term and not creature_type_term and not selected_roles:
+    if (
+        not name_term
+        and not text_term
+        and not creature_type_term
+        and not keyword_terms
+        and not selected_roles
+        and normalized_type == "all"
+    ):
         return empty_payload
 
     filter_kwargs = {
         "type_filter": type_filter,
         "color_filters": color_filters or [],
+        "color_identity": color_identity,
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,
         "cmc_max": cmc_max,
@@ -1015,6 +1195,7 @@ def search_cards(
         name_search=name_term,
         text_search=text_term,
         creature_type_search=creature_type_term,
+        keyword_search=keyword_term,
         **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
@@ -1029,13 +1210,25 @@ def search_cards(
     safe_page_size = max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE))
     safe_page = max(1, page)
     start = (safe_page - 1) * safe_page_size
-    page_cards = unique_ranked[start : start + safe_page_size]
+    page_slice = unique_ranked[start : start + safe_page_size]
+    variant_counts = _catalog_variant_counts_for_names(
+        conn,
+        [card.get("name") or "" for card in page_slice],
+    )
+    page_cards = [
+        {
+            **card,
+            "variantCount": int(variant_counts.get(card.get("name") or "", 1)),
+        }
+        for card in page_slice
+    ]
     total_pages = max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1
 
     return {
         "search": name_term,
         "textSearch": text_term,
         "creatureTypeSearch": creature_type_term,
+        "keywordSearch": keyword_term,
         "roleFilters": selected_roles,
         "setCode": set_code,
         "ownedFilter": normalized_owned,
@@ -1047,4 +1240,173 @@ def search_cards(
         "totalMatches": total,
         "totalPages": total_pages,
         "cards": page_cards,
+    }
+
+
+def list_owned_role_counts(
+    conn: sqlite3.Connection,
+    *,
+    storage_filters: list[str] | None = None,
+) -> dict:
+    """Distinct owned card names per searchable role (a name can count in multiple roles)."""
+    from collections import Counter
+
+    from util.card_name_roles import ensure_card_name_roles_table, parse_roles
+
+    ensure_card_name_roles_table(conn)
+    selected_storage = [slug for slug in (storage_filters or []) if str(slug).strip()]
+    params: list = []
+
+    if selected_storage and _has_card_instances_table(conn):
+        placeholders = ", ".join("?" for _ in selected_storage)
+        params.extend(selected_storage)
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT c.name, r.roles
+            FROM cards c
+            JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE
+            JOIN card_instances ci
+              ON ci.set_code = c.set_code
+             AND CAST(ci.collector_number AS TEXT) = CAST(c.collector_number AS TEXT)
+            WHERE ci.location_slug IN ({placeholders})
+              AND {exclude_alchemy_sql("c.collector_number")}
+              AND {exclude_alchemy_art_style_sql("c.art_style")}
+            """,
+            params,
+        ).fetchall()
+    else:
+        owned_exists = _owned_print_exists_sql(
+            "c",
+            include_instances=_has_card_instances_table(conn),
+        )
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT c.name, r.roles
+            FROM cards c
+            JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE
+            WHERE {owned_exists}
+              AND {exclude_alchemy_sql("c.collector_number")}
+              AND {exclude_alchemy_art_style_sql("c.art_style")}
+            """,
+        ).fetchall()
+
+    counts: Counter[str] = Counter()
+    for row in rows:
+        for role in parse_roles(row[1]):
+            if role in SEARCHABLE_CARD_ROLES:
+                counts[role] += 1
+
+    # Stable order matching frontend SEARCH_ROLE_OPTIONS / CARD_ROLE_LABELS.
+    ordered = [
+        "ramp",
+        "draw",
+        "removal",
+        "interaction",
+        "protection",
+        "tutor",
+        "fast_mana",
+        "game_changer",
+        "combo_piece",
+        "synergy",
+        "recursion",
+        "reanimate",
+        "equipment",
+        "aura",
+        "graveyard_hate",
+        "extra_turn",
+        "mass_land_destruction",
+        "board_wipe",
+        "bounce",
+        "counterspell",
+        "land_destruction",
+        "mill",
+        "discard",
+        "sac_outlet",
+        "fog",
+    ]
+    return {
+        "roles": [
+            {"id": role_id, "count": int(counts.get(role_id, 0))}
+            for role_id in ordered
+            if role_id in SEARCHABLE_CARD_ROLES
+        ],
+    }
+
+
+def _type_line_subtypes(type_line: str) -> list[str]:
+    subtypes: list[str] = []
+    for face in str(type_line or "").split("//"):
+        face = face.strip()
+        separator = None
+        for candidate in ("—", "–", " - "):
+            if candidate in face:
+                separator = candidate
+                break
+        if not separator:
+            continue
+        subtype_text = face.split(separator, 1)[1]
+        for token in subtype_text.replace(",", " ").split():
+            cleaned = token.strip()
+            if cleaned:
+                subtypes.append(cleaned)
+    return subtypes
+
+
+def list_search_facets(conn: sqlite3.Connection) -> dict:
+    """Creature types and keyword abilities present in the local catalog."""
+    from util.mtg_keywords import KEYWORD_ABILITIES
+
+    type_rows = conn.execute(
+        f"""
+        SELECT DISTINCT type_line
+        FROM cards
+        WHERE type_line IS NOT NULL
+          AND TRIM(type_line) != ''
+          AND {exclude_alchemy_sql("collector_number")}
+          AND {exclude_alchemy_art_style_sql("art_style")}
+        """
+    ).fetchall()
+    creature_types: set[str] = set()
+    for row in type_rows:
+        for face in str(row[0] or "").split("//"):
+            if "creature" not in face.casefold():
+                continue
+            for subtype in _type_line_subtypes(face):
+                creature_types.add(subtype)
+
+    keyword_lookup = {name.casefold(): name for name in KEYWORD_ABILITIES}
+    remaining = dict(keyword_lookup)
+    found_keywords: set[str] = set()
+    oracle_rows = conn.execute(
+        f"""
+        SELECT oracle_text
+        FROM cards
+        WHERE oracle_text IS NOT NULL
+          AND TRIM(oracle_text) != ''
+          AND {exclude_alchemy_sql("collector_number")}
+          AND {exclude_alchemy_art_style_sql("art_style")}
+        """
+    ).fetchall()
+    for row in oracle_rows:
+        if not remaining:
+            break
+        text = str(row[0] or "")
+        if not text:
+            continue
+        lowered = text.casefold()
+        matched: list[str] = []
+        for key in remaining:
+            pattern = r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])"
+            if re.search(pattern, lowered):
+                found_keywords.add(key)
+                matched.append(key)
+        for key in matched:
+            remaining.pop(key, None)
+
+    return {
+        "creatureTypes": sorted(creature_types, key=lambda value: value.casefold()),
+        "keywords": [
+            keyword_lookup[key]
+            for key in sorted(found_keywords, key=lambda value: value.casefold())
+        ],
     }

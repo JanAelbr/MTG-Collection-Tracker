@@ -191,6 +191,52 @@ class DecksApiServiceTests(unittest.TestCase):
         self.assertEqual(sections["commander"], 1)
         self.assertEqual(sections["main"], 3)
 
+    def test_add_card_rejects_off_color_identity(self):
+        deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()
+        deck_id = str(deck_row[0])
+        # Commander (Sol Ring) has empty identity → only colorless cards are legal.
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
+                colors, type_line, card_type, image_uri, cardmarket_url, color_identity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "LTR-abrade",
+                "LTR",
+                "99",
+                "Abrade",
+                None,
+                0.5,
+                None,
+                None,
+                1,
+                0,
+                0,
+                '["R"]',
+                "Instant",
+                "instant",
+                None,
+                None,
+                '["R"]',
+            ),
+        )
+        self.conn.commit()
+
+        with self.assertRaises(decks_service.DeckError) as ctx:
+            decks_service.add_card_to_deck(
+                self.conn,
+                deck_id=deck_id,
+                set_code="LTR",
+                collector_number="99",
+                finish=0,
+                section="main",
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("color identity", ctx.exception.message.lower())
+
     def test_remove_card_from_deck_moves_owned_copies_to_default_storage(self):
         deck_row = self.conn.execute("SELECT deck_id, slug FROM decks LIMIT 1").fetchone()
         deck_id = str(deck_row[0])

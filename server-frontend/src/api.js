@@ -592,6 +592,17 @@ export const api = {
 
   getReportsMeta: () => apiRequest("/reports/meta"),
 
+  getOwnedRoles: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.storageFilters?.length) {
+      query.set("storage", params.storageFilters.join(","));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest(`/reports/owned-roles${suffix}`);
+  },
+
+  getSearchFacets: () => apiRequest("/reports/search/facets"),
+
   getReportCards: (params = {}) => {
 
     const query = new URLSearchParams();
@@ -653,11 +664,13 @@ export const api = {
     if (params.q) query.set("q", params.q);
     if (params.text) query.set("text", params.text);
     if (params.creatureType) query.set("creatureType", params.creatureType);
+    if (params.keyword) query.set("keyword", params.keyword);
     if (params.setCode) query.set("setCode", params.setCode);
     if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
     if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
     if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.colorIdentity != null) query.set("colorIdentity", params.colorIdentity.join(","));
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
     if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
@@ -683,6 +696,7 @@ export const api = {
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
     if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
     if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.colorIdentity != null) query.set("colorIdentity", params.colorIdentity.join(","));
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
     if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));

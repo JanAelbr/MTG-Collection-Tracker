@@ -24,6 +24,7 @@ const emit = defineEmits([
   "keydown",
   "ownership-changed",
   "browse-name",
+  "cycle-variant",
   "load-more",
   "favorite-changed",
 ]);
@@ -278,6 +279,7 @@ defineExpose({ scrollToIndex, rootRef });
           @toggle-select="emit('toggle-select', $event)"
           @focus-index="emit('focus-index', $event)"
           @browse-name="emit('browse-name', $event)"
+          @cycle-variant="emit('cycle-variant', $event)"
           @ownership-changed="emit('ownership-changed')"
           @favorite-changed="emit('favorite-changed', $event)"
         />

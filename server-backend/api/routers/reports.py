@@ -11,6 +11,8 @@ from api.services.search_service import (
     _parse_role_filters,
     _parse_storage_filters,
     list_name_variants,
+    list_owned_role_counts,
+    list_search_facets,
     search_cards,
 )
 
@@ -29,6 +31,22 @@ def reports_meta(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         params={},
         ttl=120,
         loader=lambda: load_reports_meta(conn),
+    )
+
+
+@router.get("/owned-roles")
+def report_owned_roles(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    storage: str = Query(default=""),
+):
+    storage_filters = _parse_storage_filters(storage)
+    return serve_cached_json(
+        request,
+        namespace="reports.owned-roles",
+        params={"storage": ",".join(storage_filters)},
+        ttl=60,
+        loader=lambda: list_owned_role_counts(conn, storage_filters=storage_filters),
     )
 
 
@@ -88,17 +106,33 @@ def report_cards(
         raise _reports_error(exc) from exc
 
 
+@router.get("/search/facets")
+def report_search_facets(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    return serve_cached_json(
+        request,
+        namespace="reports.search-facets",
+        params={},
+        ttl=300,
+        loader=lambda: list_search_facets(conn),
+    )
+
+
 @router.get("/search")
 def report_search(
     conn: sqlite3.Connection = Depends(get_db),
     q: str = Query(default=""),
     text: str = Query(default=""),
     creatureType: str = Query(default=""),
+    keyword: str = Query(default=""),
     setCode: str = Query(default="All"),
     ownedFilter: str = Query(default="all"),
     foilFilter: str = Query(default="all"),
     type: str = Query(default="all"),
     colors: str = Query(default=""),
+    colorIdentity: str | None = Query(default=None),
     rarity: str = Query(default="all"),
     cmcMin: str = Query(default=""),
     cmcMax: str = Query(default=""),
@@ -119,11 +153,17 @@ def report_search(
             search=q,
             text_search=text,
             creature_type_search=creatureType,
+            keyword_search=keyword,
             set_code=setCode,
             owned_filter=ownedFilter,
             foil_filter=foilFilter,
             type_filter=type,
             color_filters=_parse_color_filters(colors),
+            color_identity=(
+                [c for c in _parse_color_filters(colorIdentity) if c != "C"]
+                if colorIdentity is not None
+                else None
+            ),
             rarity_filter=rarity,
             cmc_min=_parse_optional_float(cmcMin),
             cmc_max=_parse_optional_float(cmcMax),
@@ -151,6 +191,7 @@ def report_search_variants(
     foilFilter: str = Query(default="all"),
     type: str = Query(default="all"),
     colors: str = Query(default=""),
+    colorIdentity: str | None = Query(default=None),
     rarity: str = Query(default="all"),
     cmcMin: str = Query(default=""),
     cmcMax: str = Query(default=""),
@@ -169,6 +210,11 @@ def report_search_variants(
             foil_filter=foilFilter,
             type_filter=type,
             color_filters=_parse_color_filters(colors),
+            color_identity=(
+                [c for c in _parse_color_filters(colorIdentity) if c != "C"]
+                if colorIdentity is not None
+                else None
+            ),
             rarity_filter=rarity,
             cmc_min=_parse_optional_float(cmcMin),
             cmc_max=_parse_optional_float(cmcMax),

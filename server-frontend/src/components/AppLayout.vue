@@ -14,6 +14,7 @@ const { setGalleryFilter } = useSetGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
+  { to: "/collection/roles", label: "Roles" },
   { to: "/stats", label: "Stats" },
 ];
 

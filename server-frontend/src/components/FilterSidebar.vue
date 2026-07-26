@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   filterSidebarWidthPx,
   getFilterSidebarPrefs,
@@ -8,6 +8,7 @@ import {
 
 const collapsed = ref(false);
 const wide = ref(false);
+let skipPersist = false;
 
 const sidebarStyle = computed(() => {
   if (collapsed.value) {
@@ -25,6 +26,9 @@ onMounted(() => {
 });
 
 watch([collapsed, wide], () => {
+  if (skipPersist) {
+    return;
+  }
   storeFilterSidebarPrefs({
     collapsed: collapsed.value,
     wide: wide.value,
@@ -35,9 +39,35 @@ function toggleCollapsed() {
   collapsed.value = !collapsed.value;
 }
 
+function collapse({ persist = true } = {}) {
+  if (!persist) {
+    skipPersist = true;
+  }
+  collapsed.value = true;
+  if (!persist) {
+    nextTick(() => {
+      skipPersist = false;
+    });
+  }
+}
+
+function expand({ persist = true } = {}) {
+  if (!persist) {
+    skipPersist = true;
+  }
+  collapsed.value = false;
+  if (!persist) {
+    nextTick(() => {
+      skipPersist = false;
+    });
+  }
+}
+
 function toggleWidth() {
   wide.value = !wide.value;
 }
+
+defineExpose({ collapse, expand, toggleCollapsed });
 </script>
 
 <template>
