@@ -76,6 +76,8 @@ def build_set_option(
     family_members: list[str] | None = None,
     family_owned_count: int | None = None,
     family_catalog_count: int | None = None,
+    released_at: str | None = None,
+    digital: bool = False,
 ) -> dict:
     favorite_upper = {code.upper() for code in (favorite_sets or [])}
     normalized = set_code.upper() if set_code != "All" else set_code
@@ -92,6 +94,8 @@ def build_set_option(
         "familyRoot": root,
         "familyMembers": members,
         "isFamilyRoot": bool(root and normalized == root and len(members) > 1),
+        "releasedAt": str(released_at or ""),
+        "digital": bool(digital),
     }
     if owned_count is not None:
         option["ownedCount"] = owned_count
@@ -240,6 +244,10 @@ def build_sorted_set_options(
             root: sum(owned_counts.get(member, 0) for member in (families.get(root) or [root]))
             for root in roots
         },
+        release_dates={
+            root: str((catalog.get(root) or {}).get("released_at") or "")
+            for root in roots
+        },
     )
     ordered_codes = ordered_set_codes_by_family(
         all_codes,
@@ -280,6 +288,8 @@ def build_sorted_set_options(
                 family_members=members,
                 family_owned_count=family_owned if len(members) > 1 else None,
                 family_catalog_count=family_catalog if len(members) > 1 else None,
+                released_at=meta.get("released_at"),
+                digital=bool(meta.get("digital")),
             )
         )
     return options

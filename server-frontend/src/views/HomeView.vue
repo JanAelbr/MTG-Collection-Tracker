@@ -58,6 +58,9 @@ function setSortModeLabel(mode) {
   if (mode === "owned") {
     return "Most owned";
   }
+  if (mode === "chronological") {
+    return "Chronological (new to old)";
+  }
   return "Alphabetical";
 }
 
@@ -311,13 +314,13 @@ onUnmounted(stopPolling);
           </select>
         </label>
         <label class="manager-filter">
-          <span>Set dropdown order</span>
+          <span>Set browser order</span>
           <select
             :value="pricingSettings.setSortMode ?? 'alphabetical'"
             @change="updateSetSortMode"
           >
             <option
-              v-for="mode in (pricingSettings.setSortModeOptions ?? ['alphabetical', 'owned'])"
+              v-for="mode in (pricingSettings.setSortModeOptions ?? ['alphabetical', 'owned', 'chronological'])"
               :key="mode"
               :value="mode"
             >

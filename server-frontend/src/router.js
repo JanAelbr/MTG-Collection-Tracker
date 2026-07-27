@@ -15,6 +15,7 @@ const DeckBuilderView = () => import("./views/DeckBuilderView.vue");
 const CardDetailView = () => import("./views/CardDetailView.vue");
 const HomeView = () => import("./views/HomeView.vue");
 const FavoritesHomeView = () => import("./views/FavoritesHomeView.vue");
+const SetsView = () => import("./views/SetsView.vue");
 const ScanView = () => import("./views/ScanView.vue");
 
 const router = createRouter({
@@ -66,6 +67,12 @@ const router = createRouter({
       meta: { title: "Settings" },
     },
     { path: "/home", redirect: "/" },
+    {
+      path: "/sets",
+      name: "sets",
+      component: SetsView,
+      meta: { title: "Sets" },
+    },
     {
       path: "/storage",
       name: "storage",

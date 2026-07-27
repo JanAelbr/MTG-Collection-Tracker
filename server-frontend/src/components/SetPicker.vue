@@ -1,12 +1,8 @@
 <script setup>
 import "../styles/set-gallery.css";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed } from "vue";
 import SetGallery from "./SetGallery.vue";
-import { api, clearClientCache } from "../api";
-import { useAvailableManagerSets } from "../composables/availableSets";
-import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { formatSetCountLabel, setDisplayName, setShortName } from "../utils/format";
-import { resolveSetIconUri } from "../utils/scryfall";
 
 const props = defineProps({
   sets: { type: Array, default: () => [] },
@@ -18,28 +14,14 @@ const props = defineProps({
     default: "dropdown",
     validator: (value) => value === "dropdown" || value === "banner",
   },
-  showFavorites: { type: Boolean, default: true },
-  showReloadCatalog: { type: Boolean, default: true },
   activeArtStyle: { type: String, default: "" },
 });
 
 const emit = defineEmits([
   "update:modelValue",
   "update:family",
-  "toggleFavorite",
   "sets-changed",
 ]);
-
-const { setGalleryFilter } = useSetGalleryFilter();
-const reloadingSetCode = ref("");
-const addingSetCode = ref("");
-const ensureError = ref("");
-const {
-  availableSets,
-  loadingAvailableSets,
-  fetchAvailableManagerSets,
-  removeAvailableSet,
-} = useAvailableManagerSets();
 
 const knownSetCodes = computed(() => {
   const codes = new Set();
@@ -56,22 +38,6 @@ const knownSetCodes = computed(() => {
   }
   return codes;
 });
-
-const searchSets = computed(() =>
-  availableSets.value.map((set) => ({
-    setCode: set.setCode,
-    label: set.name || set.setCode,
-    name: set.name || set.setCode,
-    iconUri: set.iconUri || resolveSetIconUri(set),
-    setType: set.setType,
-    parentSetCode: set.parentSetCode,
-    familyMembers: set.familyMembers || [set.setCode],
-    familyRoot: set.setCode,
-    isFamilyRoot: true,
-    ownedCount: 0,
-    catalogCount: 0,
-  })),
-);
 
 const activeSet = computed(() =>
   props.sets.find((set) => set.setCode === props.modelValue) || null,
@@ -110,97 +76,13 @@ function onSelect(setCode) {
   if (normalized === "ALL" || isKnownSet(normalized)) {
     emit("update:family", false);
     emit("update:modelValue", normalized === "ALL" ? "All" : normalized);
-    return;
   }
-  ensureAndSelectSet(normalized);
 }
 
 function onSelectFamily(setCode) {
   emit("update:family", true);
   emit("update:modelValue", setCode);
 }
-
-function onFavoriteClick(set) {
-  toggleFavorite(set);
-}
-
-async function toggleFavorite(set) {
-  if (!set?.setCode || set.setCode === "All") {
-    return;
-  }
-  try {
-    const result = await api.toggleManagerSetFavorite(set.setCode);
-    clearClientCache();
-    emit("sets-changed", { ...result, catalogReloaded: true });
-    emit("toggleFavorite", set);
-  } catch (error) {
-    window.alert(error.message || "Could not update favourite set.");
-  }
-}
-
-async function loadSearchSets() {
-  if (props.layout !== "banner") {
-    return;
-  }
-  await fetchAvailableManagerSets();
-}
-
-async function ensureAndSelectSet(setCode) {
-  const normalized = String(setCode || "").trim().toUpperCase();
-  if (!normalized || addingSetCode.value) {
-    return;
-  }
-  addingSetCode.value = normalized;
-  ensureError.value = "";
-  try {
-    const result = await api.createManagerSet({ setCode: normalized });
-    for (const code of result.addedSetCodes || result.familyMembers || [normalized]) {
-      removeAvailableSet(code);
-    }
-    const root = result.setCode || normalized;
-    const members = result.familyMembers || [root];
-    clearClientCache();
-    setGalleryFilter.value = "";
-    emit("update:family", members.length > 1);
-    emit("update:modelValue", root);
-    emit("sets-changed", { ...result, catalogReloaded: true });
-  } catch (error) {
-    ensureError.value = error.message || "Could not load set family.";
-    window.alert(ensureError.value);
-  } finally {
-    addingSetCode.value = "";
-  }
-}
-
-async function reloadCatalog(set) {
-  if (!set?.setCode || set.setCode === "All") {
-    return;
-  }
-  if (reloadingSetCode.value === set.setCode) {
-    return;
-  }
-  reloadingSetCode.value = set.setCode;
-  try {
-    const result = await api.reloadManagerSetCatalog(set.setCode);
-    clearClientCache();
-    emit("sets-changed", { ...result, catalogReloaded: true });
-  } catch (error) {
-    window.alert(error.message || "Could not reload catalog.");
-  } finally {
-    reloadingSetCode.value = "";
-  }
-}
-
-watch(
-  () => props.layout,
-  () => {
-    loadSearchSets();
-  },
-);
-
-onMounted(() => {
-  loadSearchSets();
-});
 </script>
 
 <template>
@@ -214,21 +96,10 @@ onMounted(() => {
         :active-set-code="modelValue"
         :active-family="family"
         :active-art-style="activeArtStyle"
-        :show-favorites="showFavorites"
-        :show-reload-catalog="showReloadCatalog"
-        :reloading-set-code="reloadingSetCode"
-        :search-sets="searchSets"
-        :loading-search-sets="loadingAvailableSets"
-        :adding-set-code="addingSetCode"
         @select="onSelect"
         @select-family="onSelectFamily"
-        @toggle-favorite="onFavoriteClick"
-        @reload-catalog="reloadCatalog"
       />
     </div>
-    <p v-if="ensureError" class="collection-sync-message error set-gallery-add-error">
-      {{ ensureError }}
-    </p>
   </div>
 
   <div

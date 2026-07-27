@@ -81,6 +81,30 @@ def _database_path(conn: sqlite3.Connection) -> str:
     return row[2] if row else ""
 
 
+def _enrich_sets_from_scryfall(conn: sqlite3.Connection) -> None:
+    """Best-effort Scryfall metadata sync; never blocks local schema bootstrap."""
+    headers = {"User-Agent": HTTP_USER_AGENT}
+    try:
+        backfill_missing_set_icon_uris(conn, headers)
+    except Exception:
+        log.warning("Set icon backfill skipped", exc_info=True)
+    try:
+        backfill_missing_set_relations(conn, headers)
+    except Exception:
+        log.warning("Set relation backfill skipped", exc_info=True)
+    try:
+        family_sync = ensure_tracked_family_children(conn, headers)
+    except Exception:
+        log.warning("Family child sync skipped", exc_info=True)
+        return
+    if family_sync.get("added"):
+        log.info(
+            "Loaded %s family child set(s): %s",
+            len(family_sync["added"]),
+            ", ".join(family_sync["added"]),
+        )
+
+
 def ensure_database_schema(conn: sqlite3.Connection) -> None:
     """Create core collection tables and run incremental migrations once per database file."""
     db_path = _database_path(conn)
@@ -97,16 +121,8 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         ensure_deck_tables(conn)
         ensure_sets_table(conn)
         ensure_sets_columns(conn)
-        backfill_missing_set_icon_uris(conn, {"User-Agent": HTTP_USER_AGENT})
-        backfill_missing_set_relations(conn, {"User-Agent": HTTP_USER_AGENT})
+        _enrich_sets_from_scryfall(conn)
         ensure_tracked_sets_ready(conn)
-        family_sync = ensure_tracked_family_children(conn, {"User-Agent": HTTP_USER_AGENT})
-        if family_sync.get("added"):
-            log.info(
-                "Loaded %s family child set(s): %s",
-                len(family_sync["added"]),
-                ", ".join(family_sync["added"]),
-            )
         ensure_card_prices_table(conn)
         ensure_card_columns(conn)
         prune_alchemy_cards(conn)

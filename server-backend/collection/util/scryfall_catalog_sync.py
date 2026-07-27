@@ -5,10 +5,18 @@ import sqlite3
 
 from lib.config import HTTP_USER_AGENT
 from lib.config import normalize_set_code
-from report.report_data import load_catalog_count_by_set
 from util.db_migrate import ensure_card_columns
 from util.price_sync import set_catalog_is_complete, sync_set_catalog
 from util.set_catalog import ensure_sets_table, sync_set_metadata
+
+
+def _catalog_card_count(conn: sqlite3.Connection, set_code: str) -> int:
+    """Count cards for a set directly (avoids stale report_data caches mid-import)."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM cards WHERE set_code = ?",
+        (normalize_set_code(set_code),),
+    ).fetchone()
+    return int(row[0] or 0) if row else 0
 
 
 def import_set_catalog_from_scryfall(
@@ -45,8 +53,7 @@ def import_set_catalog_from_scryfall(
             {normalized},
             force_scryfall=force_scryfall,
         )
-    catalog_counts = load_catalog_count_by_set(conn)
-    count = catalog_counts.get(normalized, 0)
+    count = _catalog_card_count(conn, normalized)
     if count == 0:
         raise ValueError(f"No cards found for set {normalized} on Scryfall")
 

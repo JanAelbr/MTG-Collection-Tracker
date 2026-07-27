@@ -1,7 +1,6 @@
 <script setup>
 import "../styles/set-gallery.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import LoadingIndicator from "./LoadingIndicator.vue";
 import {
   formatSetCountLabel,
   setCompletionPercent,
@@ -9,9 +8,10 @@ import {
   setDisplayName,
 } from "../utils/format";
 import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
+import { isSetBrowserHiddenSubsetType } from "../utils/setBrowserSubsets";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 
-/** Max set tiles shown while searching (tracked + Scryfall candidates). */
+/** Max set tiles shown while searching. */
 const SET_GALLERY_SEARCH_LIMIT = 12;
 
 const props = defineProps({
@@ -19,22 +19,14 @@ const props = defineProps({
   activeSetCode: { type: String, default: "" },
   activeFamily: { type: Boolean, default: false },
   activeArtStyle: { type: String, default: "" },
-  showFavorites: { type: Boolean, default: false },
-  showReloadCatalog: { type: Boolean, default: true },
-  reloadingSetCode: { type: String, default: "" },
-  searchSets: { type: Array, default: () => [] },
-  loadingSearchSets: { type: Boolean, default: false },
-  addingSetCode: { type: String, default: "" },
 });
 
 const emit = defineEmits([
   "select",
   "select-family",
-  "toggleFavorite",
-  "reload-catalog",
 ]);
 
-const { setGalleryFilter } = useSetGalleryFilter();
+const { setGalleryFilter, showSetBrowserSubsets } = useSetGalleryFilter();
 const galleryRef = ref(null);
 
 const setsByCode = computed(() => {
@@ -140,39 +132,9 @@ const visibleFamilies = computed(() => {
   }
 
   const matchedTracked = roots.filter((set) => rootMatchesQuery(set, query));
-  const trackedCodes = new Set();
-  for (const set of roots) {
-    for (const code of set.familyMembers || [set.setCode]) {
-      if (code) {
-        trackedCodes.add(String(code).toUpperCase());
-      }
-    }
-    if (set.setCode) {
-      trackedCodes.add(String(set.setCode).toUpperCase());
-    }
-  }
-
-  const matchedSearch = (props.searchSets || [])
-    .filter((set) => {
-      if (!set?.setCode || trackedCodes.has(String(set.setCode).toUpperCase())) {
-        return false;
-      }
-      return setMatchesQuery(set, query);
-    })
-    .map((set) => ({
-      ...set,
-      pendingImport: true,
-      familyRoot: set.familyRoot || set.setCode,
-      familyMembers: set.familyMembers || [set.setCode],
-      isFamilyRoot: true,
-      ownedCount: set.ownedCount ?? 0,
-      catalogCount: set.catalogCount ?? 0,
-    }));
-
-  const combined = [...matchedTracked, ...matchedSearch];
   const limited = [];
   const seen = new Set();
-  for (const set of combined) {
+  for (const set of matchedTracked) {
     if (!set?.setCode || seen.has(set.setCode)) {
       continue;
     }
@@ -186,7 +148,7 @@ const visibleFamilies = computed(() => {
 });
 
 function familyTagMembers(set) {
-  if (!set?.setCode || set.setCode === "All" || set.pendingImport) {
+  if (!set?.setCode || set.setCode === "All") {
     return [];
   }
   const members = set.familyMembers || [];
@@ -210,6 +172,15 @@ function familyTagMembers(set) {
       setCode: code,
       familyRoot: set.setCode,
       familyMembers: members,
+    })
+    .filter((member) => {
+      if (showSetBrowserSubsets.value) {
+        return true;
+      }
+      if (member.setCode === set.setCode || member.setCode === props.activeSetCode) {
+        return true;
+      }
+      return !isSetBrowserHiddenSubsetType(member.setType);
     });
 }
 
@@ -250,9 +221,6 @@ function displayCatalogCount(set) {
 }
 
 function countLabel(set) {
-  if (set?.pendingImport) {
-    return "Add";
-  }
   const owned = displayOwnedCount(set);
   const catalog = displayCatalogCount(set);
   if (owned == null || catalog == null) {
@@ -262,9 +230,6 @@ function countLabel(set) {
 }
 
 function completionRarityClass(set) {
-  if (set?.pendingImport) {
-    return "";
-  }
   const owned = displayOwnedCount(set);
   const catalog = displayCatalogCount(set);
   const rarity = setCompletionRarity({ ownedCount: owned, catalogCount: catalog });
@@ -272,7 +237,7 @@ function completionRarityClass(set) {
 }
 
 function isFamilyActive(set) {
-  if (!set?.setCode || set.setCode === "All" || set.pendingImport) {
+  if (!set?.setCode || set.setCode === "All") {
     return false;
   }
   if (props.activeFamily && (set.setCode === props.activeSetCode || set.setCode === activeFamilyRoot.value)) {
@@ -288,7 +253,7 @@ function isFamilyActive(set) {
 }
 
 function isSetActive(set) {
-  if (!set?.setCode || set.pendingImport) {
+  if (!set?.setCode) {
     return false;
   }
   if (set.setCode === "All") {
@@ -338,9 +303,6 @@ function activeTitleLine(set) {
 }
 
 function activeStatsLine(set) {
-  if (set?.pendingImport) {
-    return "Not in library yet";
-  }
   const parts = [];
   const owned = displayOwnedCount(set);
   const catalog = displayCatalogCount(set);
@@ -359,27 +321,6 @@ function activeStatsLine(set) {
     parts.push(props.activeArtStyle);
   }
   return parts.join(" · ");
-}
-
-function canReload(set) {
-  return (
-    props.showReloadCatalog
-    && set?.setCode
-    && set.setCode !== "All"
-    && !set.pendingImport
-  );
-}
-
-function isReloading(set) {
-  if (!props.reloadingSetCode) {
-    return false;
-  }
-  const members = set.familyMembers || [set.setCode];
-  return members.includes(props.reloadingSetCode) || props.reloadingSetCode === set.setCode;
-}
-
-function isAdding(set) {
-  return Boolean(props.addingSetCode && set?.setCode === props.addingSetCode);
 }
 
 function positionActiveSet() {
@@ -402,16 +343,13 @@ function positionActiveSet() {
 }
 
 function onSelectFamilyOrSet(set) {
-  if (!set?.setCode || props.addingSetCode) {
+  if (!set?.setCode) {
     return;
   }
   emit("select", set.setCode);
 }
 
 function onSelectMember(setCode) {
-  if (props.addingSetCode) {
-    return;
-  }
   emit("select", setCode);
 }
 
@@ -427,19 +365,6 @@ function onMemberKeydown(event, setCode) {
     event.preventDefault();
     onSelectMember(setCode);
   }
-}
-
-function onToggleFavorite(event, set) {
-  event.stopPropagation();
-  if (set?.pendingImport) {
-    return;
-  }
-  emit("toggleFavorite", set);
-}
-
-function onReload(event, set) {
-  event.stopPropagation();
-  emit("reload-catalog", set);
 }
 
 watch(() => props.activeSetCode, positionActiveSet);
@@ -467,85 +392,47 @@ onMounted(positionActiveSet);
           active: isCardActive(set),
           'set-gallery-card--all': set.setCode === 'All',
           'set-gallery-card--expanded': showFamilyChildren(set),
-          'set-gallery-card--pending': set.pendingImport,
-          'is-importing': isAdding(set),
         }"
         role="button"
         tabindex="0"
-        :aria-label="set.pendingImport
-          ? `Add and select ${setDisplayName(set) || set.setCode}`
-          : `Select ${setDisplayName(set) || set.setCode}`"
+        :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
         :aria-current="isCardActive(set) ? 'true' : undefined"
-        :aria-busy="isAdding(set) ? 'true' : undefined"
         @click="onSelectFamilyOrSet(set)"
         @keydown="onCardKeydown($event, set)"
       >
         <div class="set-gallery-card-main">
-          <div v-if="isAdding(set)" class="set-gallery-importing" aria-live="polite">
-            <LoadingIndicator compact :label="`Adding ${set.setCode}…`" />
+          <div class="set-gallery-icon-wrap">
+            <img
+              v-if="setIconUri(set)"
+              :src="setIconUri(set)"
+              :alt="`${set.setCode} set icon`"
+              class="set-gallery-icon"
+              loading="lazy"
+              @error="onSetIconError($event, set)"
+            >
+            <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
+              All
+            </div>
           </div>
 
-          <template v-else>
-            <button
-              v-if="showFavorites && set.setCode !== 'All' && !set.pendingImport"
-              type="button"
-              class="set-gallery-favorite set-gallery-favorite--left"
-              :class="{ 'is-favorite': set.favorite }"
-              :aria-pressed="set.favorite ? 'true' : 'false'"
-              :aria-label="set.favorite ? `Unfavourite ${setDisplayName(set) || set.setCode}` : `Favourite ${setDisplayName(set) || set.setCode}`"
-              :title="set.favorite ? 'Unfavourite set' : 'Favourite set'"
-              @click.stop="onToggleFavorite($event, set)"
-            >
-              {{ set.favorite ? "★" : "☆" }}
-            </button>
-
-            <button
-              v-if="canReload(set)"
-              type="button"
-              class="set-gallery-reload"
-              :class="{ 'is-loading': isReloading(set) }"
-              :aria-label="`Reload ${set.setCode} family catalog from Scryfall`"
-              :aria-busy="isReloading(set) ? 'true' : 'false'"
-              title="Reload family catalog from Scryfall"
-              @click.stop="onReload($event, set)"
-            >
-              <span v-if="isReloading(set)" class="loading-spinner set-gallery-reload-spinner" aria-hidden="true" />
-              <span v-else aria-hidden="true">↻</span>
-            </button>
-
-            <div class="set-gallery-icon-wrap">
-              <img
-                v-if="setIconUri(set)"
-                :src="setIconUri(set)"
-                :alt="`${set.setCode} set icon`"
-                class="set-gallery-icon"
-                loading="lazy"
-                @error="onSetIconError($event, set)"
+          <div class="set-gallery-meta">
+            <template v-if="isCardActive(set) && set.setCode !== 'All'">
+              <span
+                class="set-gallery-title"
+                :class="completionRarityClass(set)"
+                :title="activeTitleLine(set)"
               >
-              <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
-                All
-              </div>
-            </div>
-
-            <div class="set-gallery-meta">
-              <template v-if="isCardActive(set) && set.setCode !== 'All'">
-                <span
-                  class="set-gallery-title"
-                  :class="completionRarityClass(set)"
-                  :title="activeTitleLine(set)"
-                >
-                  {{ activeTitleLine(set) }}
-                </span>
-                <span v-if="activeStatsLine(set)" class="set-gallery-stats">{{ activeStatsLine(set) }}</span>
-              </template>
-              <template v-else>
-                <span class="set-gallery-code" :class="completionRarityClass(set)">
-                  {{ set.setCode === "All" ? "All" : set.setCode }}
-                </span>
-                <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
-              </template>
-            </div>
-          </template>
+                {{ activeTitleLine(set) }}
+              </span>
+              <span v-if="activeStatsLine(set)" class="set-gallery-stats">{{ activeStatsLine(set) }}</span>
+            </template>
+            <template v-else>
+              <span class="set-gallery-code" :class="completionRarityClass(set)">
+                {{ set.setCode === "All" ? "All" : set.setCode }}
+              </span>
+              <span v-if="countLabel(set)" class="set-gallery-count">{{ countLabel(set) }}</span>
+            </template>
+          </div>
         </div>
 
         <div
@@ -581,11 +468,5 @@ onMounted(positionActiveSet);
         </div>
       </div>
     </div>
-    <p
-      v-if="setGalleryFilter.trim() && loadingSearchSets && !visibleFamilies.length"
-      class="set-gallery-search-hint"
-    >
-      Searching sets…
-    </p>
   </div>
 </template>

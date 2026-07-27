@@ -390,6 +390,22 @@ body {
   margin: 0 6px 0 4px;
 }
 
+.app-subnav-subset-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 4px 0 0;
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-subnav-subset-toggle input {
+  margin: 0;
+}
+
 .app-subnav-set-filter input {
   width: 7.5rem;
   max-width: 28vw;

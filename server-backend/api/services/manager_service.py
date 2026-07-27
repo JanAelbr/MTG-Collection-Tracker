@@ -122,8 +122,13 @@ def list_available_sets(conn: sqlite3.Connection) -> list[dict]:
         ]
         display_members = [root_code, *child_codes]
         name = root_item.get("name") or root_code
-        if child_codes:
-            name = f"{name} (+{', '.join(child_codes)})"
+        auto_load_members = [
+            {
+                "setCode": code,
+                "setType": (relations.get(code) or {}).get("set_type") or None,
+            }
+            for code in child_codes
+        ]
         available.append(
             {
                 "setCode": root_code,
@@ -133,6 +138,8 @@ def list_available_sets(conn: sqlite3.Connection) -> list[dict]:
                 "setType": (str(root_item.get("set_type") or "").strip().lower() or None),
                 "parentSetCode": None,
                 "familyMembers": display_members,
+                "autoLoadMembers": auto_load_members,
+                "digital": bool(root_item.get("digital")),
             }
         )
     available.sort(key=lambda row: row["releasedAt"], reverse=True)

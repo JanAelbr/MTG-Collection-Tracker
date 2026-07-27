@@ -233,7 +233,6 @@ const strategyCards = computed(() => {
 });
 const isAllView = computed(() => viewType.value === "all");
 const isAllSetsView = computed(() => isAllSetsCode(setCode.value));
-const showSetCatalogReload = computed(() => viewType.value !== "all" && viewType.value !== "top");
 
 function isAllSetsCode(code) {
   return !code || String(code).toLowerCase() === "all";
@@ -1384,7 +1383,6 @@ onUnmounted(stopPolling);
       layout="banner"
       :sets="selectableSets"
       :active-art-style="artStyle"
-      :show-reload-catalog="showSetCatalogReload"
       @sets-changed="onSetsChanged"
     />
 

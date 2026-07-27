@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import date
 
+import requests
+
 from lib.config import HTTP_USER_AGENT
 from lib.run_log import get_logger
 from util.scryfall_client import scryfall_get
@@ -25,14 +27,15 @@ SET_COLUMNS = {
     "catalog_synced_at": "TEXT",
     "set_type": "TEXT",
     "parent_set_code": "TEXT",
+    "digital": "INTEGER",
 }
 
 UPSERT_SET_SQL = """
 INSERT INTO sets (
     set_code, name, released_at, scryfall_uri, icon_svg_uri, updated_at,
-    set_type, parent_set_code
+    set_type, parent_set_code, digital
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(set_code) DO UPDATE SET
     name = excluded.name,
     released_at = COALESCE(excluded.released_at, sets.released_at),
@@ -40,7 +43,8 @@ ON CONFLICT(set_code) DO UPDATE SET
     icon_svg_uri = COALESCE(excluded.icon_svg_uri, sets.icon_svg_uri),
     updated_at = excluded.updated_at,
     set_type = COALESCE(excluded.set_type, sets.set_type),
-    parent_set_code = COALESCE(excluded.parent_set_code, sets.parent_set_code)
+    parent_set_code = COALESCE(excluded.parent_set_code, sets.parent_set_code),
+    digital = COALESCE(excluded.digital, sets.digital)
 """
 
 UPDATE_SET_RELATIONS_SQL = """
@@ -86,7 +90,9 @@ def upsert_set_row(
     *,
     set_type: str | None = None,
     parent_set_code: str | None = None,
+    digital: bool | None = None,
 ) -> None:
+    digital_value = None if digital is None else (1 if digital else 0)
     cursor.execute(
         UPSERT_SET_SQL,
         (
@@ -98,6 +104,7 @@ def upsert_set_row(
             updated_at,
             (str(set_type).strip().lower() or None) if set_type is not None else None,
             _normalize_parent_set_code(parent_set_code),
+            digital_value,
         ),
     )
 
@@ -153,14 +160,18 @@ def fetch_all_scryfall_sets(
     sets: list[dict] = []
     url: str | None = SCRYFALL_SETS_INDEX_URL
     while url:
-        response = scryfall_get(
-            url,
-            headers=resolved_headers,
-            timeout=30,
-            logger=log,
-            label="Scryfall sets index",
-            force=force,
-        )
+        try:
+            response = scryfall_get(
+                url,
+                headers=resolved_headers,
+                timeout=30,
+                logger=log,
+                label="Scryfall sets index",
+                force=force,
+            )
+        except requests.RequestException as exc:
+            log.warning("Scryfall sets index fetch failed: %s", exc)
+            break
         if response.status_code != 200:
             log.error("Scryfall sets index fetch failed: HTTP %s", response.status_code)
             log.error("%s", response.text)
@@ -179,14 +190,18 @@ def fetch_scryfall_set(
     force: bool = False,
 ) -> dict | None:
     url = f"https://api.scryfall.com/sets/{set_code.lower()}"
-    response = scryfall_get(
-        url,
-        headers=headers,
-        timeout=30,
-        logger=log,
-        label=f"Scryfall set {set_code.upper()}",
-        force=force,
-    )
+    try:
+        response = scryfall_get(
+            url,
+            headers=headers,
+            timeout=30,
+            logger=log,
+            label=f"Scryfall set {set_code.upper()}",
+            force=force,
+        )
+    except requests.RequestException as exc:
+        log.warning("Scryfall set fetch failed for %s: %s", set_code.upper(), exc)
+        return None
     if response.status_code != 200:
         log.error("Scryfall set fetch failed for %s: HTTP %s", set_code.upper(), response.status_code)
         log.error("%s", response.text)
@@ -217,6 +232,7 @@ def sync_set_metadata(
         payload.get("icon_svg_uri"),
         set_type=payload.get("set_type"),
         parent_set_code=payload.get("parent_set_code"),
+        digital=bool(payload.get("digital")),
     )
     # Overwrite relations so a cleared Scryfall parent is not kept via COALESCE.
     update_set_relations(
@@ -241,7 +257,7 @@ def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
     ensure_sets_columns(conn)
     rows = conn.execute(
         """
-        SELECT set_code, name, released_at, scryfall_uri, icon_svg_uri, set_type, parent_set_code
+        SELECT set_code, name, released_at, scryfall_uri, icon_svg_uri, set_type, parent_set_code, digital
         FROM sets
         ORDER BY set_code
         """
@@ -254,6 +270,7 @@ def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
             "icon_svg_uri": icon_svg_uri,
             "set_type": set_type,
             "parent_set_code": parent_set_code.upper() if parent_set_code else None,
+            "digital": bool(digital),
         }
         for (
             set_code,
@@ -263,6 +280,7 @@ def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
             icon_svg_uri,
             set_type,
             parent_set_code,
+            digital,
         ) in rows
     }
 
@@ -407,26 +425,27 @@ def apply_scryfall_set_relations(
                 set_type=item.get("set_type"),
                 parent_set_code=item.get("parent_set_code"),
             )
-            if item.get("icon_svg_uri"):
-                cursor.execute(
-                    """
-                    UPDATE sets
-                    SET icon_svg_uri = COALESCE(?, icon_svg_uri),
-                        name = COALESCE(?, name),
-                        released_at = COALESCE(?, released_at),
-                        scryfall_uri = COALESCE(?, scryfall_uri),
-                        updated_at = ?
-                    WHERE set_code = ?
-                    """,
-                    (
-                        item.get("icon_svg_uri"),
-                        name,
-                        item.get("released_at"),
-                        item.get("scryfall_uri"),
-                        stamp,
-                        code,
-                    ),
-                )
+            cursor.execute(
+                """
+                UPDATE sets
+                SET digital = ?,
+                    icon_svg_uri = COALESCE(?, icon_svg_uri),
+                    name = COALESCE(?, name),
+                    released_at = COALESCE(?, released_at),
+                    scryfall_uri = COALESCE(?, scryfall_uri),
+                    updated_at = ?
+                WHERE set_code = ?
+                """,
+                (
+                    1 if item.get("digital") else 0,
+                    item.get("icon_svg_uri"),
+                    name,
+                    item.get("released_at"),
+                    item.get("scryfall_uri"),
+                    stamp,
+                    code,
+                ),
+            )
         else:
             upsert_set_row(
                 cursor,
@@ -438,6 +457,7 @@ def apply_scryfall_set_relations(
                 item.get("icon_svg_uri"),
                 set_type=item.get("set_type"),
                 parent_set_code=item.get("parent_set_code"),
+                digital=bool(item.get("digital")),
             )
             update_set_relations(
                 cursor,
@@ -463,9 +483,18 @@ def backfill_missing_set_icon_uris(
     cursor = conn.cursor()
     stamp = date.today().isoformat()
     synced = 0
-    for set_code in codes:
+    for index, set_code in enumerate(codes):
         if sync_set_metadata(cursor, set_code, headers, stamp, force_scryfall=force_scryfall):
             synced += 1
+            continue
+        remaining = len(codes) - index - 1
+        if remaining:
+            log.warning(
+                "Stopping set icon backfill after failure for %s (%s remaining)",
+                set_code.upper(),
+                remaining,
+            )
+        break
     return synced
 
 
@@ -493,16 +522,12 @@ def backfill_missing_set_relations(
             log.info("Backfilled Scryfall set relations for %s set(s)", updated)
         return updated
 
-    cursor = conn.cursor()
-    stamp = date.today().isoformat()
-    synced = 0
-    for set_code in codes:
-        if sync_set_metadata(cursor, set_code, headers, stamp, force_scryfall=force_scryfall):
-            synced += 1
-    if synced:
-        conn.commit()
-        log.info("Backfilled Scryfall set relations for %s set(s)", synced)
-    return synced
+    # Bulk fetch returned nothing (often network failure) — avoid N timed-out retries.
+    log.warning(
+        "Skipping per-set relation backfill for %s set(s); Scryfall sets index unavailable",
+        len(codes),
+    )
+    return 0
 
 
 # Fetch and store Scryfall metadata for owned and deck-list sets.

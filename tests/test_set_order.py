@@ -8,7 +8,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from report.report_data import build_art_style_option, build_set_option  # noqa: E402
-from report.set_order import SET_SORT_OWNED, normalize_favorite_sets, sort_set_codes  # noqa: E402
+from report.set_order import SET_SORT_CHRONOLOGICAL, SET_SORT_OWNED, normalize_favorite_sets, sort_set_codes  # noqa: E402
 
 
 class SetOrderTests(unittest.TestCase):
@@ -39,6 +39,40 @@ class SetOrderTests(unittest.TestCase):
         self.assertEqual(
             sort_set_codes(codes, sort_mode=SET_SORT_OWNED, owned_counts=owned_counts),
             ["MB2", "2X2", "LTR"],
+        )
+
+    def test_sort_set_codes_sorts_chronological_newest_first(self):
+        codes = ["LTR", "MH3", "LEA", "UNK"]
+        release_dates = {
+            "LTR": "2023-06-23",
+            "MH3": "2024-06-14",
+            "LEA": "1993-08-05",
+            "UNK": "",
+        }
+        self.assertEqual(
+            sort_set_codes(
+                codes,
+                sort_mode=SET_SORT_CHRONOLOGICAL,
+                release_dates=release_dates,
+            ),
+            ["MH3", "LTR", "LEA", "UNK"],
+        )
+
+    def test_sort_set_codes_chronological_keeps_favorites_first(self):
+        codes = ["LTR", "MH3", "LEA"]
+        release_dates = {
+            "LTR": "2023-06-23",
+            "MH3": "2024-06-14",
+            "LEA": "1993-08-05",
+        }
+        self.assertEqual(
+            sort_set_codes(
+                codes,
+                ["LEA"],
+                sort_mode=SET_SORT_CHRONOLOGICAL,
+                release_dates=release_dates,
+            ),
+            ["LEA", "MH3", "LTR"],
         )
 
     def test_normalize_favorite_sets_deduplicates_and_uppercases(self):

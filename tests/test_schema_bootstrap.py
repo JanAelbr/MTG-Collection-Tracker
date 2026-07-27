@@ -4,6 +4,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -30,6 +33,32 @@ class SchemaBootstrapTests(unittest.TestCase):
             self.assertIn("decks", tables)
             self.assertIn("cards", tables)
             self.assertEqual(load_deck_list(conn), [])
+            conn.close()
+
+    def test_ensure_database_schema_survives_scryfall_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "collection.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA foreign_keys = ON")
+            with patch(
+                "util.schema.backfill_missing_set_icon_uris",
+                side_effect=requests.exceptions.ReadTimeout("timed out"),
+            ), patch(
+                "util.schema.backfill_missing_set_relations",
+                return_value=0,
+            ), patch(
+                "util.schema.ensure_tracked_family_children",
+                return_value={"added": [], "skipped": 0, "families": 0},
+            ):
+                ensure_database_schema(conn)
+            conn.commit()
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            self.assertIn("cards", tables)
             conn.close()
 
 

@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
@@ -13,7 +15,9 @@ if str(SCRIPTS) not in sys.path:
 from report.report_data import format_set_option_label  # noqa: E402
 from util.set_catalog import (  # noqa: E402
     SETS_TABLE_SQL,
+    backfill_missing_set_icon_uris,
     ensure_sets_columns,
+    fetch_scryfall_set,
     load_catalog_set_codes,
     load_owned_set_codes,
     load_set_display_names,
@@ -110,6 +114,46 @@ class SetCatalogTests(unittest.TestCase):
         catalog = load_sets_catalog(self.conn)
         self.assertEqual(catalog["HOB"]["set_type"], "commander")
         self.assertEqual(catalog["HOB"]["parent_set_code"], "LTR")
+
+    def test_fetch_scryfall_set_returns_none_on_timeout(self):
+        with patch(
+            "util.set_catalog.scryfall_get",
+            side_effect=requests.exceptions.ReadTimeout("timed out"),
+        ):
+            self.assertIsNone(fetch_scryfall_set("LTR", {"User-Agent": "test"}))
+
+    def test_backfill_missing_set_icon_uris_stops_after_first_failure(self):
+        self.conn.execute(
+            """
+            CREATE TABLE cards (
+                id TEXT PRIMARY KEY,
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                name TEXT NOT NULL
+            )
+            """
+        )
+        for code in ("AAA", "BBB"):
+            upsert_set_row(
+                self.cursor,
+                code,
+                code,
+                None,
+                None,
+                "2026-06-15",
+            )
+            self.conn.execute(
+                "INSERT INTO cards (id, set_code, collector_number, name) VALUES (?, ?, ?, ?)",
+                (f"{code}-1", code, "1", code),
+            )
+        self.conn.commit()
+        with patch("util.set_catalog.sync_set_metadata", return_value=False) as mock_sync:
+            synced = backfill_missing_set_icon_uris(
+                self.conn,
+                {"User-Agent": "test"},
+            )
+        self.assertEqual(synced, 0)
+        self.assertEqual(mock_sync.call_count, 1)
 
     def test_format_set_option_label_uses_catalog(self):
         upsert_set_row(

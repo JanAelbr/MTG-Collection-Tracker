@@ -10,7 +10,7 @@ import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
 const route = useRoute();
-const { setGalleryFilter } = useSetGalleryFilter();
+const { setGalleryFilter, showSetBrowserSubsets } = useSetGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "All cards" },
@@ -26,6 +26,7 @@ const navItems = [
     matchPrefix: "/collection",
     subnav: collectionSubnav,
   },
+  { to: "/sets", label: "Sets", matchPrefix: false },
   { to: "/storage", label: "Storage", matchPrefix: false },
   { to: "/sell", label: "Sell", matchPrefix: false },
   { to: "/scan", label: "Scan", matchPrefix: false },
@@ -165,6 +166,14 @@ onMounted(() => {
               autocomplete="off"
               spellcheck="false"
             />
+          </label>
+          <label
+            v-if="index === 0 && showSetGalleryFilter"
+            class="app-subnav-subset-toggle"
+            title="Show token, art card, promo, and minigame family subsets"
+          >
+            <input v-model="showSetBrowserSubsets" type="checkbox" />
+            <span>Tokens &amp; promos</span>
           </label>
         </template>
       </nav>
