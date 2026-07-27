@@ -205,6 +205,20 @@ function displayOwnedCount(set) {
   ) {
     return set.familyOwnedCount;
   }
+  // Expanded family tile: show the selected subset's counts, not the root's.
+  if (
+    !props.activeFamily
+    && set?.setCode
+    && set.setCode === activeFamilyRoot.value
+    && props.activeSetCode
+    && props.activeSetCode !== "All"
+    && props.activeSetCode !== set.setCode
+  ) {
+    const member = setsByCode.value.get(props.activeSetCode);
+    if (member?.ownedCount != null) {
+      return member.ownedCount;
+    }
+  }
   return set?.ownedCount;
 }
 
@@ -216,6 +230,19 @@ function displayCatalogCount(set) {
     && (set.setCode === props.activeSetCode || set.setCode === activeFamilyRoot.value)
   ) {
     return set.familyCatalogCount;
+  }
+  if (
+    !props.activeFamily
+    && set?.setCode
+    && set.setCode === activeFamilyRoot.value
+    && props.activeSetCode
+    && props.activeSetCode !== "All"
+    && props.activeSetCode !== set.setCode
+  ) {
+    const member = setsByCode.value.get(props.activeSetCode);
+    if (member?.catalogCount != null) {
+      return member.catalogCount;
+    }
   }
   return set?.catalogCount;
 }
