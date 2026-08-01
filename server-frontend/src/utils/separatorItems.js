@@ -33,16 +33,29 @@ export function formatArtStyleNumberRange(rule) {
   return suffix ? `${range}${suffix}` : range;
 }
 
+function resolveSeparatorFamilyRoot(set, setCode) {
+  const familyRoot = String(set?.familyRoot || "").trim();
+  const parent = String(set?.parentSetCode || "").trim();
+  if (familyRoot && familyRoot.toUpperCase() !== String(setCode).toUpperCase()) {
+    return familyRoot;
+  }
+  if (parent) {
+    return parent;
+  }
+  return familyRoot || setCode;
+}
+
 export function buildStorageSeparators(sets) {
   return (sets || []).map((set, index) => {
     const setCode = String(set.setCode || "").trim();
     const setName = setShortName(set) || setDisplayName(set) || setCode;
-    const familyRoot = String(set.familyRoot || set.parentSetCode || setCode || "").trim();
+    const familyRoot = resolveSeparatorFamilyRoot(set, setCode);
     return {
       id: `storage-${setCode}-${index}`,
       mode: "storage",
       setCode,
-      familyRoot: familyRoot || setCode,
+      familyRoot,
+      iconUri: set.iconUri || "",
       setName,
       year: releaseYear(set),
       previewLabel: setCode || setName,
@@ -55,7 +68,8 @@ export function buildBinderSeparators(sets, rulesBySetCode) {
   for (const set of sets || []) {
     const setCode = String(set.setCode || "").trim();
     const setName = setShortName(set) || setDisplayName(set) || setCode;
-    const familyRoot = String(set.familyRoot || set.parentSetCode || setCode || "").trim() || setCode;
+    const familyRoot = resolveSeparatorFamilyRoot(set, setCode);
+    const iconUri = set.iconUri || "";
     const rawRules = rulesBySetCode?.get?.(setCode) ?? rulesBySetCode?.[setCode];
     const rules = artStyleRulesFromApi(rawRules || []);
 
@@ -65,6 +79,7 @@ export function buildBinderSeparators(sets, rulesBySetCode) {
         mode: "binder",
         setCode,
         familyRoot,
+        iconUri,
         setName,
         artStyle: "",
         numberRange: "",
@@ -81,6 +96,7 @@ export function buildBinderSeparators(sets, rulesBySetCode) {
         mode: "binder",
         setCode,
         familyRoot,
+        iconUri,
         setName,
         artStyle,
         numberRange,

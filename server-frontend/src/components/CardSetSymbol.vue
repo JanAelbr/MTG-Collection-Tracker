@@ -2,10 +2,13 @@
 import { computed, ref, watch } from "vue";
 import { COLLECTION_RARITY_LABELS } from "../utils/collectionRarities";
 import { mtgVectorsCardSetIconUri } from "../utils/mtgVectors";
-import { scryfallSetIconUri } from "../utils/scryfall";
+import { scryfallSetIconUri, setFamilyRootCode } from "../utils/scryfall";
 
 const props = defineProps({
   setCode: { type: String, default: "" },
+  familyRoot: { type: String, default: "" },
+  /** Preferred icon URL (e.g. API iconUri); tried before generated candidates. */
+  iconUri: { type: String, default: "" },
   rarity: { type: String, default: "" },
   /** rarity = tinted by print rarity; generic = Scryfall monochrome set icon */
   variant: {
@@ -14,26 +17,61 @@ const props = defineProps({
     validator: (value) => ["rarity", "generic"].includes(value),
   },
   size: { type: Number, default: 14 },
+  /**
+   * When true and familyRoot differs from setCode, try the family-root icon
+   * before the subset's own SVG (many subsets have missing/placeholder marks).
+   */
+  preferFamilyRoot: { type: Boolean, default: false },
 });
 
-const usedFallback = ref(false);
+const fallbackIndex = ref(0);
 
-const primarySrc = computed(() => {
-  if (props.variant === "generic") {
-    return scryfallSetIconUri(props.setCode);
+const rootCode = computed(() =>
+  setFamilyRootCode({
+    setCode: props.setCode,
+    familyRoot: props.familyRoot,
+  }),
+);
+
+const candidates = computed(() => {
+  const code = String(props.setCode || "").trim().toUpperCase();
+  if (!code || code === "ALL") {
+    return [];
   }
-  return (
-    mtgVectorsCardSetIconUri(props.setCode, props.rarity)
-    || scryfallSetIconUri(props.setCode)
-  );
+  const root = rootCode.value;
+  const preferred = String(props.iconUri || "").trim();
+  const urls = [];
+  if (preferred) {
+    urls.push(preferred);
+  }
+  const own = [];
+  const parent = [];
+  if (props.variant === "rarity") {
+    own.push(mtgVectorsCardSetIconUri(code, props.rarity));
+  }
+  own.push(scryfallSetIconUri(code));
+  if (root && root !== code) {
+    if (props.variant === "rarity") {
+      parent.push(mtgVectorsCardSetIconUri(root, props.rarity));
+    }
+    parent.push(scryfallSetIconUri(root));
+  }
+  if (props.preferFamilyRoot && parent.length) {
+    urls.push(...parent, ...own);
+  } else {
+    urls.push(...own, ...parent);
+  }
+  const seen = new Set();
+  return urls.filter((url) => {
+    if (!url || seen.has(url)) {
+      return false;
+    }
+    seen.add(url);
+    return true;
+  });
 });
 
-const src = computed(() => {
-  if (usedFallback.value) {
-    return scryfallSetIconUri(props.setCode);
-  }
-  return primarySrc.value;
-});
+const src = computed(() => candidates.value[fallbackIndex.value] || "");
 
 const title = computed(() => {
   const code = String(props.setCode || "").trim().toUpperCase();
@@ -54,21 +92,20 @@ const imgStyle = computed(() => ({
 }));
 
 watch(
-  () => [props.setCode, props.rarity, props.variant],
+  () => [props.setCode, props.familyRoot, props.iconUri, props.rarity, props.variant, props.preferFamilyRoot],
   () => {
-    usedFallback.value = false;
+    fallbackIndex.value = 0;
   },
 );
 
 function onError(event) {
-  const fallback = scryfallSetIconUri(props.setCode);
-  if (!fallback || usedFallback.value || src.value === fallback) {
-    if (event?.target) {
-      event.target.style.display = "none";
-    }
+  if (fallbackIndex.value + 1 < candidates.value.length) {
+    fallbackIndex.value += 1;
     return;
   }
-  usedFallback.value = true;
+  if (event?.target) {
+    event.target.style.display = "none";
+  }
 }
 </script>
 
@@ -79,7 +116,7 @@ function onError(event) {
     :class="`card-set-symbol--${variant}`"
     :src="src"
     alt=""
-    loading="lazy"
+    loading="eager"
     decoding="async"
     :width="size"
     :height="size"

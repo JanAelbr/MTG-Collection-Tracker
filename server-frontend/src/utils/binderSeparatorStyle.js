@@ -26,9 +26,85 @@ export const BINDER_FONT_OPTIONS = Object.freeze([
 export const BINDER_BORDER_STYLES = Object.freeze(["ornate", "simple", "none"]);
 export const BINDER_TITLE_SCALES = Object.freeze(["sm", "md", "lg"]);
 
+/** Distinct background looks for binder separators (CSS-rendered). */
+export const BINDER_BACKGROUND_THEMES = Object.freeze([
+  {
+    id: "none",
+    label: "Solid",
+    description: "Flat base color only",
+    defaults: {
+      baseColor: "#f3e8d2",
+      inkColor: "#18120c",
+      accentColor: "#b8944a",
+    },
+  },
+  {
+    id: "parchment",
+    label: "Parchment",
+    description: "Aged manuscript paper",
+    defaults: {
+      baseColor: "#f3e8d2",
+      inkColor: "#18120c",
+      accentColor: "#b8944a",
+    },
+  },
+  {
+    id: "leather",
+    label: "Leather",
+    description: "Embossed book cover",
+    defaults: {
+      baseColor: "#3a2418",
+      inkColor: "#f3e6d0",
+      accentColor: "#c9a227",
+    },
+  },
+  {
+    id: "marble",
+    label: "Marble",
+    description: "Polished stone with veins",
+    defaults: {
+      baseColor: "#e8ecef",
+      inkColor: "#2a3038",
+      accentColor: "#8a9aaa",
+    },
+  },
+  {
+    id: "velvet",
+    label: "Velvet",
+    description: "Deep plush cloth",
+    defaults: {
+      baseColor: "#2a1020",
+      inkColor: "#f5e6d0",
+      accentColor: "#d4a017",
+    },
+  },
+  {
+    id: "night",
+    label: "Night sky",
+    description: "Celestial dark field",
+    defaults: {
+      baseColor: "#0c1220",
+      inkColor: "#e8eef8",
+      accentColor: "#c9b896",
+    },
+  },
+  {
+    id: "brass",
+    label: "Brass plaque",
+    description: "Brushed metal plate",
+    defaults: {
+      baseColor: "#8a7350",
+      inkColor: "#1a140c",
+      accentColor: "#e8d5a3",
+    },
+  },
+]);
+
 const FONT_IDS = new Set(BINDER_FONT_OPTIONS.map((option) => option.id));
+const BACKGROUND_IDS = new Set(BINDER_BACKGROUND_THEMES.map((theme) => theme.id));
 
 export const DEFAULT_BINDER_SEPARATOR_STYLE = Object.freeze({
+  backgroundTheme: "parchment",
   inkColor: "#18120c",
   accentColor: "#b8944a",
   baseColor: "#f3e8d2",
@@ -80,8 +156,12 @@ export function normalizeBinderSeparatorStyle(input = {}) {
   const fontFamily = FONT_IDS.has(input.fontFamily)
     ? input.fontFamily
     : DEFAULT_BINDER_SEPARATOR_STYLE.fontFamily;
+  const backgroundTheme = BACKGROUND_IDS.has(input.backgroundTheme)
+    ? input.backgroundTheme
+    : DEFAULT_BINDER_SEPARATOR_STYLE.backgroundTheme;
 
   return {
+    backgroundTheme,
     inkColor: asHexColor(input.inkColor, DEFAULT_BINDER_SEPARATOR_STYLE.inkColor),
     accentColor: asHexColor(input.accentColor, DEFAULT_BINDER_SEPARATOR_STYLE.accentColor),
     baseColor: asHexColor(input.baseColor, DEFAULT_BINDER_SEPARATOR_STYLE.baseColor),
@@ -108,6 +188,23 @@ export function normalizeBinderSeparatorStyle(input = {}) {
       DEFAULT_BINDER_SEPARATOR_STYLE.artStyleUppercase,
     ),
   };
+}
+
+export function binderBackgroundTheme(id) {
+  return (
+    BINDER_BACKGROUND_THEMES.find((theme) => theme.id === id)
+    || BINDER_BACKGROUND_THEMES[0]
+  );
+}
+
+/** Apply a background theme and its suggested ink / accent / base colors. */
+export function applyBinderBackgroundTheme(settings, themeId) {
+  const theme = binderBackgroundTheme(themeId);
+  return normalizeBinderSeparatorStyle({
+    ...settings,
+    backgroundTheme: theme.id,
+    ...theme.defaults,
+  });
 }
 
 export function loadBinderSeparatorStyle() {
@@ -160,6 +257,7 @@ export function binderStyleToCssVars(settings) {
 export function binderSeparatorClassNames(settings) {
   const style = normalizeBinderSeparatorStyle(settings);
   return [
+    `binder-separator--bg-${style.backgroundTheme}`,
     `binder-separator--border-${style.borderStyle}`,
     `binder-separator--title-${style.titleScale}`,
     style.softVeil ? "" : "binder-separator--no-veil",

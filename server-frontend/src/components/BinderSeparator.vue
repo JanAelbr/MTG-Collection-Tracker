@@ -12,6 +12,7 @@ import {
 const props = defineProps({
   setCode: { type: String, default: "" },
   familyRoot: { type: String, default: "" },
+  iconUri: { type: String, default: "" },
   setName: { type: String, default: "" },
   artStyle: { type: String, default: "" },
   numberRange: { type: String, default: "" },
@@ -94,7 +95,10 @@ const showFrame = computed(() => style.value.borderStyle !== "none");
     aria-label="Binder separator"
     :style="rootStyle"
   >
-    <div class="binder-separator-parchment" aria-hidden="true" />
+    <!-- Clip layer has no transform; print engines mishandle overflow on transformed nodes. -->
+    <div class="binder-separator-bg-clip" aria-hidden="true">
+      <div class="binder-separator-parchment" />
+    </div>
 
     <div v-if="showFrame" class="binder-separator-frame" aria-hidden="true">
       <span class="binder-frame-corner binder-frame-corner--tl" />
@@ -111,6 +115,7 @@ const showFrame = computed(() => style.value.borderStyle !== "none");
           class="binder-separator-icon"
           :set-code="setCode"
           :family-root="familyRoot"
+          :icon-uri="iconUri"
           variant="generic"
           :size="36"
         />

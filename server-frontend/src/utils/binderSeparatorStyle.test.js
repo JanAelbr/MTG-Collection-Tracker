@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyBinderBackgroundTheme,
   binderFontStack,
   binderSeparatorClassNames,
   binderStyleToCssVars,
@@ -49,6 +50,7 @@ describe("binderSeparatorStyle", () => {
 
   it("returns modifier class names", () => {
     const classes = binderSeparatorClassNames({
+      backgroundTheme: "velvet",
       borderStyle: "simple",
       titleScale: "lg",
       softVeil: false,
@@ -57,6 +59,7 @@ describe("binderSeparatorStyle", () => {
       showOrnament: false,
       artStyleUppercase: false,
     });
+    expect(classes).toContain("binder-separator--bg-velvet");
     expect(classes).toContain("binder-separator--border-simple");
     expect(classes).toContain("binder-separator--title-lg");
     expect(classes).toContain("binder-separator--no-veil");
@@ -64,6 +67,25 @@ describe("binderSeparatorStyle", () => {
     expect(classes).toContain("binder-separator--no-ornament");
     expect(classes).toContain("binder-separator--art-normal-case");
     expect(classes).not.toContain("binder-separator--no-jewels");
+  });
+
+  it("applies background theme color defaults", () => {
+    const next = applyBinderBackgroundTheme(
+      { ...DEFAULT_BINDER_SEPARATOR_STYLE },
+      "night",
+    );
+    expect(next.backgroundTheme).toBe("night");
+    expect(next.baseColor).toBe("#0c1220");
+    expect(next.inkColor).toBe("#e8eef8");
+  });
+
+  it("supports solid none background", () => {
+    const next = applyBinderBackgroundTheme(
+      { ...DEFAULT_BINDER_SEPARATOR_STYLE },
+      "none",
+    );
+    expect(next.backgroundTheme).toBe("none");
+    expect(binderSeparatorClassNames(next)).toContain("binder-separator--bg-none");
   });
 
   it("resolves font stacks", () => {

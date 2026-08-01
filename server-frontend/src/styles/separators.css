@@ -55,6 +55,12 @@
   color: #3e3424;
 }
 
+.separators-scope {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .separators-page-search {
   flex: 1 1 220px;
   min-width: 160px;
@@ -77,6 +83,22 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.separators-storage-select {
+  display: inline-flex;
+  margin: 0;
+}
+
+.separators-storage-select select {
+  max-width: 220px;
+  padding: 5px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.86rem;
+  color: #333;
 }
 
 .separators-page-selection-count {
@@ -185,6 +207,11 @@
   box-shadow: inset 0 0 0 1px #5d4e37;
 }
 
+.separators-set-tile.is-pending {
+  border-style: dashed;
+  color: #666;
+}
+
 .separators-set-tile-check {
   flex: 0 0 auto;
   width: 16px;
@@ -206,6 +233,18 @@
   line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separators-set-tile-badge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #cfd8dc;
+  color: #37474f;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -315,6 +354,99 @@
   color: #666;
 }
 
+.binder-bg-theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.binder-bg-theme-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.binder-bg-theme-btn:hover {
+  border-color: #c8c8c8;
+  background: #fff;
+}
+
+.binder-bg-theme-btn.is-active {
+  border-color: #5d4e37;
+  box-shadow: inset 0 0 0 1px #5d4e37;
+  background: #f7f3ea;
+}
+
+.binder-bg-theme-swatch {
+  display: block;
+  height: 28px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background-size: cover;
+  background-position: center;
+}
+
+.binder-bg-theme-swatch--parchment {
+  background-color: #f3e8d2;
+  background-image:
+    linear-gradient(135deg, #f7efdc 0%, #e8d4b0 50%, #dcc6a0 100%);
+}
+
+.binder-bg-theme-swatch--none {
+  background-color: #f3e8d2;
+  background-image:
+    linear-gradient(135deg, #fff 0%, #f3e8d2 100%);
+}
+
+.binder-bg-theme-swatch--leather {
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(0, 0, 0, 0.12) 3px 4px),
+    linear-gradient(155deg, #5a3a28, #2a1810);
+}
+
+.binder-bg-theme-swatch--marble {
+  background-image:
+    linear-gradient(118deg, transparent 40%, rgba(255, 255, 255, 0.7) 42%, transparent 44%),
+    linear-gradient(165deg, #f2f4f6, #cfd5db);
+}
+
+.binder-bg-theme-swatch--velvet {
+  background-image:
+    radial-gradient(ellipse at 50% 30%, rgba(212, 160, 23, 0.35), transparent 55%),
+    linear-gradient(180deg, #4a2040, #1a0a14);
+}
+
+.binder-bg-theme-swatch--night {
+  background-color: #0c1220;
+  background-image:
+    radial-gradient(circle, #fff 0.8px, transparent 1px),
+    linear-gradient(165deg, #1a2744, #0c1220);
+  background-size: 8px 9px, auto;
+}
+
+.binder-bg-theme-swatch--brass {
+  background-image:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgba(255, 255, 255, 0.15) 2px 3px),
+    linear-gradient(180deg, #c4a574, #6b5330);
+}
+
+.binder-bg-theme-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: #444;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .binder-style-group-toggle {
   display: flex;
   align-items: center;
@@ -333,16 +465,40 @@
   flex: 0 0 auto;
 }
 
+.binder-style-group-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: #777;
+  text-align: right;
+}
+
 .binder-style-group-chevron {
-  margin-left: auto;
+  flex: 0 0 auto;
+  margin-left: 0;
   color: #888;
   font-size: 0.85rem;
+}
+
+.binder-style-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.binder-style-group--open .binder-style-group-chevron {
+  color: #555;
 }
 
 .separator-color-preview {
   display: inline-flex;
   gap: 3px;
   align-items: center;
+  margin-left: auto;
 }
 
 .separator-color-preview-swatch {
@@ -527,10 +683,21 @@
     inset 0 0 3mm color-mix(in srgb, var(--binder-ink) 12%, transparent);
   overflow: hidden;
   isolation: isolate;
+  /* Extra clip for Chromium print, which often ignores overflow on transformed kids. */
+  overflow-clip-margin: 0;
   break-inside: avoid;
   page-break-inside: avoid;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+}
+
+.binder-separator-bg-clip {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .binder-separator-parchment {
@@ -570,6 +737,262 @@
 
 .binder-separator--no-veil .binder-separator-parchment::after {
   display: none;
+}
+
+/* Solid — base color only, no texture layer */
+.binder-separator--bg-none .binder-separator-parchment {
+  display: none;
+}
+
+/* Leather — embossed book-cover grain */
+.binder-separator--bg-leather .binder-separator-parchment {
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  filter: none;
+  background-color: var(--binder-base);
+  background-image:
+    repeating-linear-gradient(
+      92deg,
+      transparent 0,
+      transparent 1.1mm,
+      color-mix(in srgb, #000 7%, transparent) 1.1mm,
+      color-mix(in srgb, #000 7%, transparent) 1.25mm
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 0.9mm,
+      color-mix(in srgb, #fff 4%, transparent) 0.9mm,
+      color-mix(in srgb, #fff 4%, transparent) 1mm
+    ),
+    radial-gradient(
+      ellipse at 28% 18%,
+      color-mix(in srgb, var(--binder-base) 70%, #fff) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 78% 88%,
+      color-mix(in srgb, #000 35%, transparent) 0%,
+      transparent 50%
+    ),
+    linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--binder-base) 75%, #fff) 0%,
+      var(--binder-base) 42%,
+      color-mix(in srgb, var(--binder-base) 55%, #000) 100%
+    );
+  background-size: auto;
+  background-position: center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
+}
+
+.binder-separator--bg-leather .binder-separator-parchment::after {
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse at 50% 40%,
+      color-mix(in srgb, var(--binder-base) 35%, transparent) 0%,
+      transparent 70%
+    );
+}
+
+/* Marble — cool stone with veining */
+.binder-separator--bg-marble .binder-separator-parchment {
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  filter: none;
+  background-color: var(--binder-base);
+  background-image:
+    linear-gradient(
+      118deg,
+      transparent 38%,
+      color-mix(in srgb, #fff 55%, transparent) 40%,
+      color-mix(in srgb, #fff 55%, transparent) 41%,
+      transparent 43%
+    ),
+    linear-gradient(
+      72deg,
+      transparent 52%,
+      color-mix(in srgb, #5a6570 18%, transparent) 53.5%,
+      transparent 55%
+    ),
+    linear-gradient(
+      28deg,
+      transparent 62%,
+      color-mix(in srgb, #fff 30%, transparent) 63%,
+      transparent 64.5%
+    ),
+    radial-gradient(
+      ellipse at 20% 80%,
+      color-mix(in srgb, #9aa5b0 22%, transparent),
+      transparent 45%
+    ),
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--binder-base) 80%, #fff) 0%,
+      var(--binder-base) 48%,
+      color-mix(in srgb, var(--binder-base) 70%, #8a949e) 100%
+    );
+  background-size: auto;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.binder-separator--bg-marble .binder-separator-parchment::after {
+  inset: 8%;
+  background:
+    radial-gradient(
+      ellipse at 50% 45%,
+      color-mix(in srgb, #fff 55%, transparent) 0%,
+      transparent 72%
+    );
+}
+
+/* Velvet — deep plush cloth with soft light */
+.binder-separator--bg-velvet .binder-separator-parchment {
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  filter: none;
+  background-color: var(--binder-base);
+  background-image:
+    radial-gradient(
+      ellipse at 50% 22%,
+      color-mix(in srgb, var(--binder-accent) 28%, transparent) 0%,
+      transparent 52%
+    ),
+    radial-gradient(
+      ellipse at 50% 100%,
+      color-mix(in srgb, #000 55%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 15% 45%,
+      color-mix(in srgb, #fff 8%, transparent) 0%,
+      transparent 40%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--binder-base) 70%, #5a2040) 0%,
+      var(--binder-base) 45%,
+      color-mix(in srgb, var(--binder-base) 60%, #000) 100%
+    );
+  background-size: auto;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.binder-separator--bg-velvet .binder-separator-parchment::after {
+  inset: 10%;
+  background:
+    radial-gradient(
+      ellipse at 50% 42%,
+      color-mix(in srgb, var(--binder-base) 40%, transparent) 0%,
+      transparent 75%
+    );
+}
+
+/* Night sky — celestial dark field with stars */
+.binder-separator--bg-night .binder-separator-parchment {
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  filter: none;
+  background-color: var(--binder-base);
+  background-image:
+    radial-gradient(circle, color-mix(in srgb, #fff 90%, transparent) 0.35mm, transparent 0.45mm),
+    radial-gradient(circle, color-mix(in srgb, #fff 70%, transparent) 0.25mm, transparent 0.35mm),
+    radial-gradient(circle, color-mix(in srgb, var(--binder-accent) 80%, #fff) 0.4mm, transparent 0.55mm),
+    radial-gradient(
+      ellipse at 70% 18%,
+      color-mix(in srgb, #2a3a6a 55%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 20% 75%,
+      color-mix(in srgb, #1a1030 50%, transparent) 0%,
+      transparent 50%
+    ),
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--binder-base) 70%, #1a2744) 0%,
+      var(--binder-base) 50%,
+      color-mix(in srgb, var(--binder-base) 65%, #050810) 100%
+    );
+  background-size:
+    7mm 8mm,
+    11mm 10mm,
+    15mm 13mm,
+    auto,
+    auto,
+    auto;
+  background-position:
+    1mm 2mm,
+    4mm 5mm,
+    2mm 8mm,
+    center,
+    center,
+    center;
+  background-repeat: repeat, repeat, repeat, no-repeat, no-repeat, no-repeat;
+}
+
+.binder-separator--bg-night .binder-separator-parchment::after {
+  inset: 8%;
+  background:
+    radial-gradient(
+      ellipse at 50% 40%,
+      color-mix(in srgb, #243050 35%, transparent) 0%,
+      transparent 70%
+    );
+}
+
+/* Brass plaque — brushed metal plate */
+.binder-separator--bg-brass .binder-separator-parchment {
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  filter: none;
+  background-color: var(--binder-base);
+  background-image:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 0.35mm,
+      color-mix(in srgb, #fff 8%, transparent) 0.35mm,
+      color-mix(in srgb, #fff 8%, transparent) 0.45mm,
+      transparent 0.45mm,
+      transparent 0.8mm,
+      color-mix(in srgb, #000 10%, transparent) 0.8mm,
+      color-mix(in srgb, #000 10%, transparent) 0.9mm
+    ),
+    linear-gradient(
+      125deg,
+      transparent 35%,
+      color-mix(in srgb, #fff 35%, transparent) 48%,
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--binder-base) 55%, #fff) 0%,
+      var(--binder-base) 35%,
+      color-mix(in srgb, var(--binder-base) 55%, #4a3820) 68%,
+      color-mix(in srgb, var(--binder-base) 70%, #c4a574) 100%
+    );
+  background-size: auto;
+  background-position: center;
+  background-repeat: repeat, no-repeat, no-repeat;
+}
+
+.binder-separator--bg-brass .binder-separator-parchment::after {
+  inset: 12%;
+  background:
+    radial-gradient(
+      ellipse at 50% 45%,
+      color-mix(in srgb, #fff 25%, transparent) 0%,
+      transparent 70%
+    );
 }
 
 .binder-separator-frame {
@@ -746,6 +1169,11 @@
 .binder-separator-icon {
   filter: brightness(0) saturate(100%);
   opacity: 0.85;
+  width: auto !important;
+  height: 10mm !important;
+  max-width: 12mm !important;
+  object-fit: contain;
+  margin-top: 0;
 }
 
 .binder-separator-set,
@@ -835,11 +1263,17 @@
   --storage-meta: #666666;
   --storage-border: #bbbbbb;
   --storage-font: Segoe UI, Arial, sans-serif;
+  --storage-tab-height: 17mm;
+  --storage-icon-scale: 0.8;
+  --storage-icon-offset: 0mm;
+  --storage-name-scale: 0.19;
+  --storage-card-width: 63mm;
+  --storage-card-height: 88mm;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: 66mm;
-  height: 105mm;
+  width: var(--storage-card-width);
+  height: calc(var(--storage-tab-height) + var(--storage-card-height));
   border: 0.3mm solid var(--storage-border);
   border-radius: 1mm;
   background: #fff;
@@ -853,10 +1287,16 @@
 .storage-separator-tab {
   display: flex;
   align-items: center;
-  gap: 2mm;
+  gap: calc(var(--storage-tab-height) * 0.1);
   box-sizing: border-box;
-  height: 17mm;
-  padding: 1.2mm 2.5mm;
+  flex: 0 0 var(--storage-tab-height);
+  width: 100%;
+  height: var(--storage-tab-height);
+  min-height: var(--storage-tab-height);
+  max-height: var(--storage-tab-height);
+  padding:
+    calc(var(--storage-tab-height) * 0.07)
+    calc(var(--storage-tab-height) * 0.12);
   border-bottom: 0.3mm solid var(--storage-border);
   background: var(--storage-tab);
   font-family: var(--storage-font);
@@ -865,36 +1305,41 @@
 .storage-separator-icon,
 .storage-separator .card-set-symbol.storage-separator-icon {
   flex: 0 0 auto;
-  width: 13.5mm !important;
-  height: 13.5mm !important;
+  box-sizing: border-box;
+  width: auto !important;
+  height: calc(var(--storage-tab-height) * var(--storage-icon-scale)) !important;
+  max-width: calc(var(--storage-tab-height) * var(--storage-icon-scale) * 1.05) !important;
+  max-height: calc(var(--storage-tab-height) * var(--storage-icon-scale)) !important;
   object-fit: contain;
-}
-
-.storage-separator--icon-sm .storage-separator-icon,
-.storage-separator--icon-sm .card-set-symbol.storage-separator-icon {
-  width: 8mm !important;
-  height: 8mm !important;
-}
-
-.storage-separator--icon-md .storage-separator-icon,
-.storage-separator--icon-md .card-set-symbol.storage-separator-icon {
-  width: 11mm !important;
-  height: 11mm !important;
+  object-position: center;
+  margin-top: 0;
+  margin-left: var(--storage-icon-offset);
 }
 
 .storage-separator--no-icon .storage-separator-icon {
   display: none;
 }
 
+.storage-separator--center .storage-separator-tab {
+  justify-content: center;
+}
+
+.storage-separator--center .storage-separator-text {
+  flex: 0 1 auto;
+  text-align: center;
+}
+
 .storage-separator-text {
   display: flex;
   flex-direction: column;
-  gap: 0.6mm;
+  justify-content: center;
+  gap: calc(var(--storage-tab-height) * 0.04);
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .storage-separator-name {
-  font-size: 3.2mm;
+  font-size: calc(var(--storage-tab-height) * var(--storage-name-scale));
   font-weight: 600;
   line-height: 1.15;
   color: var(--storage-name);
@@ -903,24 +1348,24 @@
   white-space: nowrap;
 }
 
-.storage-separator--name-sm .storage-separator-name {
-  font-size: 2.6mm;
-}
-
-.storage-separator--name-lg .storage-separator-name {
-  font-size: 3.8mm;
-}
-
 .storage-separator-meta,
 .storage-separator-year {
-  font-size: 2.6mm;
+  font-size: calc(var(--storage-tab-height) * var(--storage-name-scale) * 0.78);
   color: var(--storage-meta);
   line-height: 1;
   letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .storage-separator-body {
-  flex: 1 1 auto;
+  box-sizing: border-box;
+  flex: 0 0 var(--storage-card-height);
+  width: 100%;
+  height: var(--storage-card-height);
+  min-height: var(--storage-card-height);
+  max-height: var(--storage-card-height);
   background: #fff;
 }
 
@@ -969,5 +1414,16 @@
   .separators-print-sheet .binder-separator,
   .separators-print-sheet .storage-separator {
     box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /*
+   * Chromium print-to-PDF fails to clip rotated/scaled parchment near page
+   * breaks (triangular texture shards). Keep unique crops via position only.
+   */
+  .separators-print-sheet .binder-separator-parchment {
+    inset: 0;
+    transform: none;
   }
 }

@@ -10,6 +10,7 @@ export const STORAGE_META_FORMATS = Object.freeze([
 
 export const STORAGE_ICON_SCALES = Object.freeze(["sm", "md", "lg"]);
 export const STORAGE_NAME_SCALES = Object.freeze(["sm", "md", "lg"]);
+export const STORAGE_HEADER_ALIGNS = Object.freeze(["left", "center"]);
 
 export const STORAGE_FONT_OPTIONS = Object.freeze([
   {
@@ -38,13 +39,30 @@ export const DEFAULT_STORAGE_SEPARATOR_STYLE = Object.freeze({
   borderColor: "#bbbbbb",
   showIcon: true,
   iconScale: "lg",
+  iconOffsetMm: 0,
+  headerAlign: "left",
   nameScale: "md",
   metaFormat: "yearCode",
   fontFamily: "system",
+  tabHeightMm: 17,
 });
+
+export const STORAGE_TAB_HEIGHT_MIN_MM = 10;
+export const STORAGE_TAB_HEIGHT_MAX_MM = 30;
+export const STORAGE_ICON_OFFSET_MIN_MM = -8;
+export const STORAGE_ICON_OFFSET_MAX_MM = 8;
 
 function asBool(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function asNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function asHexColor(value, fallback) {
@@ -59,6 +77,17 @@ function asHexColor(value, fallback) {
   return fallback;
 }
 
+function resolveIconOffsetMm(input) {
+  if (input.iconOffsetMm != null) {
+    return asNumber(input.iconOffsetMm, DEFAULT_STORAGE_SEPARATOR_STYLE.iconOffsetMm);
+  }
+  // Legacy left-only control stored a positive leftward shift.
+  if (input.iconOffsetLeftMm != null) {
+    return -asNumber(input.iconOffsetLeftMm, 0);
+  }
+  return DEFAULT_STORAGE_SEPARATOR_STYLE.iconOffsetMm;
+}
+
 export function normalizeStorageSeparatorStyle(input = {}) {
   const metaFormat = STORAGE_META_FORMATS.includes(input.metaFormat)
     ? input.metaFormat
@@ -69,6 +98,9 @@ export function normalizeStorageSeparatorStyle(input = {}) {
   const nameScale = STORAGE_NAME_SCALES.includes(input.nameScale)
     ? input.nameScale
     : DEFAULT_STORAGE_SEPARATOR_STYLE.nameScale;
+  const headerAlign = STORAGE_HEADER_ALIGNS.includes(input.headerAlign)
+    ? input.headerAlign
+    : DEFAULT_STORAGE_SEPARATOR_STYLE.headerAlign;
   const fontFamily = FONT_IDS.has(input.fontFamily)
     ? input.fontFamily
     : DEFAULT_STORAGE_SEPARATOR_STYLE.fontFamily;
@@ -80,9 +112,20 @@ export function normalizeStorageSeparatorStyle(input = {}) {
     borderColor: asHexColor(input.borderColor, DEFAULT_STORAGE_SEPARATOR_STYLE.borderColor),
     showIcon: asBool(input.showIcon, DEFAULT_STORAGE_SEPARATOR_STYLE.showIcon),
     iconScale,
+    iconOffsetMm: clamp(
+      resolveIconOffsetMm(input),
+      STORAGE_ICON_OFFSET_MIN_MM,
+      STORAGE_ICON_OFFSET_MAX_MM,
+    ),
+    headerAlign,
     nameScale,
     metaFormat,
     fontFamily,
+    tabHeightMm: clamp(
+      asNumber(input.tabHeightMm, DEFAULT_STORAGE_SEPARATOR_STYLE.tabHeightMm),
+      STORAGE_TAB_HEIGHT_MIN_MM,
+      STORAGE_TAB_HEIGHT_MAX_MM,
+    ),
   };
 }
 
@@ -135,20 +178,25 @@ export function formatStorageMetaLine(year, setCode, metaFormat) {
 
 export function storageStyleToCssVars(settings) {
   const style = normalizeStorageSeparatorStyle(settings);
+  const iconScale = style.iconScale === "sm" ? 0.48 : style.iconScale === "md" ? 0.64 : 0.8;
+  const nameScale = style.nameScale === "sm" ? 0.155 : style.nameScale === "lg" ? 0.23 : 0.19;
   return {
     "--storage-tab": style.tabColor,
     "--storage-name": style.nameColor,
     "--storage-meta": style.metaColor,
     "--storage-border": style.borderColor,
     "--storage-font": storageFontStack(style.fontFamily),
+    "--storage-tab-height": `${style.tabHeightMm}mm`,
+    "--storage-icon-scale": String(iconScale),
+    "--storage-icon-offset": `${style.iconOffsetMm}mm`,
+    "--storage-name-scale": String(nameScale),
   };
 }
 
 export function storageSeparatorClassNames(settings) {
   const style = normalizeStorageSeparatorStyle(settings);
   return [
-    `storage-separator--icon-${style.iconScale}`,
-    `storage-separator--name-${style.nameScale}`,
     style.showIcon ? "" : "storage-separator--no-icon",
+    style.headerAlign === "center" ? "storage-separator--center" : "",
   ].filter(Boolean);
 }

@@ -13,6 +13,7 @@ import {
 const props = defineProps({
   setCode: { type: String, default: "" },
   familyRoot: { type: String, default: "" },
+  iconUri: { type: String, default: "" },
   setName: { type: String, default: "" },
   year: { type: String, default: "" },
   styleSettings: {
@@ -30,15 +31,8 @@ const metaLine = computed(() =>
 const rootStyle = computed(() => storageStyleToCssVars(style.value));
 const rootClass = computed(() => storageSeparatorClassNames(style.value));
 
-const iconPx = computed(() => {
-  if (style.value.iconScale === "sm") {
-    return 28;
-  }
-  if (style.value.iconScale === "md") {
-    return 40;
-  }
-  return 48;
-});
+/** Pixel hint only; CSS scales the icon to header height. */
+const iconPx = computed(() => Math.round(style.value.tabHeightMm * 3.8));
 </script>
 
 <template>
@@ -54,6 +48,7 @@ const iconPx = computed(() => {
         class="storage-separator-icon"
         :set-code="setCode"
         :family-root="familyRoot"
+        :icon-uri="iconUri"
         variant="generic"
         :size="iconPx"
       />
@@ -62,6 +57,6 @@ const iconPx = computed(() => {
         <span v-if="metaLine" class="storage-separator-meta">{{ metaLine }}</span>
       </div>
     </header>
-    <div class="storage-separator-body" />
+    <div class="storage-separator-body" aria-hidden="true" />
   </article>
 </template>

@@ -32,6 +32,19 @@ export function isSetBrowserHiddenSubsetType(setType) {
   return HIDDEN_TYPE_SET.has(String(setType || "").trim().toLowerCase());
 }
 
+/** Token / art-series / memorabilia — often clutter picker lists. */
+export const TOKEN_AND_ART_SET_TYPES = Object.freeze([
+  "token",
+  "memorabilia",
+  "art_series",
+]);
+
+const TOKEN_AND_ART_TYPE_SET = new Set(TOKEN_AND_ART_SET_TYPES);
+
+export function isTokenOrArtSetType(setType) {
+  return TOKEN_AND_ART_TYPE_SET.has(String(setType || "").trim().toLowerCase());
+}
+
 export function isAutoLoadSubsetType(setType) {
   return AUTO_LOAD_TYPE_SET.has(String(setType || "").trim().toLowerCase());
 }

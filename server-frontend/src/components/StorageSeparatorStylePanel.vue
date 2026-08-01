@@ -1,12 +1,20 @@
 <script setup>
+import { computed } from "vue";
+
 import SeparatorColorControls from "./SeparatorColorControls.vue";
+import SeparatorStyleSection from "./SeparatorStyleSection.vue";
 import {
   DEFAULT_STORAGE_SEPARATOR_STYLE,
   normalizeStorageSeparatorStyle,
   STORAGE_FONT_OPTIONS,
+  STORAGE_HEADER_ALIGNS,
+  STORAGE_ICON_OFFSET_MAX_MM,
+  STORAGE_ICON_OFFSET_MIN_MM,
   STORAGE_ICON_SCALES,
   STORAGE_META_FORMATS,
   STORAGE_NAME_SCALES,
+  STORAGE_TAB_HEIGHT_MAX_MM,
+  STORAGE_TAB_HEIGHT_MIN_MM,
 } from "../utils/storageSeparatorStyle";
 
 const model = defineModel({
@@ -38,6 +46,37 @@ const scaleLabels = {
   md: "Medium",
   lg: "Large",
 };
+
+const alignLabels = {
+  left: "Left",
+  center: "Center",
+};
+
+const layoutSummary = computed(() => {
+  const bits = [`${model.value.tabHeightMm} mm`, alignLabels[model.value.headerAlign] || "Left"];
+  return bits.join(" · ");
+});
+
+const iconSummary = computed(() => {
+  if (!model.value.showIcon) {
+    return "Hidden";
+  }
+  const size = scaleLabels[model.value.iconScale] || model.value.iconScale;
+  const offset = Number(model.value.iconOffsetMm) || 0;
+  return offset ? `${size} · ${offset} mm` : size;
+});
+
+const textSummary = computed(() => {
+  const name = scaleLabels[model.value.nameScale] || model.value.nameScale;
+  const meta = metaLabels[model.value.metaFormat] || model.value.metaFormat;
+  return `${name} · ${meta}`;
+});
+
+const fontSummary = computed(
+  () =>
+    STORAGE_FONT_OPTIONS.find((option) => option.id === model.value.fontFamily)?.label
+    || model.value.fontFamily,
+);
 </script>
 
 <template>
@@ -60,8 +99,36 @@ const scaleLabels = {
       @apply="patch"
     />
 
-    <div class="binder-style-group">
-      <h4 class="binder-style-group-title">Header</h4>
+    <SeparatorStyleSection title="Layout" :summary="layoutSummary">
+      <label class="binder-style-field binder-style-field--stack">
+        <span>Top height ({{ model.tabHeightMm }} mm)</span>
+        <input
+          type="range"
+          :min="STORAGE_TAB_HEIGHT_MIN_MM"
+          :max="STORAGE_TAB_HEIGHT_MAX_MM"
+          step="1"
+          :value="model.tabHeightMm"
+          @input="patch({ tabHeightMm: Number($event.target.value) })"
+        />
+      </label>
+      <label class="binder-style-field">
+        <span>Content align</span>
+        <select
+          :value="model.headerAlign"
+          @change="patch({ headerAlign: $event.target.value })"
+        >
+          <option
+            v-for="id in STORAGE_HEADER_ALIGNS"
+            :key="id"
+            :value="id"
+          >
+            {{ alignLabels[id] }}
+          </option>
+        </select>
+      </label>
+    </SeparatorStyleSection>
+
+    <SeparatorStyleSection title="Icon" :summary="iconSummary">
       <label class="binder-style-check">
         <input
           type="checkbox"
@@ -86,6 +153,21 @@ const scaleLabels = {
           </option>
         </select>
       </label>
+      <label class="binder-style-field binder-style-field--stack">
+        <span>Icon offset ({{ model.iconOffsetMm }} mm)</span>
+        <input
+          type="range"
+          :min="STORAGE_ICON_OFFSET_MIN_MM"
+          :max="STORAGE_ICON_OFFSET_MAX_MM"
+          step="0.5"
+          :value="model.iconOffsetMm"
+          :disabled="!model.showIcon"
+          @input="patch({ iconOffsetMm: Number($event.target.value) })"
+        />
+      </label>
+    </SeparatorStyleSection>
+
+    <SeparatorStyleSection title="Text" :summary="textSummary">
       <label class="binder-style-field">
         <span>Name size</span>
         <select
@@ -116,10 +198,9 @@ const scaleLabels = {
           </option>
         </select>
       </label>
-    </div>
+    </SeparatorStyleSection>
 
-    <div class="binder-style-group">
-      <h4 class="binder-style-group-title">Font</h4>
+    <SeparatorStyleSection title="Font" :summary="fontSummary">
       <label class="binder-style-field">
         <span>Family</span>
         <select
@@ -135,6 +216,6 @@ const scaleLabels = {
           </option>
         </select>
       </label>
-    </div>
+    </SeparatorStyleSection>
   </section>
 </template>

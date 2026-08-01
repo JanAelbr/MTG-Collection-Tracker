@@ -1,9 +1,15 @@
 <script setup>
+import { computed } from "vue";
+
 import SeparatorColorControls from "./SeparatorColorControls.vue";
+import SeparatorStyleSection from "./SeparatorStyleSection.vue";
 import {
+  applyBinderBackgroundTheme,
+  BINDER_BACKGROUND_THEMES,
   BINDER_BORDER_STYLES,
   BINDER_FONT_OPTIONS,
   BINDER_TITLE_SCALES,
+  binderBackgroundTheme,
   DEFAULT_BINDER_SEPARATOR_STYLE,
   normalizeBinderSeparatorStyle,
 } from "../utils/binderSeparatorStyle";
@@ -18,6 +24,10 @@ function patch(partial) {
     ...model.value,
     ...partial,
   });
+}
+
+function setBackgroundTheme(themeId) {
+  model.value = applyBinderBackgroundTheme(model.value, themeId);
 }
 
 function resetStyle() {
@@ -35,6 +45,49 @@ const titleLabels = {
   md: "Medium",
   lg: "Large",
 };
+
+const isParchmentTheme = computed(() => model.value.backgroundTheme === "parchment");
+const hasTextureBackground = computed(() => model.value.backgroundTheme !== "none");
+
+const backgroundSummary = computed(
+  () => binderBackgroundTheme(model.value.backgroundTheme).label,
+);
+
+const effectsSummary = computed(() => {
+  const bits = [];
+  if (model.value.softVeil && hasTextureBackground.value) {
+    bits.push("Veil");
+  }
+  if (isParchmentTheme.value && model.value.uniqueParchment) {
+    bits.push("Unique crop");
+  }
+  return bits.join(" · ") || "Default";
+});
+
+const bordersSummary = computed(() => {
+  const style = borderLabels[model.value.borderStyle] || model.value.borderStyle;
+  const bits = [style];
+  if (model.value.borderStyle === "ornate") {
+    if (model.value.showCorners) {
+      bits.push("corners");
+    }
+    if (model.value.showJewels) {
+      bits.push("jewels");
+    }
+  }
+  if (model.value.showOrnament) {
+    bits.push("ornament");
+  }
+  return bits.join(" · ");
+});
+
+const fontSummary = computed(() => {
+  const family =
+    BINDER_FONT_OPTIONS.find((option) => option.id === model.value.fontFamily)?.label
+    || model.value.fontFamily;
+  const size = titleLabels[model.value.titleScale] || model.value.titleScale;
+  return `${family} · ${size}`;
+});
 </script>
 
 <template>
@@ -46,6 +99,29 @@ const titleLabels = {
       </button>
     </div>
 
+    <SeparatorStyleSection title="Background" :summary="backgroundSummary">
+      <div class="binder-bg-theme-grid" role="listbox" aria-label="Background theme">
+        <button
+          v-for="theme in BINDER_BACKGROUND_THEMES"
+          :key="theme.id"
+          type="button"
+          class="binder-bg-theme-btn"
+          :class="{ 'is-active': model.backgroundTheme === theme.id }"
+          role="option"
+          :aria-selected="model.backgroundTheme === theme.id ? 'true' : 'false'"
+          :title="theme.description"
+          @click="setBackgroundTheme(theme.id)"
+        >
+          <span
+            class="binder-bg-theme-swatch"
+            :class="`binder-bg-theme-swatch--${theme.id}`"
+            aria-hidden="true"
+          />
+          <span class="binder-bg-theme-label">{{ theme.label }}</span>
+        </button>
+      </div>
+    </SeparatorStyleSection>
+
     <SeparatorColorControls
       mode="binder"
       :colors="{
@@ -56,9 +132,12 @@ const titleLabels = {
       @apply="patch"
     />
 
-    <div class="binder-style-group">
-      <h4 class="binder-style-group-title">Effects</h4>
-      <label class="binder-style-field binder-style-field--stack">
+    <SeparatorStyleSection
+      v-if="hasTextureBackground"
+      title="Effects"
+      :summary="effectsSummary"
+    >
+      <label v-if="isParchmentTheme" class="binder-style-field binder-style-field--stack">
         <span>Parchment opacity ({{ model.parchmentOpacity }}%)</span>
         <input
           type="range"
@@ -68,7 +147,7 @@ const titleLabels = {
           @input="patch({ parchmentOpacity: Number($event.target.value) })"
         />
       </label>
-      <label class="binder-style-field binder-style-field--stack">
+      <label v-if="isParchmentTheme" class="binder-style-field binder-style-field--stack">
         <span>Parchment softness ({{ model.parchmentSoftness }}%)</span>
         <input
           type="range"
@@ -86,7 +165,7 @@ const titleLabels = {
         />
         <span>Soft center veil</span>
       </label>
-      <label class="binder-style-check">
+      <label v-if="isParchmentTheme" class="binder-style-check">
         <input
           type="checkbox"
           :checked="model.uniqueParchment"
@@ -94,10 +173,9 @@ const titleLabels = {
         />
         <span>Unique parchment crop</span>
       </label>
-    </div>
+    </SeparatorStyleSection>
 
-    <div class="binder-style-group">
-      <h4 class="binder-style-group-title">Borders</h4>
+    <SeparatorStyleSection title="Borders" :summary="bordersSummary">
       <label class="binder-style-field">
         <span>Style</span>
         <select
@@ -139,10 +217,9 @@ const titleLabels = {
         />
         <span>Ornament dots</span>
       </label>
-    </div>
+    </SeparatorStyleSection>
 
-    <div class="binder-style-group">
-      <h4 class="binder-style-group-title">Font</h4>
+    <SeparatorStyleSection title="Font" :summary="fontSummary">
       <label class="binder-style-field">
         <span>Family</span>
         <select
@@ -181,6 +258,6 @@ const titleLabels = {
         />
         <span>Art style uppercase</span>
       </label>
-    </div>
+    </SeparatorStyleSection>
   </section>
 </template>

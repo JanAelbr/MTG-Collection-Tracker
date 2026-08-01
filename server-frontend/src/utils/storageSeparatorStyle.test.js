@@ -33,17 +33,31 @@ describe("storageSeparatorStyle", () => {
       tabColor: "#abcdef",
       showIcon: false,
       iconScale: "sm",
+      iconOffsetMm: -2.5,
       nameScale: "lg",
+      tabHeightMm: 22,
     });
     expect(vars["--storage-tab"]).toBe("#abcdef");
+    expect(vars["--storage-tab-height"]).toBe("22mm");
+    expect(vars["--storage-icon-scale"]).toBe("0.48");
+    expect(vars["--storage-icon-offset"]).toBe("-2.5mm");
+    expect(vars["--storage-name-scale"]).toBe("0.23");
     expect(storageSeparatorClassNames({
       showIcon: false,
       iconScale: "sm",
       nameScale: "lg",
+      headerAlign: "center",
     })).toEqual([
-      "storage-separator--icon-sm",
-      "storage-separator--name-lg",
       "storage-separator--no-icon",
+      "storage-separator--center",
     ]);
+  });
+
+  it("clamps tab height and icon offset", () => {
+    expect(normalizeStorageSeparatorStyle({ tabHeightMm: 3 }).tabHeightMm).toBe(10);
+    expect(normalizeStorageSeparatorStyle({ tabHeightMm: 99 }).tabHeightMm).toBe(30);
+    expect(normalizeStorageSeparatorStyle({ iconOffsetMm: -20 }).iconOffsetMm).toBe(-8);
+    expect(normalizeStorageSeparatorStyle({ iconOffsetMm: 20 }).iconOffsetMm).toBe(8);
+    expect(normalizeStorageSeparatorStyle({ iconOffsetLeftMm: 3 }).iconOffsetMm).toBe(-3);
   });
 });
