@@ -28,6 +28,7 @@ const navItems = [
   },
   { to: "/sets", label: "Sets", matchPrefix: false },
   { to: "/storage", label: "Storage", matchPrefix: false },
+  { to: "/separators", label: "Separators", matchPrefix: false },
   { to: "/sell", label: "Sell", matchPrefix: false },
   { to: "/scan", label: "Scan", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },

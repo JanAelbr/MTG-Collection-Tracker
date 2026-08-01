@@ -16,6 +16,7 @@ const CardDetailView = () => import("./views/CardDetailView.vue");
 const HomeView = () => import("./views/HomeView.vue");
 const FavoritesHomeView = () => import("./views/FavoritesHomeView.vue");
 const SetsView = () => import("./views/SetsView.vue");
+const SeparatorsView = () => import("./views/SeparatorsView.vue");
 const ScanView = () => import("./views/ScanView.vue");
 
 const router = createRouter({
@@ -78,6 +79,12 @@ const router = createRouter({
       name: "storage",
       component: StorageView,
       meta: { title: "Storage" },
+    },
+    {
+      path: "/separators",
+      name: "separators",
+      component: SeparatorsView,
+      meta: { title: "Separators" },
     },
     {
       path: "/sell",

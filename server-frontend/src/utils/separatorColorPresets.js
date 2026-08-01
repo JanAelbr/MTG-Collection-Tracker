@@ -1,0 +1,223 @@
+/** Coordinated color themes for binder + storage separators (20 presets). */
+export const SEPARATOR_COLOR_PRESETS = Object.freeze([
+  {
+    id: "classic",
+    label: "Classic parchment",
+    binder: { inkColor: "#18120c", accentColor: "#b8944a", baseColor: "#f3e8d2" },
+    storage: {
+      tabColor: "#f3f3f3",
+      nameColor: "#222222",
+      metaColor: "#666666",
+      borderColor: "#bbbbbb",
+    },
+  },
+  {
+    id: "agedOak",
+    label: "Aged oak",
+    binder: { inkColor: "#2a1c12", accentColor: "#8b6914", baseColor: "#e6d3b0" },
+    storage: {
+      tabColor: "#e8dcc8",
+      nameColor: "#2a1c12",
+      metaColor: "#6b542e",
+      borderColor: "#b8a078",
+    },
+  },
+  {
+    id: "rivendell",
+    label: "Rivendell",
+    binder: { inkColor: "#1a2e28", accentColor: "#c5a35a", baseColor: "#e8f0ea" },
+    storage: {
+      tabColor: "#dce8e2",
+      nameColor: "#1a2e28",
+      metaColor: "#4a6b5e",
+      borderColor: "#9bb5a8",
+    },
+  },
+  {
+    id: "mordorAsh",
+    label: "Mordor ash",
+    binder: { inkColor: "#1a1412", accentColor: "#a85c3a", baseColor: "#d4cfc8" },
+    storage: {
+      tabColor: "#cfc8c2",
+      nameColor: "#1a1412",
+      metaColor: "#5c5048",
+      borderColor: "#8a8078",
+    },
+  },
+  {
+    id: "rohanWheat",
+    label: "Rohan wheat",
+    binder: { inkColor: "#3a2a14", accentColor: "#c4a035", baseColor: "#f5e6c4" },
+    storage: {
+      tabColor: "#f0e4c4",
+      nameColor: "#3a2a14",
+      metaColor: "#7a6430",
+      borderColor: "#c8b478",
+    },
+  },
+  {
+    id: "elvenSilver",
+    label: "Elven silver",
+    binder: { inkColor: "#2a3038", accentColor: "#8a9aaa", baseColor: "#eef1f4" },
+    storage: {
+      tabColor: "#e4e9ee",
+      nameColor: "#2a3038",
+      metaColor: "#5a6878",
+      borderColor: "#a8b4c0",
+    },
+  },
+  {
+    id: "dwarvenBronze",
+    label: "Dwarven bronze",
+    binder: { inkColor: "#2c1e14", accentColor: "#b87333", baseColor: "#ead9c4" },
+    storage: {
+      tabColor: "#e2d2bc",
+      nameColor: "#2c1e14",
+      metaColor: "#6e4e30",
+      borderColor: "#b89870",
+    },
+  },
+  {
+    id: "nightInk",
+    label: "Night ink",
+    binder: { inkColor: "#0e1218", accentColor: "#6b7f9a", baseColor: "#d8dee6" },
+    storage: {
+      tabColor: "#cfd6e0",
+      nameColor: "#0e1218",
+      metaColor: "#445066",
+      borderColor: "#8896a8",
+    },
+  },
+  {
+    id: "crimsonSeal",
+    label: "Crimson seal",
+    binder: { inkColor: "#2a1214", accentColor: "#a83838", baseColor: "#f0e0dc" },
+    storage: {
+      tabColor: "#ead8d4",
+      nameColor: "#2a1214",
+      metaColor: "#7a4040",
+      borderColor: "#c09090",
+    },
+  },
+  {
+    id: "oceanSlate",
+    label: "Ocean slate",
+    binder: { inkColor: "#142028", accentColor: "#4a7c8c", baseColor: "#dde8ec" },
+    storage: {
+      tabColor: "#d0dee4",
+      nameColor: "#142028",
+      metaColor: "#3e606c",
+      borderColor: "#88a8b4",
+    },
+  },
+  {
+    id: "forestMoss",
+    label: "Forest moss",
+    binder: { inkColor: "#182418", accentColor: "#6a8a48", baseColor: "#e4ebd8" },
+    storage: {
+      tabColor: "#d8e2cc",
+      nameColor: "#182418",
+      metaColor: "#4a6440",
+      borderColor: "#98b080",
+    },
+  },
+  {
+    id: "royalIndigo",
+    label: "Royal indigo",
+    binder: { inkColor: "#1a1430", accentColor: "#7a68b0", baseColor: "#e6e0f0" },
+    storage: {
+      tabColor: "#dcd6e8",
+      nameColor: "#1a1430",
+      metaColor: "#554878",
+      borderColor: "#a898c8",
+    },
+  },
+  {
+    id: "warmSand",
+    label: "Warm sand",
+    binder: { inkColor: "#3a3020", accentColor: "#c8a878", baseColor: "#f6ecd8" },
+    storage: {
+      tabColor: "#efe4ce",
+      nameColor: "#3a3020",
+      metaColor: "#7a6a4c",
+      borderColor: "#c8b898",
+    },
+  },
+  {
+    id: "coolParchment",
+    label: "Cool parchment",
+    binder: { inkColor: "#24282c", accentColor: "#9a9080", baseColor: "#ece8e0" },
+    storage: {
+      tabColor: "#e4e0d8",
+      nameColor: "#24282c",
+      metaColor: "#5c5850",
+      borderColor: "#b0a898",
+    },
+  },
+  {
+    id: "copperGreen",
+    label: "Copper green",
+    binder: { inkColor: "#1c2824", accentColor: "#b87848", baseColor: "#dde8e0" },
+    storage: {
+      tabColor: "#d2e0d8",
+      nameColor: "#1c2824",
+      metaColor: "#486058",
+      borderColor: "#98b0a0",
+    },
+  },
+  {
+    id: "charcoalGold",
+    label: "Charcoal gold",
+    binder: { inkColor: "#1c1c1c", accentColor: "#d4af37", baseColor: "#e0e0e0" },
+    storage: {
+      tabColor: "#d6d6d6",
+      nameColor: "#1c1c1c",
+      metaColor: "#555555",
+      borderColor: "#9a9a9a",
+    },
+  },
+  {
+    id: "ivoryRose",
+    label: "Ivory rose",
+    binder: { inkColor: "#2c181c", accentColor: "#c08090", baseColor: "#f4e8ea" },
+    storage: {
+      tabColor: "#eadce0",
+      nameColor: "#2c181c",
+      metaColor: "#7a5058",
+      borderColor: "#c8a0a8",
+    },
+  },
+  {
+    id: "stormGrey",
+    label: "Storm grey",
+    binder: { inkColor: "#1e2226", accentColor: "#708090", baseColor: "#e2e6ea" },
+    storage: {
+      tabColor: "#d6dce2",
+      nameColor: "#1e2226",
+      metaColor: "#4a545e",
+      borderColor: "#98a4b0",
+    },
+  },
+  {
+    id: "honeyAmber",
+    label: "Honey amber",
+    binder: { inkColor: "#2c200c", accentColor: "#e0a020", baseColor: "#f8ecc8" },
+    storage: {
+      tabColor: "#f2e4b8",
+      nameColor: "#2c200c",
+      metaColor: "#7a6020",
+      borderColor: "#d4b060",
+    },
+  },
+  {
+    id: "midnightBlue",
+    label: "Midnight blue",
+    binder: { inkColor: "#0c1424", accentColor: "#3a5a8c", baseColor: "#d4dce8" },
+    storage: {
+      tabColor: "#c8d2e0",
+      nameColor: "#0c1424",
+      metaColor: "#384e6e",
+      borderColor: "#8094b0",
+    },
+  },
+]);
