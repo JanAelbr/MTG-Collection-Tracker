@@ -109,6 +109,12 @@ class SetOrderTests(unittest.TestCase):
         option = build_set_option("LTR", set_names, [])
         self.assertEqual(option["iconUri"], "https://svgs.scryfall.io/sets/ltr.svg")
 
+    def test_build_set_option_falls_back_to_family_root_icon(self):
+        set_names = {"LTC": "Tales of Middle-earth Commander"}
+        option = build_set_option("LTC", set_names, [], family_root="LTR")
+        self.assertEqual(option["familyRoot"], "LTR")
+        self.assertEqual(option["iconUri"], "https://svgs.scryfall.io/sets/ltr.svg")
+
     def test_build_set_option_prefers_stored_icon_uri(self):
         set_names = {"HOB": "The Hobbit"}
         icon_uri = "https://svgs.scryfall.io/sets/hob.svg?1782705600"

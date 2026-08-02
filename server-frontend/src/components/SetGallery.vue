@@ -6,6 +6,7 @@ import {
   setCompletionPercent,
   setCompletionRarity,
   setDisplayName,
+  setShortName,
 } from "../utils/format";
 import { applySetGalleryIconFallback, resolveSetGalleryIconUri } from "../utils/scryfall";
 import { isSetBrowserHiddenSubsetType } from "../utils/setBrowserSubsets";
@@ -313,20 +314,26 @@ function flooredCompletionPercent(set) {
   return Math.floor(percent);
 }
 
-function activeTitleLine(set) {
-  const name = setDisplayName(set);
-  const code = set.setCode;
-  if (set.isFamilyRoot && (set.familyMembers || []).length > 1) {
-    const suffix = props.activeFamily || isFamilyActive(set) ? " family" : "";
-    if (!name || name === code) {
-      return `${code}${suffix}`;
+function activeTitleSet(set) {
+  if (
+    props.activeSetCode
+    && props.activeSetCode !== "All"
+    && props.activeSetCode !== set.setCode
+  ) {
+    const member = setsByCode.value.get(props.activeSetCode);
+    if (member) {
+      return member;
     }
-    return `${code}${suffix} · ${name}`;
   }
-  if (!name || name === code) {
-    return code;
+  return set;
+}
+
+function activeTitleLine(set) {
+  const selected = activeTitleSet(set);
+  if (selected?.setCode === "All") {
+    return "All sets";
   }
-  return `${code} · ${name}`;
+  return setShortName(selected) || selected?.setCode || "";
 }
 
 function activeStatsLine(set) {
@@ -422,8 +429,9 @@ onMounted(positionActiveSet);
         }"
         role="button"
         tabindex="0"
-        :aria-label="`Select ${setDisplayName(set) || set.setCode}`"
+        :aria-label="`Select ${isCardActive(set) && set.setCode !== 'All' ? activeTitleLine(set) : (setDisplayName(set) || set.setCode)}`"
         :aria-current="isCardActive(set) ? 'true' : undefined"
+        :title="isCardActive(set) && set.setCode !== 'All' ? activeTitleLine(set) : undefined"
         @click="onSelectFamilyOrSet(set)"
         @keydown="onCardKeydown($event, set)"
       >
@@ -431,6 +439,7 @@ onMounted(positionActiveSet);
           <div class="set-gallery-icon-wrap">
             <img
               v-if="setIconUri(set)"
+              :key="`${set.setCode}:${setIconUri(set)}`"
               :src="setIconUri(set)"
               :alt="`${set.setCode} set icon`"
               class="set-gallery-icon"
@@ -484,6 +493,7 @@ onMounted(positionActiveSet);
           >
             <img
               v-if="setIconUri(member)"
+              :key="`${member.setCode}:${setIconUri(member)}`"
               :src="setIconUri(member)"
               alt=""
               class="set-gallery-subtile-icon"

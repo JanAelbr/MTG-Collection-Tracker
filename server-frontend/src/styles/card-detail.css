@@ -490,6 +490,19 @@
   text-align: right;
 }
 
+.card-detail-sale-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-detail-asking-price {
+  color: #666;
+  font-size: 12px;
+}
+
 .card-detail-locations {
   margin: 10px 0;
   font-size: 13px;

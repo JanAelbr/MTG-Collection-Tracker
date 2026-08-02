@@ -1,5 +1,5 @@
 import { artStyleRulesFromApi } from "./artStyleRules.js";
-import { setDisplayName, setShortName } from "./format.js";
+import { setDisplayName } from "./format.js";
 
 export function releaseYear(set) {
   const date = String(set?.releasedAt || "").trim();
@@ -18,7 +18,7 @@ export function formatArtStyleNumberRange(rule) {
   }
   if (rule.matchType === "prefix") {
     const prefix = String(rule.prefix || "").trim();
-    return prefix ? `${prefix}…` : "";
+    return prefix ? `#${prefix}…` : "";
   }
   const first = rule.firstNumber;
   const last = rule.lastNumber;
@@ -29,7 +29,7 @@ export function formatArtStyleNumberRange(rule) {
     ? String(rule.suffix).trim()
     : "";
   const sameNumber = Number(first) === Number(last) && Number.isFinite(Number(first));
-  const range = sameNumber ? String(first) : `${first} – ${last}`;
+  const range = sameNumber ? `#${first}` : `#${first} – #${last}`;
   return suffix ? `${range}${suffix}` : range;
 }
 
@@ -48,7 +48,7 @@ function resolveSeparatorFamilyRoot(set, setCode) {
 export function buildStorageSeparators(sets) {
   return (sets || []).map((set, index) => {
     const setCode = String(set.setCode || "").trim();
-    const setName = setShortName(set) || setDisplayName(set) || setCode;
+    const setName = setDisplayName(set) || setCode;
     const familyRoot = resolveSeparatorFamilyRoot(set, setCode);
     return {
       id: `storage-${setCode}-${index}`,
@@ -67,7 +67,7 @@ export function buildBinderSeparators(sets, rulesBySetCode) {
   const items = [];
   for (const set of sets || []) {
     const setCode = String(set.setCode || "").trim();
-    const setName = setShortName(set) || setDisplayName(set) || setCode;
+    const setName = setDisplayName(set) || setCode;
     const familyRoot = resolveSeparatorFamilyRoot(set, setCode);
     const iconUri = set.iconUri || "";
     const rawRules = rulesBySetCode?.get?.(setCode) ?? rulesBySetCode?.[setCode];

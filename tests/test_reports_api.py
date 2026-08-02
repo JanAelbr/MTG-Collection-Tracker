@@ -207,6 +207,52 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["collectorNumber"], "1")
 
+    def test_apply_filters_owned_is_finish_aware(self):
+        """Owning nonfoil must not include the unowned foil of the same print."""
+        cards = [
+            {
+                "setCode": "LTR",
+                "collectorNumber": "1",
+                "artStyle": "",
+                "finish": 0,
+                "owned": True,
+            },
+            {
+                "setCode": "LTR",
+                "collectorNumber": "1",
+                "artStyle": "",
+                "finish": 1,
+                "owned": False,
+            },
+            {
+                "setCode": "LTR",
+                "collectorNumber": "2",
+                "artStyle": "",
+                "finish": 0,
+                "owned": False,
+            },
+        ]
+        owned = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="owned",
+            foil_filter="all",
+        )
+        self.assertEqual([(c["collectorNumber"], c["finish"]) for c in owned], [("1", 0)])
+
+        unowned = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="unowned",
+            foil_filter="all",
+        )
+        self.assertEqual(
+            [(c["collectorNumber"], c["finish"]) for c in unowned],
+            [("1", 1), ("2", 0)],
+        )
+
     def test_apply_filters_by_enchantment_type(self):
         cards = [
             {
@@ -1101,6 +1147,7 @@ class ReportsApiServiceTests(unittest.TestCase):
             },
             locations_map={},
             owned_keys=frozenset(),
+            listing_prices={},
             snapshot_prices={},
             compare_date=None,
         )

@@ -189,6 +189,7 @@ defineExpose({ rootRef });
             <span class="storage-table-set-cell">
               <CardSetSymbol
                 :set-code="entry.card.setCode"
+                :family-root="entry.card.familyRoot || ''"
                 variant="generic"
                 :size="16"
               />
@@ -205,7 +206,11 @@ defineExpose({ rootRef });
               :image-uri-back="entry.card.imageUriBack || ''"
             >
               <span class="storage-card-name-row">
-                <CardSetSymbol :set-code="entry.card.setCode" :rarity="entry.card.rarity || ''" />
+                <CardSetSymbol
+                  :set-code="entry.card.setCode"
+                  :family-root="entry.card.familyRoot || ''"
+                  :rarity="entry.card.rarity || ''"
+                />
                 <RouterLink :to="cardRoute(entry.card)" class="reports-card-link">
                   {{ String(entry.card.collectorNumber).padStart(3, "0") }} · {{ entry.card.name || entry.card.cardName }}
                 </RouterLink>

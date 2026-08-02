@@ -379,12 +379,6 @@ async function ensureStorageLocations() {
 export { ensureStorageLocations };
 
 function defaultStorageSlug(state, settings) {
-  if (state?.copies?.length === 1) {
-    return state.copies[0].locationSlug;
-  }
-  if (state?.locationSlug) {
-    return state.locationSlug;
-  }
   if (settings?.defaultStorageLocation) {
     return settings.defaultStorageLocation;
   }

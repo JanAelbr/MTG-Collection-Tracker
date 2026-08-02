@@ -2193,19 +2193,37 @@ body {
   overflow: hidden;
 }
 
-.collection-page.reports-page > .page-with-sidebar {
+.collection-page.reports-page > .collection-page-scroll {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.collection-page.reports-page .collection-page-scroll > .collection-status,
+.collection-page.reports-page .collection-page-scroll > .set-gallery-wrap {
+  flex: 0 0 auto;
+}
+
+.collection-page.reports-page .collection-page-scroll > .page-with-sidebar {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
   align-items: stretch;
   overflow: hidden;
 }
 
 .collection-page.reports-page .filter-sidebar {
-  position: static;
-  top: auto;
-  max-height: none;
+  position: sticky;
+  top: 0;
+  max-height: 100%;
   height: auto;
   align-self: stretch;
+  overflow: auto;
 }
 
 .collection-page.reports-page .page-with-sidebar-main {
@@ -2214,6 +2232,7 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -2231,19 +2250,30 @@ body {
   flex: 0 0 auto;
 }
 
+.collection-page.reports-page .collection-all-toolbar-row--primary {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: 0 0 10px;
+  padding: 8px 0;
+  background: #fff;
+  border-bottom: 1px solid #eceff1;
+}
+
 .collection-page.reports-page .collection-gallery-panel > .gallery-loading-wrap,
 .collection-page.reports-page .collection-gallery-panel > .gallery-loading-wrap > .gallery-loading-content {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .collection-page.reports-page .collection-gallery-panel .collection-virtual-grid {
   flex: 1 1 auto;
-  height: 100%;
-  max-height: none;
   min-height: 0;
+  height: auto;
+  max-height: none;
 }
 
 .collection-page.reports-page .collection-gallery-panel > .manager-set-table {
@@ -2612,6 +2642,9 @@ body {
   position: relative;
   display: inline-flex;
   align-items: baseline;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
 }
 
 .price-strategy-value.has-strategy-tooltip {
@@ -2683,6 +2716,12 @@ body {
   color: #222;
 }
 
+.price-strategy-tooltip-purchase {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #e8ecf0;
+}
+
 .storage-unit-value {
   display: block;
   margin-top: 2px;
@@ -2703,11 +2742,6 @@ body {
 }
 
 .collection-page .collection-card-grid-change {
-  font-weight: 600;
-}
-
-.collection-page .collection-card-grid-gain {
-  font-size: inherit;
   font-weight: 600;
 }
 
@@ -3603,14 +3637,15 @@ body {
   width: 100%;
 }
 
-.card-interactive-overlay .card-copy-controls--overlay .card-copy-controls-owned-row,
-.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy-controls {
+.card-interactive-overlay .card-copy-controls--overlay .card-copy-controls-owned-row {
   justify-content: center;
   width: 100%;
 }
 
 .card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy-controls {
-  flex-wrap: wrap;
+  justify-content: center;
+  flex-wrap: nowrap;
+  width: 100%;
 }
 
 .card-interactive-overlay .card-copy-controls--overlay .card-interactive-status {
@@ -4605,11 +4640,17 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: nowrap;
 }
 
 .card-interactive-copy-controls .browse-select {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.card-interactive-sell-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .finish-toggle-btn {
@@ -6232,13 +6273,22 @@ button.card-variant {
     overflow: visible;
   }
 
-  .collection-page.reports-page > .page-with-sidebar {
+  .collection-page.reports-page > .collection-page-scroll {
     overflow: visible;
+  }
+
+  .collection-page.reports-page .collection-page-scroll > .page-with-sidebar {
+    overflow: visible;
+    min-height: 0;
   }
 
   .collection-page.reports-page .page-with-sidebar-main,
   .collection-page.reports-page .collection-gallery-panel {
     overflow: visible;
+  }
+
+  .collection-page.reports-page .collection-all-toolbar-row--primary {
+    position: static;
   }
 
   .collection-page.reports-page .collection-gallery-panel .collection-virtual-grid {
@@ -6337,6 +6387,10 @@ button.card-variant {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.collection-all-toolbar-row--primary {
+  gap: 8px;
 }
 
 .collection-all-toolbar-row {

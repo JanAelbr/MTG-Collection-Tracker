@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SellListingsTable from "../components/SellListingsTable.vue";
-import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { cardMatchesSearchQuery } from "../utils/collectionFilters";
 import { formatEuro } from "../utils/format";
 import { valueForStrategy } from "../utils/priceStrategies";
@@ -15,7 +15,7 @@ const error = ref("");
 const listed = ref([]);
 const sold = ref([]);
 const listedTotals = ref({ totalAsking: 0, totalListings: 0 });
-const soldTotals = ref({ totalSales: 0, totalProfitLoss: 0, totalListings: 0 });
+const soldTotals = ref({ totalSales: 0, totalListings: 0 });
 const busyId = ref(null);
 
 const sellDialog = ref(null);
@@ -28,10 +28,7 @@ const expandedSetCodes = ref(new Set());
 
 const { settings: pricingSettings } = usePricingSettings();
 const priceStrategies = computed(() => pricingSettings.value?.priceStrategies || []);
-const globalPriceStrategy = computed(() => pricingSettings.value?.priceStrategy || "trend");
-const activeStrategyId = computed(
-  () => pricingSettings.value?.sellPriceStrategy || globalPriceStrategy.value,
-);
+const activeStrategyId = computed(() => "trend");
 
 const sortField = ref("name");
 const sortDir = ref("asc");
@@ -89,21 +86,20 @@ const setGroups = computed(() => {
   const groups = [...buckets.entries()].map(([setCode, groupCards]) => {
     let totalAsking = 0;
     let totalSales = 0;
-    let totalProfitLoss = 0;
     for (const card of groupCards) {
       totalAsking += Number(card.listingPrice || 0);
       totalSales += Number(card.salePrice || 0);
-      totalProfitLoss += Number(card.profitLoss || 0);
     }
     const setLabel = groupCards.find((card) => card.setLabel)?.setLabel || setCode;
+    const familyRoot = groupCards.find((card) => card.familyRoot)?.familyRoot || setCode;
     return {
       setCode,
       setLabel,
+      familyRoot,
       cards: groupCards,
       count: groupCards.length,
       totalAsking,
       totalSales,
-      totalProfitLoss,
     };
   });
   const ascending = sortDir.value === "asc";
@@ -171,30 +167,11 @@ function toggleGroupBySet() {
   }
 }
 
-async function onSellPriceStrategyChange(event) {
-  const next = event?.target?.value;
-  if (!next || next === activeStrategyId.value) {
-    return;
-  }
-  try {
-    await savePricingSettings({ sellPriceStrategy: next });
-  } catch (err) {
-    error.value = err?.message || "Failed to update price strategy";
-  }
-}
-
 function setGroupMetaText(group) {
   if (tab.value === "listed") {
     return `${group.count} · ${formatEuro(group.totalAsking)}`;
   }
-  return `${group.count} · ${formatEuro(group.totalSales)} · P/L ${formatEuro(group.totalProfitLoss)}`;
-}
-
-function profitClass(value) {
-  if (value == null) {
-    return "";
-  }
-  return value >= 0 ? "reports-gain" : "reports-loss";
+  return `${group.count} · ${formatEuro(group.totalSales)}`;
 }
 
 function strategyValue(card, strategyId) {
@@ -263,10 +240,6 @@ function sortValue(card, field) {
       return askVsActiveDelta(card);
     case "salePrice":
       return card.salePrice;
-    case "purchaseValue":
-      return card.purchaseValue;
-    case "profitLoss":
-      return card.profitLoss;
     case "location":
       return card.locationLabel || card.locationSlug || "";
     default:
@@ -300,8 +273,6 @@ function defaultSortDir(field) {
     field === "listingPrice"
     || field === "askDelta"
     || field === "salePrice"
-    || field === "purchaseValue"
-    || field === "profitLoss"
     || field.startsWith("strategy:")
   ) {
     return "desc";
@@ -338,7 +309,6 @@ async function load() {
     sold.value = soldPayload.cards || [];
     soldTotals.value = {
       totalSales: soldPayload.totalSales || 0,
-      totalProfitLoss: soldPayload.totalProfitLoss || 0,
       totalListings: soldPayload.totalListings || 0,
     };
   } catch (err) {
@@ -396,10 +366,6 @@ async function saveSoldPrice(card, event) {
     ));
     soldTotals.value.totalSales = sold.value.reduce(
       (sum, item) => sum + Number(item.salePrice || 0),
-      0,
-    );
-    soldTotals.value.totalProfitLoss = sold.value.reduce(
-      (sum, item) => sum + Number(item.profitLoss || 0),
       0,
     );
   } catch (err) {
@@ -475,10 +441,6 @@ async function confirmSell() {
       (sum, item) => sum + Number(item.salePrice || 0),
       0,
     );
-    soldTotals.value.totalProfitLoss = sold.value.reduce(
-      (sum, item) => sum + Number(item.profitLoss || 0),
-      0,
-    );
     closeSellDialog();
     tab.value = "sold";
   } catch (err) {
@@ -501,10 +463,6 @@ async function onDeleteSold(card) {
       (sum, item) => sum + Number(item.salePrice || 0),
       0,
     );
-    soldTotals.value.totalProfitLoss = sold.value.reduce(
-      (sum, item) => sum + Number(item.profitLoss || 0),
-      0,
-    );
   } catch (err) {
     error.value = err?.message || "Failed to delete sold row";
   } finally {
@@ -521,6 +479,8 @@ watch(tab, () => {
     tab.value === "sold"
     && (sortField.value === "listingPrice"
       || sortField.value === "askDelta"
+      || sortField.value === "purchaseValue"
+      || sortField.value === "profitLoss"
       || sortField.value.startsWith("strategy:"))
   ) {
     sortField.value = "salePrice";
@@ -582,10 +542,6 @@ onMounted(load);
     </p>
     <p v-else class="sell-page-stats">
       Sales total: <strong>{{ formatEuro(soldTotals.totalSales) }}</strong>
-      · P/L:
-      <strong :class="profitClass(soldTotals.totalProfitLoss)">
-        {{ formatEuro(soldTotals.totalProfitLoss) }}
-      </strong>
     </p>
 
     <div v-if="!loading && cards.length" class="sell-page-toolbar">
@@ -597,22 +553,6 @@ onMounted(load);
           placeholder="Search name, #, set…"
           autocomplete="off"
         >
-      </label>
-      <label v-if="tab === 'listed' && priceStrategies.length" class="sell-toolbar-strategy">
-        <span>Price strategy</span>
-        <select
-          :value="activeStrategyId"
-          aria-label="Sell page price strategy"
-          @change="onSellPriceStrategyChange"
-        >
-          <option
-            v-for="strategy in priceStrategies"
-            :key="strategy.id"
-            :value="strategy.id"
-          >
-            {{ strategy.label }}
-          </option>
-        </select>
       </label>
       <p v-if="matchSummaryText" class="sell-toolbar-summary">{{ matchSummaryText }}</p>
       <div class="sell-toolbar-end">
@@ -669,7 +609,6 @@ onMounted(load);
         :ask-vs-active-direction="askVsActiveDirection"
         :ask-vs-active-label="askVsActiveLabel"
         :ask-vs-active-title="askVsActiveTitle"
-        :profit-class="profitClass"
         :set-group-meta-text="setGroupMetaText"
         @toggle-sort="toggleSort"
         @toggle-set-group="toggleSetGroup"

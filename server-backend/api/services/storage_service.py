@@ -190,14 +190,19 @@ def list_location_cards(
     from api.services.sale_listings_service import listed_listings_by_instance_id
 
     listed_by_instance = listed_listings_by_instance_id(conn)
+    from util.set_families import load_family_roots
+
+    family_roots = load_family_roots(conn)
     grouped: dict[tuple, dict] = {}
     for row in rows:
         key = (row["set_code"], str(row["collector_number"]), int(row["finish"]))
         card = grouped.get(key)
         if card is None:
             finish = int(row["finish"])
+            set_code = str(row["set_code"] or "").strip().upper()
             card = {
                 "setCode": row["set_code"],
+                "familyRoot": family_roots.get(set_code) or set_code,
                 "collectorNumber": str(row["collector_number"]),
                 "finish": finish,
                 "foil": finish,

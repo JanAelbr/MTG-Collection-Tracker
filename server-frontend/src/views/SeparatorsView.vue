@@ -29,7 +29,11 @@ import {
   buildStorageSeparators,
   releaseYear,
 } from "../utils/separatorItems";
-import { formatSubsetTypeLabel, isTokenOrArtSetType } from "../utils/setBrowserSubsets";
+import {
+  formatSubsetTypeLabel,
+  isSetsPagePromoType,
+  isTokenOrArtSetType,
+} from "../utils/setBrowserSubsets";
 
 const MODE_STORAGE = "storage";
 const MODE_BINDER = "binder";
@@ -44,6 +48,7 @@ const loadError = ref("");
 const filterQuery = ref("");
 const setScope = ref(SCOPE_LOADED);
 const showTokenAndArtSets = ref(false);
+const showPromoSets = ref(false);
 const mode = ref(MODE_STORAGE);
 const binderStyle = ref({ ...DEFAULT_BINDER_SEPARATOR_STYLE });
 const storageStyle = ref({ ...DEFAULT_STORAGE_SEPARATOR_STYLE });
@@ -111,10 +116,12 @@ function enrichTrackedSet(set) {
 
 function enrichAvailableSet(set) {
   const setCode = String(set.setCode || "").trim();
+  const name = String(set.name || "").trim();
+  const label = name ? `${name} (${setCode})` : setCode;
   return {
     setCode,
-    label: set.name || set.setCode,
-    name: set.name || set.setCode,
+    label,
+    name: name || setCode,
     iconUri: set.iconUri || "",
     setType: set.setType,
     parentSetCode: set.parentSetCode || "",
@@ -171,13 +178,7 @@ function setMatchesQuery(set, query) {
 }
 
 function setPickerLabel(set) {
-  const name = setShortName(set) || setDisplayName(set) || set.setCode;
-  if (isFamilyRootSet(set)) {
-    return name;
-  }
-  const type = formatSubsetTypeLabel(set.setType);
-  const code = String(set.setCode || "").toUpperCase();
-  return type && type !== "set" ? `${code} · ${type}` : code || name;
+  return setDisplayName(set) || set.setCode;
 }
 
 function setGroupYear(set) {
@@ -189,8 +190,13 @@ function setGroupYear(set) {
 const visibleSets = computed(() => {
   const query = filterQuery.value.trim().toLowerCase();
   return selectableSets.value.filter((set) => {
-    if (!showTokenAndArtSets.value && !query && isTokenOrArtSetType(set.setType)) {
-      return false;
+    if (!query) {
+      if (!showTokenAndArtSets.value && isTokenOrArtSetType(set.setType)) {
+        return false;
+      }
+      if (!showPromoSets.value && isSetsPagePromoType(set.setType)) {
+        return false;
+      }
     }
     return setMatchesQuery(set, query);
   });
@@ -573,6 +579,16 @@ onMounted(async () => {
             @click="showTokenAndArtSets = !showTokenAndArtSets"
           >
             Tokens &amp; art
+          </button>
+          <button
+            type="button"
+            class="separators-mode-btn"
+            :class="{ 'is-active': showPromoSets }"
+            :aria-pressed="showPromoSets ? 'true' : 'false'"
+            title="Show promo sets in the list"
+            @click="showPromoSets = !showPromoSets"
+          >
+            Promos
           </button>
         </div>
 

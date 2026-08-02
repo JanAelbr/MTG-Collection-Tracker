@@ -624,6 +624,7 @@ onMounted(async () => {
               <div class="sets-tile-icon-wrap">
                 <img
                   v-if="setIconUri(set)"
+                  :key="`${set.setCode}:${setIconUri(set)}`"
                   :src="setIconUri(set)"
                   :alt="`${set.setCode} set icon`"
                   class="sets-tile-icon"
@@ -675,6 +676,7 @@ onMounted(async () => {
                 <div class="sets-tile-icon-wrap">
                   <img
                     v-if="setIconUri(set)"
+                    :key="`${set.setCode}:${setIconUri(set)}`"
                     :src="setIconUri(set)"
                     :alt="`${set.setCode} set icon`"
                     class="sets-tile-icon"

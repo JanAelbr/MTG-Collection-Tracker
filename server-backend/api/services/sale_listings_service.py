@@ -198,21 +198,25 @@ def _hydrate_rows(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dic
     strategy = settings_service.get_settings(conn)["priceStrategy"]
     labels = _location_labels(conn)
     set_names = load_set_display_names(conn)
+    from util.set_families import load_family_roots
+
+    family_roots = load_family_roots(conn)
     catalog_cache: dict[tuple[str, str], object] = {}
     items: list[dict] = []
     for row in rows:
         key = (row["set_code"], str(row["collector_number"]))
         if key not in catalog_cache:
             catalog_cache[key] = _catalog_row(conn, key[0], key[1])
-        items.append(
-            _serialize_listing(
-                row,
-                strategy=strategy,
-                location_labels=labels,
-                set_names=set_names,
-                catalog_row=catalog_cache[key],
-            )
+        item = _serialize_listing(
+            row,
+            strategy=strategy,
+            location_labels=labels,
+            set_names=set_names,
+            catalog_row=catalog_cache[key],
         )
+        set_code = str(item.get("setCode") or "").strip().upper()
+        item["familyRoot"] = family_roots.get(set_code) or set_code
+        items.append(item)
     return items
 
 

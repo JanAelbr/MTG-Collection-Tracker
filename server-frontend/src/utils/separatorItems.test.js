@@ -18,29 +18,29 @@ describe("separatorItems", () => {
     expect(formatArtStyleNumberRange({
       matchType: "prefix",
       prefix: "A",
-    })).toBe("A…");
+    })).toBe("#A…");
     expect(formatArtStyleNumberRange({
       matchType: "range",
       firstNumber: 1,
       lastNumber: 280,
-    })).toBe("1 – 280");
+    })).toBe("#1 – #280");
     expect(formatArtStyleNumberRange({
       matchType: "range_suffix",
       firstNumber: 1,
       lastNumber: 10,
       suffix: "★",
-    })).toBe("1 – 10★");
+    })).toBe("#1 – #10★");
     expect(formatArtStyleNumberRange({
       matchType: "range",
       firstNumber: 149,
       lastNumber: 149,
-    })).toBe("149");
+    })).toBe("#149");
     expect(formatArtStyleNumberRange({
       matchType: "range_suffix",
       firstNumber: "5",
       lastNumber: "5",
       suffix: "a",
-    })).toBe("5a");
+    })).toBe("#5a");
   });
 
   it("builds one storage separator per set", () => {
@@ -53,7 +53,7 @@ describe("separatorItems", () => {
       setCode: "LTR",
       year: "2023",
     });
-    expect(items[0].setName).toContain("Lord of the Rings");
+    expect(items[0].setName).toBe("The Lord of the Rings (LTR)");
   });
 
   it("builds binder separators from art style rules", () => {
@@ -71,7 +71,7 @@ describe("separatorItems", () => {
     expect(items[0]).toMatchObject({
       mode: "binder",
       artStyle: "Regular",
-      numberRange: "1 – 280",
+      numberRange: "#1 – #280",
     });
     expect(items[1].artStyle).toBe("Showcase");
   });

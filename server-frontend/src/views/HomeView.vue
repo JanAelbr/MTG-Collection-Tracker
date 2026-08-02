@@ -34,16 +34,6 @@ async function loadPricingSettings() {
   await fetchPricingSettings(true);
 }
 
-async function updatePriceStrategy(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ priceStrategy: event.target.value });
-    settingsMessage.value = "Pricing settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save pricing settings.";
-  }
-}
-
 async function updatePageSize(event) {
   settingsMessage.value = "";
   try {
@@ -284,23 +274,12 @@ onUnmounted(stopPolling);
     <section v-if="pricingSettings" class="home-panel">
       <h2>Pricing &amp; display</h2>
       <p class="home-intro">
-        Price strategy applies across Collection, Stats, Storage, Decks, and card detail pages.
-        Rows per page applies to Collection gallery and table lists.
-        Price change columns compare against the previous price snapshot automatically.
+        Gallery prices show the lowest listing first, then the highest of the other
+        Cardmarket strategies when it is higher. Rows per page applies to Collection
+        gallery and table lists. Price change columns compare against the previous
+        price snapshot automatically.
       </p>
       <div class="home-pricing-panel">
-        <label class="manager-filter">
-          <span>Price strategy</span>
-          <select :value="pricingSettings.priceStrategy" @change="updatePriceStrategy">
-            <option
-              v-for="strategy in pricingSettings.priceStrategies"
-              :key="strategy.id"
-              :value="strategy.id"
-            >
-              {{ strategy.label }}
-            </option>
-          </select>
-        </label>
         <label class="manager-filter">
           <span>Rows per page</span>
           <select :value="pricingSettings.pageSize" @change="updatePageSize">

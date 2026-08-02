@@ -57,6 +57,16 @@ def effective_family_root(set_code: str, relations: dict[str, dict], known: set[
     return code
 
 
+def load_family_roots(conn: sqlite3.Connection) -> dict[str, str]:
+    """Return {SET_CODE: family root code} for every catalog set."""
+    relations = load_set_relations(conn)
+    known = set(relations.keys())
+    return {
+        code: effective_family_root(code, relations, known) or code
+        for code in known
+    }
+
+
 def family_members_for_root(
     root_code: str,
     known_codes: list[str] | set[str],

@@ -3,7 +3,6 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import CardPreview from "./CardPreview.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import ManaCost from "./ManaCost.vue";
-import { usePricingSettings } from "../composables/pricingSettings";
 import {
   displayCardValue,
   formatPowerToughness,
@@ -21,7 +20,6 @@ const props = defineProps({
 
 const emit = defineEmits(["browse-name", "load-more"]);
 
-const { settings: pricingSettings } = usePricingSettings();
 const loadMoreSentinelRef = ref(null);
 let loadMoreObserver = null;
 
@@ -101,7 +99,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
               :image-uri-back="card.imageUriBack || ''"
             >
               <span class="search-results-card-name">
-                <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+                <CardSetSymbol :set-code="card.setCode" :family-root="card.familyRoot || ''" :rarity="card.rarity || ''" />
                 <span class="reports-card-link">{{ card.name }}</span>
               </span>
             </CardPreview>
@@ -110,6 +108,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
             <span class="search-results-set-row">
               <CardSetSymbol
                 :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
                 variant="generic"
                 :size="16"
               />
@@ -124,7 +123,7 @@ onBeforeUnmount(disconnectLoadMoreObserver);
           <td>{{ formatRarityLabel(card.rarity) }}</td>
           <td class="search-results-num-cell">{{ formatPowerToughness(card) }}</td>
           <td class="search-results-num-cell">
-            {{ displayCardValue(card, pricingSettings?.priceStrategy || "trend") }}
+            {{ displayCardValue(card) }}
           </td>
           <td>
             <span

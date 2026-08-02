@@ -558,7 +558,7 @@ def _load_enriched_set(
     epoch = get_cache_epoch()
     cache_key = memory_cache.make_key(
         "reports.enriched.set",
-        {"setCode": normalized, "compareDate": selected_compare or "", "roles": "v1"},
+        {"setCode": normalized, "compareDate": selected_compare or "", "roles": "v1", "familyRoot": "v1", "finishes": "v2"},
         epoch,
     )
     cached = memory_cache.get(cache_key)
@@ -566,6 +566,11 @@ def _load_enriched_set(
         return cached
 
     name_roles = roles_by_name if roles_by_name is not None else load_card_name_roles_map(conn)
+    from util.set_families import effective_family_root, load_set_relations
+
+    relations = load_set_relations(conn)
+    known = set(relations.keys())
+    family_root = effective_family_root(normalized, relations, known) or normalized
     cards_df = load_ranked_cards_data_for_set(normalized)
     base_cards = serialize_ranked_cards(cards_df)
     enriched = [
@@ -577,6 +582,7 @@ def _load_enriched_set(
             snapshot_prices=snapshot_prices,
             compare_date=selected_compare,
             roles_by_name=name_roles,
+            family_root=family_root,
         )
         for card in base_cards
     ]
@@ -647,6 +653,7 @@ def _enrich_card(
     snapshot_prices: dict[str, float],
     compare_date: str | None,
     roles_by_name: dict[str, list[str]] | None = None,
+    family_root: str | None = None,
 ) -> dict:
     finish = int(card["finish"])
     values_by_strategy = values_by_strategy_for_finish(card, finish)
@@ -661,8 +668,11 @@ def _enrich_card(
         roles = roles_by_name.get(name) or roles_by_name.get(str(name).casefold()) or []
 
     listing_price = listing_prices.get(key)
+    set_code = str(card["set_code"] or "").strip().upper()
+    root = (family_root or set_code).strip().upper() or set_code
     payload = {
         "setCode": card["set_code"],
+        "familyRoot": root,
         "collectorNumber": str(card["collector_number"]),
         "name": name,
         "artStyle": card.get("art_style") or "",
@@ -764,9 +774,9 @@ def _apply_filters(
     elif foil_filter == "etched":
         result = [card for card in result if card["finish"] == 2]
     if owned_filter == "owned":
-        result = [card for card in result if card["owned"]]
+        result = [card for card in result if card.get("owned")]
     elif owned_filter == "unowned":
-        result = [card for card in result if not card["owned"]]
+        result = [card for card in result if not card.get("owned")]
     if type_filter and type_filter != "all":
         result = [
             card for card in result

@@ -8,7 +8,7 @@ import { useFavorites } from "../composables/favorites";
 import { cardSelectionKey } from "../utils/collectionScopeStats";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
-import { formatEuro, formatProfitBracket } from "../utils/format";
+import { formatEuro } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
 
 const props = defineProps({
@@ -82,20 +82,6 @@ function cardKey(card, index = 0) {
 function cardIsOwned(card) {
   ownershipTick.value;
   return isEffectivelyOwned(card);
-}
-
-function gainBracket(card) {
-  if (!cardIsOwned(card) || card.purchaseValue == null || card.purchaseValue === 0) {
-    return null;
-  }
-  return formatProfitBracket(card.profitLoss);
-}
-
-function gainClass(card) {
-  if (card.profitLoss == null) {
-    return "";
-  }
-  return card.profitLoss >= 0 ? "reports-gain" : "reports-loss";
 }
 
 function listingPrice(card) {
@@ -331,7 +317,11 @@ function onDrop(index, event) {
           </button>
           <span class="collection-card-grid-meta-text">
             <span class="collection-card-grid-name-row collection-card-grid-browse-name-row">
-              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+              <CardSetSymbol
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <button
                 type="button"
                 class="collection-card-grid-name collection-card-grid-name-button"
@@ -376,7 +366,11 @@ function onDrop(index, event) {
       </div>
       <figcaption class="collection-card-grid-caption">
         <span class="collection-card-grid-meta">
-          <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+          <CardSetSymbol
+            :set-code="card.setCode"
+            :family-root="card.familyRoot || ''"
+            :rarity="card.rarity || ''"
+          />
           <span class="collection-card-grid-meta-text">
             <span class="collection-card-grid-name-row">
               <RouterLink
@@ -404,11 +398,6 @@ function onDrop(index, event) {
                 class="collection-card-grid-listing"
                 title="Asking price (for sale)"
               >· {{ listingLabel(card) }}</span>
-              <span
-                v-if="gainBracket(card)"
-                class="collection-card-grid-gain"
-                :class="gainClass(card)"
-              >{{ gainBracket(card) }}</span>
             </span>
           </span>
         </span>

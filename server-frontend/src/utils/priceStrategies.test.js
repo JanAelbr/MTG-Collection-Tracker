@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyStrategyToCard,
+  galleryDisplayValue,
+  galleryPricePair,
   hasStrategyPrices,
+  strategyPriceBounds,
   strategyPriceRows,
   valueForStrategy,
 } from "./priceStrategies.js";
@@ -25,6 +28,35 @@ describe("priceStrategies", () => {
   it("detects strategy price maps", () => {
     expect(hasStrategyPrices(card)).toBe(true);
     expect(hasStrategyPrices({ currentValue: 1 })).toBe(false);
+  });
+
+  it("computes strategy price bounds", () => {
+    expect(strategyPriceBounds(card)).toEqual({ low: 1.2, high: 1.8 });
+    expect(strategyPriceBounds({ valuesByStrategy: { trend: 2, avg: 2 } })).toEqual({
+      low: 2,
+      high: 2,
+    });
+    expect(strategyPriceBounds({ currentValue: 1 })).toEqual({ low: null, high: null });
+  });
+
+  it("builds gallery price pair with lowest first", () => {
+    expect(galleryPricePair(card)).toEqual({ low: 1.2, high: 1.8 });
+    expect(galleryDisplayValue(card)).toBe(1.8);
+  });
+
+  it("shows only lowest when it is the highest value", () => {
+    expect(galleryPricePair({
+      valuesByStrategy: { low: 5, trend: 4, avg: 3 },
+    })).toEqual({ low: 5, high: null });
+    expect(galleryDisplayValue({
+      valuesByStrategy: { low: 5, trend: 4 },
+    })).toBe(5);
+  });
+
+  it("falls back to other strategies when lowest is missing", () => {
+    expect(galleryPricePair({
+      valuesByStrategy: { trend: 1.5, avg: 2 },
+    })).toEqual({ low: 2, high: null });
   });
 
   it("builds tooltip rows with active strategy", () => {

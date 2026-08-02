@@ -99,7 +99,7 @@ function setViewMode(mode) {
 
 <template>
   <div class="collection-all-toolbar">
-    <div class="collection-all-toolbar-row">
+    <div class="collection-all-toolbar-row collection-all-toolbar-row--primary">
       <label class="collection-all-search">
         <span class="visually-hidden">Search cards</span>
         <input

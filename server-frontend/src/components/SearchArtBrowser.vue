@@ -6,9 +6,8 @@ import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CardVariantGallery from "./CardVariantGallery.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
-import { usePricingSettings } from "../composables/pricingSettings";
 import { formatEuro } from "../utils/format";
-import { valueForStrategy } from "../utils/priceStrategies";
+import { galleryDisplayValue } from "../utils/priceStrategies";
 import {
   FINISH_ETCHED,
   FINISH_FOIL,
@@ -33,8 +32,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:selectedIndex", "close", "ownership-changed"]);
-
-const { settings: pricingSettings } = usePricingSettings();
 
 const panelRef = ref(null);
 const imageZoomOpen = ref(false);
@@ -123,21 +120,19 @@ function setLabel(code) {
 }
 
 function valueForFinish(card, finish) {
-  const strategy = pricingSettings.value?.priceStrategy || "trend";
   const normalized = normalizeFinish(finish);
   const byStrategy = card.finishValuesByStrategy?.[normalized];
-  if (byStrategy && strategy in byStrategy) {
-    const value = byStrategy[strategy];
-    return value == null ? null : value;
+  if (byStrategy) {
+    return galleryDisplayValue({ valuesByStrategy: byStrategy });
   }
   const finishValue = card.finishValues?.[normalized];
   if (finishValue != null && Number(finishValue) > 0) {
     return finishValue;
   }
   if (normalizeFinish(card.finish ?? card.foil) === normalized) {
-    const strategyValue = valueForStrategy(card, strategy);
-    if (strategyValue != null) {
-      return strategyValue;
+    const galleryValue = galleryDisplayValue(card);
+    if (galleryValue != null) {
+      return galleryValue;
     }
   }
   const market = marketValueForFinish(card, normalized);

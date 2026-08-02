@@ -29,6 +29,7 @@ const router = useRouter();
 const rootRef = ref(null);
 const isHovered = ref(false);
 const hoverPinned = ref(false);
+const overlayLocked = ref(false);
 const imageZoomOpen = ref(false);
 const copyControlsRef = ref(null);
 let leaveTimer = null;
@@ -50,7 +51,7 @@ const showOverlay = computed(() => {
   if (!props.showZoom && !props.showDetails && !props.showCopyControls && !hasRoles.value) {
     return false;
   }
-  return isHovered.value || hoverPinned.value;
+  return isHovered.value || hoverPinned.value || overlayLocked.value;
 });
 const effectivelyOwned = computed(() => {
   ownershipRevision.value;
@@ -103,18 +104,31 @@ function onPointerLeave(event) {
   if (related instanceof Node && root?.contains(related)) {
     return;
   }
-  if (related instanceof Element && related.closest(".storage-location-picker-menu")) {
+  if (overlayLocked.value) {
+    pinHover();
+    return;
+  }
+  if (
+    related instanceof Element
+    && related.closest(
+      ".storage-location-picker-menu, .list-for-sale-modal-backdrop, .sell-dialog, .card-image-zoom-backdrop",
+    )
+  ) {
     pinHover();
     return;
   }
   clearLeaveTimer();
   leaveTimer = setTimeout(() => {
+    if (overlayLocked.value) {
+      return;
+    }
     hoverPinned.value = false;
     isHovered.value = false;
   }, 220);
 }
 
 function onMenuOpenChange(isOpen) {
+  overlayLocked.value = Boolean(isOpen);
   if (isOpen) {
     pinHover();
     return;
@@ -122,7 +136,7 @@ function onMenuOpenChange(isOpen) {
   clearLeaveTimer();
   leaveTimer = setTimeout(() => {
     const root = rootRef.value;
-    if (root?.matches(":hover")) {
+    if (overlayLocked.value || root?.matches(":hover")) {
       return;
     }
     hoverPinned.value = false;

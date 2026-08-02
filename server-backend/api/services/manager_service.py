@@ -823,6 +823,9 @@ def load_owned_instances_for_print(
         (normalized_set, normalized_number),
     ).fetchall()
 
+    from api.services.sale_listings_service import listed_listings_by_instance_id
+
+    listed_by_instance = listed_listings_by_instance_id(conn)
     finish_counts: dict[int, int] = {}
     instances: list[dict] = []
     for instance_id, finish, slug, label, location_type, deck_id, purchase_value in rows:
@@ -847,6 +850,11 @@ def load_owned_instances_for_print(
             "currentValue": current_value,
             "profitLoss": profit_loss,
         }
+        listing = listed_by_instance.get(int(instance_id))
+        if listing is not None:
+            entry["forSale"] = True
+            entry["listingId"] = listing["listingId"]
+            entry["listingPrice"] = listing["listingPrice"]
         if deck_id is not None:
             entry["deckId"] = int(deck_id)
         if location_type_value == "deck" or str(slug).lower().startswith("deck:"):

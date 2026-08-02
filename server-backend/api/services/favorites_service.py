@@ -149,7 +149,10 @@ def _hydrate_favorite_art_styles(
 ) -> list[dict]:
     if not favorite_art_styles:
         return []
+    from util.set_families import load_family_roots
+
     icon_uris = load_set_icon_uris(conn)
+    family_roots = load_family_roots(conn)
     option_cache: dict[str, dict[str, dict]] = {}
     result: list[dict] = []
     for item in favorite_art_styles:
@@ -165,6 +168,7 @@ def _hydrate_favorite_art_styles(
         cards = _collection_cards_for_set(conn, set_code, art_style=art_style)
         for card in cards:
             card["favorite"] = True
+        root = family_roots.get(set_code) or set_code
         result.append({
             "setCode": set_code,
             "artStyle": art_style,
@@ -172,7 +176,8 @@ def _hydrate_favorite_art_styles(
             "favorite": True,
             "ownedCount": option.get("ownedCount") if option else 0,
             "catalogCount": option.get("catalogCount") if option else len(cards),
-            "iconUri": icon_uris.get(set_code) or "",
+            "iconUri": icon_uris.get(set_code) or icon_uris.get(root) or "",
+            "familyRoot": root,
             "missing": option is None and not cards,
             "cards": cards,
         })

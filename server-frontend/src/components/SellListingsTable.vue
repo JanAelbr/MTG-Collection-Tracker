@@ -22,7 +22,6 @@ const props = defineProps({
   askVsActiveDirection: { type: Function, required: true },
   askVsActiveLabel: { type: Function, required: true },
   askVsActiveTitle: { type: Function, required: true },
-  profitClass: { type: Function, required: true },
   setGroupMetaText: { type: Function, required: true },
 });
 
@@ -40,7 +39,7 @@ const columnCount = computed(() => {
   if (props.tab === "listed") {
     return 7 + props.priceStrategies.length;
   }
-  return 8;
+  return 6;
 });
 
 const displayRows = computed(() => {
@@ -155,16 +154,6 @@ function sortHeaderClass(field) {
             Sale{{ sortIndicator("salePrice") }}
           </button>
         </th>
-        <th v-if="tab === 'sold'" :class="sortHeaderClass('purchaseValue')">
-          <button type="button" class="sell-table-sort-btn" @click="emit('toggle-sort', 'purchaseValue')">
-            Paid{{ sortIndicator("purchaseValue") }}
-          </button>
-        </th>
-        <th v-if="tab === 'sold'" :class="sortHeaderClass('profitLoss')">
-          <button type="button" class="sell-table-sort-btn" @click="emit('toggle-sort', 'profitLoss')">
-            P/L{{ sortIndicator("profitLoss") }}
-          </button>
-        </th>
         <th :class="sortHeaderClass('location')">
           <button type="button" class="sell-table-sort-btn" @click="emit('toggle-sort', 'location')">
             Location{{ sortIndicator("location") }}
@@ -185,7 +174,12 @@ function sortHeaderClass(field) {
               @click="emit('toggle-set-group', row.group.setCode)"
             >
               <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
-              <CardSetSymbol :set-code="row.group.setCode" variant="generic" :size="18" />
+              <CardSetSymbol
+                :set-code="row.group.setCode"
+                :family-root="row.group.familyRoot || ''"
+                variant="generic"
+                :size="18"
+              />
               <h3 class="storage-set-group-title">{{ row.group.setLabel || row.group.setCode }}</h3>
               <span class="storage-set-group-meta">{{ setGroupMetaText(row.group) }}</span>
             </button>
@@ -198,7 +192,11 @@ function sortHeaderClass(field) {
               :image-uri-back="row.card.imageUriBack || ''"
             >
               <span class="sell-card-name">
-                <CardSetSymbol :set-code="row.card.setCode" :rarity="row.card.rarity || ''" />
+                <CardSetSymbol
+                  :set-code="row.card.setCode"
+                  :family-root="row.card.familyRoot || ''"
+                  :rarity="row.card.rarity || ''"
+                />
                 <RouterLink :to="cardRoute(row.card)" class="reports-card-link">
                   {{ row.card.name }}
                 </RouterLink>
@@ -207,7 +205,12 @@ function sortHeaderClass(field) {
           </td>
           <td>
             <span class="sell-set-cell">
-              <CardSetSymbol :set-code="row.card.setCode" variant="generic" :size="16" />
+              <CardSetSymbol
+                :set-code="row.card.setCode"
+                :family-root="row.card.familyRoot || ''"
+                variant="generic"
+                :size="16"
+              />
               <span>{{ row.card.setLabel || row.card.setCode }} · #{{ row.card.collectorNumber }}</span>
             </span>
           </td>
@@ -259,10 +262,6 @@ function sortHeaderClass(field) {
               :disabled="busyId === row.card.listingId"
               @change="emit('save-sold-price', row.card, $event)"
             >
-          </td>
-          <td v-if="tab === 'sold'">{{ formatEuro(row.card.purchaseValue) }}</td>
-          <td v-if="tab === 'sold'" :class="profitClass(row.card.profitLoss)">
-            {{ formatEuro(row.card.profitLoss) }}
           </td>
           <td>{{ row.card.locationLabel || row.card.locationSlug || "—" }}</td>
           <td class="sell-actions">

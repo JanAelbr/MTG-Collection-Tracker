@@ -98,12 +98,6 @@ function storageLabel(slug) {
 }
 
 function resolveDefaultStorageSlug(state, settings) {
-  if (state?.copies?.length === 1) {
-    return state.copies[0].locationSlug;
-  }
-  if (state?.locationSlug) {
-    return state.locationSlug;
-  }
   if (settings?.defaultStorageLocation) {
     return settings.defaultStorageLocation;
   }
@@ -111,9 +105,6 @@ function resolveDefaultStorageSlug(state, settings) {
 }
 
 async function ensureDefaultsForAdd() {
-  if (defaultStorageSlug.value) {
-    return;
-  }
   const [, settings] = await Promise.all([
     ensureStorageLocations(),
     fetchPricingSettings(),
@@ -200,7 +191,7 @@ async function onAdjust(delta) {
   if (delta > 0 && previousCount >= maxCopies.value) {
     return;
   }
-  if (delta > 0 && previousCount === 0 && !copyState.value) {
+  if (delta > 0) {
     await ensureDefaultsForAdd();
   }
   const optimisticCount = Math.max(0, previousCount + delta);
@@ -216,10 +207,9 @@ async function onAdjust(delta) {
     const state = await adjustCardCopyCount(
       props.card,
       delta,
-      defaultStorageSlug.value,
+      delta > 0 ? defaultStorageSlug.value : undefined,
     );
     copyState.value = state;
-    defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
     emit("ownership-changed");
   } catch (error) {
     panelError.value = error.message || "Could not update owned count.";
@@ -256,7 +246,6 @@ async function onCopyStorageSelect(copy, slug) {
   try {
     const state = await updateCardCopyStorage(props.card, copy.instanceId, slug);
     copyState.value = state;
-    defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
     emit("ownership-changed");
   } catch (error) {
     panelError.value = error.message || "Could not assign storage.";
@@ -300,7 +289,6 @@ async function onOwnedFinishToggle() {
     const state = await changeCardOwnershipFinish(props.card, next);
     if (state) {
       copyState.value = state;
-      defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
     }
     applyLocalFinish(next);
     emit("ownership-changed");
@@ -333,7 +321,6 @@ async function onCopyFinishToggle(copy) {
   try {
     const state = await updateCardCopyFinish(props.card, copy.instanceId, next);
     copyState.value = state;
-    defaultStorageSlug.value = resolveDefaultStorageSlug(state, null);
     applyLocalFinish(next);
     emit("ownership-changed");
   } catch (error) {
@@ -366,10 +353,12 @@ function openSaleModal(copy) {
     listingId: copy.listingId ?? null,
     listingPrice: copy.listingPrice ?? null,
   };
+  emit("menu-open-change", true);
 }
 
 function closeSaleModal() {
   saleModal.value = null;
+  emit("menu-open-change", false);
 }
 
 async function onSaleModalSaved(result) {
@@ -440,7 +429,6 @@ defineExpose({ addCopy });
         :key="copy.instanceId"
         class="card-interactive-copy"
       >
-        <span class="card-interactive-label">Copy {{ index + 1 }}</span>
         <div class="card-interactive-copy-controls">
           <FinishToggleButton
             v-if="showCopyFinishToggle(copy)"
@@ -461,7 +449,7 @@ defineExpose({ addCopy });
           <button
             v-if="typeof copy.instanceId === 'number'"
             type="button"
-            class="btn btn-small"
+            class="btn btn-small card-interactive-sell-btn"
             :disabled="panelLoading"
             :title="copy.forSale ? 'Update asking price' : 'List this copy for sale'"
             @click="openSaleModal(copy)"

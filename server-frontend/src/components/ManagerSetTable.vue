@@ -302,7 +302,11 @@ onBeforeUnmount(disconnectLoadMoreObserver);
                 :image-uri-back="row.card.imageUriBack || ''"
               >
                 <span class="manager-card-name-row">
-                  <CardSetSymbol :set-code="row.card.setCode" :rarity="row.card.rarity || ''" />
+                  <CardSetSymbol
+                    :set-code="row.card.setCode"
+                    :family-root="row.card.familyRoot || ''"
+                    :rarity="row.card.rarity || ''"
+                  />
                   <RouterLink :to="cardRoute(row.card)" class="reports-card-link">
                     {{ row.card.name }}
                   </RouterLink>

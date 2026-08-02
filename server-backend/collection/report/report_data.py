@@ -84,11 +84,17 @@ def build_set_option(
     label = "All sets" if set_code == "All" else format_set_option_label(set_code, set_names)
     members = [code.upper() for code in (family_members or [])]
     root = (family_root or normalized).upper() if normalized != "All" else None
+    if icon_uri:
+        resolved_icon = icon_uri
+    elif root and root != normalized:
+        resolved_icon = scryfall_set_icon_uri(root)
+    else:
+        resolved_icon = scryfall_set_icon_uri(set_code)
     option = {
         "setCode": set_code,
         "label": label,
         "favorite": normalized != "All" and normalized in favorite_upper,
-        "iconUri": icon_uri or scryfall_set_icon_uri(set_code),
+        "iconUri": resolved_icon,
         "setType": set_type,
         "parentSetCode": parent_set_code.upper() if parent_set_code else None,
         "familyRoot": root,
@@ -274,6 +280,10 @@ def build_sorted_set_options(
         members = families.get(root) or [code_upper]
         family_owned = sum(owned_counts.get(member, 0) for member in members)
         family_catalog = sum(catalog_counts.get(member, 0) for member in members)
+        icon = icon_uris.get(code_upper) or meta.get("icon_svg_uri")
+        if not icon and root != code_upper:
+            root_meta = catalog.get(root) or {}
+            icon = icon_uris.get(root) or root_meta.get("icon_svg_uri")
         options.append(
             build_set_option(
                 set_code,
@@ -281,7 +291,7 @@ def build_sorted_set_options(
                 favorites,
                 owned_count=owned_counts.get(code_upper, 0),
                 catalog_count=catalog_counts.get(code_upper, 0),
-                icon_uri=icon_uris.get(code_upper) or meta.get("icon_svg_uri"),
+                icon_uri=icon,
                 set_type=rel.get("set_type") or meta.get("set_type"),
                 parent_set_code=rel.get("parent_set_code") or meta.get("parent_set_code"),
                 family_root=root,

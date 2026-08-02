@@ -8,7 +8,6 @@ import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { fetchFavorites, useFavorites } from "../composables/favorites";
 import {
   fetchPricingSettings,
-  savePricingSettings,
   usePricingSettings,
 } from "../composables/pricingSettings";
 import { collectionRouteForSet } from "../utils/setScope";
@@ -20,7 +19,7 @@ import {
   favoriteArtStyleKey,
   favoriteCardKey,
 } from "../utils/favorites";
-import { applyStrategyToCards } from "../utils/priceStrategies";
+import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 
 const payload = ref(null);
 const loading = ref(true);
@@ -34,28 +33,12 @@ const sets = computed(() => payload.value?.sets || []);
 const artStyles = computed(() => payload.value?.artStyles || []);
 const cards = computed(() => payload.value?.cards || []);
 
-const priceStrategies = computed(() => pricingSettings.value?.priceStrategies || []);
-const globalPriceStrategy = computed(
-  () => pricingSettings.value?.priceStrategy || "trend",
-);
-
-const cardsPriceStrategy = computed(
-  () => pricingSettings.value?.favoritesCardsPriceStrategy || globalPriceStrategy.value,
-);
-
-const artStylesPriceStrategy = computed(
-  () =>
-    pricingSettings.value?.favoritesArtStylesPriceStrategy || globalPriceStrategy.value,
-);
-
-const displayCards = computed(() =>
-  applyStrategyToCards(cards.value, cardsPriceStrategy.value),
-);
+const displayCards = computed(() => applyGalleryDisplayToCards(cards.value));
 
 const displayArtStyles = computed(() =>
   artStyles.value.map((style) => ({
     ...style,
-    cards: applyStrategyToCards(style.cards || [], artStylesPriceStrategy.value),
+    cards: applyGalleryDisplayToCards(style.cards || []),
   })),
 );
 
@@ -119,14 +102,6 @@ async function loadFavorites({ silent = false } = {}) {
       loading.value = false;
     }
   }
-}
-
-async function onCardsPriceStrategyChange(event) {
-  await savePricingSettings({ favoritesCardsPriceStrategy: event.target.value });
-}
-
-async function onArtStylesPriceStrategyChange(event) {
-  await savePricingSettings({ favoritesArtStylesPriceStrategy: event.target.value });
 }
 
 function syncCardsFromFavoriteList(nextFavorites) {
@@ -300,22 +275,6 @@ onMounted(async () => {
       <section v-if="cards.length" class="favorites-home-section home-panel">
         <div class="favorites-home-section-header">
           <h2>Cards</h2>
-          <label v-if="priceStrategies.length" class="manager-filter favorites-home-strategy">
-            <span>Price strategy</span>
-            <select
-              :value="cardsPriceStrategy"
-              aria-label="Favourite cards price strategy"
-              @change="onCardsPriceStrategyChange"
-            >
-              <option
-                v-for="strategy in priceStrategies"
-                :key="strategy.id"
-                :value="strategy.id"
-              >
-                {{ strategy.label }}
-              </option>
-            </select>
-          </label>
         </div>
         <div class="favorites-home-cards collection-gallery-panel">
           <CollectionCardGrid
@@ -324,7 +283,6 @@ onMounted(async () => {
             show-unowned-badge
             reorderable
             :card-scale="collectionCardScale"
-            :price-strategy="cardsPriceStrategy"
             @ownership-changed="onOwnershipChanged"
             @favorite-changed="onCardFavoriteChanged"
             @reorder="onReorderCards"
@@ -335,22 +293,6 @@ onMounted(async () => {
       <section v-if="artStyles.length" class="favorites-home-section home-panel">
         <div class="favorites-home-section-header">
           <h2>Art styles</h2>
-          <label v-if="priceStrategies.length" class="manager-filter favorites-home-strategy">
-            <span>Price strategy</span>
-            <select
-              :value="artStylesPriceStrategy"
-              aria-label="Favourite art styles price strategy"
-              @change="onArtStylesPriceStrategyChange"
-            >
-              <option
-                v-for="strategy in priceStrategies"
-                :key="strategy.id"
-                :value="strategy.id"
-              >
-                {{ strategy.label }}
-              </option>
-            </select>
-          </label>
         </div>
         <div
           v-for="(style, index) in displayArtStyles"
@@ -397,7 +339,6 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
-              :price-strategy="artStylesPriceStrategy"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />
@@ -406,7 +347,6 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
-              :price-strategy="artStylesPriceStrategy"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />

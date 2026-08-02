@@ -10,6 +10,7 @@ import {
 import DeckAddControl from "./DeckAddControl.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import DeckOwnedToggle from "./DeckOwnedToggle.vue";
+import ListForSaleModal from "./ListForSaleModal.vue";
 import StorageLocationIcon from "./StorageLocationIcon.vue";
 import StorageLocationSelect from "./StorageLocationSelect.vue";
 import { formatEuro, formatProfit } from "../utils/format";
@@ -37,6 +38,7 @@ const error = ref("");
 const purchaseDrafts = ref({});
 const selectNewestAfterReload = ref(false);
 const pendingNewInstanceId = ref("");
+const saleModal = ref(null);
 
 const instances = computed(() => props.card?.ownedInstances || []);
 const deckMemberships = computed(() => props.card?.deckMemberships || []);
@@ -410,6 +412,32 @@ async function onAddCopy() {
 
 function onDeckChanged(result) {
   emit("deck-changed", result);
+  emit("ownership-changed");
+}
+
+function openSaleModal(instance) {
+  if (!instance?.instanceId || busy.value || props.loading) {
+    return;
+  }
+  saleModal.value = {
+    card: {
+      ...props.card,
+      finish: normalizeFinish(instance.finish),
+      foil: normalizeFinish(instance.finish),
+      currentValue: instance.currentValue,
+    },
+    instanceId: instance.instanceId,
+    listingId: instance.listingId ?? null,
+    listingPrice: instance.listingPrice ?? null,
+  };
+}
+
+function closeSaleModal() {
+  saleModal.value = null;
+}
+
+function onSaleModalSaved() {
+  clearClientCache();
   emit("ownership-changed");
 }
 
@@ -789,10 +817,38 @@ onMounted(async () => {
             {{ formatProfit(activeInstance.profitLoss) }}
           </span>
         </div>
+
+        <div class="card-detail-pricing-stat card-detail-sale-stat">
+          <span class="card-detail-pricing-stat-label">Sale</span>
+          <span class="card-detail-pricing-stat-value card-detail-sale-controls">
+            <span v-if="activeInstance.forSale" class="card-detail-asking-price">
+              Asking {{ formatEuro(activeInstance.listingPrice) }}
+            </span>
+            <button
+              type="button"
+              class="btn btn-small"
+              :disabled="busy || loading"
+              :title="activeInstance.forSale ? 'Update asking price' : 'List this copy for sale'"
+              @click="openSaleModal(activeInstance)"
+            >
+              {{ activeInstance.forSale ? "For sale" : "Sell" }}
+            </button>
+          </span>
+        </div>
       </div>
     </div>
 
     <p v-if="busy" class="card-owned-qty-tile-status">Updating…</p>
     <p v-else-if="error" class="card-owned-qty-tile-status error">{{ error }}</p>
+
+    <ListForSaleModal
+      :open="Boolean(saleModal)"
+      :card="saleModal?.card || null"
+      :instance-id="saleModal?.instanceId ?? null"
+      :listing-id="saleModal?.listingId ?? null"
+      :listing-price="saleModal?.listingPrice ?? null"
+      @close="closeSaleModal"
+      @saved="onSaleModalSaved"
+    />
   </div>
 </template>

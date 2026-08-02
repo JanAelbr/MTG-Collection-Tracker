@@ -174,6 +174,7 @@ function onSelect(card) {
             <p class="card-variant-caption">
               <CardSetSymbol
                 :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
                 variant="generic"
                 :size="12"
               />
@@ -181,7 +182,11 @@ function onSelect(card) {
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
-              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+              <CardSetSymbol
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>
@@ -217,6 +222,7 @@ function onSelect(card) {
             <p class="card-variant-caption">
               <CardSetSymbol
                 :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
                 variant="generic"
                 :size="12"
               />
@@ -224,7 +230,11 @@ function onSelect(card) {
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
-              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+              <CardSetSymbol
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>
@@ -256,6 +266,7 @@ function onSelect(card) {
             <p class="card-variant-caption">
               <CardSetSymbol
                 :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
                 variant="generic"
                 :size="12"
               />
@@ -263,7 +274,11 @@ function onSelect(card) {
               · {{ collectorNumberLabel(card) }}
             </p>
             <p v-if="showName" class="card-variant-name">
-              <CardSetSymbol :set-code="card.setCode" :rarity="card.rarity || ''" />
+              <CardSetSymbol
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <span>{{ card.name }}</span>
               <CardFinishBadge :card="card" :finish="finish" compact />
             </p>

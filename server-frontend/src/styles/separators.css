@@ -177,7 +177,7 @@
 
 .separators-set-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
 }
 
@@ -231,9 +231,7 @@
   min-width: 0;
   font-size: 0.82rem;
   line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .separators-set-tile-badge {
@@ -1376,7 +1374,7 @@
 
 @media print {
   @page {
-    margin: 10mm;
+    margin: 5mm;
   }
 
   body {
@@ -1408,12 +1406,16 @@
     display: flex !important;
     flex-wrap: wrap;
     align-content: flex-start;
-    gap: 4mm;
+    justify-content: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 0;
   }
 
   .separators-print-sheet .binder-separator,
   .separators-print-sheet .storage-separator {
     box-shadow: none;
+    margin: 0;
     break-inside: avoid;
     page-break-inside: avoid;
   }

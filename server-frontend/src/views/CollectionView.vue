@@ -17,7 +17,7 @@ import { useCollectionBulkSelect } from "../composables/useCollectionBulkSelect"
 import { useManagerSetTable } from "../composables/useManagerSetTable";
 import { fetchCardCopyState } from "../composables/cardContextMenu";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
-import { applyStrategyToCards } from "../utils/priceStrategies";
+import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
@@ -133,7 +133,7 @@ const managerTable = useManagerSetTable(() => ({
   pageSize: pageSize.value,
   sort: allCardsSort.value,
   sortDir: allCardsSortDir.value,
-  priceStrategy: pricingSettings.value?.priceStrategy || "trend",
+  priceStrategy: "trend",
 }));
 
 const storageModalOpen = ref(false);
@@ -173,13 +173,9 @@ function allCardsFilterParams() {
 const cards = computed(() => {
   if (isAllView.value) {
     ownershipRevision.value;
-    pricingSettings.value?.priceStrategy;
-    // Filtering/sorting/pagination already happened server-side; only the display
-    // price label needs a client-side relabel so switching strategy is instant.
-    return applyStrategyToCards(
-      accumulatedCards.value,
-      pricingSettings.value?.priceStrategy || "trend",
-    );
+    // Filtering/sorting/pagination already happened server-side; relabel
+    // currentValue to the gallery display high for totals/tooltips.
+    return applyGalleryDisplayToCards(accumulatedCards.value);
   }
   return cardsPayload.value?.cards || [];
 });
@@ -228,8 +224,7 @@ const strategyCards = computed(() => {
   if (isAllView.value) {
     return cards.value;
   }
-  pricingSettings.value?.priceStrategy;
-  return applyStrategyToCards(cards.value, pricingSettings.value?.priceStrategy || "trend");
+  return applyGalleryDisplayToCards(cards.value);
 });
 const isAllView = computed(() => viewType.value === "all");
 const isAllSetsView = computed(() => isAllSetsCode(setCode.value));
@@ -1165,20 +1160,6 @@ watch(pageSize, () => {
   }
 });
 
-// Sort-by-value is computed server-side using the persisted price strategy, so
-// switching strategy needs a refetch to keep ordering (not just labels) correct.
-watch(() => pricingSettings.value?.priceStrategy, () => {
-  if (
-    !routeSyncReady.value
-    || !collectionHydrated.value
-    || !isAllView.value
-    || isTableView.value
-  ) {
-    return;
-  }
-  loadCards();
-});
-
 watch(
   () => [
     route.query.set,
@@ -1353,6 +1334,7 @@ onUnmounted(stopPolling);
 
 <template>
   <div class="reports-page collection-page">
+    <div class="collection-page-scroll">
     <div v-if="showSyncTile" class="collection-status">
       <p v-if="lastPriceUpdate" class="collection-status-meta">
         Last price snapshot: <strong>{{ lastPriceUpdate }}</strong>
@@ -1571,7 +1553,7 @@ onUnmounted(stopPolling);
             :is-row-selected="managerTable.isRowSelected"
             :sort-field="allCardsSort"
             :sort-dir="allCardsSortDir"
-            :price-strategy="pricingSettings?.priceStrategy || 'trend'"
+            :price-strategy="'trend'"
             @update:all-visible-selected="onTableSelectAll"
             @toggle-row="managerTable.toggleRow"
             @set-copy-count="onTableSetCopyCount"
@@ -1615,6 +1597,7 @@ onUnmounted(stopPolling);
           </template>
         </div>
       </div>
+    </div>
     </div>
 
     <ManagerCardStorageModal

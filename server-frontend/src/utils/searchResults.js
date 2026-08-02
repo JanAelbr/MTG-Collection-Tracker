@@ -1,6 +1,6 @@
 import { COLLECTION_RARITY_LABELS } from "./collectionRarities";
 import { formatEuro } from "./format";
-import { valueForStrategy } from "./priceStrategies";
+import { galleryPricePair } from "./priceStrategies";
 
 export function formatPowerToughness(card) {
   const power = card?.power;
@@ -32,10 +32,14 @@ export function formatTypeLabel(card) {
   return primary || typeLine;
 }
 
-export function displayCardValue(card, strategyId) {
-  const value = valueForStrategy(card, strategyId);
-  if (value == null) {
+/** Gallery-style value: lowest listing, then best other strategy (or a single number). */
+export function displayCardValue(card) {
+  const { low, high } = galleryPricePair(card);
+  if (low == null) {
     return "—";
   }
-  return formatEuro(value);
+  if (high == null) {
+    return formatEuro(low);
+  }
+  return `${formatEuro(low)} ~ ${formatEuro(high)}`;
 }

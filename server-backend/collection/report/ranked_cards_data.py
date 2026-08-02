@@ -40,48 +40,6 @@ def _display_name(set_code, collector_number, name) -> str:
     return "Unknown"
 
 
-def _finish_frame(source: pd.DataFrame, *, finish: int, current_value) -> pd.DataFrame:
-    frame = source.copy()
-    frame["finish"] = finish
-    frame["purchase_value"] = pd.NA
-    frame["current_value"] = current_value
-    frame["profit_loss"] = pd.NA
-    return frame
-
-
-def _catalog_allows_finish(frame: pd.DataFrame, finish: int) -> pd.Series:
-    """False when Scryfall flags explicitly say this finish does not exist."""
-    column = HAS_FINISH_COLUMNS[finish]
-    if column not in frame.columns:
-        return pd.Series(True, index=frame.index)
-    raw = frame[column]
-    known = raw.notna()
-    enabled = raw.fillna(0).astype(int).ne(0)
-    return ~known | enabled
-
-
-def _priced_unowned_rows(unowned: pd.DataFrame, finish: int) -> pd.DataFrame:
-    column = MARKET_VALUE_COLUMNS[finish]
-    values = unowned[column]
-    mask = values.notna() & (values.astype(float) > 0) & _catalog_allows_finish(unowned, finish)
-    return unowned[mask]
-
-
-def _fallback_finish_for_unpriced(row) -> int:
-    """Pick a catalog finish when a print has no usable market prices."""
-    has_nonfoil = _optional_int_flag(row.get("has_nonfoil"))
-    has_foil = _optional_int_flag(row.get("has_foil"))
-    has_etched = _optional_int_flag(row.get("has_etched"))
-    if has_nonfoil == 0 and has_foil == 1 and not has_etched:
-        return FINISH_FOIL
-    if has_nonfoil == 0 and has_etched == 1 and not has_foil:
-        return FINISH_ETCHED
-    existing = row.get("finish")
-    if existing is not None and not pd.isna(existing):
-        return int(existing)
-    return FINISH_NONFOIL
-
-
 def _optional_int_flag(value) -> int | None:
     if value is None or pd.isna(value):
         return None
@@ -91,47 +49,110 @@ def _optional_int_flag(value) -> int | None:
         return None
 
 
-# Expand catalog rows into finish rows, including cards without prices.
+def _row_flag(row, column: str) -> int | None:
+    if column not in row.index:
+        return None
+    return _optional_int_flag(row[column])
+
+
+def _fallback_finish_for_unpriced(row) -> int:
+    """Pick a catalog finish when finish flags do not allow any explicit finish."""
+    has_nonfoil = _row_flag(row, "has_nonfoil")
+    has_foil = _row_flag(row, "has_foil")
+    has_etched = _row_flag(row, "has_etched")
+    if has_nonfoil == 0 and has_foil == 1 and not has_etched:
+        return FINISH_FOIL
+    if has_nonfoil == 0 and has_etched == 1 and not has_foil:
+        return FINISH_ETCHED
+    existing = row["finish"] if "finish" in row.index else None
+    if existing is not None and not pd.isna(existing):
+        return int(existing)
+    return FINISH_NONFOIL
+
+
+def _market_value_for_finish(row, finish: int):
+    column = MARKET_VALUE_COLUMNS[finish]
+    if column not in row.index:
+        return None
+    value = row[column]
+    if value is None or pd.isna(value):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if numeric > 0 else None
+
+
+def _catalog_finishes_for_row(row, owned_finishes: set[int] | None = None) -> list[int]:
+    """Return every finish this print should appear as in the all-cards gallery."""
+    owned = owned_finishes or set()
+    finishes: list[int] = []
+    for finish in (FINISH_NONFOIL, FINISH_FOIL, FINISH_ETCHED):
+        flag = _row_flag(row, HAS_FINISH_COLUMNS[finish])
+        if flag == 0:
+            continue
+        if flag == 1:
+            finishes.append(finish)
+            continue
+        # Unknown flag: keep owned finishes and priced finishes only.
+        if finish in owned or _market_value_for_finish(row, finish) is not None:
+            finishes.append(finish)
+    if finishes:
+        return finishes
+    return [_fallback_finish_for_unpriced(row)]
+
+
+def _unowned_finish_row(base_row, *, finish: int) -> pd.Series:
+    row = base_row.copy()
+    row["finish"] = finish
+    row["purchase_value"] = pd.NA
+    row["current_value"] = _market_value_for_finish(base_row, finish)
+    row["profit_loss"] = pd.NA
+    return row
+
+
+def _owned_finish_row(owned_row, base_row, *, finish: int) -> pd.Series:
+    row = owned_row.copy()
+    row["finish"] = finish
+    current = _market_value_for_finish(base_row, finish)
+    if current is not None:
+        row["current_value"] = current
+        purchase = row["purchase_value"] if "purchase_value" in row.index else None
+        if purchase is not None and not pd.isna(purchase) and float(purchase) != 0:
+            row["profit_loss"] = current - float(purchase)
+        else:
+            row["profit_loss"] = pd.NA
+    return row
+
+
+# Expand catalog rows into one row per available finish (nonfoil / foil / etched).
 def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
     if cards_df.empty:
         return cards_df
 
-    owned = cards_df[cards_df["purchase_value"].notna()]
-    unowned = cards_df[cards_df["purchase_value"].isna()]
-    parts: list[pd.DataFrame] = []
-    if not owned.empty:
-        parts.append(owned)
+    parts: list[pd.Series] = []
+    grouped = cards_df.groupby(["set_code", "collector_number"], sort=False, dropna=False)
+    for _, group in grouped:
+        base_row = group.iloc[0]
+        owned_by_finish: dict[int, pd.Series] = {}
+        for _, row in group.iterrows():
+            purchase = row["purchase_value"] if "purchase_value" in row.index else None
+            finish_raw = row["finish"] if "finish" in row.index else None
+            if purchase is None or pd.isna(purchase) or finish_raw is None or pd.isna(finish_raw):
+                continue
+            owned_by_finish[int(finish_raw)] = row
 
-    if not unowned.empty:
-        covered_index: set = set()
-        nonfoil = _priced_unowned_rows(unowned, FINISH_NONFOIL)
-        if not nonfoil.empty:
-            covered_index.update(nonfoil.index.tolist())
-            parts.append(_finish_frame(nonfoil, finish=0, current_value=nonfoil["market_value"]))
-
-        foil_rows = _priced_unowned_rows(unowned, FINISH_FOIL)
-        if not foil_rows.empty:
-            covered_index.update(foil_rows.index.tolist())
-            parts.append(_finish_frame(foil_rows, finish=1, current_value=foil_rows["market_value_foil"]))
-
-        etched_rows = _priced_unowned_rows(unowned, FINISH_ETCHED)
-        if not etched_rows.empty:
-            covered_index.update(etched_rows.index.tolist())
-            parts.append(_finish_frame(etched_rows, finish=2, current_value=etched_rows["market_value_etched"]))
-
-        remaining = unowned.drop(index=list(covered_index), errors="ignore")
-        if not remaining.empty:
-            fallback = remaining.copy()
-            finishes = fallback.apply(_fallback_finish_for_unpriced, axis=1).astype(int)
-            fallback["finish"] = finishes
-            fallback["purchase_value"] = pd.NA
-            fallback["current_value"] = pd.NA
-            fallback["profit_loss"] = pd.NA
-            parts.append(fallback)
+        for finish in _catalog_finishes_for_row(base_row, set(owned_by_finish)):
+            owned_row = owned_by_finish.get(finish)
+            if owned_row is not None:
+                parts.append(_owned_finish_row(owned_row, base_row, finish=finish))
+            else:
+                parts.append(_unowned_finish_row(base_row, finish=finish))
 
     if not parts:
         return pd.DataFrame(columns=cards_df.columns)
-    return pd.concat(parts, ignore_index=True)
+    return pd.DataFrame(parts).reset_index(drop=True)
 
 
 # Load owned and unowned finish rows for ranked reports.
