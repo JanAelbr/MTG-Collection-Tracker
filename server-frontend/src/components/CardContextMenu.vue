@@ -80,10 +80,10 @@ const finishRows = computed(() => {
   ownershipRevision.value;
   return manageableFinishes.value.map((finish) => {
     const state = finishStates.value[finish];
-    const cardForFinish = cardWithFinish(props.card, finish);
+    // Never fall back to another finish's top-level ownedQty on the gallery tile.
     const ownedCount = state?.ownedCount != null
       ? state.ownedCount
-      : effectiveDeckOwnedQty(cardForFinish);
+      : ownedCountForFinishFallback(props.card, finish);
     const maxCopies = state?.maxCopies ?? MAX_COPIES;
     const copies = state?.copies ?? [];
     return {
@@ -107,6 +107,24 @@ function cardWithFinish(card, finish) {
     finish: normalized,
     foil: normalized,
   };
+}
+
+/** Finish-scoped count when /manager/copies has not loaded yet. */
+function ownedCountForFinishFallback(card, finish) {
+  if (!card) {
+    return 0;
+  }
+  const normalized = normalizeFinish(finish);
+  const isSameFinish = cardFinish(card) === normalized;
+  return effectiveDeckOwnedQty({
+    ...cardWithFinish(card, normalized),
+    // Drop tile-level ownership that belongs only to the clicked finish.
+    ownedQty: isSameFinish ? card.ownedQty : undefined,
+    owned: isSameFinish ? card.owned : undefined,
+    purchaseValue: isSameFinish ? card.purchaseValue : undefined,
+    locations: isSameFinish ? card.locations : undefined,
+    qty: undefined,
+  });
 }
 
 function resolveDefaultStorageSlug(state, settings) {
@@ -140,6 +158,10 @@ async function loadMenuState() {
   panelError.value = "";
   panelLoading.value = true;
   try {
+    await ensureDefaultsForAdd();
+    if (token !== loadToken) {
+      return;
+    }
     const payloads = await Promise.all(
       manageableFinishes.value.map(async (finish) => {
         const payload = await fetchCardCopyState(cardWithFinish(props.card, finish));

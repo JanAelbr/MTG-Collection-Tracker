@@ -2839,8 +2839,22 @@ body {
 }
 
 .collection-search-page {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+}
+
+.collection-search-page > .collection-search-page-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.collection-search-page .collection-search-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .collection-search-hero {
@@ -2918,6 +2932,7 @@ body {
 
 .collection-search-page-layout .collection-search-main {
   order: 1;
+  min-width: 0;
 }
 
 .collection-search-page .collection-search-page-form {
@@ -3200,6 +3215,14 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.collection-search-page .collection-search-results .gallery-loading-content > .search-results-groups,
+.collection-search-page .collection-search-results .gallery-loading-content > .collection-virtual-grid,
+.collection-search-page .collection-search-results .gallery-loading-content > .search-results-list {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .collection-search-page .collection-search-results .collection-virtual-grid {
@@ -3207,12 +3230,52 @@ body {
   height: 100%;
   max-height: none;
   min-height: 0;
+  overflow: auto;
 }
 
 .collection-search-page .collection-search-results .search-results-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+.collection-search-page .search-results-groups {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.collection-search-page .search-results-toolbar {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.collection-search-page .search-results-toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.collection-search-page .search-results-group-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #555;
+}
+
+.collection-search-page .search-results-group-by select {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
 }
 
 .collection-search-results-hint {

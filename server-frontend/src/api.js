@@ -25,6 +25,8 @@ const listeners = {
 };
 
 const activeControllers = new Map();
+/** In-flight GET promises keyed by method+full path (including query). */
+const inflightGets = new Map();
 
 export class ApiAbortError extends Error {
   constructor() {
@@ -47,8 +49,9 @@ export function ignoreAborted(promise) {
 }
 
 function requestEndpointKey(method, path) {
-  const [pathname] = path.split("?");
-  return `${method}:${pathname}`;
+  // Keep the query string so parallel GETs that differ only by params
+  // (e.g. /manager/copies?finish=0 vs finish=1) do not abort each other.
+  return `${method}:${path}`;
 }
 
 function cancelActiveRequest(key) {
@@ -117,38 +120,43 @@ function shouldUseClientCache(method, path) {
 
 
 export async function apiRequest(path, options = {}) {
-
   const method = (options.method || "GET").toUpperCase();
+  const endpointKey = requestEndpointKey(method, path);
 
+  if (method === "GET") {
+    const inflight = inflightGets.get(endpointKey);
+    if (inflight) {
+      return inflight;
+    }
+    const requestPromise = performApiRequest(path, options).finally(() => {
+      if (inflightGets.get(endpointKey) === requestPromise) {
+        inflightGets.delete(endpointKey);
+      }
+    });
+    inflightGets.set(endpointKey, requestPromise);
+    return requestPromise;
+  }
+
+  return performApiRequest(path, options);
+}
+
+async function performApiRequest(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
   const cacheKey = cacheKeyFor(method, path);
-
   const useCache = shouldUseClientCache(method, path);
-
   const endpointKey = requestEndpointKey(method, path);
 
   cancelActiveRequest(endpointKey);
-
   const controller = new AbortController();
-
   activeControllers.set(endpointKey, controller);
 
-
-
   if (useCache) {
-
     const cached = getCachedEntry(cacheKey);
-
     if (cached) {
-
       activeControllers.delete(endpointKey);
-
       return cached.data;
-
     }
-
   }
-
-
 
   const headers = {
     "Content-Type": "application/json",

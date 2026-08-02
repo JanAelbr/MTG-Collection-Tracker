@@ -4,6 +4,7 @@ import {
   formatPowerToughness,
   formatRarityLabel,
   formatTypeLabel,
+  groupSearchCards,
 } from "./searchResults.js";
 
 describe("searchResults helpers", () => {
@@ -38,5 +39,62 @@ describe("searchResults helpers", () => {
       valuesByStrategy: { low: 5, trend: 4 },
     })).toBe("€5.00");
     expect(displayCardValue(null)).toBe("—");
+  });
+});
+
+describe("groupSearchCards", () => {
+  it("returns a single bucket when grouping is off", () => {
+    const cards = [{ name: "A" }, { name: "B" }];
+    expect(groupSearchCards(cards, "none")).toEqual([
+      { key: "all", label: "All", cards },
+    ]);
+  });
+
+  it("groups by type, role, color identity, and set", () => {
+    const cards = [
+      {
+        name: "Bolt",
+        cardType: "instant",
+        roles: ["removal"],
+        colorIdentity: ["R"],
+        setCode: "M21",
+      },
+      {
+        name: "Bear",
+        cardType: "creature",
+        roles: ["ramp"],
+        colorIdentity: ["G"],
+        setCode: "M21",
+      },
+      {
+        name: "Sol Ring",
+        cardType: "artifact",
+        roles: [],
+        colorIdentity: [],
+        setCode: "C21",
+      },
+    ];
+
+    expect(groupSearchCards(cards, "type").map((group) => group.key)).toEqual([
+      "creature",
+      "artifact",
+      "instant",
+    ]);
+    expect(groupSearchCards(cards, "role").map((group) => group.label)).toEqual([
+      "Ramp",
+      "Removal",
+      "No role",
+    ]);
+    expect(groupSearchCards(cards, "colorIdentity").map((group) => group.label)).toEqual([
+      "Red",
+      "Green",
+      "Colorless",
+    ]);
+    expect(groupSearchCards(cards, "set", {
+      setLabelFor: (code) => (code === "M21" ? "Core 2021" : code),
+    }).map((group) => group.label)).toEqual([
+      "C21",
+      "Core 2021",
+    ]);
   });
 });

@@ -13,15 +13,22 @@ import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCa
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
+import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
 import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
 import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
+import {
+  groupSearchCards,
+  normalizeSearchGroupBy,
+  SEARCH_GROUP_BY_OPTIONS,
+} from "../utils/searchResults";
 
 const PAGE_SIZE = 25;
 const SEARCH_SET_CODE = "All";
+const LARGE_GROUP_CARD_COUNT = 24;
 
 const route = useRoute();
 const router = useRouter();
@@ -64,6 +71,9 @@ const mobileFiltersOpen = ref(false);
 const searchViewMode = ref("gallery");
 const searchSort = ref("newest");
 const searchSortDir = ref("desc");
+const searchGroupBy = ref("none");
+const collapsedSearchGroups = ref(new Set());
+const loadingAll = ref(false);
 const routeSyncReady = ref(false);
 const virtualGridRef = ref(null);
 const filterSidebarRef = ref(null);
@@ -76,6 +86,15 @@ const cards = computed(() => accumulatedCards.value);
 const totalMatches = computed(() => searchTotalMatches.value);
 const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
+const isGroupedResults = computed(() => normalizeSearchGroupBy(searchGroupBy.value) !== "none");
+const searchResultGroups = computed(() => {
+  if (!isGroupedResults.value) {
+    return [];
+  }
+  return groupSearchCards(accumulatedCards.value, searchGroupBy.value, {
+    setLabelFor: setLabel,
+  });
+});
 const hasActiveSearch = computed(() => Boolean(
   searchQuery.value.trim()
   || textSearchQuery.value.trim()
@@ -271,6 +290,7 @@ function resetSearchResults() {
   searchTotalMatches.value = 0;
   loadedPages.value = 0;
   variantCache.value = {};
+  collapsedSearchGroups.value = new Set();
 }
 
 function applySearchPayload(payload, { append = false } = {}) {
@@ -385,6 +405,7 @@ async function loadResults({ autoSelectFirst = false } = {}) {
     && !creatureTypeTerm
     && !keywordTerm
     && !roleFilters.value.length
+    && !colorFilters.value.length
     && typeFilter.value === "all"
   ) {
     resetSearchResults();
@@ -401,7 +422,9 @@ async function loadResults({ autoSelectFirst = false } = {}) {
     }
     applySearchPayload(payload, { append: false });
   });
-  if (!isListView.value) {
+  if (isGroupedResults.value && hasMoreResults.value) {
+    await loadAllResults();
+  } else if (!isListView.value) {
     await fillVisibleResults();
   }
   if (autoSelectFirst) {
@@ -410,7 +433,7 @@ async function loadResults({ autoSelectFirst = false } = {}) {
 }
 
 async function loadMoreResults() {
-  if (loadingMore.value || loading.value || !hasMoreResults.value) {
+  if (loadingMore.value || loading.value || loadingAll.value || !hasMoreResults.value) {
     return;
   }
   loadingMore.value = true;
@@ -424,13 +447,35 @@ async function loadMoreResults() {
   }
 }
 
+async function loadAllResults() {
+  if (loadingAll.value || loading.value || !hasMoreResults.value) {
+    return;
+  }
+  loadingAll.value = true;
+  try {
+    while (hasMoreResults.value) {
+      const before = loadedPages.value;
+      const payload = await fetchSearchPage(loadedPages.value + 1);
+      if (!payload) {
+        break;
+      }
+      applySearchPayload(payload, { append: true });
+      if (loadedPages.value === before) {
+        break;
+      }
+    }
+  } finally {
+    loadingAll.value = false;
+  }
+}
+
 async function fillVisibleResults() {
-  if (isListView.value) {
+  if (isListView.value || isGroupedResults.value) {
     return;
   }
   await nextTick();
   const root = virtualGridRef.value?.rootRef;
-  if (!root || !hasMoreResults.value || loadingMore.value || loading.value) {
+  if (!root || !hasMoreResults.value || loadingMore.value || loading.value || loadingAll.value) {
     return;
   }
   const scrollable = root.scrollHeight > root.clientHeight + 8;
@@ -439,6 +484,46 @@ async function fillVisibleResults() {
     if (hasMoreResults.value) {
       await fillVisibleResults();
     }
+  }
+}
+
+function isLargeSearchGroup(group) {
+  return (group?.cards?.length || 0) > LARGE_GROUP_CARD_COUNT;
+}
+
+function isSearchGroupExpanded(key) {
+  return !collapsedSearchGroups.value.has(key);
+}
+
+function toggleSearchGroup(key) {
+  const next = new Set(collapsedSearchGroups.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  collapsedSearchGroups.value = next;
+}
+
+function expandAllSearchGroups() {
+  collapsedSearchGroups.value = new Set();
+}
+
+function collapseAllSearchGroups() {
+  collapsedSearchGroups.value = new Set(
+    searchResultGroups.value.map((group) => group.key),
+  );
+}
+
+async function onSearchGroupByChange(event) {
+  const next = normalizeSearchGroupBy(event.target.value);
+  if (searchGroupBy.value === next) {
+    return;
+  }
+  searchGroupBy.value = next;
+  collapsedSearchGroups.value = new Set();
+  if (next !== "none" && hasMoreResults.value) {
+    await loadAllResults();
   }
 }
 
@@ -1016,26 +1101,61 @@ onMounted(async () => {
                 <p class="collection-gallery-toolbar-stats">
                   Showing {{ cards.length }} of {{ totalMatches }} cards
                 </p>
-                <div
-                  class="button-group collection-view-mode-group"
-                  role="group"
-                  aria-label="View mode"
-                >
-                  <button
-                    type="button"
-                    class="filter-button"
-                    :class="{ active: searchViewMode === 'gallery' }"
-                    @click="setSearchViewMode('gallery')"
+                <div class="search-results-toolbar-controls">
+                  <div
+                    class="button-group collection-view-mode-group"
+                    role="group"
+                    aria-label="View mode"
                   >
-                    Gallery
+                    <button
+                      type="button"
+                      class="filter-button"
+                      :class="{ active: searchViewMode === 'gallery' }"
+                      @click="setSearchViewMode('gallery')"
+                    >
+                      Gallery
+                    </button>
+                    <button
+                      type="button"
+                      class="filter-button"
+                      :class="{ active: searchViewMode === 'list' }"
+                      @click="setSearchViewMode('list')"
+                    >
+                      List
+                    </button>
+                  </div>
+                  <label class="search-results-group-by">
+                    <span>Group by</span>
+                    <select
+                      :value="searchGroupBy"
+                      aria-label="Group search results"
+                      @change="onSearchGroupByChange"
+                    >
+                      <option
+                        v-for="option in SEARCH_GROUP_BY_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <button
+                    v-if="isGroupedResults && searchResultGroups.length"
+                    type="button"
+                    class="btn btn-secondary btn-small"
+                    @click="collapsedSearchGroups.size ? expandAllSearchGroups() : collapseAllSearchGroups()"
+                  >
+                    {{ collapsedSearchGroups.size ? "Expand all" : "Collapse all" }}
                   </button>
                   <button
+                    v-if="hasMoreResults"
                     type="button"
-                    class="filter-button"
-                    :class="{ active: searchViewMode === 'list' }"
-                    @click="setSearchViewMode('list')"
+                    class="btn btn-secondary btn-small"
+                    :disabled="loadingAll || loadingMore || loading"
+                    @click="loadAllResults"
                   >
-                    List
+                    {{ loadingAll ? "Loading…" : "Load all" }}
                   </button>
                 </div>
                 <div class="search-results-toolbar-end">
@@ -1070,9 +1190,63 @@ onMounted(async () => {
                   />
                 </div>
               </div>
-              <GalleryLoadingOverlay :loading="loading && !loadingMore" label="Searching cards…">
+              <GalleryLoadingOverlay :loading="(loading && !loadingMore && !loadingAll) || loadingAll" :label="loadingAll ? 'Loading all cards…' : 'Searching cards…'">
+                <div v-if="isGroupedResults" class="search-results-groups">
+                  <section
+                    v-for="group in searchResultGroups"
+                    :key="group.key"
+                    class="storage-set-group"
+                    :class="{ 'is-collapsed': !isSearchGroupExpanded(group.key) }"
+                  >
+                    <button
+                      type="button"
+                      class="storage-set-group-header"
+                      :aria-expanded="isSearchGroupExpanded(group.key)"
+                      @click="toggleSearchGroup(group.key)"
+                    >
+                      <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
+                      <h3 class="storage-set-group-title">{{ group.label }}</h3>
+                      <span class="storage-set-group-meta">{{ group.cards.length }} cards</span>
+                    </button>
+                    <div
+                      v-if="isSearchGroupExpanded(group.key)"
+                      class="storage-set-group-gallery"
+                      :class="{ 'is-scrollable-group': !isListView && isLargeSearchGroup(group) }"
+                    >
+                      <VirtualizedCollectionCardGrid
+                        v-if="!isListView && isLargeSearchGroup(group)"
+                        :cards="group.cards"
+                        :show-unowned-badge="false"
+                        :card-scale="collectionCardScale"
+                        browse-names
+                        :selected-name="selectedBrowseName"
+                        @browse-name="browseCardName"
+                        @cycle-variant="cycleCardVariant"
+                        @ownership-changed="onArtOwnershipChanged"
+                      />
+                      <CollectionCardGrid
+                        v-else-if="!isListView"
+                        :cards="group.cards"
+                        :show-unowned-badge="false"
+                        :card-scale="collectionCardScale"
+                        browse-names
+                        :selected-name="selectedBrowseName"
+                        @browse-name="browseCardName"
+                        @cycle-variant="cycleCardVariant"
+                        @ownership-changed="onArtOwnershipChanged"
+                      />
+                      <SearchResultsList
+                        v-else
+                        :cards="group.cards"
+                        :selected-name="selectedBrowseName"
+                        :set-label-for="setLabel"
+                        @browse-name="browseCardName"
+                      />
+                    </div>
+                  </section>
+                </div>
                 <VirtualizedCollectionCardGrid
-                  v-if="!isListView"
+                  v-else-if="!isListView"
                   ref="virtualGridRef"
                   :cards="cards"
                   :show-unowned-badge="false"
@@ -1096,8 +1270,8 @@ onMounted(async () => {
                   @load-more="loadMoreResults"
                 />
               </GalleryLoadingOverlay>
-              <p v-if="loadingMore" class="collection-search-load-more-status">
-                <LoadingIndicator label="Loading more cards…" />
+              <p v-if="loadingMore || loadingAll" class="collection-search-load-more-status">
+                <LoadingIndicator :label="loadingAll ? 'Loading all cards…' : 'Loading more cards…'" />
               </p>
             </div>
 
