@@ -4,10 +4,12 @@ import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../api";
 import BrowseSelect from "../components/BrowseSelect.vue";
-import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
+import CollectionGroupTree from "../components/CollectionGroupTree.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import ManaSymbols from "../components/ManaSymbols.vue";
+import StorageGroupGallery from "../components/StorageGroupGallery.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
@@ -19,17 +21,29 @@ import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { filterCollectionCards } from "../utils/collectionFilters";
 import {
   defaultCollectionSortDir,
-  groupCollectionCardsBySet,
   sortCollectionCards,
 } from "../utils/collectionSort";
+import { DECK_COLOR_ORDER } from "../utils/deckCards";
+import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 import { cardDisplayName } from "../utils/finishes";
 import { formatEuro, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 import {
+  collectGroupPaths,
+  groupHasChildren,
+  groupSearchCards,
+  SEARCH_GROUP_BY_OPTIONS,
+} from "../utils/searchResults";
+import {
+  normalizeStorageGroupByLevels,
   storageFiltersFromRoute,
-  storageLocationFromRoute,
+  storageLocationsFromRoute,
   storageRouteQuery,
 } from "../utils/storageScope";
+import {
+  mergeStorageBreakdownPayloads,
+  mergeStorageCardPayloads,
+} from "../utils/storageMerge";
 import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 
 const route = useRoute();
@@ -42,7 +56,7 @@ const {
 } = usePricingSettings();
 
 const locations = ref([]);
-const selectedSlug = ref("");
+const selectedSlugs = ref([]);
 const cardsPayload = ref(null);
 const breakdownPayload = ref(null);
 const setsCatalog = ref([]);
@@ -51,14 +65,15 @@ const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
 const { loading: loadingBreakdown, run: runBreakdownLoad } = useAsyncLoad();
 
 const searchQuery = ref("");
-const foilFilter = ref("all");
 const setFilter = ref("");
+const colorFilters = ref([]);
+const colorMode = ref(getStoredColorFilterMode());
 const cardsSort = ref("value");
 const cardsSortDir = ref(defaultCollectionSortDir("value"));
 const viewMode = ref("gallery");
-const groupBySet = ref(true);
-/** Set codes currently expanded; empty = all collapsed (default). */
-const expandedSetCodes = ref(new Set());
+const groupByLevels = ref(["set"]);
+/** Group paths currently expanded; empty = all collapsed (default). */
+const expandedGroupKeys = ref(new Set());
 const syncingRoute = ref(false);
 
 const editor = reactive({
@@ -77,13 +92,6 @@ const inlineError = ref("");
 const inlineLabelRef = ref(null);
 const inlineDescRef = ref(null);
 
-const FINISH_OPTIONS = [
-  { id: "all", label: "All finishes" },
-  { id: "nonfoil", label: "Nonfoil" },
-  { id: "foil", label: "Foil" },
-  { id: "etched", label: "Etched" },
-];
-
 const SORT_OPTIONS = [
   { id: "value", label: "Value" },
   { id: "name", label: "Name" },
@@ -94,17 +102,32 @@ const SORT_OPTIONS = [
   { id: "copies", label: "Copies" },
 ];
 
+const selectedLocations = computed(() => {
+  const bySlug = new Map(locations.value.map((item) => [item.slug, item]));
+  return selectedSlugs.value
+    .map((slug) => bySlug.get(slug))
+    .filter(Boolean);
+});
+
 const selectedLocation = computed(() =>
-  locations.value.find((item) => item.slug === selectedSlug.value),
+  selectedLocations.value.length === 1 ? selectedLocations.value[0] : null,
 );
+
+const isMultiLocation = computed(() => selectedSlugs.value.length > 1);
+
+const selectedLocationLabels = computed(() =>
+  selectedLocations.value.map((location) => location.label).join(", "),
+);
+
+const selectedSlugKey = computed(() => selectedSlugs.value.join("|"));
 
 const canInlineEdit = computed(() => {
   const type = selectedLocation.value?.locationType;
-  return type === "storage" || type === "binder";
+  return Boolean(selectedLocation.value) && (type === "storage" || type === "binder");
 });
 
 const isDeckLocation = computed(
-  () => selectedLocation.value?.locationType === "deck",
+  () => selectedLocations.value.some((location) => location.locationType === "deck"),
 );
 
 const visibleLocations = computed(() =>
@@ -196,26 +219,32 @@ function lineTotal(card) {
 }
 
 function applyFiltersFromRoute(routeRef = route) {
-  const filters = storageFiltersFromRoute(routeRef);
+  const filters = storageFiltersFromRoute(routeRef, {
+    colorModeFallback: getStoredColorFilterMode(),
+  });
   searchQuery.value = filters.searchQuery;
-  foilFilter.value = filters.foilFilter;
   setFilter.value = filters.setFilter;
+  colorFilters.value = [...filters.colorFilters];
+  colorMode.value = filters.colorMode;
   cardsSort.value = filters.sort;
   cardsSortDir.value = filters.sortDir;
   viewMode.value = filters.viewMode;
-  groupBySet.value = filters.groupBySet;
+  groupByLevels.value = filters.groupByLevels?.length
+    ? [...filters.groupByLevels]
+    : [];
 }
 
 function pushStorageQuery() {
   const nextQuery = storageRouteQuery({
-    location: selectedSlug.value,
-    foilFilter: foilFilter.value,
+    location: selectedSlugs.value,
     setFilter: setFilter.value,
     sort: cardsSort.value,
     sortDir: cardsSortDir.value,
     searchQuery: searchQuery.value,
     viewMode: viewMode.value,
-    groupBySet: groupBySet.value,
+    groupByLevels: groupByLevels.value,
+    colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
   });
   const current = route.query || {};
   const keys = new Set([...Object.keys(current), ...Object.keys(nextQuery)]);
@@ -331,7 +360,9 @@ const filteredCards = computed(() =>
   filterCollectionCards(locationCards.value, {
     setCode: setFilter.value || "All",
     searchQuery: searchQuery.value,
-    foilFilter: foilFilter.value,
+    searchMode: "storage",
+    colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     ownedFilter: "all",
   }),
 );
@@ -344,19 +375,24 @@ const sortedCards = computed(() =>
   }),
 );
 
-const setGroups = computed(() => {
-  if (!groupBySet.value) {
-    return [];
-  }
-  return groupCollectionCardsBySet(filteredCards.value, {
-    sort: cardsSort.value,
-    dir: cardsSortDir.value,
-    allowSet: true,
-  }).map((group) => {
+const isGrouped = computed(() => groupByLevels.value.length > 0);
+
+function enrichCardGroups(groups) {
+  return (groups || []).map((group) => {
+    const childGroups = groupHasChildren(group)
+      ? enrichCardGroups(group.groups)
+      : [];
+    const cards = childGroups.length
+      ? group.cards
+      : sortCollectionCards(group.cards, {
+        sort: cardsSort.value,
+        dir: cardsSortDir.value,
+        allowSet: true,
+      });
     let copyCount = 0;
     let totalValue = 0;
     let hasPriced = false;
-    for (const card of group.cards) {
+    for (const card of group.cards || []) {
       copyCount += Number(card.copyCount) || 0;
       const line = lineTotal(card);
       if (line != null) {
@@ -366,51 +402,62 @@ const setGroups = computed(() => {
     }
     return {
       ...group,
-      printCount: group.cards.length,
+      cards,
+      groups: childGroups,
+      printCount: (group.cards || []).length,
       copyCount,
       totalValue: hasPriced ? totalValue : null,
     };
   });
+}
+
+const cardGroups = computed(() => {
+  if (!isGrouped.value) {
+    return [];
+  }
+  return enrichCardGroups(groupSearchCards(filteredCards.value, groupByLevels.value, {
+    setLabelFor: setLabelForCode,
+  }));
 });
 
-const anySetGroupExpanded = computed(() =>
-  setGroups.value.some((group) => expandedSetCodes.value.has(group.setCode)),
+const anyGroupExpanded = computed(() =>
+  collectGroupPaths(cardGroups.value).some((path) => expandedGroupKeys.value.has(path)),
 );
 
-function defaultExpandedSetCodes(groups = setGroups.value) {
+function defaultExpandedGroupKeys(groups = cardGroups.value) {
   if (groups.length === 1) {
-    return new Set([groups[0].setCode]);
+    return new Set([groups[0].path]);
   }
   return new Set();
 }
 
-function applyDefaultSetGroupExpansion() {
-  expandedSetCodes.value = defaultExpandedSetCodes();
+function applyDefaultGroupExpansion() {
+  expandedGroupKeys.value = defaultExpandedGroupKeys();
 }
 
-function isSetGroupExpanded(setCode) {
-  return expandedSetCodes.value.has(setCode);
+function isGroupExpanded(path) {
+  return expandedGroupKeys.value.has(path);
 }
 
-function toggleSetGroup(setCode) {
-  const next = new Set(expandedSetCodes.value);
-  if (next.has(setCode)) {
-    next.delete(setCode);
+function toggleGroup(path) {
+  const next = new Set(expandedGroupKeys.value);
+  if (next.has(path)) {
+    next.delete(path);
   } else {
-    next.add(setCode);
+    next.add(path);
   }
-  expandedSetCodes.value = next;
+  expandedGroupKeys.value = next;
 }
 
-function expandAllSetGroups() {
-  expandedSetCodes.value = new Set(setGroups.value.map((group) => group.setCode));
+function expandAllGroups() {
+  expandedGroupKeys.value = new Set(collectGroupPaths(cardGroups.value));
 }
 
-function collapseAllSetGroups() {
-  expandedSetCodes.value = new Set();
+function collapseAllGroups() {
+  expandedGroupKeys.value = new Set();
 }
 
-function setGroupMetaText(group) {
+function groupMetaText(group) {
   const printLabel = `${group.printCount} ${group.printCount === 1 ? "print" : "prints"}`;
   if (group.totalValue == null) {
     return printLabel;
@@ -426,19 +473,38 @@ function setGroupMetaText(group) {
 const GROUP_VIRTUALIZE_THRESHOLD = 40;
 const GROUP_TABLE_MAX_VISIBLE_ROWS = 12;
 
-function isLargeSetGroup(group) {
+function isLargeGroup(group) {
   return (group?.cards?.length || 0) > GROUP_VIRTUALIZE_THRESHOLD;
 }
 
-function setGroupTableRowVar(group) {
-  return isLargeSetGroup(group)
+function groupTableRowVar(group) {
+  return isLargeGroup(group)
     ? Math.min(group.cards.length, GROUP_TABLE_MAX_VISIBLE_ROWS)
     : group.cards.length;
 }
 
-const setGroupCodesKey = computed(() =>
-  setGroups.value.map((group) => group.setCode).join("|"),
+const groupKeysKey = computed(() =>
+  `${groupByLevels.value.join(",")}:${collectGroupPaths(cardGroups.value).join("|")}`,
 );
+
+function groupByOptionsForLevel(levelIndex) {
+  const used = new Set(groupByLevels.value.slice(0, levelIndex));
+  return SEARCH_GROUP_BY_OPTIONS.filter(
+    (option) => option.value === "none" || !used.has(option.value),
+  );
+}
+
+function onGroupLevelChange(levelIndex, event) {
+  const nextValue = String(event?.target?.value || "none");
+  const next = groupByLevels.value.slice(0, levelIndex);
+  if (nextValue !== "none") {
+    next.push(nextValue);
+  }
+  groupByLevels.value = next;
+  if (isGrouped.value) {
+    applyDefaultGroupExpansion();
+  }
+}
 
 const scopePrintCount = computed(() => locationCards.value.length);
 
@@ -446,7 +512,9 @@ const matchSummaryText = computed(() => {
   const shown = sortedCards.value.length;
   const scope = scopePrintCount.value;
   if (!scope) {
-    return "No prints in this location";
+    return isMultiLocation.value
+      ? "No prints in these locations"
+      : "No prints in this location";
   }
   if (shown === scope) {
     return `${shown} prints`;
@@ -454,38 +522,69 @@ const matchSummaryText = computed(() => {
   return `${shown} shown · ${scope} prints`;
 });
 
-async function loadLocations(preferredSlug = "") {
+function normalizePreferredSlugs(preferred = "") {
+  if (Array.isArray(preferred)) {
+    return preferred.map((slug) => String(slug || "").trim()).filter(Boolean);
+  }
+  return String(preferred || "")
+    .split(",")
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+}
+
+function resolveSelectedSlugs(preferred = []) {
+  const known = new Set(locations.value.map((location) => location.slug));
+  const preferredSlugs = normalizePreferredSlugs(preferred).filter((slug) => known.has(slug));
+  if (preferredSlugs.length) {
+    return preferredSlugs;
+  }
+  const current = selectedSlugs.value.filter((slug) => known.has(slug));
+  if (current.length) {
+    return current;
+  }
+  const fallback =
+    locations.value.find((location) => location.slug === (pricingSettings.value?.defaultStorageLocation || ""))?.slug
+    || locations.value[0]?.slug
+    || "";
+  return fallback ? [fallback] : [];
+}
+
+async function loadLocations(preferred = "") {
   const payload = await api.listStorageLocations();
   locations.value = payload.locations || [];
-  const nextSlug =
-    preferredSlug ||
-    selectedSlug.value ||
-    payload.defaultLocation ||
-    locations.value[0]?.slug ||
-    "";
-  selectedSlug.value = nextSlug;
+  let preferredList = normalizePreferredSlugs(preferred);
+  if (!preferredList.length && payload.defaultLocation) {
+    preferredList = [payload.defaultLocation];
+  }
+  selectedSlugs.value = resolveSelectedSlugs(preferredList);
 }
 
 async function loadCards() {
   if (viewMode.value === "breakdown") {
     return;
   }
-  if (!selectedSlug.value) {
+  if (!selectedSlugs.value.length) {
     cardsPayload.value = null;
     return;
   }
   await runCardsLoad(async () => {
-    cardsPayload.value = await api.getStorageLocationCards(selectedSlug.value);
+    const payloads = await Promise.all(
+      selectedSlugs.value.map((slug) => api.getStorageLocationCards(slug)),
+    );
+    cardsPayload.value = mergeStorageCardPayloads(payloads);
   });
 }
 
 async function loadBreakdown() {
-  if (!selectedSlug.value) {
+  if (!selectedSlugs.value.length) {
     breakdownPayload.value = null;
     return;
   }
   await runBreakdownLoad(async () => {
-    breakdownPayload.value = await api.getStorageBreakdown(selectedSlug.value);
+    const payloads = await Promise.all(
+      selectedSlugs.value.map((slug) => api.getStorageBreakdown(slug)),
+    );
+    breakdownPayload.value = mergeStorageBreakdownPayloads(payloads);
   });
 }
 
@@ -611,7 +710,7 @@ async function removeOneCopy(card) {
     return;
   }
   await api.deleteInstance(instanceId);
-  await loadLocations(selectedSlug.value);
+  await loadLocations(selectedSlugs.value);
 }
 
 function listOneForSale(card) {
@@ -645,15 +744,54 @@ async function onSaleModalSaved(result) {
   if (card) {
     applyListingResultToCard(card, result);
   }
-  await loadLocations(selectedSlug.value);
+  await loadLocations(selectedSlugs.value);
 }
 
-function selectLocation(slug) {
-  if (slug !== selectedSlug.value) {
+function selectLocation(slug, event = null) {
+  const multi = Boolean(event?.ctrlKey || event?.metaKey);
+  if (multi) {
+    const index = selectedSlugs.value.indexOf(slug);
+    if (index >= 0) {
+      if (selectedSlugs.value.length <= 1) {
+        return;
+      }
+      selectedSlugs.value = selectedSlugs.value.filter((item) => item !== slug);
+      return;
+    }
+    selectedSlugs.value = [...selectedSlugs.value, slug];
+    return;
+  }
+  if (selectedSlugs.value.length !== 1 || selectedSlugs.value[0] !== slug) {
     searchQuery.value = "";
     setFilter.value = "";
+    colorFilters.value = [];
   }
-  selectedSlug.value = slug;
+  selectedSlugs.value = [slug];
+}
+
+function isLocationSelected(slug) {
+  return selectedSlugs.value.includes(slug);
+}
+
+function toggleColorFilter(color) {
+  if (colorFilters.value.includes(color)) {
+    colorFilters.value = colorFilters.value.filter((item) => item !== color);
+    return;
+  }
+  colorFilters.value = [...colorFilters.value, color];
+}
+
+function clearColorFilters() {
+  colorFilters.value = [];
+}
+
+function setColorMode(next) {
+  const mode = next === "includes" ? "includes" : "exact";
+  if (colorMode.value === mode) {
+    return;
+  }
+  colorMode.value = mode;
+  storeColorFilterMode(mode);
 }
 
 function onSortChange(event) {
@@ -684,18 +822,11 @@ function setViewMode(mode) {
   }
 }
 
-function toggleGroupBySet() {
-  groupBySet.value = !groupBySet.value;
-  if (groupBySet.value) {
-    applyDefaultSetGroupExpansion();
-  }
-}
-
 async function onCardScaleChange(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
-watch(selectedSlug, () => {
+watch(selectedSlugKey, () => {
   if (viewMode.value === "breakdown") {
     loadBreakdown();
   } else {
@@ -715,9 +846,9 @@ watch(viewMode, (mode, previous) => {
   }
 });
 
-watch(selectedLocation, (location) => {
-  syncInlineFields(location);
-  if (location?.locationType === "deck") {
+watch(selectedLocations, (next) => {
+  syncInlineFields(selectedLocation.value);
+  if (next.some((location) => location.locationType === "deck")) {
     sectionExpanded.deck = true;
   }
 });
@@ -728,21 +859,22 @@ watch(setCodesInLocation, (codes) => {
   }
 });
 
-watch(setGroupCodesKey, () => {
-  if (!groupBySet.value) {
+watch(groupKeysKey, () => {
+  if (!isGrouped.value) {
     return;
   }
-  applyDefaultSetGroupExpansion();
+  applyDefaultGroupExpansion();
 });
 
 watch(
-  [searchQuery, foilFilter, setFilter, cardsSort, cardsSortDir, viewMode, groupBySet],
+  [searchQuery, setFilter, colorFilters, colorMode, cardsSort, cardsSortDir, viewMode, groupByLevels],
   () => {
     if (syncingRoute.value) {
       return;
     }
     pushStorageQuery();
   },
+  { deep: true },
 );
 
 watch(
@@ -751,10 +883,10 @@ watch(
     if (syncingRoute.value) {
       return;
     }
-    const location = storageLocationFromRoute(route);
+    const routeSlugs = storageLocationsFromRoute(route);
     applyFiltersFromRoute(route);
-    if (location && location !== selectedSlug.value) {
-      selectedSlug.value = location;
+    if (routeSlugs.length && routeSlugs.join("|") !== selectedSlugKey.value) {
+      selectedSlugs.value = resolveSelectedSlugs(routeSlugs);
     }
   },
 );
@@ -770,9 +902,9 @@ async function loadSetsCatalog() {
 
 onMounted(async () => {
   applyFiltersFromRoute(route);
-  const preferredLocation = storageLocationFromRoute(route);
+  const preferredLocations = storageLocationsFromRoute(route);
   await Promise.all([
-    loadLocations(preferredLocation),
+    loadLocations(preferredLocations),
     loadPricingSettings(true),
     loadSetsCatalog(),
   ]);
@@ -787,6 +919,7 @@ onMounted(async () => {
   <div class="storage-page collection-page">
     <div class="storage-layout">
       <nav class="storage-location-nav" aria-label="Storage locations">
+        <p class="storage-multi-hint">Ctrl/⌘+click to select multiple</p>
         <section
           v-for="section in groupedVisibleLocations"
           :key="section.type"
@@ -824,12 +957,13 @@ onMounted(async () => {
             v-show="isSectionExpanded(section)"
             :key="location.slug"
             class="storage-location-link"
-            :class="{ active: location.slug === selectedSlug }"
+            :class="{ active: isLocationSelected(location.slug) }"
           >
             <button
               type="button"
               class="storage-location-select"
-              @click="selectLocation(location.slug)"
+              :aria-pressed="isLocationSelected(location.slug) ? 'true' : 'false'"
+              @click="selectLocation(location.slug, $event)"
             >
               <span class="storage-location-link-main">
                 <StorageLocationIcon :type="location.locationType" />
@@ -855,7 +989,20 @@ onMounted(async () => {
       </nav>
 
       <div class="storage-detail">
-        <div v-if="selectedLocation" class="storage-detail-header">
+        <div v-if="isMultiLocation" class="storage-detail-header">
+          <div class="storage-detail-title-row">
+            <div class="storage-detail-title-main">
+              <h2>{{ selectedLocations.length }} locations</h2>
+            </div>
+          </div>
+          <p class="storage-location-description">{{ selectedLocationLabels }}</p>
+          <p class="storage-location-stats">
+            {{ cardsPayload?.totalCopies ?? selectedLocations.reduce((sum, location) => sum + (location.cardCount || 0), 0) }} copies ·
+            {{ cardsPayload?.uniquePrints ?? "—" }} unique prints
+          </p>
+        </div>
+
+        <div v-else-if="selectedLocation" class="storage-detail-header">
           <div class="storage-detail-title-row">
             <div class="storage-detail-title-main">
               <StorageLocationIcon
@@ -942,7 +1089,7 @@ onMounted(async () => {
               <input
                 v-model="searchQuery"
                 type="search"
-                placeholder="Search name or #…"
+                placeholder="Words AND · punctuation flexible…"
                 autocomplete="off"
               >
             </label>
@@ -961,18 +1108,40 @@ onMounted(async () => {
               portal-panel
             />
 
-            <label class="storage-toolbar-select">
-              <span class="visually-hidden">Finish</span>
-              <select v-model="foilFilter" aria-label="Filter by finish">
-                <option
-                  v-for="option in FINISH_OPTIONS"
-                  :key="option.id"
-                  :value="option.id"
+            <div class="storage-color-filter" role="group" aria-label="Color identity">
+              <div class="storage-color-filter-pips">
+                <button
+                  v-for="color in DECK_COLOR_ORDER"
+                  :key="color"
+                  type="button"
+                  class="storage-color-filter-btn"
+                  :class="{ active: colorFilters.includes(color) }"
+                  :title="color === 'C' ? 'Colorless' : color"
+                  :aria-pressed="colorFilters.includes(color) ? 'true' : 'false'"
+                  @click="toggleColorFilter(color)"
                 >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
+                  <ManaSymbols :colors="color === 'C' ? [] : [color]" :size="14" />
+                </button>
+              </div>
+              <button
+                v-if="colorFilters.length"
+                type="button"
+                class="storage-color-filter-clear"
+                title="Clear color filters"
+                aria-label="Clear color filters"
+                @click="clearColorFilters"
+              >
+                ×
+              </button>
+              <label class="storage-color-mode-toggle" title="Exact color identity only">
+                <input
+                  type="checkbox"
+                  :checked="colorMode === 'exact'"
+                  @change="setColorMode($event.target.checked ? 'exact' : 'includes')"
+                >
+                <span>Exact</span>
+              </label>
+            </div>
 
             <div class="storage-sort-row">
               <label class="visually-hidden" for="storage-sort">Sort by</label>
@@ -1000,24 +1169,73 @@ onMounted(async () => {
             <p v-else class="storage-toolbar-summary">Analytics for this location</p>
 
             <div class="storage-toolbar-end">
-              <button
+              <div
                 v-if="!isBreakdownView"
-                type="button"
-                class="filter-button"
-                :class="{ active: groupBySet }"
-                :aria-pressed="groupBySet"
-                @click="toggleGroupBySet"
+                class="storage-group-by-stack"
               >
-                Group by set
-              </button>
+                <label class="storage-group-by">
+                  <span>Group by</span>
+                  <select
+                    :value="groupByLevels[0] || 'none'"
+                    aria-label="Group storage cards"
+                    @change="onGroupLevelChange(0, $event)"
+                  >
+                    <option
+                      v-for="option in groupByOptionsForLevel(0)"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label
+                  v-if="groupByLevels[0]"
+                  class="storage-group-by"
+                >
+                  <span>Then</span>
+                  <select
+                    :value="groupByLevels[1] || 'none'"
+                    aria-label="Then group by"
+                    @change="onGroupLevelChange(1, $event)"
+                  >
+                    <option
+                      v-for="option in groupByOptionsForLevel(1)"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label
+                  v-if="groupByLevels[1]"
+                  class="storage-group-by"
+                >
+                  <span>Then</span>
+                  <select
+                    :value="groupByLevels[2] || 'none'"
+                    aria-label="Then group by again"
+                    @change="onGroupLevelChange(2, $event)"
+                  >
+                    <option
+                      v-for="option in groupByOptionsForLevel(2)"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
 
               <button
-                v-if="!isBreakdownView && groupBySet && setGroups.length"
+                v-if="!isBreakdownView && isGrouped && cardGroups.length"
                 type="button"
                 class="btn btn-secondary btn-small storage-set-groups-toggle"
-                @click="anySetGroupExpanded ? collapseAllSetGroups() : expandAllSetGroups()"
+                @click="anyGroupExpanded ? collapseAllGroups() : expandAllGroups()"
               >
-                {{ anySetGroupExpanded ? "Collapse all" : "Expand all" }}
+                {{ anyGroupExpanded ? "Collapse all" : "Expand all" }}
               </button>
 
               <div
@@ -1096,48 +1314,22 @@ onMounted(async () => {
           :loading="false"
           class="storage-gallery-wrap collection-gallery-panel"
         >
-          <div v-if="groupBySet" class="storage-grouped-scroll">
-            <section
-              v-for="group in setGroups"
-              :key="group.setCode"
-              class="storage-set-group"
-              :class="{ 'is-collapsed': !isSetGroupExpanded(group.setCode) }"
+          <div v-if="isGrouped" class="storage-grouped-scroll">
+            <CollectionGroupTree
+              :groups="cardGroups"
+              :is-expanded="isGroupExpanded"
+              :set-icon-for="setIconForCode"
+              :meta-text-for="groupMetaText"
+              @toggle="toggleGroup"
             >
-              <button
-                type="button"
-                class="storage-set-group-header"
-                :aria-expanded="isSetGroupExpanded(group.setCode)"
-                @click="toggleSetGroup(group.setCode)"
-              >
-                <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
-                <img
-                  v-if="setIconForCode(group.setCode)"
-                  :src="setIconForCode(group.setCode)"
-                  alt=""
-                  class="storage-set-group-icon"
-                >
-                <h3 class="storage-set-group-title">
-                  {{ setLabelForCode(group.setCode) }}
-                </h3>
-                <span class="storage-set-group-meta">{{ setGroupMetaText(group) }}</span>
-              </button>
-              <div
-                v-if="isSetGroupExpanded(group.setCode)"
-                class="storage-set-group-gallery"
-                :class="{ 'is-scrollable-group': isLargeSetGroup(group) }"
-              >
-                <VirtualizedCollectionCardGrid
-                  v-if="isLargeSetGroup(group)"
+              <template #leaf="{ group }">
+                <StorageGroupGallery
                   :cards="group.cards"
                   :card-scale="collectionCardScale"
+                  :scrollable="isLargeGroup(group)"
                 />
-                <CollectionCardGrid
-                  v-else
-                  :cards="group.cards"
-                  :card-scale="collectionCardScale"
-                />
-              </div>
-            </section>
+              </template>
+            </CollectionGroupTree>
           </div>
           <VirtualizedCollectionCardGrid
             v-else
@@ -1149,52 +1341,36 @@ onMounted(async () => {
         </GalleryLoadingOverlay>
 
         <div
-          v-else-if="groupBySet"
+          v-else-if="isGrouped"
           class="table-panel cards-panel storage-cards-panel storage-grouped-scroll"
         >
-          <section
-            v-for="group in setGroups"
-            :key="group.setCode"
-            class="storage-set-group"
-            :class="{ 'is-collapsed': !isSetGroupExpanded(group.setCode) }"
+          <CollectionGroupTree
+            :groups="cardGroups"
+            :is-expanded="isGroupExpanded"
+            :set-icon-for="setIconForCode"
+            :meta-text-for="groupMetaText"
+            @toggle="toggleGroup"
           >
-            <button
-              type="button"
-              class="storage-set-group-header"
-              :aria-expanded="isSetGroupExpanded(group.setCode)"
-              @click="toggleSetGroup(group.setCode)"
-            >
-              <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
-              <img
-                v-if="setIconForCode(group.setCode)"
-                :src="setIconForCode(group.setCode)"
-                alt=""
-                class="storage-set-group-icon"
+            <template #leaf="{ group }">
+              <div
+                class="storage-set-group-table"
+                :style="{ '--storage-group-rows': groupTableRowVar(group) }"
               >
-              <h3 class="storage-set-group-title">
-                {{ setLabelForCode(group.setCode) }}
-              </h3>
-              <span class="storage-set-group-meta">{{ setGroupMetaText(group) }}</span>
-            </button>
-            <div
-              v-if="isSetGroupExpanded(group.setCode)"
-              class="storage-set-group-table"
-              :style="{ '--storage-group-rows': setGroupTableRowVar(group) }"
-            >
-              <VirtualizedStorageTable
-                :cards="group.cards"
-                :sort-field="cardsSort"
-                :sort-dir="cardsSortDir"
-                :show-remove="!isDeckLocation"
-                :line-total="lineTotal"
-                :set-label-for="setLabelForCode"
-                :set-icon-for="setIconForCode"
-                @sort="onColumnSort"
-                @remove-one="removeOneCopy"
-                @list-for-sale="listOneForSale"
-              />
-            </div>
-          </section>
+                <VirtualizedStorageTable
+                  :cards="group.cards"
+                  :sort-field="cardsSort"
+                  :sort-dir="cardsSortDir"
+                  :show-remove="!isDeckLocation"
+                  :line-total="lineTotal"
+                  :set-label-for="setLabelForCode"
+                  :set-icon-for="setIconForCode"
+                  @sort="onColumnSort"
+                  @remove-one="removeOneCopy"
+                  @list-for-sale="listOneForSale"
+                />
+              </div>
+            </template>
+          </CollectionGroupTree>
         </div>
 
         <div

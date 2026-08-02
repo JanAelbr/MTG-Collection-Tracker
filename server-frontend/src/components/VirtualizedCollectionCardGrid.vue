@@ -40,23 +40,25 @@ const overscanRows = 2;
 
 /** Matches `.collection-card-grid` min column width. */
 const BASE_COL_WIDTH = 118;
-/** Matches `.collection-card-grid` gap. */
-const BASE_GAP = 16;
+/** Matches `.collection-card-grid` column-gap. */
+const BASE_COL_GAP = 12;
+/** Matches `.collection-card-grid` row-gap. */
+const BASE_ROW_GAP = 8;
 /** Matches `.collection-card-grid` horizontal padding (4px + 4px). */
 const GRID_PAD_X = 8;
 /** Standard MTG card proportion (height / width). */
 const CARD_ASPECT_RATIO = 88 / 63;
 /** Matches `.collection-card-grid-caption` margin-top. */
-const CAPTION_MARGIN_TOP = 6;
+const CAPTION_MARGIN_TOP = 4;
 /**
  * Reserved caption block; must be >= rendered height or virtual rows overlap
  * (duplicate-looking cards while scrolling). Keep in sync with CSS min-heights.
  * Base includes name row + price row (+ gap).
  */
-const CAPTION_HEIGHT_BASE = 52;
-const CAPTION_HEIGHT_BROWSE = 52;
-const CAPTION_HEIGHT_WITH_SET = 68;
-const CAPTION_HEIGHT_WITH_BADGE = 14;
+const CAPTION_HEIGHT_BASE = 40;
+const CAPTION_HEIGHT_BROWSE = 40;
+const CAPTION_HEIGHT_WITH_SET = 54;
+const CAPTION_HEIGHT_WITH_BADGE = 12;
 
 const gridStyle = computed(() => ({
   "--collection-card-scale": String(props.cardScale / 100),
@@ -117,7 +119,7 @@ function reservedCaptionHeight() {
 function rowStrideForColumnWidth(columnWidth) {
   const imageHeight = columnWidth * CARD_ASPECT_RATIO;
   const captionHeight = CAPTION_MARGIN_TOP * scaleFactor.value + reservedCaptionHeight();
-  const gap = BASE_GAP * scaleFactor.value;
+  const gap = BASE_ROW_GAP * scaleFactor.value;
   return imageHeight + captionHeight + gap;
 }
 
@@ -145,7 +147,7 @@ function measureLayout({ force = false } = {}) {
     ? Math.floor(prevScroll / Math.max(prevRowHeight, 1)) * prevColumns
     : 0;
 
-  const gap = BASE_GAP * scaleFactor.value;
+  const gap = BASE_COL_GAP * scaleFactor.value;
   const minColWidth = BASE_COL_WIDTH * scaleFactor.value;
   const usable = Math.max(minColWidth, width - GRID_PAD_X);
   const nextColumns = Math.max(1, Math.floor((usable + gap) / (minColWidth + gap)));

@@ -944,6 +944,14 @@ body {
   overflow-y: auto;
 }
 
+.storage-multi-hint {
+  margin: 0 0 10px;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #888;
+}
+
 .storage-location-section {
   display: flex;
   flex-direction: column;
@@ -1617,6 +1625,93 @@ body {
   gap: 4px;
 }
 
+.storage-color-filter {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.storage-color-filter-pips {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.storage-color-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-right: 1px solid #e6eaf0;
+  background: transparent;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.storage-color-filter-btn:last-child {
+  border-right: none;
+}
+
+.storage-color-filter-btn:hover,
+.storage-color-filter-btn:focus-visible {
+  background: rgba(46, 125, 50, 0.08);
+  outline: none;
+}
+
+.storage-color-filter-btn.active {
+  background: #333;
+}
+
+.storage-color-filter-btn.active :deep(.mana-symbol) {
+  filter: none;
+}
+
+.storage-color-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #666;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.storage-color-filter-clear:hover,
+.storage-color-filter-clear:focus-visible {
+  background: #f3f4f6;
+  outline: none;
+}
+
+.storage-color-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.storage-color-mode-toggle input {
+  margin: 0;
+  width: 12px;
+  height: 12px;
+}
+
 .storage-toolbar-summary {
   margin: 0;
   color: #607d8b;
@@ -1728,6 +1823,89 @@ body {
   flex: 0 0 auto;
 }
 
+.storage-set-group-pips {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.storage-set-group-type-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.storage-group-by-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.storage-group-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #555;
+}
+
+.storage-group-by select {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.storage-set-group--depth-1 {
+  margin-left: 12px;
+}
+
+.storage-set-group--depth-2 {
+  margin-left: 24px;
+}
+
+.storage-set-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-set-group-rarity {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #9e9e9e;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.storage-set-group-rarity--common {
+  background: #b0b0b0;
+}
+
+.storage-set-group-rarity--uncommon {
+  background: #6f8f6f;
+}
+
+.storage-set-group-rarity--rare {
+  background: #c9a227;
+}
+
+.storage-set-group-rarity--mythic {
+  background: #c45c26;
+}
+
+.storage-set-group-rarity--special,
+.storage-set-group-rarity--bonus {
+  background: #7e57c2;
+}
+
+.storage-set-group-rarity--unknown {
+  background: #9e9e9e;
+}
+
 .storage-set-group-title {
   margin: 0;
   min-width: 0;
@@ -1757,12 +1935,11 @@ body {
   min-height: 0;
 }
 
-/* Large groups (see isLargeSetGroup) get a bounded, scrollable viewport so
-   VirtualizedCollectionCardGrid can actually window rows instead of
-   rendering every card at once when "Expand all" is used on a big collection. */
+/* Large groups get a bounded viewport sized to show up to 3 card rows
+   (see StorageGroupGallery). Height is set inline from measured row stride. */
 .storage-set-group-gallery.is-scrollable-group {
-  height: 420px;
-  max-height: 60vh;
+  height: var(--storage-group-gallery-height, calc(3 * var(--storage-group-row-stride, 220px)));
+  max-height: none;
   overflow: hidden;
   border-radius: 8px;
 }
@@ -2168,7 +2345,8 @@ body {
   --collection-card-scale: 1;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(calc(118px * var(--collection-card-scale)), 1fr));
-  gap: calc(16px * var(--collection-card-scale));
+  column-gap: calc(12px * var(--collection-card-scale));
+  row-gap: calc(8px * var(--collection-card-scale));
   padding: 8px 4px 4px;
 }
 
@@ -2503,24 +2681,24 @@ body {
 .collection-page .collection-card-grid-caption {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin-top: 6px;
-  min-height: calc(52px * var(--collection-card-scale, 1));
+  gap: 2px;
+  margin-top: 4px;
+  min-height: calc(40px * var(--collection-card-scale, 1));
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.3;
   overflow: visible;
 }
 
 .collection-page .collection-card-grid-caption:has(.collection-card-grid-set) {
-  min-height: calc(68px * var(--collection-card-scale, 1));
+  min-height: calc(54px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-caption:has(.reports-unowned-badge) {
-  min-height: calc(66px * var(--collection-card-scale, 1));
+  min-height: calc(52px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-caption:has(.collection-card-grid-set):has(.reports-unowned-badge) {
-  min-height: calc(82px * var(--collection-card-scale, 1));
+  min-height: calc(66px * var(--collection-card-scale, 1));
 }
 
 .collection-page .collection-card-grid-meta {
@@ -3256,6 +3434,13 @@ body {
 
 .collection-search-page .search-results-toolbar-controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.collection-search-page .search-results-group-by-stack {
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
@@ -6523,7 +6708,8 @@ button.card-variant {
 @media (max-width: 600px) {
   .collection-page .collection-card-grid {
     grid-template-columns: repeat(auto-fill, minmax(calc(96px * var(--collection-card-scale)), 1fr));
-    gap: calc(10px * var(--collection-card-scale));
+    column-gap: calc(8px * var(--collection-card-scale));
+    row-gap: calc(6px * var(--collection-card-scale));
   }
 
   .app-subnav {

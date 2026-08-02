@@ -122,6 +122,63 @@ export function cardMatchesSearchQuery(card, searchQuery) {
   );
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Build a case-insensitive substring pattern for one storage search token.
+ * Letters/digits match literally; every other character is an optional wildcard
+ * (may be omitted or match any single character).
+ */
+export function storageSearchTokenPattern(token) {
+  const text = String(token || "");
+  let pattern = "";
+  for (const char of text) {
+    if (/[a-z0-9]/i.test(char)) {
+      pattern += escapeRegExp(char);
+    } else {
+      pattern += ".?";
+    }
+  }
+  return pattern ? new RegExp(pattern, "i") : null;
+}
+
+function storageSearchFields(card) {
+  const number = String(card?.collectorNumber ?? "");
+  const padded = number.padStart(3, "0");
+  return [
+    number,
+    padded,
+    String(card?.name ?? ""),
+    String(card?.oracleText ?? ""),
+    `#${number}`,
+    `#${padded}`,
+  ];
+}
+
+/**
+ * Storage search: whitespace-separated tokens are AND'd as substring matches.
+ * Special characters in each token act as optional single-character wildcards.
+ */
+export function cardMatchesStorageSearchQuery(card, searchQuery) {
+  const tokens = String(searchQuery || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!tokens.length) {
+    return true;
+  }
+  const fields = storageSearchFields(card);
+  return tokens.every((token) => {
+    const pattern = storageSearchTokenPattern(token);
+    if (!pattern) {
+      return true;
+    }
+    return fields.some((field) => pattern.test(field));
+  });
+}
+
 export function filterCollectionCards(
   cards,
   {
@@ -133,6 +190,7 @@ export function filterCollectionCards(
     colorFilters = [],
     colorMode = "exact",
     searchQuery = "",
+    searchMode = "default",
     rarityFilter = "all",
     cmcMin = null,
     cmcMax = null,
@@ -186,7 +244,10 @@ export function filterCollectionCards(
     result = result.filter((card) => cardMatchesCollectionStorageFilter(card, storageFilters));
   }
   if (searchQuery) {
-    result = result.filter((card) => cardMatchesSearchQuery(card, searchQuery));
+    const matcher = searchMode === "storage"
+      ? cardMatchesStorageSearchQuery
+      : cardMatchesSearchQuery;
+    result = result.filter((card) => matcher(card, searchQuery));
   }
 
   return result;

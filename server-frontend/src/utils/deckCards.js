@@ -11,6 +11,61 @@ export const DECK_COLOR_LABELS = {
   C: "Colorless",
 };
 
+/** Official / common names for multicolor identities (keys in WUBRG order). */
+export const COLOR_COMBINATION_NAMES = {
+  WU: "Azorius",
+  WB: "Orzhov",
+  WR: "Boros",
+  WG: "Selesnya",
+  UB: "Dimir",
+  UR: "Izzet",
+  UG: "Simic",
+  BR: "Rakdos",
+  BG: "Golgari",
+  RG: "Gruul",
+  WUB: "Esper",
+  WUR: "Jeskai",
+  WUG: "Bant",
+  WBR: "Mardu",
+  WBG: "Abzan",
+  WRG: "Naya",
+  UBR: "Grixis",
+  UBG: "Sultai",
+  URG: "Temur",
+  BRG: "Jund",
+  WUBR: "Yore-Tiller",
+  WUBG: "Glint-Eye",
+  WURG: "Ink-Treader",
+  WBRG: "Dune-Brood",
+  UBRG: "Witch-Maw",
+  WUBRG: "Five-color",
+};
+
+/**
+ * Human label for a color-identity key (`"UB"`, `"C"`, …).
+ * Multicolor uses guild/shard/wedge/Nephilim names when known.
+ */
+export function colorCombinationLabel(key) {
+  const normalized = String(key || "").trim().toUpperCase().replace(/[^WUBRGC]/g, "");
+  if (!normalized || normalized === "C") {
+    return DECK_COLOR_LABELS.C;
+  }
+  const pips = [...new Set(
+    normalized
+      .split("")
+      .filter((pip) => DECK_COLOR_ORDER.includes(pip) && pip !== "C"),
+  )].sort((left, right) => DECK_COLOR_ORDER.indexOf(left) - DECK_COLOR_ORDER.indexOf(right));
+  if (!pips.length) {
+    return DECK_COLOR_LABELS.C;
+  }
+  if (pips.length === 1) {
+    return DECK_COLOR_LABELS[pips[0]] || pips[0];
+  }
+  const comboKey = pips.join("");
+  return COLOR_COMBINATION_NAMES[comboKey]
+    || pips.map((pip) => DECK_COLOR_LABELS[pip] || pip).join(" / ");
+}
+
 const SECTION_ORDER = { commander: 0, main: 1, sideboard: 2 };
 
 export function deckTypeIconType(source) {

@@ -13,16 +13,19 @@ import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCa
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
-import CollectionCardGrid from "../components/CollectionCardGrid.vue";
+import CollectionGroupTree from "../components/CollectionGroupTree.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
+import StorageGroupGallery from "../components/StorageGroupGallery.vue";
 import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
 import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
+import { resolveSetIconUri } from "../utils/scryfall";
 import {
+  collectGroupPaths,
   groupSearchCards,
-  normalizeSearchGroupBy,
+  normalizeGroupByLevels,
   SEARCH_GROUP_BY_OPTIONS,
 } from "../utils/searchResults";
 
@@ -71,7 +74,7 @@ const mobileFiltersOpen = ref(false);
 const searchViewMode = ref("gallery");
 const searchSort = ref("newest");
 const searchSortDir = ref("desc");
-const searchGroupBy = ref("none");
+const searchGroupByLevels = ref([]);
 const collapsedSearchGroups = ref(new Set());
 const loadingAll = ref(false);
 const routeSyncReady = ref(false);
@@ -86,12 +89,12 @@ const cards = computed(() => accumulatedCards.value);
 const totalMatches = computed(() => searchTotalMatches.value);
 const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
-const isGroupedResults = computed(() => normalizeSearchGroupBy(searchGroupBy.value) !== "none");
+const isGroupedResults = computed(() => searchGroupByLevels.value.length > 0);
 const searchResultGroups = computed(() => {
   if (!isGroupedResults.value) {
     return [];
   }
-  return groupSearchCards(accumulatedCards.value, searchGroupBy.value, {
+  return groupSearchCards(accumulatedCards.value, searchGroupByLevels.value, {
     setLabelFor: setLabel,
   });
 });
@@ -166,6 +169,22 @@ const setLabels = computed(() => {
   }
   return labels;
 });
+
+const setsByCode = computed(() => {
+  const byCode = new Map();
+  for (const set of sets.value) {
+    byCode.set(String(set.setCode || "").toUpperCase(), set);
+  }
+  return byCode;
+});
+
+function setIconForCode(code) {
+  const normalized = String(code || "").trim().toUpperCase();
+  if (!normalized || normalized === "—") {
+    return null;
+  }
+  return resolveSetIconUri(setsByCode.value.get(normalized) || { setCode: normalized });
+}
 
 function searchApiParams() {
   return {
@@ -491,16 +510,16 @@ function isLargeSearchGroup(group) {
   return (group?.cards?.length || 0) > LARGE_GROUP_CARD_COUNT;
 }
 
-function isSearchGroupExpanded(key) {
-  return !collapsedSearchGroups.value.has(key);
+function isSearchGroupExpanded(path) {
+  return !collapsedSearchGroups.value.has(path);
 }
 
-function toggleSearchGroup(key) {
+function toggleSearchGroup(path) {
   const next = new Set(collapsedSearchGroups.value);
-  if (next.has(key)) {
-    next.delete(key);
+  if (next.has(path)) {
+    next.delete(path);
   } else {
-    next.add(key);
+    next.add(path);
   }
   collapsedSearchGroups.value = next;
 }
@@ -510,19 +529,27 @@ function expandAllSearchGroups() {
 }
 
 function collapseAllSearchGroups() {
-  collapsedSearchGroups.value = new Set(
-    searchResultGroups.value.map((group) => group.key),
+  collapsedSearchGroups.value = new Set(collectGroupPaths(searchResultGroups.value));
+}
+
+function searchGroupByOptionsForLevel(levelIndex) {
+  const used = new Set(searchGroupByLevels.value.slice(0, levelIndex));
+  return SEARCH_GROUP_BY_OPTIONS.filter(
+    (option) => option.value === "none" || !used.has(option.value),
   );
 }
 
-async function onSearchGroupByChange(event) {
-  const next = normalizeSearchGroupBy(event.target.value);
-  if (searchGroupBy.value === next) {
-    return;
+async function onSearchGroupLevelChange(levelIndex, event) {
+  const nextValue = String(event?.target?.value || "none");
+  const next = searchGroupByLevels.value.slice(0, levelIndex);
+  if (nextValue !== "none") {
+    next.push(nextValue);
   }
-  searchGroupBy.value = next;
+  const normalized = normalizeGroupByLevels(next, { emptyDefault: [] });
+  const changed = normalized.join(",") !== searchGroupByLevels.value.join(",");
+  searchGroupByLevels.value = normalized;
   collapsedSearchGroups.value = new Set();
-  if (next !== "none" && hasMoreResults.value) {
+  if (changed && normalized.length && hasMoreResults.value) {
     await loadAllResults();
   }
 }
@@ -1124,22 +1151,62 @@ onMounted(async () => {
                       List
                     </button>
                   </div>
-                  <label class="search-results-group-by">
-                    <span>Group by</span>
-                    <select
-                      :value="searchGroupBy"
-                      aria-label="Group search results"
-                      @change="onSearchGroupByChange"
-                    >
-                      <option
-                        v-for="option in SEARCH_GROUP_BY_OPTIONS"
-                        :key="option.value"
-                        :value="option.value"
+                  <div class="search-results-group-by-stack">
+                    <label class="search-results-group-by">
+                      <span>Group by</span>
+                      <select
+                        :value="searchGroupByLevels[0] || 'none'"
+                        aria-label="Group search results"
+                        @change="onSearchGroupLevelChange(0, $event)"
                       >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
+                        <option
+                          v-for="option in searchGroupByOptionsForLevel(0)"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <label
+                      v-if="searchGroupByLevels[0]"
+                      class="search-results-group-by"
+                    >
+                      <span>Then</span>
+                      <select
+                        :value="searchGroupByLevels[1] || 'none'"
+                        aria-label="Then group search results"
+                        @change="onSearchGroupLevelChange(1, $event)"
+                      >
+                        <option
+                          v-for="option in searchGroupByOptionsForLevel(1)"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <label
+                      v-if="searchGroupByLevels[1]"
+                      class="search-results-group-by"
+                    >
+                      <span>Then</span>
+                      <select
+                        :value="searchGroupByLevels[2] || 'none'"
+                        aria-label="Then group search results again"
+                        @change="onSearchGroupLevelChange(2, $event)"
+                      >
+                        <option
+                          v-for="option in searchGroupByOptionsForLevel(2)"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
                   <button
                     v-if="isGroupedResults && searchResultGroups.length"
                     type="button"
@@ -1192,58 +1259,35 @@ onMounted(async () => {
               </div>
               <GalleryLoadingOverlay :loading="(loading && !loadingMore && !loadingAll) || loadingAll" :label="loadingAll ? 'Loading all cards…' : 'Searching cards…'">
                 <div v-if="isGroupedResults" class="search-results-groups">
-                  <section
-                    v-for="group in searchResultGroups"
-                    :key="group.key"
-                    class="storage-set-group"
-                    :class="{ 'is-collapsed': !isSearchGroupExpanded(group.key) }"
+                  <CollectionGroupTree
+                    :groups="searchResultGroups"
+                    :is-expanded="isSearchGroupExpanded"
+                    :set-icon-for="setIconForCode"
+                    @toggle="toggleSearchGroup"
                   >
-                    <button
-                      type="button"
-                      class="storage-set-group-header"
-                      :aria-expanded="isSearchGroupExpanded(group.key)"
-                      @click="toggleSearchGroup(group.key)"
-                    >
-                      <span class="storage-set-group-chevron" aria-hidden="true">▾</span>
-                      <h3 class="storage-set-group-title">{{ group.label }}</h3>
-                      <span class="storage-set-group-meta">{{ group.cards.length }} cards</span>
-                    </button>
-                    <div
-                      v-if="isSearchGroupExpanded(group.key)"
-                      class="storage-set-group-gallery"
-                      :class="{ 'is-scrollable-group': !isListView && isLargeSearchGroup(group) }"
-                    >
-                      <VirtualizedCollectionCardGrid
-                        v-if="!isListView && isLargeSearchGroup(group)"
-                        :cards="group.cards"
-                        :show-unowned-badge="false"
-                        :card-scale="collectionCardScale"
-                        browse-names
-                        :selected-name="selectedBrowseName"
-                        @browse-name="browseCardName"
-                        @cycle-variant="cycleCardVariant"
-                        @ownership-changed="onArtOwnershipChanged"
-                      />
-                      <CollectionCardGrid
-                        v-else-if="!isListView"
-                        :cards="group.cards"
-                        :show-unowned-badge="false"
-                        :card-scale="collectionCardScale"
-                        browse-names
-                        :selected-name="selectedBrowseName"
-                        @browse-name="browseCardName"
-                        @cycle-variant="cycleCardVariant"
-                        @ownership-changed="onArtOwnershipChanged"
-                      />
+                    <template #leaf="{ group }">
                       <SearchResultsList
-                        v-else
+                        v-if="isListView"
                         :cards="group.cards"
                         :selected-name="selectedBrowseName"
                         :set-label-for="setLabel"
                         @browse-name="browseCardName"
                       />
-                    </div>
-                  </section>
+                      <StorageGroupGallery
+                        v-else
+                        :cards="group.cards"
+                        :card-scale="collectionCardScale"
+                        :scrollable="isLargeSearchGroup(group)"
+                        :show-unowned-badge="false"
+                        :show-favorites="false"
+                        browse-names
+                        :selected-name="selectedBrowseName"
+                        @browse-name="browseCardName"
+                        @cycle-variant="cycleCardVariant"
+                        @ownership-changed="onArtOwnershipChanged"
+                      />
+                    </template>
+                  </CollectionGroupTree>
                 </div>
                 <VirtualizedCollectionCardGrid
                   v-else-if="!isListView"

@@ -44,8 +44,15 @@ SELECT
     c.has_foil,
     c.has_etched,
     c.colors,
+    c.color_identity,
     c.type_line,
-    c.card_type
+    c.card_type,
+    c.oracle_text,
+    c.mana_cost,
+    c.cmc,
+    c.rarity,
+    c.power,
+    c.toughness
 FROM card_instances ci
 LEFT JOIN cards c
     ON c.set_code = ci.set_code
@@ -188,8 +195,10 @@ def list_location_cards(
     get_location(conn, slug)
     rows = conn.execute(LOCATION_CARDS_QUERY, (slug,)).fetchall()
     from api.services.sale_listings_service import listed_listings_by_instance_id
+    from util.card_name_roles import load_card_name_roles_map
 
     listed_by_instance = listed_listings_by_instance_id(conn)
+    roles_by_name = load_card_name_roles_map(conn)
     from util.set_families import load_family_roots
 
     family_roots = load_family_roots(conn)
@@ -200,6 +209,18 @@ def list_location_cards(
         if card is None:
             finish = int(row["finish"])
             set_code = str(row["set_code"] or "").strip().upper()
+            name = deck_card_display_name({
+                "catalog_name": row["name"],
+                "card_name": row["name"],
+                "set_code": row["set_code"],
+                "collector_number": row["collector_number"],
+            })
+            catalog_name = str_or_empty(row["name"])
+            roles = (
+                roles_by_name.get(catalog_name)
+                or roles_by_name.get(catalog_name.casefold())
+                or []
+            )
             card = {
                 "setCode": row["set_code"],
                 "familyRoot": family_roots.get(set_code) or set_code,
@@ -209,14 +230,11 @@ def list_location_cards(
                 "copyCount": 0,
                 "instanceIds": [],
                 "purchaseValue": _float_or_none(row["purchase_value"]),
-                "name": deck_card_display_name({
-                    "catalog_name": row["name"],
-                    "card_name": row["name"],
-                    "set_code": row["set_code"],
-                    "collector_number": row["collector_number"],
-                }),
+                "name": name,
                 "artStyle": str_or_empty(row["art_style"]),
                 **card_image_fields(row),
+                **card_metadata_api(row),
+                "roles": list(roles),
                 "currentValue": price_from_strategy(
                     row["cardmarket_url"],
                     finish,

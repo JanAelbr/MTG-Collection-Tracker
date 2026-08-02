@@ -5,6 +5,7 @@ import {
   cardMatchesCollectionRarityFilter,
   cardMatchesCollectionStorageFilter,
   cardMatchesSearchQuery,
+  cardMatchesStorageSearchQuery,
   filterCollectionCards,
 } from "./collectionFilters.js";
 
@@ -56,6 +57,34 @@ describe("collectionFilters search", () => {
     expect(cardMatchesSearchQuery(sampleCards[0], "sauron")).toBe(false);
   });
 
+  it("AND-matches storage search tokens and treats special chars as wildcards", () => {
+    const card = {
+      name: "Jace, the Mind Sculptor",
+      collectorNumber: "1",
+      oracleText: "Draw cards.",
+    };
+    expect(cardMatchesStorageSearchQuery(card, "mind sculptor")).toBe(true);
+    expect(cardMatchesStorageSearchQuery(card, "jace mind")).toBe(true);
+    expect(cardMatchesStorageSearchQuery(card, "jace sauron")).toBe(false);
+
+    expect(cardMatchesStorageSearchQuery(
+      { name: "Ring's Path", collectorNumber: "2", oracleText: "" },
+      "ring's",
+    )).toBe(true);
+    expect(cardMatchesStorageSearchQuery(
+      { name: "Rings Path", collectorNumber: "2", oracleText: "" },
+      "ring's",
+    )).toBe(true);
+    expect(cardMatchesStorageSearchQuery(
+      { name: "Frodo Baggins", collectorNumber: "3", oracleText: "" },
+      "frodo-baggins",
+    )).toBe(true);
+    expect(cardMatchesStorageSearchQuery(
+      { name: "Frodobaggins", collectorNumber: "3", oracleText: "" },
+      "frodo-baggins",
+    )).toBe(true);
+  });
+
   it("filters cards by search query", () => {
     const filtered = filterCollectionCards(sampleCards, {
       setCode: "LTR",
@@ -64,6 +93,19 @@ describe("collectionFilters search", () => {
     });
     expect(filtered).toHaveLength(1);
     expect(filtered[0].name).toBe("Mount Doom");
+  });
+
+  it("uses storage search mode when requested", () => {
+    const cards = [
+      { name: "Mind Stone", collectorNumber: "1", oracleText: "" },
+      { name: "Sculpting Steel", collectorNumber: "2", oracleText: "" },
+      { name: "Jace, the Mind Sculptor", collectorNumber: "3", oracleText: "" },
+    ];
+    const filtered = filterCollectionCards(cards, {
+      searchQuery: "mind sculptor",
+      searchMode: "storage",
+    });
+    expect(filtered.map((card) => card.name)).toEqual(["Jace, the Mind Sculptor"]);
   });
 
   it("filters by rarity and cmc", () => {

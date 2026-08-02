@@ -1,6 +1,6 @@
-import { COLLECTION_RARITY_LABELS } from "./collectionRarities";
+import { COLLECTION_RARITY_LABELS, COLLECTION_RARITY_ORDER } from "./collectionRarities";
 import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "./collectionTypes";
-import { DECK_COLOR_LABELS, DECK_COLOR_ORDER } from "./deckCards";
+import { colorCombinationLabel, DECK_COLOR_ORDER } from "./deckCards";
 import { formatCardRoleLabel } from "./deckPower";
 import { formatEuro } from "./format";
 import { galleryPricePair } from "./priceStrategies";
@@ -10,12 +10,71 @@ export const SEARCH_GROUP_BY_OPTIONS = [
   { value: "type", label: "Type" },
   { value: "role", label: "Role" },
   { value: "colorIdentity", label: "Color identity" },
+  { value: "rarity", label: "Rarity" },
   { value: "set", label: "Set" },
 ];
 
+export const SEARCH_GROUP_BY_FIELDS = SEARCH_GROUP_BY_OPTIONS.filter(
+  (option) => option.value !== "none",
+);
+
+const GROUP_BY_FIELD_SET = new Set(SEARCH_GROUP_BY_FIELDS.map((option) => option.value));
+const MAX_GROUP_LEVELS = 3;
+
 export function normalizeSearchGroupBy(value) {
   const key = String(value || "").trim();
-  return SEARCH_GROUP_BY_OPTIONS.some((option) => option.value === key) ? key : "none";
+  if (key === "none" || key === "off" || key === "0" || key === "false") {
+    return "none";
+  }
+  return GROUP_BY_FIELD_SET.has(key) ? key : "none";
+}
+
+function normalizeGroupByField(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.toLowerCase() === "none" || raw.toLowerCase() === "off") {
+    return "";
+  }
+  if (raw.toLowerCase() === "color" || raw.toLowerCase() === "coloridentity") {
+    return "colorIdentity";
+  }
+  if (GROUP_BY_FIELD_SET.has(raw)) {
+    return raw;
+  }
+  const lower = raw.toLowerCase();
+  const match = SEARCH_GROUP_BY_FIELDS.find((option) => option.value.toLowerCase() === lower);
+  return match?.value || "";
+}
+
+/**
+ * Normalize one or more group-by levels (max 3, unique).
+ * Accepts `"role"`, `"role,colorIdentity,rarity"`, or `["role", "colorIdentity"]`.
+ */
+export function normalizeGroupByLevels(value, { emptyDefault = [] } = {}) {
+  let parts = [];
+  if (Array.isArray(value)) {
+    parts = value;
+  } else if (value != null && String(value).trim()) {
+    parts = String(value).split(/[,+/|]/);
+  }
+  const levels = [];
+  const seen = new Set();
+  for (const part of parts) {
+    const field = normalizeGroupByField(part);
+    if (!field || seen.has(field)) {
+      continue;
+    }
+    seen.add(field);
+    levels.push(field);
+    if (levels.length >= MAX_GROUP_LEVELS) {
+      break;
+    }
+  }
+  return levels.length ? levels : [...emptyDefault];
+}
+
+export function formatGroupByLevels(levels = []) {
+  const normalized = normalizeGroupByLevels(levels);
+  return normalized.length ? normalized.join(",") : "none";
 }
 
 export function formatPowerToughness(card) {
@@ -73,13 +132,18 @@ function colorIdentityKey(card) {
 }
 
 function colorIdentityLabel(key) {
-  if (!key || key === "C") {
-    return DECK_COLOR_LABELS.C;
+  return colorCombinationLabel(key);
+}
+
+/** Mana pip letters for a color-identity group key (`"WU"`, `"C"`, …). */
+export function colorIdentityPipsFromKey(key) {
+  const normalized = String(key || "").trim().toUpperCase();
+  if (!normalized || normalized === "C") {
+    return [];
   }
-  return key
+  return normalized
     .split("")
-    .map((pip) => DECK_COLOR_LABELS[pip] || pip)
-    .join(" / ");
+    .filter((pip) => DECK_COLOR_ORDER.includes(pip) && pip !== "C");
 }
 
 function typeGroupKey(card) {
@@ -110,6 +174,18 @@ function setGroupKey(card) {
   return String(card?.setCode || "").trim().toUpperCase() || "—";
 }
 
+function rarityGroupKey(card) {
+  const rarity = String(card?.rarity || "").trim().toLowerCase();
+  return rarity || "__none__";
+}
+
+function rarityGroupLabel(key) {
+  if (!key || key === "__none__") {
+    return "Unknown rarity";
+  }
+  return COLLECTION_RARITY_LABELS[key] || formatRarityLabel(key);
+}
+
 function groupMeta(groupBy, card, setLabelFor) {
   switch (groupBy) {
     case "type": {
@@ -127,6 +203,10 @@ function groupMeta(groupBy, card, setLabelFor) {
       const key = colorIdentityKey(card);
       return { key, label: colorIdentityLabel(key) };
     }
+    case "rarity": {
+      const key = rarityGroupKey(card);
+      return { key, label: rarityGroupLabel(key) };
+    }
     case "set": {
       const key = setGroupKey(card);
       const label = typeof setLabelFor === "function"
@@ -143,6 +223,21 @@ function compareGroupKeys(groupBy, left, right) {
   if (groupBy === "type") {
     const leftIndex = COLLECTION_TYPE_ORDER.indexOf(left);
     const rightIndex = COLLECTION_TYPE_ORDER.indexOf(right);
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+    }
+  }
+  if (groupBy === "rarity") {
+    const leftIndex = COLLECTION_RARITY_ORDER.indexOf(left);
+    const rightIndex = COLLECTION_RARITY_ORDER.indexOf(right);
+    if (left === "__none__" || right === "__none__") {
+      if (left === "__none__") {
+        return 1;
+      }
+      if (right === "__none__") {
+        return -1;
+      }
+    }
     if (leftIndex !== -1 || rightIndex !== -1) {
       return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
     }
@@ -170,22 +265,80 @@ function compareGroupKeys(groupBy, left, right) {
   return String(left).localeCompare(String(right), undefined, { sensitivity: "base" });
 }
 
-/**
- * Group search result cards for display.
- * @returns {{ key: string, label: string, cards: object[] }[]}
- */
-export function groupSearchCards(cards = [], groupBy = "none", { setLabelFor } = {}) {
-  const mode = normalizeSearchGroupBy(groupBy);
-  if (mode === "none") {
-    return [{ key: "all", label: "All", cards: [...(cards || [])] }];
-  }
+function groupCardsOneLevel(cards, mode, { setLabelFor, pathPrefix = "", depth = 0 } = {}) {
   const buckets = new Map();
   for (const card of cards || []) {
     const { key, label } = groupMeta(mode, card, setLabelFor);
     if (!buckets.has(key)) {
-      buckets.set(key, { key, label, cards: [] });
+      const path = pathPrefix ? `${pathPrefix}/${mode}:${key}` : `${mode}:${key}`;
+      buckets.set(key, {
+        key,
+        label,
+        path,
+        groupBy: mode,
+        depth,
+        cards: [],
+        groups: [],
+      });
     }
     buckets.get(key).cards.push(card);
   }
   return [...buckets.values()].sort((left, right) => compareGroupKeys(mode, left.key, right.key));
+}
+
+function nestGroups(cards, levels, { setLabelFor, pathPrefix = "", depth = 0 } = {}) {
+  if (!levels.length) {
+    return [];
+  }
+  const [mode, ...rest] = levels;
+  const groups = groupCardsOneLevel(cards, mode, { setLabelFor, pathPrefix, depth });
+  if (!rest.length) {
+    return groups;
+  }
+  return groups.map((group) => ({
+    ...group,
+    groups: nestGroups(group.cards, rest, {
+      setLabelFor,
+      pathPrefix: group.path,
+      depth: depth + 1,
+    }),
+  }));
+}
+
+/**
+ * Group cards for display. `groupBy` may be one field or nested levels.
+ * @returns {{ key: string, label: string, path: string, groupBy: string, depth: number, cards: object[], groups: object[] }[]}
+ */
+export function groupSearchCards(cards = [], groupBy = "none", { setLabelFor } = {}) {
+  const levels = normalizeGroupByLevels(groupBy, { emptyDefault: [] });
+  if (!levels.length) {
+    return [{
+      key: "all",
+      label: "All",
+      path: "all",
+      groupBy: "none",
+      depth: 0,
+      cards: [...(cards || [])],
+      groups: [],
+    }];
+  }
+  return nestGroups(cards, levels, { setLabelFor });
+}
+
+/** Collect every group path in a nested tree (depth-first). */
+export function collectGroupPaths(groups = [], out = []) {
+  for (const group of groups || []) {
+    if (group?.path) {
+      out.push(group.path);
+    }
+    if (group?.groups?.length) {
+      collectGroupPaths(group.groups, out);
+    }
+  }
+  return out;
+}
+
+/** True when a group has nested child groups. */
+export function groupHasChildren(group) {
+  return Boolean(group?.groups?.length);
 }
