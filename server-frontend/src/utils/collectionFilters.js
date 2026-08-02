@@ -112,11 +112,15 @@ export function cardMatchesSearchQuery(card, searchQuery) {
   const padded = number.padStart(3, "0");
   const name = String(card?.name ?? "").toLowerCase();
   const oracleText = String(card?.oracleText ?? "").toLowerCase();
+  const typeLine = String(card?.typeLine ?? card?.type_line ?? "").toLowerCase();
+  const cardType = String(card?.cardType ?? card?.card_type ?? "").toLowerCase();
   return (
     number.includes(query)
     || padded.includes(query)
     || name.includes(query)
     || oracleText.includes(query)
+    || typeLine.includes(query)
+    || cardType.includes(query)
     || `#${number}`.includes(query)
     || `#${padded}`.includes(query)
   );
@@ -152,6 +156,8 @@ function storageSearchFields(card) {
     padded,
     String(card?.name ?? ""),
     String(card?.oracleText ?? ""),
+    String(card?.typeLine ?? card?.type_line ?? ""),
+    String(card?.cardType ?? card?.card_type ?? ""),
     `#${number}`,
     `#${padded}`,
   ];

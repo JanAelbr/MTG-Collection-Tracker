@@ -104,3 +104,64 @@ export function storeColorFilterMode(mode) {
 export function filterSidebarWidthPx(wide) {
   return wide ? FILTER_SIDEBAR_WIDTHS.wide : FILTER_SIDEBAR_WIDTHS.narrow;
 }
+
+/** Collapsible filter groups in CollectionAllFilters (Search + Collection). */
+export const FILTER_SECTION_PREFS_KEY = "collectionFilterSectionPrefs";
+
+export const FILTER_SECTION_IDS = Object.freeze([
+  "card",
+  "role",
+  "storage",
+  "details",
+]);
+
+/** Default: all filter groups collapsed. */
+export function defaultFilterSectionPrefs() {
+  return Object.fromEntries(FILTER_SECTION_IDS.map((id) => [id, false]));
+}
+
+/**
+ * @returns {Record<string, boolean>} map of section id → expanded
+ */
+export function getFilterSectionPrefs() {
+  const defaults = defaultFilterSectionPrefs();
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FILTER_SECTION_PREFS_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object") {
+      return defaults;
+    }
+    const next = { ...defaults };
+    for (const id of FILTER_SECTION_IDS) {
+      if (Object.prototype.hasOwnProperty.call(parsed, id)) {
+        next[id] = Boolean(parsed[id]);
+      }
+    }
+    return next;
+  } catch {
+    return defaults;
+  }
+}
+
+export function storeFilterSectionPrefs(prefs) {
+  const defaults = defaultFilterSectionPrefs();
+  const next = { ...defaults };
+  if (prefs && typeof prefs === "object") {
+    for (const id of FILTER_SECTION_IDS) {
+      if (Object.prototype.hasOwnProperty.call(prefs, id)) {
+        next[id] = Boolean(prefs[id]);
+      }
+    }
+  }
+  localStorage.setItem(FILTER_SECTION_PREFS_KEY, JSON.stringify(next));
+  return next;
+}
+
+export function setFilterSectionExpanded(id, expanded) {
+  if (!FILTER_SECTION_IDS.includes(id)) {
+    return getFilterSectionPrefs();
+  }
+  return storeFilterSectionPrefs({
+    ...getFilterSectionPrefs(),
+    [id]: Boolean(expanded),
+  });
+}

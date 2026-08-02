@@ -93,6 +93,9 @@ describe("storageScope", () => {
 
   it("reads group modes from the route", () => {
     expect(storageFiltersFromRoute({ query: { group: "type" } }).groupByLevels).toEqual(["type"]);
+    expect(storageFiltersFromRoute({ query: { group: "subtype" } }).groupByLevels).toEqual([
+      "subtype",
+    ]);
     expect(storageFiltersFromRoute({ query: { group: "role" } }).groupByLevels).toEqual(["role"]);
     expect(storageFiltersFromRoute({ query: { group: "colorIdentity" } }).groupByLevels).toEqual([
       "colorIdentity",

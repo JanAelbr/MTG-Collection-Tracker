@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { api } from "../api";
 import ArtStylePicker from "./ArtStylePicker.vue";
+import FilterSidebarGroup from "./FilterSidebarGroup.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import MultiBrowseSelect from "./MultiBrowseSelect.vue";
 import { DECK_COLOR_ORDER } from "../utils/deckCards";
@@ -14,7 +15,11 @@ import {
   COLLECTION_RARITY_LABELS,
   COLLECTION_RARITY_ORDER,
 } from "../utils/collectionRarities";
-import { SEARCH_ROLE_OPTIONS } from "../utils/deckPower";
+import { SEARCH_ROLE_OPTIONS, formatCardRoleLabel } from "../utils/deckPower";
+import {
+  getFilterSectionPrefs,
+  setFilterSectionExpanded,
+} from "../utils/filterStorage";
 import { hasSelectableArtStyles } from "../utils/format";
 
 const props = defineProps({
@@ -91,6 +96,7 @@ const emit = defineEmits([
 
 const storageLocations = ref([]);
 const storageLoading = ref(false);
+const sectionExpanded = reactive(getFilterSectionPrefs());
 
 const sectionedStorageLocations = computed(() =>
   STORAGE_LOCATION_SECTIONS.map((section) => ({
@@ -120,6 +126,75 @@ const roleSelectOptions = computed(() =>
 );
 
 const showArtStylePicker = computed(() => hasSelectableArtStyles(props.artStyles));
+
+const showCardGroup = computed(() => props.isAllView && !props.isTableView);
+
+const showRoleGroup = computed(
+  () => props.isAllView && !props.isTableView && props.showRoleFilter,
+);
+
+const showStorageGroup = computed(
+  () => props.isAllView && !props.isTableView && props.showStorageFilter,
+);
+
+const showDetailsGroup = computed(() => props.isAllView && !props.isTableView);
+
+const cardGroupSummary = computed(() => {
+  const parts = [];
+  if (props.typeFilter && props.typeFilter !== "all") {
+    parts.push(COLLECTION_TYPE_LABELS[props.typeFilter] || props.typeFilter);
+  }
+  if (props.colorFilters.length) {
+    parts.push(props.colorFilters.join(""));
+  }
+  return parts.join(" · ");
+});
+
+const roleGroupSummary = computed(() => {
+  if (!props.roleFilters.length) {
+    return "";
+  }
+  if (props.roleFilters.length === 1) {
+    return formatCardRoleLabel(props.roleFilters[0]);
+  }
+  return `${props.roleFilters.length} roles`;
+});
+
+const storageGroupSummary = computed(() => {
+  if (!props.storageFilters.length) {
+    return "";
+  }
+  if (props.storageFilters.length === 1) {
+    const match = storageSelectOptions.value.find(
+      (option) => option.value === props.storageFilters[0],
+    );
+    return match?.label || props.storageFilters[0];
+  }
+  return `${props.storageFilters.length} locations`;
+});
+
+const detailsGroupSummary = computed(() => {
+  const parts = [];
+  if (props.rarityFilter && props.rarityFilter !== "all") {
+    parts.push(COLLECTION_RARITY_LABELS[props.rarityFilter] || props.rarityFilter);
+  }
+  if (props.cmcMin || props.cmcMax) {
+    parts.push(`CMC ${props.cmcMin || "…"}–${props.cmcMax || "…"}`);
+  }
+  if (props.priceMin || props.priceMax) {
+    parts.push(`€${props.priceMin || "…"}–${props.priceMax || "…"}`);
+  }
+  if (props.powerMin || props.toughnessMin) {
+    parts.push(`P/T ≥${props.powerMin || "0"}/≥${props.toughnessMin || "0"}`);
+  }
+  return parts.join(" · ");
+});
+
+function toggleSection(id) {
+  const next = !sectionExpanded[id];
+  sectionExpanded[id] = next;
+  setFilterSectionExpanded(id, next);
+}
 
 function onStorageFiltersChange(values) {
   emit("set-storage-filters", Array.isArray(values) ? [...values] : []);
@@ -298,37 +373,13 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isAllView && !isTableView && showStorageFilter" class="filter-sidebar-section">
-      <p class="filter-sidebar-label">Storage</p>
-      <p v-if="storageLoading" class="collection-storage-filter-status">Loading…</p>
-      <MultiBrowseSelect
-        v-else
-        class="collection-multi-filter-select"
-        :model-value="storageFilters"
-        :options="storageSelectOptions"
-        filterable
-        portal-panel
-        placeholder="Any storage"
-        aria-label="Filter by storage location"
-        @update:model-value="onStorageFiltersChange"
-      />
-    </div>
-
-    <div v-if="isAllView && !isTableView && showRoleFilter" class="filter-sidebar-section">
-      <p class="filter-sidebar-label">Role</p>
-      <MultiBrowseSelect
-        class="collection-multi-filter-select"
-        :model-value="roleFilters"
-        :options="roleSelectOptions"
-        filterable
-        portal-panel
-        placeholder="Any role"
-        aria-label="Filter by card role"
-        @update:model-value="onRoleFiltersChange"
-      />
-    </div>
-
-    <div v-if="isAllView && !isTableView" class="filter-sidebar-section">
+    <FilterSidebarGroup
+      v-if="showCardGroup"
+      title="Card"
+      :summary="cardGroupSummary"
+      :expanded="sectionExpanded.card"
+      @toggle="toggleSection('card')"
+    >
       <p class="filter-sidebar-label">Type</p>
       <label class="manager-filter collection-type-filter">
         <select :value="typeFilter" @change="emit('type-filter-change', $event)">
@@ -369,9 +420,55 @@ onMounted(async () => {
         >
         <span>Exact color identity only</span>
       </label>
-    </div>
+    </FilterSidebarGroup>
 
-    <div v-if="isAllView && !isTableView" class="filter-sidebar-section">
+    <FilterSidebarGroup
+      v-if="showRoleGroup"
+      title="Role"
+      :summary="roleGroupSummary"
+      :expanded="sectionExpanded.role"
+      @toggle="toggleSection('role')"
+    >
+      <MultiBrowseSelect
+        class="collection-multi-filter-select"
+        :model-value="roleFilters"
+        :options="roleSelectOptions"
+        filterable
+        portal-panel
+        placeholder="Any role"
+        aria-label="Filter by card role"
+        @update:model-value="onRoleFiltersChange"
+      />
+    </FilterSidebarGroup>
+
+    <FilterSidebarGroup
+      v-if="showStorageGroup"
+      title="Storage"
+      :summary="storageGroupSummary"
+      :expanded="sectionExpanded.storage"
+      @toggle="toggleSection('storage')"
+    >
+      <p v-if="storageLoading" class="collection-storage-filter-status">Loading…</p>
+      <MultiBrowseSelect
+        v-else
+        class="collection-multi-filter-select"
+        :model-value="storageFilters"
+        :options="storageSelectOptions"
+        filterable
+        portal-panel
+        placeholder="Any storage"
+        aria-label="Filter by storage location"
+        @update:model-value="onStorageFiltersChange"
+      />
+    </FilterSidebarGroup>
+
+    <FilterSidebarGroup
+      v-if="showDetailsGroup"
+      title="Details"
+      :summary="detailsGroupSummary"
+      :expanded="sectionExpanded.details"
+      @toggle="toggleSection('details')"
+    >
       <p class="filter-sidebar-label">Rarity</p>
       <label class="manager-filter collection-type-filter">
         <select :value="rarityFilter" @change="emit('rarity-filter-change', $event)">
@@ -465,7 +562,7 @@ onMounted(async () => {
           >
         </label>
       </div>
-    </div>
+    </FilterSidebarGroup>
 
     <div v-if="isAllView && showPriceHealth" class="filter-sidebar-section">
       <p class="filter-sidebar-label">Price health</p>

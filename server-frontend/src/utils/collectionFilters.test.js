@@ -50,11 +50,31 @@ const sampleCards = [
 ];
 
 describe("collectionFilters search", () => {
-  it("matches collector numbers, names, and oracle text", () => {
+  it("matches collector numbers, names, oracle text, and type lines", () => {
     expect(cardMatchesSearchQuery(sampleCards[0], "frodo")).toBe(true);
     expect(cardMatchesSearchQuery(sampleCards[1], "245")).toBe(true);
     expect(cardMatchesSearchQuery(sampleCards[1], "counter target")).toBe(true);
     expect(cardMatchesSearchQuery(sampleCards[0], "sauron")).toBe(false);
+
+    const legendary = {
+      name: "Aragorn",
+      collectorNumber: "10",
+      oracleText: "Vigilance",
+      typeLine: "Legendary Creature — Human Noble",
+      cardType: "creature",
+    };
+    expect(cardMatchesSearchQuery(legendary, "legendary")).toBe(true);
+    expect(cardMatchesSearchQuery(legendary, "human")).toBe(true);
+    expect(cardMatchesSearchQuery(legendary, "noble")).toBe(true);
+    expect(cardMatchesSearchQuery(legendary, "creature")).toBe(true);
+    expect(cardMatchesSearchQuery(
+      { name: "Pacifism", typeLine: "Enchantment — Aura", cardType: "enchantment" },
+      "aura",
+    )).toBe(true);
+    expect(cardMatchesSearchQuery(
+      { name: "Sword", typeLine: "Artifact — Equipment", cardType: "artifact" },
+      "equipment",
+    )).toBe(true);
   });
 
   it("AND-matches storage search tokens and treats special chars as wildcards", () => {
@@ -62,10 +82,13 @@ describe("collectionFilters search", () => {
       name: "Jace, the Mind Sculptor",
       collectorNumber: "1",
       oracleText: "Draw cards.",
+      typeLine: "Legendary Creature — Human Wizard",
     };
     expect(cardMatchesStorageSearchQuery(card, "mind sculptor")).toBe(true);
     expect(cardMatchesStorageSearchQuery(card, "jace mind")).toBe(true);
     expect(cardMatchesStorageSearchQuery(card, "jace sauron")).toBe(false);
+    expect(cardMatchesStorageSearchQuery(card, "legendary wizard")).toBe(true);
+    expect(cardMatchesStorageSearchQuery(card, "human elf")).toBe(false);
 
     expect(cardMatchesStorageSearchQuery(
       { name: "Ring's Path", collectorNumber: "2", oracleText: "" },

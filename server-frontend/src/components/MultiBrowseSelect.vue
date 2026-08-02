@@ -263,7 +263,7 @@ onUnmounted(() => {
                 </span>
                 <StorageLocationIcon
                   v-if="option.locationType"
-                  :location-type="option.locationType"
+                  :type="option.locationType"
                 />
                 <span class="browse-select-option-label">{{ option.label }}</span>
               </li>
@@ -315,7 +315,7 @@ onUnmounted(() => {
               </span>
               <StorageLocationIcon
                 v-if="option.locationType"
-                :location-type="option.locationType"
+                :type="option.locationType"
               />
               <span class="browse-select-option-label">{{ option.label }}</span>
             </li>

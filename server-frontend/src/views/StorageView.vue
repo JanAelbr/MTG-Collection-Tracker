@@ -773,6 +773,42 @@ function isLocationSelected(slug) {
   return selectedSlugs.value.includes(slug);
 }
 
+function sectionLocationSlugs(section) {
+  return (section?.locations || [])
+    .map((location) => location.slug)
+    .filter(Boolean);
+}
+
+function isSectionFullySelected(section) {
+  const slugs = sectionLocationSlugs(section);
+  if (!slugs.length) {
+    return false;
+  }
+  const selected = new Set(selectedSlugs.value);
+  return slugs.every((slug) => selected.has(slug));
+}
+
+function selectAllInSection(section, event = null) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const slugs = sectionLocationSlugs(section);
+  if (!slugs.length) {
+    return;
+  }
+  if (isSectionFullySelected(section)) {
+    // Already all selected for this type — keep a single location so the page stays usable.
+    selectedSlugs.value = [slugs[0]];
+    return;
+  }
+  if (section.collapsible) {
+    sectionExpanded[section.type] = true;
+  }
+  searchQuery.value = "";
+  setFilter.value = "";
+  colorFilters.value = [];
+  selectedSlugs.value = [...slugs];
+}
+
 function toggleColorFilter(color) {
   if (colorFilters.value.includes(color)) {
     colorFilters.value = colorFilters.value.filter((item) => item !== color);
@@ -926,21 +962,57 @@ onMounted(async () => {
           class="storage-location-section"
           :class="{ 'storage-location-section--collapsed': !isSectionExpanded(section) }"
         >
-          <button
+          <div
             v-if="section.collapsible"
-            type="button"
-            class="storage-location-section-heading storage-location-section-toggle"
-            :aria-expanded="isSectionExpanded(section) ? 'true' : 'false'"
-            @click="toggleSection(section)"
+            class="storage-location-section-heading"
           >
-            <StorageLocationIcon :type="section.type" />
-            <span class="storage-location-section-title">{{ section.label }}</span>
-            <span class="storage-location-section-count">{{ section.locations.length }}</span>
-            <span class="storage-location-section-chevron" aria-hidden="true">▾</span>
-          </button>
+            <button
+              type="button"
+              class="storage-location-section-toggle"
+              :aria-expanded="isSectionExpanded(section) ? 'true' : 'false'"
+              @click="toggleSection(section)"
+            >
+              <StorageLocationIcon :type="section.type" />
+              <span class="storage-location-section-title">{{ section.label }}</span>
+              <span class="storage-location-section-count">{{ section.locations.length }}</span>
+              <span class="storage-location-section-chevron" aria-hidden="true">▾</span>
+            </button>
+            <button
+              type="button"
+              class="storage-location-section-select-all"
+              :class="{ active: isSectionFullySelected(section) }"
+              :disabled="!section.locations.length"
+              :aria-pressed="isSectionFullySelected(section) ? 'true' : 'false'"
+              :aria-label="isSectionFullySelected(section)
+                ? `Clear ${section.label} selection`
+                : `Select all ${section.label}`"
+              :title="isSectionFullySelected(section)
+                ? `Clear ${section.label} selection`
+                : `Select all ${section.label}`"
+              @click="selectAllInSection(section, $event)"
+            >
+              All
+            </button>
+          </div>
           <h3 v-else class="storage-location-section-heading">
             <StorageLocationIcon :type="section.type" />
             <span class="storage-location-section-title">{{ section.label }}</span>
+            <button
+              type="button"
+              class="storage-location-section-select-all"
+              :class="{ active: isSectionFullySelected(section) }"
+              :disabled="!section.locations.length"
+              :aria-pressed="isSectionFullySelected(section) ? 'true' : 'false'"
+              :aria-label="isSectionFullySelected(section)
+                ? `Clear ${section.label} selection`
+                : `Select all ${section.label}`"
+              :title="isSectionFullySelected(section)
+                ? `Clear ${section.label} selection`
+                : `Select all ${section.label}`"
+              @click="selectAllInSection(section, $event)"
+            >
+              All
+            </button>
             <button
               v-if="section.canCreate"
               type="button"

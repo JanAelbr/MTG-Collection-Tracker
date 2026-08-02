@@ -8,6 +8,7 @@ import { galleryPricePair } from "./priceStrategies";
 export const SEARCH_GROUP_BY_OPTIONS = [
   { value: "none", label: "None" },
   { value: "type", label: "Type" },
+  { value: "subtype", label: "Subtype" },
   { value: "role", label: "Role" },
   { value: "colorIdentity", label: "Color identity" },
   { value: "rarity", label: "Rarity" },
@@ -34,13 +35,16 @@ function normalizeGroupByField(value) {
   if (!raw || raw.toLowerCase() === "none" || raw.toLowerCase() === "off") {
     return "";
   }
-  if (raw.toLowerCase() === "color" || raw.toLowerCase() === "coloridentity") {
+  const lower = raw.toLowerCase();
+  if (lower === "color" || lower === "coloridentity") {
     return "colorIdentity";
+  }
+  if (lower === "subtypes" || lower === "sub-type" || lower === "sub_type") {
+    return "subtype";
   }
   if (GROUP_BY_FIELD_SET.has(raw)) {
     return raw;
   }
-  const lower = raw.toLowerCase();
   const match = SEARCH_GROUP_BY_FIELDS.find((option) => option.value.toLowerCase() === lower);
   return match?.value || "";
 }
@@ -164,6 +168,40 @@ function typeGroupLabel(key) {
   return COLLECTION_TYPE_LABELS[key] || formatTypeLabel({ cardType: key }) || "Other";
 }
 
+/** Subtype text after the type-line dash (Aura, Equipment, Elf Druid, …). */
+export function cardSubtypeLabel(card) {
+  const typeLine = String(card?.typeLine || card?.type_line || "").trim();
+  if (!typeLine) {
+    return "";
+  }
+  const face = typeLine.split("//")[0]?.trim() || "";
+  for (const separator of ["—", "–", " - "]) {
+    if (!face.includes(separator)) {
+      continue;
+    }
+    const text = face
+      .split(separator)
+      .slice(1)
+      .join(separator)
+      .replace(/,/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+    return text;
+  }
+  return "";
+}
+
+function subtypeGroupKey(card) {
+  return cardSubtypeLabel(card) || "__none__";
+}
+
+function subtypeGroupLabel(key) {
+  if (!key || key === "__none__") {
+    return "No subtype";
+  }
+  return key;
+}
+
 function roleGroupKey(card) {
   const roles = Array.isArray(card?.roles) ? card.roles : [];
   const first = roles.map((role) => String(role || "").trim()).find(Boolean);
@@ -191,6 +229,10 @@ function groupMeta(groupBy, card, setLabelFor) {
     case "type": {
       const key = typeGroupKey(card);
       return { key, label: typeGroupLabel(key) };
+    }
+    case "subtype": {
+      const key = subtypeGroupKey(card);
+      return { key, label: subtypeGroupLabel(key) };
     }
     case "role": {
       const key = roleGroupKey(card);
@@ -254,7 +296,10 @@ function compareGroupKeys(groupBy, left, right) {
       return byRank;
     }
   }
-  if (groupBy === "role" && (left === "__none__" || right === "__none__")) {
+  if (
+    (groupBy === "role" || groupBy === "subtype")
+    && (left === "__none__" || right === "__none__")
+  ) {
     if (left === "__none__") {
       return 1;
     }

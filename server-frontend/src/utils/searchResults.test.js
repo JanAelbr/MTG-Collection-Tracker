@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cardSubtypeLabel,
   colorIdentityPipsFromKey,
   displayCardValue,
   formatPowerToughness,
@@ -56,7 +57,18 @@ describe("searchResults helpers", () => {
       "rarity",
     ]);
     expect(normalizeGroupByLevels("role,role,set")).toEqual(["role", "set"]);
+    expect(normalizeGroupByLevels("type,subtypes")).toEqual(["type", "subtype"]);
     expect(normalizeGroupByLevels("none")).toEqual([]);
+  });
+
+  it("reads subtype text from type lines", () => {
+    expect(cardSubtypeLabel({ typeLine: "Creature — Elf Druid" })).toBe("Elf Druid");
+    expect(cardSubtypeLabel({ typeLine: "Enchantment — Aura" })).toBe("Aura");
+    expect(cardSubtypeLabel({ typeLine: "Artifact — Equipment" })).toBe("Equipment");
+    expect(cardSubtypeLabel({ typeLine: "Instant" })).toBe("");
+    expect(cardSubtypeLabel({
+      typeLine: "Creature — Human Wizard // Creature – Spirit",
+    })).toBe("Human Wizard");
   });
 });
 
@@ -68,11 +80,12 @@ describe("groupSearchCards", () => {
     ]);
   });
 
-  it("groups by type, role, color identity, rarity, and set", () => {
+  it("groups by type, subtype, role, color identity, rarity, and set", () => {
     const cards = [
       {
         name: "Bolt",
         cardType: "instant",
+        typeLine: "Instant",
         roles: ["removal"],
         colorIdentity: ["R"],
         rarity: "common",
@@ -81,6 +94,7 @@ describe("groupSearchCards", () => {
       {
         name: "Bear",
         cardType: "creature",
+        typeLine: "Creature — Bear",
         roles: ["ramp"],
         colorIdentity: ["G"],
         rarity: "common",
@@ -89,17 +103,43 @@ describe("groupSearchCards", () => {
       {
         name: "Sol Ring",
         cardType: "artifact",
+        typeLine: "Artifact",
         roles: [],
         colorIdentity: [],
         rarity: "uncommon",
         setCode: "C21",
       },
+      {
+        name: "Sword",
+        cardType: "artifact",
+        typeLine: "Artifact — Equipment",
+        roles: [],
+        colorIdentity: [],
+        rarity: "rare",
+        setCode: "C21",
+      },
+      {
+        name: "Pacifism",
+        cardType: "enchantment",
+        typeLine: "Enchantment — Aura",
+        roles: ["removal"],
+        colorIdentity: ["W"],
+        rarity: "common",
+        setCode: "M21",
+      },
     ];
 
     expect(groupSearchCards(cards, "type").map((group) => group.key)).toEqual([
       "creature",
+      "enchantment",
       "artifact",
       "instant",
+    ]);
+    expect(groupSearchCards(cards, "subtype").map((group) => group.label)).toEqual([
+      "Aura",
+      "Bear",
+      "Equipment",
+      "No subtype",
     ]);
     expect(groupSearchCards(cards, "role").map((group) => group.label)).toEqual([
       "Ramp",
@@ -107,6 +147,7 @@ describe("groupSearchCards", () => {
       "No role",
     ]);
     expect(groupSearchCards(cards, "colorIdentity").map((group) => group.label)).toEqual([
+      "White",
       "Red",
       "Green",
       "Colorless",
@@ -114,6 +155,7 @@ describe("groupSearchCards", () => {
     expect(groupSearchCards(cards, "rarity").map((group) => group.label)).toEqual([
       "Common",
       "Uncommon",
+      "Rare",
     ]);
     expect(groupSearchCards([
       { name: "Counterspell", colorIdentity: ["U", "B"] },

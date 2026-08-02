@@ -297,16 +297,20 @@ def _apply_all_view_extra_filters(
 
 
 def _card_matches_all_view_search(card: dict, term: str) -> bool:
-    """Matches frontend `cardMatchesSearchQuery`: collector number, name, or oracle text."""
+    """Matches frontend `cardMatchesSearchQuery`: number, name, oracle, or type line."""
     number = str(card.get("collectorNumber") or "").lower()
     padded = number.zfill(3)
     name = str(card.get("name") or "").lower()
     oracle_text = str(card.get("oracleText") or "").lower()
+    type_line = str(card.get("typeLine") or card.get("type_line") or "").lower()
+    card_type = str(card.get("cardType") or card.get("card_type") or "").lower()
     return (
         term in number
         or term in padded
         or term in name
         or term in oracle_text
+        or term in type_line
+        or term in card_type
         or term in f"#{number}"
         or term in f"#{padded}"
     )
