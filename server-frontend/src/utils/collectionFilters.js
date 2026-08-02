@@ -131,6 +131,7 @@ export function filterCollectionCards(
     foilFilter = "all",
     typeFilter = "all",
     colorFilters = [],
+    colorMode = "exact",
     searchQuery = "",
     rarityFilter = "all",
     cmcMin = null,
@@ -167,7 +168,7 @@ export function filterCollectionCards(
     result = result.filter((card) => cardMatchesCollectionTypeFilter(card, typeFilter));
   }
   if (colorFilters?.length) {
-    result = result.filter((card) => cardMatchesColorFilter(card, colorFilters));
+    result = result.filter((card) => cardMatchesColorFilter(card, colorFilters, { mode: colorMode }));
   }
   if (rarityFilter && rarityFilter !== "all") {
     result = result.filter((card) => cardMatchesCollectionRarityFilter(card, rarityFilter));

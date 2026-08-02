@@ -1,0 +1,300 @@
+/* Print Cards page — screen layout + card-sized print sheet */
+
+.print-cards-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.print-cards-page-header h1 {
+  margin: 0 0 4px;
+  font-size: 1.35rem;
+}
+
+.print-cards-page-intro,
+.print-cards-page-empty,
+.print-cards-page-error,
+.print-cards-page-muted,
+.print-cards-preview-empty {
+  margin: 0;
+  color: #666;
+  font-size: 0.92rem;
+}
+
+.print-cards-page-error {
+  color: #a33;
+}
+
+.print-cards-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.print-cards-scope {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.print-cards-mode-btn {
+  padding: 5px 10px;
+  border: 1px solid #d0d4da;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #444;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.print-cards-mode-btn.is-active {
+  background: #333;
+  border-color: #333;
+  color: #fff;
+  font-weight: 600;
+}
+
+.print-cards-page-search {
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+
+.print-cards-page-search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d0d4da;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.print-cards-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.print-cards-page-selection-count {
+  color: #555;
+  font-size: 13px;
+}
+
+.print-cards-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  min-height: 0;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .print-cards-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.print-cards-gallery {
+  min-width: 0;
+  min-height: 420px;
+}
+
+.print-cards-gallery .collection-virtual-grid {
+  max-height: calc(100vh - 220px);
+}
+
+.print-cards-queue {
+  position: sticky;
+  top: 96px;
+  padding: 12px;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.print-cards-queue-heading {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+.print-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 280px);
+  overflow: auto;
+}
+
+.print-cards-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.print-cards-list-item.is-selected {
+  border-color: #c5ccd6;
+  background: #fff;
+}
+
+.print-cards-list-checkbox {
+  flex: 0 0 auto;
+}
+
+.print-cards-list-thumb {
+  flex: 0 0 auto;
+  border-color: #d8dde5;
+  cursor: pointer;
+}
+
+.print-cards-list-item.is-selected .print-cards-list-thumb {
+  border-color: #333;
+}
+
+.print-cards-list-remove {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #666;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.print-cards-list-remove:hover,
+.print-cards-list-remove:focus-visible {
+  background: #f0f2f5;
+  color: #a33;
+  outline: none;
+}
+
+.print-cards-thumb-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: calc(100vh - 280px);
+  overflow: auto;
+}
+
+.print-cards-thumb {
+  width: 54px;
+  height: 75px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #eee;
+  cursor: pointer;
+}
+
+.print-cards-thumb:hover {
+  border-color: #888;
+}
+
+.print-cards-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.print-cards-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  font-size: 9px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Print sheet — hidden on screen, shown when printing */
+.print-cards-print-sheet {
+  display: none;
+}
+
+.print-cards-print-tile {
+  width: 63mm;
+  height: 88mm;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.print-cards-print-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.print-cards-print-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 4mm;
+  border: 0.3mm solid #999;
+  font-size: 3.5mm;
+  text-align: center;
+}
+
+@media print {
+  @page {
+    margin: 5mm;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .app-chrome,
+  .toast-stack,
+  .card-image-tooltip,
+  .print-cards-no-print {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-main {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+
+  .print-cards-page {
+    display: block;
+    gap: 0;
+  }
+
+  .print-cards-print-sheet {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .print-cards-print-sheet .print-cards-print-tile {
+    margin: 0;
+    box-shadow: none;
+  }
+}

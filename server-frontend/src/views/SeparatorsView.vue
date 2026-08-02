@@ -518,7 +518,7 @@ onMounted(async () => {
       <header class="separators-page-header">
         <h1>Separators</h1>
         <p class="separators-page-intro">
-          Generate printable storage dividers or binder inserts for your selected sets.
+          Printable storage dividers or binder inserts for selected sets.
         </p>
       </header>
 

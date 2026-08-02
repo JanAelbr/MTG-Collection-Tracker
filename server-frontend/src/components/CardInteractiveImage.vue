@@ -1,15 +1,13 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import {
   effectiveDeckOwnedQty,
   isEffectivelyOwned,
   normalizeCardMenuTarget,
   ownershipRevision,
 } from "../composables/cardContextMenu";
+import CardContextMenu from "./CardContextMenu.vue";
 import CardCopyControls from "./CardCopyControls.vue";
-import { cardFinish, cardRouteQuery } from "../utils/finishes";
-import { formatCardRoles } from "../utils/deckPower";
 
 const props = defineProps({
   src: { type: String, default: "" },
@@ -17,21 +15,21 @@ const props = defineProps({
   card: { type: Object, default: null },
   imgClass: { type: [String, Array, Object], default: "" },
   loading: { type: String, default: "lazy" },
-  showDetails: { type: Boolean, default: true },
+  /** Kept for callers; Details now lives in the context menu. */
+  showDetails: { type: Boolean, default: false },
   showZoom: { type: Boolean, default: true },
-  /** When false, hover overlay only shows zoom (and details if enabled). */
+  /** When false, hover overlay only shows zoom. */
   showCopyControls: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["finish-changed", "ownership-changed"]);
 
-const router = useRouter();
 const rootRef = ref(null);
 const isHovered = ref(false);
 const hoverPinned = ref(false);
-const overlayLocked = ref(false);
 const imageZoomOpen = ref(false);
 const copyControlsRef = ref(null);
+const contextMenu = ref({ open: false, x: 0, y: 0 });
 let leaveTimer = null;
 
 const isInteractive = computed(() => Boolean(props.card && props.src && normalizeCardMenuTarget(props.card)));
@@ -42,37 +40,21 @@ const ownedCount = computed(() => {
 const canClickToAdd = computed(
   () => props.showCopyControls && isInteractive.value && ownedCount.value === 0,
 );
-const roleLabels = computed(() => formatCardRoles(props.card?.roles || []));
-const hasRoles = computed(() => roleLabels.value.length > 0);
 const showOverlay = computed(() => {
   if (!isInteractive.value) {
     return false;
   }
-  if (!props.showZoom && !props.showDetails && !props.showCopyControls && !hasRoles.value) {
+  if (!props.showZoom && !props.showCopyControls) {
     return false;
   }
-  return isHovered.value || hoverPinned.value || overlayLocked.value;
+  return isHovered.value || hoverPinned.value;
 });
 const effectivelyOwned = computed(() => {
   ownershipRevision.value;
   return isEffectivelyOwned(props.card);
 });
 const zoomImageSrc = computed(() => props.src || props.card?.imageUri || "");
-
-watch(
-  () => [
-    props.card?.setCode,
-    props.card?.set_code,
-    props.card?.collectorNumber,
-    props.card?.collector_number,
-    props.card?.finish,
-  ],
-  () => {
-    if (!isHovered.value) {
-      return;
-    }
-  },
-);
+const canOpenContextMenu = computed(() => Boolean(normalizeCardMenuTarget(props.card)));
 
 function clearLeaveTimer() {
   if (leaveTimer) {
@@ -104,41 +86,15 @@ function onPointerLeave(event) {
   if (related instanceof Node && root?.contains(related)) {
     return;
   }
-  if (overlayLocked.value) {
-    pinHover();
-    return;
-  }
   if (
     related instanceof Element
-    && related.closest(
-      ".storage-location-picker-menu, .list-for-sale-modal-backdrop, .sell-dialog, .card-image-zoom-backdrop",
-    )
+    && related.closest(".card-image-zoom-backdrop")
   ) {
     pinHover();
     return;
   }
   clearLeaveTimer();
   leaveTimer = setTimeout(() => {
-    if (overlayLocked.value) {
-      return;
-    }
-    hoverPinned.value = false;
-    isHovered.value = false;
-  }, 220);
-}
-
-function onMenuOpenChange(isOpen) {
-  overlayLocked.value = Boolean(isOpen);
-  if (isOpen) {
-    pinHover();
-    return;
-  }
-  clearLeaveTimer();
-  leaveTimer = setTimeout(() => {
-    const root = rootRef.value;
-    if (overlayLocked.value || root?.matches(":hover")) {
-      return;
-    }
     hoverPinned.value = false;
     isHovered.value = false;
   }, 220);
@@ -166,18 +122,24 @@ function stopNavigation(event) {
   event.stopPropagation();
 }
 
-function onViewDetails(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  const target = normalizeCardMenuTarget(props.card);
-  if (!target) {
+function onContextMenu(event) {
+  if (!canOpenContextMenu.value) {
     return;
   }
-  router.push({
-    name: "card",
-    params: { setCode: target.setCode, collectorNumber: target.collectorNumber },
-    query: cardRouteQuery(cardFinish(props.card)),
-  });
+  event.preventDefault();
+  event.stopPropagation();
+  contextMenu.value = {
+    open: true,
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
+function closeContextMenu() {
+  contextMenu.value = {
+    ...contextMenu.value,
+    open: false,
+  };
 }
 
 function openImageZoom(event) {
@@ -231,6 +193,7 @@ onUnmounted(() => {
       'is-clickable-add': canClickToAdd,
     }"
     @click="onCardClick"
+    @contextmenu="onContextMenu"
     @pointerenter="onPointerEnter"
     @pointerleave="onPointerLeave"
   >
@@ -275,40 +238,13 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <div
-        v-if="hasRoles"
-        class="card-interactive-roles"
-        aria-label="Card roles"
-        @click.stop
-        @mousedown.stop="stopNavigation"
-      >
-        <span
-          v-for="label in roleLabels"
-          :key="label"
-          class="card-interactive-role"
-        >
-          {{ label }}
-        </span>
-      </div>
-
-      <button
-        v-if="showDetails"
-        type="button"
-        class="card-interactive-action card-interactive-details"
-        @click="onViewDetails"
-      >
-        Details
-      </button>
-
       <CardCopyControls
         v-if="showCopyControls"
         ref="copyControlsRef"
         :card="card"
         :visible="showOverlay"
         variant="overlay"
-        @finish-changed="emit('finish-changed', $event)"
         @ownership-changed="emit('ownership-changed')"
-        @menu-open-change="onMenuOpenChange"
       />
     </div>
 
@@ -336,5 +272,16 @@ onUnmounted(() => {
         >
       </div>
     </Teleport>
+
+    <CardContextMenu
+      v-if="contextMenu.open"
+      :open="true"
+      :card="card"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @close="closeContextMenu"
+      @ownership-changed="emit('ownership-changed')"
+      @finish-changed="emit('finish-changed', $event)"
+    />
   </div>
 </template>

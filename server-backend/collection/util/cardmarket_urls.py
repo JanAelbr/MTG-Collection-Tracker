@@ -23,6 +23,10 @@ PRIMARY_FOIL_KEYS = ("trend-foil", "avg-foil", "avg7-foil", "avg30-foil", "avg1-
 SPLIT_BLOCK_FOIL_OFFSET = 20
 # Scroll showcase and other sparse guides can leave gaps between paired products.
 MAX_PAIR_SEARCH_DISTANCE = 7
+# Adjacent finish pairs (typical Cardmarket nonfoil/foil idProduct neighbors) are
+# trusted even when expensive — an absolute trend cap would skip The One Ring and
+# similar chase cards, then wrongly latch onto a cheaper previous printing.
+NEAR_PAIR_DISTANCE = 2
 PLAUSIBLE_NONFOIL_TREND_CAP = 150.0
 # LTC "Rings of Power" Sol Ring promos each have their own Cardmarket product.
 LTC_RINGS_OF_POWER_COLLECTORS = frozenset({"408", "409", "410"})
@@ -154,6 +158,27 @@ def _is_plausible_nonfoil_product(product_id: int | None, guide: dict[int, dict]
     return trend is not None and 0 < trend <= PLAUSIBLE_NONFOIL_TREND_CAP
 
 
+def _accept_paired_nonfoil_product(
+    product_id: int | None,
+    guide: dict[int, dict],
+    *,
+    pair_distance: int | None = None,
+) -> bool:
+    """Accept a finish-pair nonfoil candidate.
+
+    Near neighbors (|delta| <= NEAR_PAIR_DISTANCE) only need nonfoil prices.
+    Farther candidates still use the absolute trend cap so foil-only Scryfall
+    links do not latch onto unrelated expensive products several IDs away.
+    """
+    if product_id is None:
+        return False
+    if not _entry_has_nonfoil_prices(guide.get(product_id)):
+        return False
+    if pair_distance is not None and abs(pair_distance) <= NEAR_PAIR_DISTANCE:
+        return True
+    return _is_plausible_nonfoil_product(product_id, guide)
+
+
 def _normalized_nonfoil_product_id(
     cardmarket_url: str | None,
     guide: dict[int, dict],
@@ -248,15 +273,50 @@ def find_paired_product_id(
         if not entry:
             continue
         if guide_entry_finish_bias(entry) == want:
-            if want == "nonfoil" and not _is_plausible_nonfoil_product(neighbor_id, guide):
+            if want == "nonfoil" and not _accept_paired_nonfoil_product(
+                neighbor_id,
+                guide,
+                pair_distance=delta,
+            ):
                 continue
             return neighbor_id
     if want == "foil":
         return _find_split_block_foil_product(product_id, guide)
     paired = _find_split_block_nonfoil_product(product_id, guide)
-    if paired is not None and _is_plausible_nonfoil_product(paired, guide):
+    if paired is not None and _accept_paired_nonfoil_product(
+        paired,
+        guide,
+        pair_distance=SPLIT_BLOCK_FOIL_OFFSET,
+    ):
         return paired
     return None
+
+
+def _prefer_foil_paired_nonfoil_url(
+    nonfoil_url: str | None,
+    foil_url: str | None,
+    guide: dict[int, dict],
+) -> tuple[str | None, str | None]:
+    """When foil points at a foil-only product, prefer its near nonfoil pair.
+
+    Fixes cases where an earlier pass latched onto a cheaper previous printing
+    (LTR #697 The One Ring → Mithril Coat) because expensive adjacent nonfoils
+    were rejected by the absolute trend cap.
+    """
+    foil_id = parse_id_product(foil_url)
+    if foil_id is None:
+        return nonfoil_url, foil_url
+    if guide_entry_finish_bias(guide.get(foil_id)) != "foil":
+        return nonfoil_url, foil_url
+    paired = find_paired_product_id(foil_id, guide, FINISH_NONFOIL)
+    if paired is None:
+        return nonfoil_url, foil_url
+    stored_id = parse_id_product(nonfoil_url)
+    if stored_id == paired:
+        return nonfoil_url, foil_url
+    if stored_id is not None and abs(stored_id - foil_id) <= abs(paired - foil_id):
+        return nonfoil_url, foil_url
+    return build_product_url(paired), foil_url
 
 
 def normalize_cardmarket_url_columns(
@@ -278,11 +338,7 @@ def normalize_cardmarket_url_columns(
             if bias == "foil":
                 foil_url = nonfoil_url
                 paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
-                nonfoil_url = (
-                    build_product_url(paired)
-                    if paired is not None and _is_plausible_nonfoil_product(paired, guide)
-                    else None
-                )
+                nonfoil_url = build_product_url(paired) if paired is not None else None
             elif bias == "nonfoil":
                 paired = find_paired_product_id(product_id, guide, FINISH_FOIL)
                 if paired is not None:
@@ -300,11 +356,17 @@ def normalize_cardmarket_url_columns(
                 foil_url = build_product_url(paired) if paired else None
             elif bias == "foil":
                 paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
-                if paired is not None and _is_plausible_nonfoil_product(paired, guide):
+                if paired is not None:
                     nonfoil_url = build_product_url(paired)
             elif bias == "both":
                 # Promo/dual-finish mis-stored as foil-only (e.g. PF23 from foil:true).
                 nonfoil_url = foil_url
+    else:
+        nonfoil_url, foil_url = _prefer_foil_paired_nonfoil_url(
+            nonfoil_url,
+            foil_url,
+            guide,
+        )
 
     return _apply_finish_flag_url_constraints(
         nonfoil_url,
@@ -416,7 +478,7 @@ def cardmarket_url_for_finish(
             bias = guide_entry_finish_bias(guide.get(product_id))
             if bias == "foil":
                 paired = find_paired_product_id(product_id, guide, FINISH_NONFOIL)
-                if paired is not None and _is_plausible_nonfoil_product(paired, guide):
+                if paired is not None:
                     return build_product_url(paired)
             elif bias in ("nonfoil", "both", "unknown"):
                 return nonfoil_url

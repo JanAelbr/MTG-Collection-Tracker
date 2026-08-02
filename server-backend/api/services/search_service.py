@@ -14,10 +14,12 @@ from api.services.reports_service import (
 from api.services import settings_service
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 from util.card_metadata import (
+    DEFAULT_COLLECTION_COLOR_MODE,
     card_matches_collection_cmc_filter,
     card_matches_collection_price_filter,
     card_matches_collection_rarity_filter,
     card_matches_collection_stat_filter,
+    parse_collection_color_mode,
 )
 from util.set_catalog import load_sets_catalog
 
@@ -145,6 +147,7 @@ def _sets_matching_search_filters(
     creature_type_search: str = "",
     keyword_search: str = "",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     type_filter: str = "all",
     role_filters: list[str] | None = None,
     owned_filter: str = "all",
@@ -183,12 +186,31 @@ def _sets_matching_search_filters(
 
     colors = list(color_filters or [])
     if colors:
+        # Exact mode prefers color identity; includes mode uses casting colors.
+        # SQL stays inclusive OR (and may over-fetch); Python applies exact equality.
+        use_identity = parse_collection_color_mode(color_mode) == "exact"
         color_parts: list[str] = []
         for color in colors:
             if color == "C":
-                color_parts.append(
-                    "(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
-                )
+                if use_identity:
+                    color_parts.append(
+                        "("
+                        "c.color_identity IS NULL OR TRIM(c.color_identity) = ''"
+                        " OR c.color_identity = '[]'"
+                        " OR ("
+                        "(c.color_identity IS NULL OR TRIM(c.color_identity) = '')"
+                        " AND (c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
+                        ")"
+                        ")"
+                    )
+                else:
+                    color_parts.append(
+                        "(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
+                    )
+            elif use_identity:
+                color_parts.append("(c.color_identity LIKE ? OR c.colors LIKE ?)")
+                params.append(f'%"{color}"%')
+                params.append(f'%"{color}"%')
             else:
                 color_parts.append("c.colors LIKE ?")
                 params.append(f'%"{color}"%')
@@ -234,6 +256,7 @@ def _resolve_search_pool_set_codes(
     creature_type_search: str = "",
     keyword_search: str = "",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     type_filter: str = "all",
     role_filters: list[str] | None = None,
     owned_filter: str = "all",
@@ -285,6 +308,7 @@ def _resolve_search_pool_set_codes(
         creature_type_search=creature_term,
         keyword_search=keyword_search,
         color_filters=colors,
+        color_mode=color_mode,
         type_filter=normalized_type,
         role_filters=roles,
         owned_filter=normalized_owned,
@@ -524,6 +548,7 @@ def _filter_enriched_cards(
     keyword_search: str = "",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
@@ -543,6 +568,7 @@ def _filter_enriched_cards(
         foil_filter=foil_filter,
         type_filter=type_filter,
         color_filters=color_filters or [],
+        color_mode=color_mode,
         storage_filters=storage_filters or [],
     )
     filtered = [
@@ -613,6 +639,7 @@ def _filtered_pool(
     keyword_search: str = "",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
@@ -637,6 +664,7 @@ def _filtered_pool(
             creature_type_search=creature_type_search,
             keyword_search=keyword_search,
             color_filters=color_filters,
+            color_mode=color_mode,
             type_filter=type_filter,
             role_filters=role_filters,
             owned_filter=owned_filter,
@@ -660,6 +688,7 @@ def _filtered_pool(
         keyword_search=keyword_search,
         type_filter=type_filter,
         color_filters=color_filters,
+        color_mode=color_mode,
         color_identity=color_identity,
         rarity_filter=rarity_filter,
         cmc_min=cmc_min,
@@ -1019,6 +1048,7 @@ def list_name_variants(
     foil_filter: str = "all",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
@@ -1038,6 +1068,7 @@ def list_name_variants(
     filter_kwargs = {
         "type_filter": type_filter,
         "color_filters": color_filters or [],
+        "color_mode": color_mode,
         "color_identity": color_identity,
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,
@@ -1120,6 +1151,7 @@ def search_cards(
     foil_filter: str = "all",
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
     color_identity: list[str] | None = None,
     rarity_filter: str = "all",
     cmc_min: float | None = None,
@@ -1145,6 +1177,8 @@ def search_cards(
     keyword_terms = parse_keyword_search_terms(keyword_search)
     keyword_term = ", ".join(keyword_terms)
     selected_roles = list(role_filters or [])
+    selected_colors = list(color_filters or [])
+    parsed_color_mode = parse_collection_color_mode(color_mode)
     normalized_type = (type_filter or "all").strip().lower() or "all"
     empty_payload = {
         "search": name_term,
@@ -1169,13 +1203,15 @@ def search_cards(
         and not creature_type_term
         and not keyword_terms
         and not selected_roles
+        and not selected_colors
         and normalized_type == "all"
     ):
         return empty_payload
 
     filter_kwargs = {
         "type_filter": type_filter,
-        "color_filters": color_filters or [],
+        "color_filters": selected_colors,
+        "color_mode": parsed_color_mode,
         "color_identity": color_identity,
         "rarity_filter": rarity_filter,
         "cmc_min": cmc_min,

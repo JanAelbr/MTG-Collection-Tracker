@@ -7,13 +7,14 @@ import {
   hasStrategyPrices,
   LOWEST_STRATEGY_ID,
   strategyPriceRows,
+  TREND_STRATEGY_ID,
 } from "../utils/priceStrategies";
 
 const props = defineProps({
   card: { type: Object, default: null },
   value: { type: Number, default: null },
   tag: { type: String, default: "span" },
-  /** @deprecated Unused — galleries always show lowest + best other. */
+  /** @deprecated Unused — galleries always show lowest + trend. */
   priceStrategy: { type: String, default: "" },
 });
 
@@ -65,12 +66,9 @@ const strategyRows = computed(() => {
   if (high == null) {
     return rows;
   }
-  // Highlight lowest and whichever other strategy matches the displayed high.
+  // Highlight lowest and trend when both appear in the gallery pair.
   return rows.map((row) => {
-    if (row.id === LOWEST_STRATEGY_ID) {
-      return { ...row, isActive: true };
-    }
-    if (row.value != null && Number(row.value) === high) {
+    if (row.id === LOWEST_STRATEGY_ID || row.id === TREND_STRATEGY_ID) {
       return { ...row, isActive: true };
     }
     return { ...row, isActive: false };

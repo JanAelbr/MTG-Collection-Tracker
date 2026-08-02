@@ -68,6 +68,9 @@ COLLECTION_RARITY_FILTERS = frozenset({
 COLLECTION_TYPE_GROUPS = COLLECTION_FILTER_TYPES | {"others"}
 
 COLLECTION_COLOR_FILTERS = frozenset({"W", "U", "B", "R", "G", "C"})
+COLLECTION_COLOR_MODES = frozenset({"exact", "includes"})
+DEFAULT_COLLECTION_COLOR_MODE = "exact"
+_WUBRG_PIPS = frozenset({"W", "U", "B", "R", "G"})
 
 
 def normalize_card_colors(colors: list[str] | tuple[str, ...]) -> list[str]:
@@ -95,6 +98,11 @@ def parse_collection_color_filters(colors: str | None) -> list[str]:
     ]
 
 
+def parse_collection_color_mode(mode: str | None) -> str:
+    text = str(mode or "").strip().lower()
+    return text if text in COLLECTION_COLOR_MODES else DEFAULT_COLLECTION_COLOR_MODE
+
+
 def card_matches_collection_type_filter(card: dict, type_filter: str) -> bool:
     if not type_filter or type_filter == "all":
         return True
@@ -102,9 +110,45 @@ def card_matches_collection_type_filter(card: dict, type_filter: str) -> bool:
     return card_type == str(type_filter).strip().lower()
 
 
-def card_matches_collection_color_filter(card: dict, color_filters: list[str]) -> bool:
+def _card_color_identity_pips(card: dict) -> list[str]:
+    raw = (
+        card.get("colorIdentity")
+        or card.get("color_identity")
+        or card.get("colors")
+        or []
+    )
+    return sorted({
+        str(color).upper()
+        for color in raw
+        if str(color).strip() and str(color).upper() in _WUBRG_PIPS
+    })
+
+
+def _card_matches_exact_color_identity(card: dict, color_filters: list[str]) -> bool:
+    """Match when selected pips equal the card's color identity set."""
+    identity = _card_color_identity_pips(card)
+    wants_colorless = "C" in color_filters
+    pip_filters = sorted({
+        color for color in color_filters if color in _WUBRG_PIPS
+    })
+    if wants_colorless and not pip_filters:
+        return len(identity) == 0
+    if not pip_filters:
+        return True
+    return identity == pip_filters
+
+
+def card_matches_collection_color_filter(
+    card: dict,
+    color_filters: list[str],
+    *,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
+) -> bool:
     if not color_filters:
         return True
+    mode = parse_collection_color_mode(color_mode)
+    if mode == "exact":
+        return _card_matches_exact_color_identity(card, color_filters)
     colors = card.get("colors") or []
     if "C" in color_filters and not colors:
         return True

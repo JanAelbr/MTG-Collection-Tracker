@@ -8,6 +8,7 @@ const PRICE_STRATEGY_DESCRIPTIONS = {
 };
 
 export const LOWEST_STRATEGY_ID = "low";
+export const TREND_STRATEGY_ID = "trend";
 
 export function priceStrategyDescription(strategyId) {
   return PRICE_STRATEGY_DESCRIPTIONS[strategyId] || "";
@@ -43,13 +44,24 @@ function numericStrategyEntries(card) {
   return entries;
 }
 
+function numericStrategyValue(card, strategyId) {
+  const value = valueForStrategy(card, strategyId);
+  if (value == null || Number.isNaN(Number(value))) {
+    return null;
+  }
+  return Number(value);
+}
+
 /**
- * Gallery price pair: lowest listing first, then the highest of the other strategies.
- * If lowest is missing, or it is already the highest value, secondary is null (single number).
+ * Gallery price pair: lowest listing first, then trend when trend is higher.
+ * If either side is missing, or lowest is already >= trend, secondary is null
+ * (single number).
  */
 export function galleryPricePair(card) {
-  const entries = numericStrategyEntries(card);
-  if (!entries.length) {
+  const lowest = numericStrategyValue(card, LOWEST_STRATEGY_ID);
+  const trend = numericStrategyValue(card, TREND_STRATEGY_ID);
+
+  if (lowest == null && trend == null) {
     const fallback = card?.currentValue ?? card?.current_value ?? null;
     if (fallback == null || Number.isNaN(Number(fallback))) {
       return { low: null, high: null };
@@ -58,24 +70,16 @@ export function galleryPricePair(card) {
     return { low: n, high: null };
   }
 
-  const lowestEntry = entries.find((entry) => entry.id === LOWEST_STRATEGY_ID);
-  const others = entries.filter((entry) => entry.id !== LOWEST_STRATEGY_ID);
-  const otherHigh = others.length
-    ? Math.max(...others.map((entry) => entry.value))
-    : null;
-
-  if (lowestEntry == null) {
-    return { low: otherHigh, high: null };
+  if (lowest == null) {
+    return { low: trend, high: null };
   }
-
-  const lowest = lowestEntry.value;
-  if (otherHigh == null || lowest >= otherHigh) {
+  if (trend == null || lowest >= trend) {
     return { low: lowest, high: null };
   }
-  return { low: lowest, high: otherHigh };
+  return { low: lowest, high: trend };
 }
 
-/** Single number for totals/sorting: secondary (high) when shown, else the lone displayed value. */
+/** Single number for totals/sorting: trend when shown in the pair, else the lone value. */
 export function galleryDisplayValue(card) {
   const { low, high } = galleryPricePair(card);
   return high ?? low;
@@ -108,7 +112,7 @@ export function applyStrategyToCards(cards, strategyId) {
   return (cards || []).map((card) => applyStrategyToCard(card, strategyId));
 }
 
-/** Apply gallery display value (range high side) as currentValue for totals/sorting. */
+/** Apply gallery display value (trend when paired) as currentValue for totals/sorting. */
 export function applyGalleryDisplayToCard(card) {
   if (!card) {
     return card;

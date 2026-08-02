@@ -18,6 +18,7 @@ import { formatSetDropdownLabel } from "../utils/format";
 import { parseOptionalNumber } from "../utils/collectionFilters";
 import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
+import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 
 const PAGE_SIZE = 25;
 const SEARCH_SET_CODE = "All";
@@ -49,6 +50,7 @@ const ownedFilter = ref("owned");
 const foilFilter = ref("all");
 const typeFilter = ref("all");
 const colorFilters = ref([]);
+const colorMode = ref(getStoredColorFilterMode());
 const storageFilters = ref([]);
 const roleFilters = ref([]);
 const rarityFilter = ref("all");
@@ -80,6 +82,7 @@ const hasActiveSearch = computed(() => Boolean(
   || creatureTypeQuery.value.trim()
   || keywordQuery.value.trim()
   || roleFilters.value.length
+  || colorFilters.value.length
   || typeFilter.value !== "all",
 ));
 const isListView = computed(() => searchViewMode.value === "list");
@@ -152,6 +155,7 @@ function searchApiParams() {
     foilFilter: "all",
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     storageFilters: storageFilters.value,
     roleFilters: roleFilters.value,
     rarityFilter: rarityFilter.value,
@@ -186,6 +190,7 @@ function syncFiltersFromRoute() {
   foilFilter.value = "all";
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...filters.colorFilters];
+  colorMode.value = filters.colorMode || getStoredColorFilterMode();
   storageFilters.value = [...filters.storageFilters];
   roleFilters.value = [...filters.roleFilters];
   searchQuery.value = filters.searchQuery;
@@ -232,6 +237,7 @@ function syncSearchRoute() {
       foilFilter: "all",
       typeFilter: typeFilter.value,
       colorFilters: colorFilters.value,
+      colorMode: colorMode.value,
       storageFilters: storageFilters.value,
       searchQuery: searchQuery.value.trim(),
       textSearchQuery: textSearchQuery.value.trim(),
@@ -287,6 +293,7 @@ async function fetchSearchPage(pageNum) {
     && !creatureTypeTerm
     && !keywordTerm
     && !roleFilters.value.length
+    && !colorFilters.value.length
     && typeFilter.value === "all"
   ) {
     return null;
@@ -478,6 +485,15 @@ function toggleColorFilter(color) {
 
 function clearColorFilters() {
   colorFilters.value = [];
+}
+
+function setColorMode(mode) {
+  const next = mode === "includes" ? "includes" : "exact";
+  if (colorMode.value === next) {
+    return;
+  }
+  colorMode.value = next;
+  storeColorFilterMode(next);
 }
 
 function toggleStorageFilter(slug) {
@@ -788,7 +804,7 @@ async function onArtOwnershipChanged() {
   }
 }
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, roleFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode, searchSort, searchSortDir], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, colorMode, storageFilters, roleFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode, searchSort, searchSortDir], () => {
   if (!routeSyncReady.value) {
     return;
   }
@@ -1127,6 +1143,7 @@ onMounted(async () => {
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :color-mode="colorMode"
           :storage-filters="storageFilters"
           :role-filters="roleFilters"
           :rarity-filter="rarityFilter"
@@ -1148,6 +1165,7 @@ onMounted(async () => {
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @update:color-mode="setColorMode"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
           @set-storage-filters="setStorageFilters"
@@ -1177,6 +1195,7 @@ onMounted(async () => {
         :foil-filter="foilFilter"
         :type-filter="typeFilter"
         :color-filters="colorFilters"
+        :color-mode="colorMode"
         :storage-filters="storageFilters"
         :role-filters="roleFilters"
         :rarity-filter="rarityFilter"
@@ -1197,6 +1216,7 @@ onMounted(async () => {
         @type-filter-change="onTypeFilterChange"
         @toggle-color-filter="toggleColorFilter"
         @clear-color-filters="clearColorFilters"
+        @update:color-mode="setColorMode"
         @toggle-storage-filter="toggleStorageFilter"
         @clear-storage-filters="clearStorageFilters"
         @set-storage-filters="setStorageFilters"

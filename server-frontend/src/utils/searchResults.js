@@ -32,7 +32,7 @@ export function formatTypeLabel(card) {
   return primary || typeLine;
 }
 
-/** Gallery-style value: lowest listing, then best other strategy (or a single number). */
+/** Gallery-style value: lowest listing, then trend when higher (or a single number). */
 export function displayCardValue(card) {
   const { low, high } = galleryPricePair(card);
   if (low == null) {

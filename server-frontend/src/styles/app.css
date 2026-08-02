@@ -576,6 +576,12 @@ body {
   box-shadow: 0 0 0 2px rgba(124, 179, 66, 0.12);
 }
 
+.filter-sidebar-edit-link.active {
+  border-color: #7cb342;
+  background: #eef7e6;
+  color: #2e7d32;
+}
+
 .filter-sidebar-edit-icon {
   width: 13px;
   height: 13px;
@@ -2217,13 +2223,36 @@ body {
   overflow: hidden;
 }
 
-.collection-page.reports-page .filter-sidebar {
+.collection-page.reports-page .filter-sidebar,
+.collection-page.reports-page .art-style-rules-sidebar {
   position: sticky;
   top: 0;
   max-height: 100%;
   height: auto;
   align-self: stretch;
   overflow: auto;
+}
+
+.collection-page.reports-page .art-style-rules-sidebar {
+  flex: 0 0 520px;
+  width: 520px;
+  --filter-sidebar-width: 520px;
+}
+
+.collection-page.reports-page .art-style-rules-sidebar .art-style-rules-panel {
+  margin: 0;
+  padding: 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.collection-page.reports-page .art-style-rules-sidebar .art-style-rules-help {
+  max-width: none;
+  font-size: 12px;
 }
 
 .collection-page.reports-page .page-with-sidebar-main {
@@ -2245,8 +2274,7 @@ body {
 }
 
 .collection-page.reports-page .collection-gallery-panel > .collection-all-toolbar,
-.collection-page.reports-page .collection-gallery-panel > .collection-sync-hint,
-.collection-page.reports-page .collection-gallery-panel > .art-style-rules-panel {
+.collection-page.reports-page .collection-gallery-panel > .collection-sync-hint {
   flex: 0 0 auto;
 }
 
@@ -3625,9 +3653,7 @@ body {
   width: 100%;
 }
 
-.card-interactive-overlay .card-copy-controls--overlay .card-interactive-owned,
-.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copies,
-.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy {
+.card-interactive-overlay .card-copy-controls--overlay .card-interactive-owned {
   align-items: center;
   width: min(100%, 13rem);
 }
@@ -3639,12 +3665,6 @@ body {
 
 .card-interactive-overlay .card-copy-controls--overlay .card-copy-controls-owned-row {
   justify-content: center;
-  width: 100%;
-}
-
-.card-interactive-overlay .card-copy-controls--overlay .card-interactive-copy-controls {
-  justify-content: center;
-  flex-wrap: nowrap;
   width: 100%;
 }
 
@@ -4595,33 +4615,6 @@ body {
   background: #fff;
 }
 
-.card-interactive-roles {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px;
-  max-width: 100%;
-  padding: 0 4px;
-  margin-top: 28px;
-}
-
-.card-interactive-role {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #1a2330;
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .card-interactive-owned,
 .card-interactive-finish,
 .card-interactive-copies {
@@ -4651,6 +4644,104 @@ body {
 .card-interactive-sell-btn {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.card-context-menu {
+  position: fixed;
+  z-index: 12000;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #d8dde5;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(20, 28, 40, 0.18);
+  color: #222;
+}
+
+.card-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-context-menu-item:hover,
+.card-context-menu-item:focus-visible {
+  background: #f1f4f8;
+  outline: none;
+}
+
+.card-context-menu-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: #e6ebf1;
+}
+
+.card-context-menu-finish {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px 8px;
+}
+
+.card-context-menu-finish-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-context-menu-finish-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: #445;
+}
+
+.card-context-menu-stepper .card-interactive-step {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #f4f6f9;
+  color: #222;
+  border: 1px solid #d5dae2;
+}
+
+.card-context-menu-stepper .card-interactive-count {
+  min-width: 1.4rem;
+  color: #222;
+  font-weight: 650;
+  text-align: center;
+}
+
+.card-context-menu-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-context-menu-copy .browse-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.card-context-menu-status {
+  margin: 4px 6px 2px;
+  font-size: 12px;
+  color: #666;
+}
+
+.card-context-menu-status.is-error {
+  color: #c62828;
 }
 
 .finish-toggle-btn {
@@ -6233,6 +6324,14 @@ button.card-variant {
     --filter-sidebar-width: 100%;
   }
 
+  .art-style-rules-sidebar {
+    position: static;
+    width: 100% !important;
+    flex: none;
+    max-height: none;
+    --filter-sidebar-width: 100%;
+  }
+
   .filter-sidebar--collapsed {
     width: 100% !important;
     --filter-sidebar-width: 100%;
@@ -6316,6 +6415,10 @@ button.card-variant {
   gap: 8px;
   font-size: 13px;
   color: #444;
+}
+
+.collection-color-mode-toggle {
+  margin-top: 8px;
 }
 
 .manager-price-health-count {

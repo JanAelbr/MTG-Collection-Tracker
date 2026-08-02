@@ -18,6 +18,11 @@ const collectionSubnav = [
   { to: "/stats", label: "Stats" },
 ];
 
+const printSubnav = [
+  { to: "/print/cards", label: "Cards" },
+  { to: "/print/separators", label: "Separators" },
+];
+
 const navItems = [
   { to: "/", label: "Favourites", matchPrefix: false },
   {
@@ -28,7 +33,12 @@ const navItems = [
   },
   { to: "/sets", label: "Sets", matchPrefix: false },
   { to: "/storage", label: "Storage", matchPrefix: false },
-  { to: "/separators", label: "Separators", matchPrefix: false },
+  {
+    to: "/print/cards",
+    label: "Print",
+    matchPrefix: "/print",
+    subnav: printSubnav,
+  },
   { to: "/sell", label: "Sell", matchPrefix: false },
   { to: "/scan", label: "Scan", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
@@ -38,6 +48,18 @@ const navItems = [
 const showCollectionSubnav = computed(() =>
   route.path.startsWith("/collection") || route.path === "/stats",
 );
+
+const showPrintSubnav = computed(() => route.path.startsWith("/print"));
+
+const activeSubnav = computed(() => {
+  if (showCollectionSubnav.value) {
+    return { items: collectionSubnav, label: "Collection views" };
+  }
+  if (showPrintSubnav.value) {
+    return { items: printSubnav, label: "Print views" };
+  }
+  return null;
+});
 
 const showSetGalleryFilter = computed(() => showCollectionSubnav.value);
 
@@ -89,6 +111,9 @@ function navLinkTo(item) {
 }
 
 function subnavLinkTo(subItem) {
+  if (subItem.to.startsWith("/print/")) {
+    return subItem.to;
+  }
   if (subItem.to === "/stats") {
     return {
       path: "/stats",
@@ -143,11 +168,11 @@ onMounted(() => {
       </header>
 
       <nav
-        v-if="showCollectionSubnav"
+        v-if="activeSubnav"
         class="app-subnav"
-        aria-label="Collection views"
+        :aria-label="activeSubnav.label"
       >
-        <template v-for="(subItem, index) in collectionSubnav" :key="subItem.to">
+        <template v-for="(subItem, index) in activeSubnav.items" :key="subItem.to">
           <RouterLink
             :to="subnavLinkTo(subItem)"
             class="app-subnav-link"

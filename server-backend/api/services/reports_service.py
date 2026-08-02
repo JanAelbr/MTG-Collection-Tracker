@@ -26,6 +26,7 @@ from util.card_metadata import (
     card_matches_collection_type_filter,
     card_metadata_api,
     parse_collection_color_filters,
+    parse_collection_color_mode,
 )
 from util.card_name_roles import load_card_name_roles_map
 from util.price_history import (
@@ -91,6 +92,7 @@ def list_report_cards(
     foil_filter: str = "all",
     type_filter: str = "all",
     color_filters: str = "",
+    color_mode: str = "exact",
     compare_date: str | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
     search: str = "",
@@ -123,6 +125,7 @@ def list_report_cards(
         raise ReportsError("Invalid type filter")
 
     parsed_colors = parse_collection_color_filters(color_filters)
+    parsed_color_mode = parse_collection_color_mode(color_mode)
     use_family = bool(family) and (set_code or "").strip().upper() not in {"", "ALL"}
 
     settings = settings_service.get_settings(conn)
@@ -148,6 +151,7 @@ def list_report_cards(
         foil_filter="all",
         type_filter="all",
         color_filters=[],
+        color_mode=parsed_color_mode,
     )
     filtered = _apply_filters(
         scope_cards,
@@ -158,6 +162,7 @@ def list_report_cards(
         foil_filter=normalized_foil,
         type_filter=normalized_type,
         color_filters=parsed_colors,
+        color_mode=parsed_color_mode,
         storage_filters=storage_filters or [],
     )
     filtered = _apply_all_view_extra_filters(
@@ -758,6 +763,7 @@ def _apply_filters(
     foil_filter: str,
     type_filter: str = "all",
     color_filters: list[str] | None = None,
+    color_mode: str = "exact",
     storage_filters: list[str] | None = None,
     family: bool = False,
 ) -> list[dict]:
@@ -783,9 +789,14 @@ def _apply_filters(
             if card_matches_collection_type_filter(card, type_filter)
         ]
     if color_filters:
+        parsed_mode = parse_collection_color_mode(color_mode)
         result = [
             card for card in result
-            if card_matches_collection_color_filter(card, color_filters)
+            if card_matches_collection_color_filter(
+                card,
+                color_filters,
+                color_mode=parsed_mode,
+            )
         ]
     if storage_filters:
         result = [

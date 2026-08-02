@@ -95,15 +95,42 @@ export function collectDeckCardTypes(cards) {
   });
 }
 
-export function cardMatchesColorFilter(card, selectedColors) {
+export function cardMatchesColorFilter(card, selectedColors, { mode = "exact" } = {}) {
   if (!selectedColors?.length) {
     return true;
   }
-  const colors = card?.colors || [];
-  if (selectedColors.includes("C") && colors.length === 0) {
+  if (mode === "includes") {
+    const colors = card?.colors || [];
+    if (selectedColors.includes("C") && colors.length === 0) {
+      return true;
+    }
+    return selectedColors.some((color) => color !== "C" && colors.includes(color));
+  }
+  const identity = [
+    ...new Set(
+      (card?.colorIdentity?.length ? card.colorIdentity : (card?.colors || []))
+        .map((color) => String(color || "").toUpperCase())
+        .filter((color) => color === "W" || color === "U" || color === "B" || color === "R" || color === "G"),
+    ),
+  ].sort();
+  const wantsColorless = selectedColors.includes("C");
+  const pipFilters = [
+    ...new Set(
+      selectedColors.filter(
+        (color) => color === "W" || color === "U" || color === "B" || color === "R" || color === "G",
+      ),
+    ),
+  ].sort();
+  if (wantsColorless && !pipFilters.length) {
+    return identity.length === 0;
+  }
+  if (!pipFilters.length) {
     return true;
   }
-  return selectedColors.some((color) => color !== "C" && colors.includes(color));
+  if (identity.length !== pipFilters.length) {
+    return false;
+  }
+  return identity.every((color, index) => color === pipFilters[index]);
 }
 
 export function cardMatchesTypeFilter(card, typeFilter) {
@@ -185,7 +212,7 @@ export function cardMatchesOwnershipFilter(card, ownershipFilter = "all") {
 export function filterDeckCards(cards, { typeFilter = "all", colorFilters = [], ownershipFilter = "all" } = {}) {
   return (cards || []).filter(
     (card) => cardMatchesTypeFilter(card, typeFilter)
-      && cardMatchesColorFilter(card, colorFilters)
+      && cardMatchesColorFilter(card, colorFilters, { mode: "includes" })
       && cardMatchesOwnershipFilter(card, ownershipFilter),
   );
 }

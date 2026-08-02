@@ -60,8 +60,17 @@ import { SEARCH_ROLE_OPTIONS } from "./deckPower";
 
 const ALL_CARDS_TYPE_FILTERS = COLLECTION_TYPE_FILTER_VALUES;
 const ALL_CARDS_COLOR_FILTERS = new Set(["W", "U", "B", "R", "G", "C"]);
+const ALL_CARDS_COLOR_MODES = new Set(["exact", "includes"]);
 const ALL_CARDS_RARITY_FILTERS = COLLECTION_RARITY_FILTER_VALUES;
 const SEARCH_ROLE_FILTERS = new Set(SEARCH_ROLE_OPTIONS.map((role) => role.id));
+
+function parseColorModeFromRoute(route) {
+  const modeParam = route.query?.colorMode;
+  if (typeof modeParam === "string" && ALL_CARDS_COLOR_MODES.has(modeParam)) {
+    return modeParam;
+  }
+  return null;
+}
 
 function parseStorageFiltersFromRoute(route) {
   const storageParam = route.query?.storage;
@@ -154,6 +163,7 @@ export function rolesFiltersFromRoute(route) {
       .map((value) => value.trim().toUpperCase())
       .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
     : [];
+  const colorMode = parseColorModeFromRoute(route);
 
   const rarityParam = route.query?.rarity;
   const rarityFilter = typeof rarityParam === "string" && ALL_CARDS_RARITY_FILTERS.has(rarityParam)
@@ -171,6 +181,7 @@ export function rolesFiltersFromRoute(route) {
     foilFilter,
     typeFilter,
     colorFilters,
+    colorMode,
     rarityFilter,
     searchQuery,
     cmcMin: parseOptionalNumber(route.query?.cmcMin),
@@ -190,6 +201,7 @@ export function rolesRouteQuery({
   foilFilter = "all",
   typeFilter = "all",
   colorFilters = [],
+  colorMode = "exact",
   rarityFilter = "all",
   searchQuery = "",
   cmcMin = null,
@@ -223,6 +235,9 @@ export function rolesRouteQuery({
   }
   if (colorFilters?.length) {
     query.colors = colorFilters.join(",");
+  }
+  if (colorMode === "includes") {
+    query.colorMode = "includes";
   }
   if (rarityFilter !== "all") {
     query.rarity = rarityFilter;
@@ -283,6 +298,7 @@ export function allCardsFiltersFromRoute(route) {
       .map((value) => value.trim().toUpperCase())
       .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
     : [];
+  const colorMode = parseColorModeFromRoute(route);
 
   const searchParam = route.query?.q;
   const searchQuery = typeof searchParam === "string" ? searchParam.trim() : "";
@@ -317,6 +333,7 @@ export function allCardsFiltersFromRoute(route) {
     page,
     typeFilter,
     colorFilters,
+    colorMode,
     searchQuery,
     rarityFilter,
     cmcMin,
@@ -340,6 +357,7 @@ export function allCardsRouteQuery({
   foilFilter = "all",
   typeFilter = "all",
   colorFilters = [],
+  colorMode = "exact",
   sort = "value",
   sortDir = "desc",
   page = 1,
@@ -368,6 +386,9 @@ export function allCardsRouteQuery({
   }
   if (colorFilters.length) {
     query.colors = colorFilters.join(",");
+  }
+  if (colorMode === "includes") {
+    query.colorMode = "includes";
   }
   if (searchQuery) {
     query.q = searchQuery;
@@ -478,6 +499,7 @@ export function searchFiltersFromRoute(route) {
       .map((value) => value.trim().toUpperCase())
       .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
     : [];
+  const colorMode = parseColorModeFromRoute(route);
 
   const nameParam = route.query?.q;
   const searchQuery = typeof nameParam === "string" ? nameParam.trim() : "";
@@ -518,6 +540,7 @@ export function searchFiltersFromRoute(route) {
     page,
     typeFilter,
     colorFilters,
+    colorMode,
     searchQuery,
     textSearchQuery,
     creatureTypeQuery,
@@ -542,6 +565,7 @@ export function searchRouteQuery({
   foilFilter = "all",
   typeFilter = "all",
   colorFilters = [],
+  colorMode = "exact",
   searchQuery = "",
   textSearchQuery = "",
   creatureTypeQuery = "",
@@ -584,6 +608,9 @@ export function searchRouteQuery({
   }
   if (colorFilters.length) {
     query.colors = colorFilters.join(",");
+  }
+  if (colorMode === "includes") {
+    query.colorMode = "includes";
   }
   if (rarityFilter !== "all") {
     query.rarity = rarityFilter;

@@ -27,6 +27,8 @@ const props = defineProps({
   foilFilter: { type: String, default: "all" },
   typeFilter: { type: String, default: "all" },
   colorFilters: { type: Array, default: () => [] },
+  /** exact: selected pips must equal color identity; includes: any selected casting color */
+  colorMode: { type: String, default: "exact" },
   storageFilters: { type: Array, default: () => [] },
   roleFilters: { type: Array, default: () => [] },
   rarityFilter: { type: String, default: "all" },
@@ -52,6 +54,12 @@ const props = defineProps({
   priceIssueCount: { type: Number, default: 0 },
   showPriceHealth: { type: Boolean, default: false },
   isTableView: { type: Boolean, default: false },
+  /** When false, hide the Art style filter section (e.g. all-sets scope). */
+  showArtStyleSection: { type: Boolean, default: true },
+  /** When true, the art-style edit control is shown as active. */
+  artStyleEditing: { type: Boolean, default: false },
+  /** When false, hide the pencil that opens art-style rules editing. */
+  showArtStyleEdit: { type: Boolean, default: true },
 });
 
 const emit = defineEmits([
@@ -61,6 +69,7 @@ const emit = defineEmits([
   "type-filter-change",
   "toggle-color-filter",
   "clear-color-filters",
+  "update:colorMode",
   "toggle-storage-filter",
   "clear-storage-filters",
   "set-storage-filters",
@@ -133,15 +142,17 @@ onMounted(async () => {
 
 <template>
   <div class="collection-all-filters">
-    <div v-if="!isAllSetsView" class="filter-sidebar-section">
+    <div v-if="showArtStyleSection && !isAllSetsView" class="filter-sidebar-section">
       <div class="filter-sidebar-label-row">
         <p class="filter-sidebar-label">Art style</p>
         <button
-          v-if="isAllView && !isAllSetsView"
+          v-if="showArtStyleEdit && isAllView && !isAllSetsView"
           type="button"
           class="filter-sidebar-edit-link"
-          title="Edit art styles"
-          aria-label="Edit art styles"
+          :class="{ active: artStyleEditing }"
+          :title="artStyleEditing ? 'Close art style editor' : 'Edit art styles'"
+          :aria-label="artStyleEditing ? 'Close art style editor' : 'Edit art styles'"
+          :aria-pressed="artStyleEditing ? 'true' : 'false'"
           @click="emit('open-art-style-editor')"
         >
           <svg class="filter-sidebar-edit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -350,6 +361,14 @@ onMounted(async () => {
           Clear
         </button>
       </div>
+      <label class="manager-price-health-toggle collection-color-mode-toggle">
+        <input
+          type="checkbox"
+          :checked="colorMode === 'exact'"
+          @change="emit('update:colorMode', $event.target.checked ? 'exact' : 'includes')"
+        >
+        <span>Exact color identity only</span>
+      </label>
     </div>
 
     <div v-if="isAllView && !isTableView" class="filter-sidebar-section">

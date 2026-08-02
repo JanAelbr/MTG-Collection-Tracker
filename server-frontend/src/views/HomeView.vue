@@ -274,10 +274,10 @@ onUnmounted(stopPolling);
     <section v-if="pricingSettings" class="home-panel">
       <h2>Pricing &amp; display</h2>
       <p class="home-intro">
-        Gallery prices show the lowest listing first, then the highest of the other
-        Cardmarket strategies when it is higher. Rows per page applies to Collection
-        gallery and table lists. Price change columns compare against the previous
-        price snapshot automatically.
+        Gallery prices show the lowest listing first, then Cardmarket trend when it
+        is higher. Rows per page applies to Collection gallery and table lists.
+        Price change columns compare against the previous price snapshot
+        automatically.
       </p>
       <div class="home-pricing-panel">
         <label class="manager-filter">

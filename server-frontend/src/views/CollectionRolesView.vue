@@ -24,6 +24,7 @@ import {
   rolesFiltersFromRoute,
   rolesRouteQuery,
 } from "../utils/setScope";
+import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 
 const PAGE_SIZE = 25;
 
@@ -42,6 +43,7 @@ const storageFilters = ref([]);
 const foilFilter = ref("all");
 const typeFilter = ref("all");
 const colorFilters = ref([]);
+const colorMode = ref(getStoredColorFilterMode());
 const rarityFilter = ref("all");
 const searchQuery = ref("");
 const cmcMin = ref("");
@@ -101,6 +103,7 @@ function currentFiltersPayload() {
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     rarityFilter: rarityFilter.value,
     searchQuery: searchQuery.value.trim(),
     cmcMin: parseOptionalNumber(cmcMin.value),
@@ -121,6 +124,7 @@ function applyRouteState() {
   foilFilter.value = filters.foilFilter;
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...(filters.colorFilters || [])];
+  colorMode.value = filters.colorMode || getStoredColorFilterMode();
   rarityFilter.value = filters.rarityFilter;
   searchQuery.value = filters.searchQuery || "";
   cmcMin.value = filters.cmcMin != null ? String(filters.cmcMin) : "";
@@ -191,6 +195,7 @@ async function fetchRolePage(pageNum) {
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     rarityFilter: rarityFilter.value,
     roleFilters: [activeRole.value],
     storageFilters: storageFilters.value,
@@ -292,6 +297,16 @@ function toggleColorFilter(color) {
 
 function clearColorFilters() {
   colorFilters.value = [];
+  return syncRouteAndReload();
+}
+
+function setColorMode(mode) {
+  const next = mode === "includes" ? "includes" : "exact";
+  if (colorMode.value === next) {
+    return;
+  }
+  colorMode.value = next;
+  storeColorFilterMode(next);
   return syncRouteAndReload();
 }
 
@@ -435,6 +450,7 @@ onMounted(async () => {
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :color-mode="colorMode"
           :storage-filters="storageFilters"
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
@@ -453,6 +469,7 @@ onMounted(async () => {
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @update:color-mode="setColorMode"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
           @set-storage-filters="setStorageFilters"
@@ -496,6 +513,7 @@ onMounted(async () => {
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :color-mode="colorMode"
           :storage-filters="storageFilters"
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
@@ -514,6 +532,7 @@ onMounted(async () => {
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @update:color-mode="setColorMode"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
           @set-storage-filters="setStorageFilters"

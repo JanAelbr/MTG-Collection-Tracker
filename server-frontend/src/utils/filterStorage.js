@@ -87,6 +87,20 @@ export function storeFilterSidebarPrefs(prefs) {
   );
 }
 
+export const COLOR_FILTER_MODE_KEY = "collectionColorFilterMode";
+
+export function getStoredColorFilterMode() {
+  const stored = localStorage.getItem(COLOR_FILTER_MODE_KEY);
+  return stored === "includes" ? "includes" : "exact";
+}
+
+export function storeColorFilterMode(mode) {
+  localStorage.setItem(
+    COLOR_FILTER_MODE_KEY,
+    mode === "includes" ? "includes" : "exact",
+  );
+}
+
 export function filterSidebarWidthPx(wide) {
   return wide ? FILTER_SIDEBAR_WIDTHS.wide : FILTER_SIDEBAR_WIDTHS.narrow;
 }

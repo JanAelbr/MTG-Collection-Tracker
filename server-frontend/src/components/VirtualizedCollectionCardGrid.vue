@@ -16,6 +16,8 @@ const props = defineProps({
   hasMore: { type: Boolean, default: false },
   loadMoreThreshold: { type: Number, default: 240 },
   priceStrategy: { type: String, default: "" },
+  showFavorites: { type: Boolean, default: true },
+  zoomOnly: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -276,6 +278,8 @@ defineExpose({ scrollToIndex, rootRef });
           :focused-index="focusedIndex >= 0 ? focusedIndex - visibleRange.start : -1"
           :start-index="visibleRange.start"
           :price-strategy="priceStrategy"
+          :show-favorites="showFavorites"
+          :zoom-only="zoomOnly"
           @toggle-select="emit('toggle-select', $event)"
           @focus-index="emit('focus-index', $event)"
           @browse-name="emit('browse-name', $event)"

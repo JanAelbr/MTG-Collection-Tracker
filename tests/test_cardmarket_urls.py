@@ -129,6 +129,47 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertEqual(find_paired_product_id(738285, guide, FINISH_NONFOIL), 738284)
         self.assertEqual(find_paired_product_id(738284, guide, FINISH_FOIL), 738285)
 
+    def test_find_paired_product_id_for_expensive_adjacent_one_ring(self):
+        # LTR #697: foil 738253 must pair to nonfoil 738252 (~€291), not Coat 738250.
+        guide = {
+            738250: {"trend": 24.54, "trend-foil": 0},
+            738251: {"trend": 0, "trend-foil": 36.87},
+            738252: {"trend": 291.41, "trend-foil": 0},
+            738253: {"trend": 0, "trend-foil": 609.76},
+        }
+        self.assertEqual(find_paired_product_id(738253, guide, FINISH_NONFOIL), 738252)
+        self.assertEqual(find_paired_product_id(738252, guide, FINISH_FOIL), 738253)
+
+    def test_normalize_pairs_expensive_adjacent_one_ring_nonfoil(self):
+        guide = {
+            738250: {"trend": 24.54, "trend-foil": 0},
+            738251: {"trend": 0, "trend-foil": 36.87},
+            738252: {"trend": 291.41, "trend-foil": 0},
+            738253: {"trend": 0, "trend-foil": 609.76},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            None,
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=738253",
+            guide,
+        )
+        self.assertIn("738252", nonfoil or "")
+        self.assertIn("738253", foil or "")
+
+    def test_normalize_repairs_one_ring_mislinked_to_previous_printing(self):
+        guide = {
+            738250: {"trend": 24.54, "trend-foil": 0},
+            738251: {"trend": 0, "trend-foil": 36.87},
+            738252: {"trend": 291.41, "trend-foil": 0},
+            738253: {"trend": 0, "trend-foil": 609.76},
+        }
+        nonfoil, foil = normalize_cardmarket_url_columns(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=738250",
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=738253",
+            guide,
+        )
+        self.assertIn("738252", nonfoil or "")
+        self.assertIn("738253", foil or "")
+
     def test_find_paired_product_id_for_sparse_scroll_showcase_gap(self):
         guide = {
             737810: {"trend": 0.14, "trend-foil": 0},

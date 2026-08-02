@@ -19,7 +19,7 @@ import { fetchCardCopyState } from "../composables/cardContextMenu";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { defaultAllCardsSortDir, getStoredAllCardsSort, storeAllCardsSort, storeFoilFilter } from "../utils/filterStorage";
+import { defaultAllCardsSortDir, getStoredAllCardsSort, getStoredColorFilterMode, storeAllCardsSort, storeColorFilterMode, storeFoilFilter } from "../utils/filterStorage";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import { hasSelectableArtStyles } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
@@ -62,6 +62,7 @@ const ownedFilter = ref("owned");
 const foilFilter = ref("all");
 const typeFilter = ref("all");
 const colorFilters = ref([]);
+const colorMode = ref(getStoredColorFilterMode());
 const storageFilters = ref([]);
 const searchQuery = ref("");
 const rarityFilter = ref("all");
@@ -157,6 +158,7 @@ function allCardsFilterParams() {
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     storageFilters: storageFilters.value,
     search: searchQuery.value.trim(),
     rarityFilter: rarityFilter.value,
@@ -276,6 +278,7 @@ function applyServerFiltersFromRoute() {
   foilFilter.value = filters.foilFilter;
   typeFilter.value = filters.typeFilter;
   colorFilters.value = [...filters.colorFilters];
+  colorMode.value = filters.colorMode || getStoredColorFilterMode();
   storageFilters.value = [...filters.storageFilters];
   searchQuery.value = filters.searchQuery;
   rarityFilter.value = filters.rarityFilter;
@@ -443,9 +446,11 @@ function setCollectionViewMode(mode) {
   }
 }
 
-function openArtStyleEditor() {
-  artStyleRulesOpen.value = true;
-  pushCollectionRoute();
+function toggleArtStyleEditor() {
+  artStyleRulesOpen.value = !artStyleRulesOpen.value;
+  if (artStyleRulesOpen.value) {
+    mobileFiltersOpen.value = false;
+  }
 }
 
 function setPriceIssuesOnly(value) {
@@ -703,6 +708,7 @@ function allCardsArtStyleLink(card) {
       foilFilter: foilFilter.value,
       typeFilter: typeFilter.value,
       colorFilters: colorFilters.value,
+      colorMode: colorMode.value,
       storageFilters: storageFilters.value,
       sort: allCardsSort.value,
       sortDir: allCardsSortDir.value,
@@ -735,6 +741,7 @@ function buildCollectionQuery() {
     foilFilter: foilFilter.value,
     typeFilter: typeFilter.value,
     colorFilters: colorFilters.value,
+    colorMode: colorMode.value,
     storageFilters: storageFilters.value,
     sort: allCardsSort.value,
     sortDir: allCardsSortDir.value,
@@ -855,6 +862,15 @@ function toggleColorFilter(color) {
 
 function clearColorFilters() {
   colorFilters.value = [];
+}
+
+function setColorMode(mode) {
+  const next = mode === "includes" ? "includes" : "exact";
+  if (colorMode.value === next) {
+    return;
+  }
+  colorMode.value = next;
+  storeColorFilterMode(next);
 }
 
 function toggleStorageFilter(slug) {
@@ -1127,7 +1143,7 @@ watch(displayArtStyles, (styles) => {
   }
 });
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, storageFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, colorMode, storageFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin], () => {
   if (
     !routeSyncReady.value
     || applyingRouteQuery.value
@@ -1169,6 +1185,7 @@ watch(
     route.query.finish,
     route.query.type,
     route.query.colors,
+    route.query.colorMode,
     route.query.q,
     route.query.lens,
   ],
@@ -1183,6 +1200,7 @@ watch(
     const prevFinish = foilFilter.value;
     const prevType = typeFilter.value;
     const prevColors = colorFilters.value.join(",");
+    const prevColorMode = colorMode.value;
     const prevSearch = searchQuery.value;
     const prevLens = activeLens.value;
     applyingRouteQuery.value = true;
@@ -1202,6 +1220,7 @@ watch(
         || foilFilter.value !== prevFinish
         || typeFilter.value !== prevType
         || colorFilters.value.join(",") !== prevColors
+        || colorMode.value !== prevColorMode
         || searchQuery.value !== prevSearch
         || activeLens.value !== prevLens
       ));
@@ -1288,12 +1307,21 @@ watch(
 );
 
 watch(isAllSetsView, (allSets) => {
+  if (allSets && artStyleRulesOpen.value) {
+    artStyleRulesOpen.value = false;
+  }
   if (!allSets || collectionViewMode.value !== "table") {
     return;
   }
   collectionViewMode.value = "gallery";
   if (routeSyncReady.value && isAllView.value) {
     pushCollectionRoute();
+  }
+});
+
+watch(familyScope, (newFamily) => {
+  if (newFamily && artStyleRulesOpen.value) {
+    artStyleRulesOpen.value = false;
   }
 });
 
@@ -1382,6 +1410,7 @@ onUnmounted(stopPolling);
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :color-mode="colorMode"
           :storage-filters="storageFilters"
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
@@ -1396,12 +1425,16 @@ onUnmounted(stopPolling);
           :price-issue-count="managerTable.priceIssueCount.value"
           :show-price-health="tableModeAvailable"
           :show-sort="false"
+          :show-art-style-section="true"
+          :art-style-editing="artStyleRulesOpen"
+          :show-art-style-edit="tableModeAvailable"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @update:color-mode="setColorMode"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
           @set-storage-filters="setStorageFilters"
@@ -1415,7 +1448,7 @@ onUnmounted(stopPolling);
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
           @update:price-issues-only="setPriceIssuesOnly"
-          @open-art-style-editor="openArtStyleEditor"
+          @open-art-style-editor="toggleArtStyleEditor"
         />
         <template v-else>
           <div class="filter-sidebar-section">
@@ -1443,6 +1476,19 @@ onUnmounted(stopPolling);
         </template>
       </FilterSidebar>
 
+      <aside
+        v-if="artStyleRulesOpen && tableModeAvailable && !isAllSetsView && !familyScope"
+        class="filter-sidebar art-style-rules-sidebar"
+        aria-label="Art style rules"
+      >
+        <ArtStyleRulesPanel
+          :open="artStyleRulesOpen"
+          :set-code="setCode"
+          @update:open="artStyleRulesOpen = $event"
+          @saved="onArtStyleRulesSaved"
+        />
+      </aside>
+
       <CollectionMobileFilterSheet
         :open="mobileFiltersOpen"
         @close="mobileFiltersOpen = false"
@@ -1459,6 +1505,7 @@ onUnmounted(stopPolling);
           :foil-filter="foilFilter"
           :type-filter="typeFilter"
           :color-filters="colorFilters"
+          :color-mode="colorMode"
           :storage-filters="storageFilters"
           :rarity-filter="rarityFilter"
           :cmc-min="cmcMin"
@@ -1473,12 +1520,16 @@ onUnmounted(stopPolling);
           :price-issue-count="managerTable.priceIssueCount.value"
           :show-price-health="tableModeAvailable"
           :show-sort="false"
+          :show-art-style-section="true"
+          :art-style-editing="artStyleRulesOpen"
+          :show-art-style-edit="tableModeAvailable"
           @update:art-style="artStyle = $event"
           @set-owned-filter="setOwnedFilter"
           @set-foil-filter="setFoilFilter"
           @type-filter-change="onTypeFilterChange"
           @toggle-color-filter="toggleColorFilter"
           @clear-color-filters="clearColorFilters"
+          @update:color-mode="setColorMode"
           @toggle-storage-filter="toggleStorageFilter"
           @clear-storage-filters="clearStorageFilters"
           @set-storage-filters="setStorageFilters"
@@ -1492,7 +1543,7 @@ onUnmounted(stopPolling);
           @update-sort="updateAllCardsSort"
           @toggle-sort-dir="toggleAllCardsSortDir"
           @update:price-issues-only="setPriceIssuesOnly"
-          @open-art-style-editor="openArtStyleEditor"
+          @open-art-style-editor="toggleArtStyleEditor"
         />
       </CollectionMobileFilterSheet>
 
@@ -1528,12 +1579,6 @@ onUnmounted(stopPolling);
             @update:card-scale="setCollectionCardScale"
             @update-sort="updateAllCardsSort"
             @toggle-sort-dir="toggleAllCardsSortDir"
-          />
-          <ArtStyleRulesPanel
-            v-if="tableModeAvailable"
-            v-model:open="artStyleRulesOpen"
-            :set-code="setCode"
-            @saved="onArtStyleRulesSaved"
           />
           <p v-if="showSyncHint && !isTableView" class="collection-sync-hint">
             Prices may be outdated.

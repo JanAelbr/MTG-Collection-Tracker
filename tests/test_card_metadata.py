@@ -11,11 +11,13 @@ if str(SCRIPTS) not in sys.path:
 
 from util.card_metadata import (  # noqa: E402
     card_image_fields,
+    card_matches_collection_color_filter,
     card_metadata_api,
     card_metadata_snake,
     card_types_from_type_line,
     encode_card_colors,
     parse_card_colors,
+    parse_collection_color_mode,
     primary_card_type,
 )
 from util.scryfall_card import (  # noqa: E402
@@ -207,6 +209,36 @@ class CardMetadataTests(unittest.TestCase):
         }
         self.assertEqual(card_image_uri(adventure), "https://example.com/adventure.jpg")
         self.assertIsNone(card_image_uri_back(adventure))
+
+    def test_color_filter_exact_identity_default(self):
+        mono_red = {"colors": ["R"], "colorIdentity": ["R"]}
+        gruul = {"colors": ["R", "G"], "colorIdentity": ["R", "G"]}
+        mountain = {"colors": [], "colorIdentity": ["R"]}
+        self.assertTrue(card_matches_collection_color_filter(mono_red, ["R"]))
+        self.assertTrue(card_matches_collection_color_filter(mountain, ["R"]))
+        self.assertFalse(card_matches_collection_color_filter(gruul, ["R"]))
+        self.assertTrue(
+            card_matches_collection_color_filter(gruul, ["R", "G"]),
+        )
+        self.assertEqual(parse_collection_color_mode(None), "exact")
+
+    def test_color_filter_includes_mode(self):
+        gruul = {"colors": ["R", "G"], "colorIdentity": ["R", "G"]}
+        self.assertTrue(
+            card_matches_collection_color_filter(
+                gruul,
+                ["R"],
+                color_mode="includes",
+            ),
+        )
+        colorless = {"colors": [], "colorIdentity": []}
+        self.assertTrue(
+            card_matches_collection_color_filter(
+                colorless,
+                ["C"],
+                color_mode="includes",
+            ),
+        )
 
 
 if __name__ == "__main__":

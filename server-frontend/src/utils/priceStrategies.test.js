@@ -39,12 +39,12 @@ describe("priceStrategies", () => {
     expect(strategyPriceBounds({ currentValue: 1 })).toEqual({ low: null, high: null });
   });
 
-  it("builds gallery price pair with lowest first", () => {
-    expect(galleryPricePair(card)).toEqual({ low: 1.2, high: 1.8 });
-    expect(galleryDisplayValue(card)).toBe(1.8);
+  it("builds gallery price pair as lowest then trend", () => {
+    expect(galleryPricePair(card)).toEqual({ low: 1.2, high: 1.5 });
+    expect(galleryDisplayValue(card)).toBe(1.5);
   });
 
-  it("shows only lowest when it is the highest value", () => {
+  it("shows only lowest when it is at least trend", () => {
     expect(galleryPricePair({
       valuesByStrategy: { low: 5, trend: 4, avg: 3 },
     })).toEqual({ low: 5, high: null });
@@ -53,10 +53,16 @@ describe("priceStrategies", () => {
     })).toBe(5);
   });
 
-  it("falls back to other strategies when lowest is missing", () => {
+  it("falls back to trend when lowest is missing", () => {
     expect(galleryPricePair({
       valuesByStrategy: { trend: 1.5, avg: 2 },
-    })).toEqual({ low: 2, high: null });
+    })).toEqual({ low: 1.5, high: null });
+  });
+
+  it("shows only lowest when trend is missing", () => {
+    expect(galleryPricePair({
+      valuesByStrategy: { low: 1.2, avg: 1.8 },
+    })).toEqual({ low: 1.2, high: null });
   });
 
   it("builds tooltip rows with active strategy", () => {

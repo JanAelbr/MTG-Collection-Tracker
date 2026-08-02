@@ -61,6 +61,7 @@ def report_cards(
     foilFilter: str = Query(default="all"),
     typeFilter: str = Query(default="all"),
     colors: str = Query(default=""),
+    colorMode: str = Query(default="exact"),
     compareDate: str | None = Query(default=None),
     pageSize: int = Query(default=25, ge=1, le=500),
     search: str = Query(default=""),
@@ -87,6 +88,7 @@ def report_cards(
             foil_filter=foilFilter,
             type_filter=typeFilter,
             color_filters=colors,
+            color_mode=colorMode,
             compare_date=compareDate,
             page_size=pageSize,
             search=search,
@@ -132,6 +134,7 @@ def report_search(
     foilFilter: str = Query(default="all"),
     type: str = Query(default="all"),
     colors: str = Query(default=""),
+    colorMode: str = Query(default="exact"),
     colorIdentity: str | None = Query(default=None),
     rarity: str = Query(default="all"),
     cmcMin: str = Query(default=""),
@@ -159,6 +162,7 @@ def report_search(
             foil_filter=foilFilter,
             type_filter=type,
             color_filters=_parse_color_filters(colors),
+            color_mode=colorMode,
             color_identity=(
                 [c for c in _parse_color_filters(colorIdentity) if c != "C"]
                 if colorIdentity is not None
@@ -191,6 +195,7 @@ def report_search_variants(
     foilFilter: str = Query(default="all"),
     type: str = Query(default="all"),
     colors: str = Query(default=""),
+    colorMode: str = Query(default="exact"),
     colorIdentity: str | None = Query(default=None),
     rarity: str = Query(default="all"),
     cmcMin: str = Query(default=""),
@@ -210,6 +215,7 @@ def report_search_variants(
             foil_filter=foilFilter,
             type_filter=type,
             color_filters=_parse_color_filters(colors),
+            color_mode=colorMode,
             color_identity=(
                 [c for c in _parse_color_filters(colorIdentity) if c != "C"]
                 if colorIdentity is not None

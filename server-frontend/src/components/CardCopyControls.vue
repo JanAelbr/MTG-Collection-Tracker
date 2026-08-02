@@ -2,9 +2,7 @@
 import { computed, ref, watch } from "vue";
 import {
   adjustCardCopyCount,
-  applyListingResultToCard,
   applyOptimisticCopyCount,
-  changeCardOwnershipFinish,
   effectiveDeckOwnedQty,
   ensureStorageLocations,
   fetchCardCopyState,
@@ -12,21 +10,8 @@ import {
   normalizeCardMenuTarget,
   ownershipRevision,
   storageLocations,
-  updateCardCopyFinish,
-  updateCardCopyStorage,
 } from "../composables/cardContextMenu";
 import { fetchPricingSettings } from "../composables/pricingSettings";
-import FinishToggleButton from "./FinishToggleButton.vue";
-import ListForSaleModal from "./ListForSaleModal.vue";
-import StorageLocationSelect from "./StorageLocationSelect.vue";
-import {
-  cardFinish,
-  cardSupportsNonfoilFoilToggle,
-  FINISH_FOIL,
-  FINISH_NONFOIL,
-  normalizeFinish,
-} from "../utils/finishes";
-
 const MAX_COPIES = 99;
 
 const props = defineProps({
@@ -39,13 +24,12 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["finish-changed", "ownership-changed", "menu-open-change"]);
+const emit = defineEmits(["ownership-changed"]);
 
 const panelLoading = ref(false);
 const panelError = ref("");
 const copyState = ref(null);
 const defaultStorageSlug = ref("");
-const saleModal = ref(null);
 let loadToken = 0;
 
 const isInteractive = computed(() => Boolean(props.card && normalizeCardMenuTarget(props.card)));
@@ -57,45 +41,7 @@ const ownedCount = computed(() => {
   return effectiveDeckOwnedQty(props.card);
 });
 const maxCopies = computed(() => copyState.value?.maxCopies ?? MAX_COPIES);
-const copies = computed(() => copyState.value?.copies ?? []);
 const canAddCopy = computed(() => ownedCount.value < maxCopies.value);
-const currentFinish = computed(() => cardFinish(props.card));
-const canToggleNonfoilFoil = computed(() => cardSupportsNonfoilFoilToggle(props.card));
-
-const displayCopyRows = computed(() => {
-  if (copies.value.length) {
-    return copies.value;
-  }
-  if (ownedCount.value <= 0) {
-    return [];
-  }
-  return Array.from({ length: ownedCount.value }, (_, index) => ({
-    instanceId: `pending-${index}`,
-    locationSlug: defaultStorageSlug.value,
-    finish: currentFinish.value,
-  }));
-});
-
-const showOwnedFinishToggle = computed(
-  () => canToggleNonfoilFoil.value && ownedCount.value <= 1,
-);
-
-function copyFinish(copy) {
-  return normalizeFinish(copy?.finish ?? currentFinish.value);
-}
-
-function showCopyFinishToggle(copy) {
-  return (
-    canToggleNonfoilFoil.value
-    && ownedCount.value > 1
-    && typeof copy?.instanceId === "number"
-    && [FINISH_NONFOIL, FINISH_FOIL].includes(copyFinish(copy))
-  );
-}
-
-function storageLabel(slug) {
-  return storageLocations.value.find((location) => location.slug === slug)?.label || slug;
-}
 
 function resolveDefaultStorageSlug(state, settings) {
   if (settings?.defaultStorageLocation) {
@@ -165,24 +111,6 @@ watch(
   { immediate: true },
 );
 
-function optimisticCopies(previousCount, nextCount) {
-  const current = [...(copyState.value?.copies || [])];
-  if (nextCount > previousCount) {
-    const slug = defaultStorageSlug.value || storageLocations.value[0]?.slug || "storage:general";
-    current.push({
-      instanceId: `temp-${Date.now()}-${current.length}`,
-      locationSlug: slug,
-      label: storageLabel(slug),
-      finish: currentFinish.value,
-    });
-    return current;
-  }
-  if (nextCount < previousCount && current.length) {
-    return current.slice(0, -1);
-  }
-  return current;
-}
-
 async function onAdjust(delta) {
   if (!isInteractive.value || panelLoading.value) {
     return;
@@ -200,7 +128,6 @@ async function onAdjust(delta) {
   copyState.value = {
     ...(copyState.value || {}),
     ownedCount: optimisticCount,
-    copies: optimisticCopies(previousCount, optimisticCount),
   };
   applyOptimisticCopyCount(props.card, optimisticCount, previousCount);
   try {
@@ -225,153 +152,6 @@ async function onAdjust(delta) {
     }
   } finally {
     panelLoading.value = false;
-  }
-}
-
-async function onCopyStorageSelect(copy, slug) {
-  if (!slug || panelLoading.value || typeof copy.instanceId !== "number") {
-    return;
-  }
-  panelLoading.value = true;
-  panelError.value = "";
-  const previousSlug = copy.locationSlug;
-  copyState.value = {
-    ...(copyState.value || {}),
-    copies: (copyState.value?.copies || []).map((item) => (
-      item.instanceId === copy.instanceId
-        ? { ...item, locationSlug: slug, label: storageLabel(slug) }
-        : item
-    )),
-  };
-  try {
-    const state = await updateCardCopyStorage(props.card, copy.instanceId, slug);
-    copyState.value = state;
-    emit("ownership-changed");
-  } catch (error) {
-    panelError.value = error.message || "Could not assign storage.";
-    copyState.value = {
-      ...(copyState.value || {}),
-      copies: (copyState.value?.copies || []).map((item) => (
-        item.instanceId === copy.instanceId
-          ? { ...item, locationSlug: previousSlug, label: storageLabel(previousSlug) }
-          : item
-      )),
-    };
-  } finally {
-    panelLoading.value = false;
-  }
-}
-
-function applyLocalFinish(next) {
-  if (props.card) {
-    props.card.finish = next;
-    props.card.foil = next;
-  }
-  emit("finish-changed", next);
-}
-
-async function onOwnedFinishToggle() {
-  if (!isInteractive.value || panelLoading.value || !canToggleNonfoilFoil.value) {
-    return;
-  }
-  const current = currentFinish.value;
-  const next = current === FINISH_FOIL ? FINISH_NONFOIL : FINISH_FOIL;
-  if (current === next) {
-    return;
-  }
-  if (ownedCount.value <= 0) {
-    applyLocalFinish(next);
-    return;
-  }
-  panelLoading.value = true;
-  panelError.value = "";
-  try {
-    const state = await changeCardOwnershipFinish(props.card, next);
-    if (state) {
-      copyState.value = state;
-    }
-    applyLocalFinish(next);
-    emit("ownership-changed");
-  } catch (error) {
-    panelError.value = error.message || "Could not change finish.";
-  } finally {
-    panelLoading.value = false;
-  }
-}
-
-async function onCopyFinishToggle(copy) {
-  if (!isInteractive.value || panelLoading.value) {
-    return;
-  }
-  const current = copyFinish(copy);
-  const next = current === FINISH_FOIL ? FINISH_NONFOIL : FINISH_FOIL;
-  if (current === next) {
-    return;
-  }
-  if (typeof copy.instanceId !== "number") {
-    if (ownedCount.value <= 0) {
-      applyLocalFinish(next);
-      return;
-    }
-    await onOwnedFinishToggle();
-    return;
-  }
-  panelLoading.value = true;
-  panelError.value = "";
-  try {
-    const state = await updateCardCopyFinish(props.card, copy.instanceId, next);
-    copyState.value = state;
-    applyLocalFinish(next);
-    emit("ownership-changed");
-  } catch (error) {
-    panelError.value = error.message || "Could not change finish.";
-    try {
-      const payload = await fetchCardCopyState(props.card);
-      if (payload) {
-        copyState.value = payload.state;
-        defaultStorageSlug.value = resolveDefaultStorageSlug(payload.state, payload.settings);
-      }
-    } catch {
-      // Keep the error message visible.
-    }
-  } finally {
-    panelLoading.value = false;
-  }
-}
-
-function openSaleModal(copy) {
-  if (!isInteractive.value || panelLoading.value || typeof copy.instanceId !== "number") {
-    return;
-  }
-  saleModal.value = {
-    card: {
-      ...props.card,
-      finish: copyFinish(copy),
-      foil: copyFinish(copy),
-    },
-    instanceId: copy.instanceId,
-    listingId: copy.listingId ?? null,
-    listingPrice: copy.listingPrice ?? null,
-  };
-  emit("menu-open-change", true);
-}
-
-function closeSaleModal() {
-  saleModal.value = null;
-  emit("menu-open-change", false);
-}
-
-async function onSaleModalSaved(result) {
-  applyListingResultToCard(props.card, result);
-  emit("ownership-changed");
-  try {
-    const payload = await fetchCardCopyState(props.card);
-    if (payload) {
-      copyState.value = payload.state;
-      defaultStorageSlug.value = resolveDefaultStorageSlug(payload.state, payload.settings);
-    }
-  } catch (error) {
-    panelError.value = error.message || "Could not refresh copy details.";
   }
 }
 
@@ -414,63 +194,10 @@ defineExpose({ addCopy });
             +
           </button>
         </div>
-        <FinishToggleButton
-          v-if="showOwnedFinishToggle"
-          :finish="currentFinish"
-          :disabled="panelLoading"
-          @toggle="onOwnedFinishToggle"
-        />
-      </div>
-    </div>
-
-    <div v-if="displayCopyRows.length" class="card-interactive-copies">
-      <div
-        v-for="(copy, index) in displayCopyRows"
-        :key="copy.instanceId"
-        class="card-interactive-copy"
-      >
-        <div class="card-interactive-copy-controls">
-          <FinishToggleButton
-            v-if="showCopyFinishToggle(copy)"
-            :finish="copyFinish(copy)"
-            :disabled="panelLoading"
-            @toggle="onCopyFinishToggle(copy)"
-          />
-          <StorageLocationSelect
-            :model-value="copy.locationSlug"
-            :locations="storageLocations"
-            :include-types="['storage', 'binder']"
-            :disabled="panelLoading || !storageLocations.length || typeof copy.instanceId !== 'number'"
-            compact
-            :aria-label="`Storage for copy ${index + 1}`"
-            @update:model-value="(slug) => onCopyStorageSelect(copy, slug)"
-            @open-change="emit('menu-open-change', $event)"
-          />
-          <button
-            v-if="typeof copy.instanceId === 'number'"
-            type="button"
-            class="btn btn-small card-interactive-sell-btn"
-            :disabled="panelLoading"
-            :title="copy.forSale ? 'Update asking price' : 'List this copy for sale'"
-            @click="openSaleModal(copy)"
-          >
-            {{ copy.forSale ? "For sale" : "Sell" }}
-          </button>
-        </div>
       </div>
     </div>
 
     <p v-if="panelLoading" class="card-interactive-status">Updating…</p>
     <p v-else-if="panelError" class="card-interactive-status error">{{ panelError }}</p>
-
-    <ListForSaleModal
-      :open="Boolean(saleModal)"
-      :card="saleModal?.card || null"
-      :instance-id="saleModal?.instanceId ?? null"
-      :listing-id="saleModal?.listingId ?? null"
-      :listing-price="saleModal?.listingPrice ?? null"
-      @close="closeSaleModal"
-      @saved="onSaleModalSaved"
-    />
   </div>
 </template>

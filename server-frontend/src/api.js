@@ -627,6 +627,10 @@ export const api = {
       query.set("colors", params.colorFilters.join(","));
     }
 
+    if (params.colorMode === "includes") {
+      query.set("colorMode", "includes");
+    }
+
     if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
 
     if (params.search) query.set("search", params.search);
@@ -670,6 +674,7 @@ export const api = {
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
     if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
     if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.colorMode === "includes") query.set("colorMode", "includes");
     if (params.colorIdentity != null) query.set("colorIdentity", params.colorIdentity.join(","));
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
@@ -696,6 +701,7 @@ export const api = {
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
     if (params.typeFilter && params.typeFilter !== "all") query.set("type", params.typeFilter);
     if (params.colorFilters?.length) query.set("colors", params.colorFilters.join(","));
+    if (params.colorMode === "includes") query.set("colorMode", "includes");
     if (params.colorIdentity != null) query.set("colorIdentity", params.colorIdentity.join(","));
     if (params.rarityFilter && params.rarityFilter !== "all") query.set("rarity", params.rarityFilter);
     if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));

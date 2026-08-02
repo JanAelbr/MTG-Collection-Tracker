@@ -33,7 +33,7 @@ describe("searchResults helpers", () => {
       currentValue: 1.25,
       valuesByStrategy: { trend: 2.5, low: 1.0, avg: 3.0 },
     };
-    expect(displayCardValue(card)).toBe("€1.00 ~ €3.00");
+    expect(displayCardValue(card)).toBe("€1.00 ~ €2.50");
     expect(displayCardValue({
       valuesByStrategy: { low: 5, trend: 4 },
     })).toBe("€5.00");
