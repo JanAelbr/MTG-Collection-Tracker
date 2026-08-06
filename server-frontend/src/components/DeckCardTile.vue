@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import ManaCost from "./ManaCost.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
@@ -106,6 +107,12 @@ function ownershipState(card) {
 
     <figcaption class="deck-card-grid-caption">
       <span class="deck-card-grid-name-row">
+        <CardSetSymbol
+          v-if="card.setCode"
+          :set-code="card.setCode"
+          :family-root="card.familyRoot || ''"
+          :rarity="card.rarity || ''"
+        />
         <ManaCost :mana-cost="card.manaCost || ''" :size="16" />
         <RouterLink
           v-if="cardRoute(card)"

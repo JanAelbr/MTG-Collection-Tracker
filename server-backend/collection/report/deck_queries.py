@@ -41,6 +41,7 @@ SELECT
     c.color_identity,
     c.cmc,
     c.mana_cost,
+    c.rarity,
     c.is_basic_land,
     p.purchase_value
 FROM deck_cards dc

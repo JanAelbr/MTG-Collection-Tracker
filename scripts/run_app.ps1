@@ -39,9 +39,6 @@ $Collection = Join-Path $Root "server-backend\collection"
 $env:PYTHONPATH = "$Backend;$Scripts;$Collection"
 Set-Location $Backend
 
-# Keep scan art-hash deps present in the project venv.
-& $Python -m pip install -q "Pillow>=10.0.0"
-
 $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 foreach ($listener in $listeners) {
     Stop-Process -Id $listener.OwningProcess -Force -ErrorAction SilentlyContinue
@@ -49,7 +46,7 @@ foreach ($listener in $listeners) {
 Start-Sleep -Seconds 1
 
 if ($Lan) {
-    # Mobile cameras require a secure context; HTTP on a LAN IP leaves mediaDevices undefined.
+    # Prefer HTTPS on LAN so phones don't hit mixed-content / insecure-origin limits.
     & $Python -m pip install -q "cryptography>=42.0.0"
     $tlsOut = & $Python (Join-Path $Scripts "ensure_lan_tls.py") --dir (Join-Path $Root "data\lan_tls")
     if ($LASTEXITCODE -ne 0) {
@@ -63,7 +60,7 @@ if ($Lan) {
     $Scheme = "https"
     $UvicornSslArgs = @("--ssl-certfile", $certPath, "--ssl-keyfile", $keyPath)
 
-    Write-Host "LAN mode: binding to ${BindHost}:${Port} (HTTPS for camera access)"
+    Write-Host "LAN mode: binding to ${BindHost}:${Port} (HTTPS)"
     Write-Host "Open on this PC:  ${Scheme}://127.0.0.1:${Port}"
     $lanAddresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object {
@@ -81,7 +78,7 @@ if ($Lan) {
     else {
         Write-Host "Could not detect a LAN IPv4 address; check ipconfig and use ${Scheme}://<your-ip>:${Port}"
     }
-    Write-Host "Accept the self-signed certificate warning once on your phone (required for the camera)."
+    Write-Host "Accept the self-signed certificate warning once on your phone."
     Write-Host "If phones/PCs cannot connect, allow Windows Firewall inbound TCP ${Port} (or Python)."
 }
 

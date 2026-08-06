@@ -1,5 +1,12 @@
 import sqlite3
 
+# Market value is a reliable default purchase basis only for these sets.
+MARKET_PURCHASE_DEFAULT_SETS = frozenset({"LTR", "LTC"})
+
+
+def allows_market_purchase_default(set_code: str) -> bool:
+    return str(set_code or "").strip().upper() in MARKET_PURCHASE_DEFAULT_SETS
+
 
 def lookup_unit_market(
     cursor: sqlite3.Cursor,
@@ -28,6 +35,19 @@ def lookup_unit_market(
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def default_purchase_value(
+    cursor: sqlite3.Cursor,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+) -> float:
+    """Market default for LTR/LTC; otherwise 0 until set manually."""
+    if not allows_market_purchase_default(set_code):
+        return 0.0
+    value = lookup_unit_market(cursor, set_code, collector_number, finish)
+    return float(value) if value is not None else 0.0
 
 
 def upsert_purchase_value(

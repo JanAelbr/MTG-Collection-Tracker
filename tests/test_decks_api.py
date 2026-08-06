@@ -682,6 +682,132 @@ class DecksApiServiceTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(deck_instances, 1)
 
+    def test_swap_deck_card_moves_owned_to_chosen_storage(self):
+        deck_row = self.conn.execute("SELECT deck_id, slug FROM decks LIMIT 1").fetchone()
+        deck_id = str(deck_row[0])
+        deck_slug = deck_row[1]
+
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
+                colors, type_line, card_type, image_uri, cardmarket_url, color_identity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "LTC-100",
+                "LTC",
+                "100",
+                "Arcane Signet",
+                None,
+                1.0,
+                None,
+                None,
+                1,
+                0,
+                0,
+                None,
+                "Artifact",
+                "artifact",
+                None,
+                None,
+                "[]",
+            ),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, purchase_value, finish)
+            VALUES ('LTC', '284', 1.0, 0), ('LTC', '100', 1.0, 0)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish,
+                qty, owned_qty, section, sort_order, in_catalog
+            ) VALUES (?, 'Sol Ring', 'LTC', '284', 0, 1, 1, 'main', 1, 1)
+            """,
+            (deck_row[0],),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES
+              ('LTC', '284', 0, ?, 1.0),
+              ('LTC', '100', 0, 'storage:general', 1.0)
+            """,
+            (f"deck:{deck_slug.lower()}",),
+        )
+        self.conn.commit()
+
+        result = decks_service.swap_deck_card(
+            self.conn,
+            deck_id=deck_id,
+            remove_set_code="LTC",
+            remove_collector_number="284",
+            remove_finish=0,
+            remove_section="main",
+            remove_qty=1,
+            add_set_code="LTC",
+            add_collector_number="100",
+            add_finish=0,
+            destination_storage_location="binder:ltr-black",
+        )
+
+        self.assertTrue(result["removed"]["removed"])
+        self.assertEqual(result["movedToStorage"], 1)
+        self.assertEqual(result["storageLocation"], "binder:ltr-black")
+        self.assertEqual(result["claimedToDeck"], 1)
+        self.assertEqual(result["added"]["card"]["collectorNumber"], "100")
+        self.assertEqual(result["added"]["ownedQty"], 1)
+
+        sol_location = self.conn.execute(
+            """
+            SELECT location_slug FROM card_instances
+            WHERE set_code = 'LTC' AND collector_number = '284' AND finish = 0
+            """
+        ).fetchone()[0]
+        self.assertEqual(sol_location, "binder:ltr-black")
+
+        signet_location = self.conn.execute(
+            """
+            SELECT location_slug FROM card_instances
+            WHERE set_code = 'LTC' AND collector_number = '100' AND finish = 0
+            """
+        ).fetchone()[0]
+        self.assertEqual(signet_location, f"deck:{deck_slug.lower()}")
+
+        main_rows = self.conn.execute(
+            """
+            SELECT set_code, collector_number, owned_qty FROM deck_cards
+            WHERE deck_id = ? AND section = 'main'
+            """,
+            (deck_row[0],),
+        ).fetchall()
+        self.assertEqual(len(main_rows), 1)
+        self.assertEqual(main_rows[0][0], "LTC")
+        self.assertEqual(main_rows[0][1], "100")
+        self.assertEqual(main_rows[0][2], 1)
+
+    def test_swap_deck_card_rejects_same_printing(self):
+        deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()
+        with self.assertRaises(decks_service.DeckError) as ctx:
+            decks_service.swap_deck_card(
+                self.conn,
+                deck_id=str(deck_row[0]),
+                remove_set_code="LTC",
+                remove_collector_number="284",
+                remove_finish=0,
+                remove_section="commander",
+                add_set_code="LTC",
+                add_collector_number="284",
+                add_finish=0,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("same printing", ctx.exception.message.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

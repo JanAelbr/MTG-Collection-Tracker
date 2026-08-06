@@ -390,22 +390,6 @@ body {
   margin: 0 6px 0 4px;
 }
 
-.app-subnav-subset-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin: 0 4px 0 0;
-  color: #666;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-
-.app-subnav-subset-toggle input {
-  margin: 0;
-}
-
 .app-subnav-set-filter input {
   width: 7.5rem;
   max-width: 28vw;
@@ -2916,9 +2900,30 @@ body {
   margin-top: 2px;
 }
 
+/* When rarity vectors are unavailable, tint Scryfall's black SVG by rarity. */
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--common {
+  filter: none;
+  opacity: 0.85;
+}
+
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--uncommon {
+  filter: invert(39%) sepia(14%) saturate(746%) hue-rotate(155deg) brightness(94%) contrast(88%);
+}
+
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--rare {
+  filter: invert(48%) sepia(71%) saturate(481%) hue-rotate(8deg) brightness(92%) contrast(92%);
+}
+
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--mythic,
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--special,
+.card-set-symbol.is-scryfall-fallback.card-set-symbol-rarity--bonus {
+  filter: invert(33%) sepia(86%) saturate(1684%) hue-rotate(352deg) brightness(92%) contrast(92%);
+}
+
 .manager-card-name-row,
 .search-results-card-name,
-.search-results-set-row {
+.search-results-set-row,
+.deck-cards-name-row {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3243,98 +3248,6 @@ body {
   gap: 2px;
   max-height: 180px;
   overflow-y: auto;
-}
-
-.collection-role-filter-list {
-  max-height: 240px;
-}
-
-.collection-roles-mobile-roles {
-  display: none;
-}
-
-.collection-roles-list {
-  max-height: min(70vh, 640px);
-}
-
-.collection-roles-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.collection-roles-list-item:hover,
-.collection-roles-list-item:focus-visible {
-  background: #eef2f6;
-}
-
-.collection-roles-list-item.active {
-  background: #e2e8f0;
-  font-weight: 600;
-}
-
-.collection-roles-list-item.is-empty {
-  color: #8a94a6;
-}
-
-.collection-roles-list-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.collection-roles-list-count {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: #667085;
-}
-
-.collection-roles-list-item.active .collection-roles-list-count {
-  color: inherit;
-}
-
-.collection-roles-mobile-roles {
-  display: none;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.collection-roles-mobile-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.collection-roles-chip-count {
-  margin-left: 4px;
-  opacity: 0.75;
-  font-variant-numeric: tabular-nums;
-}
-
-.collection-roles-mobile-sort {
-  max-width: 280px;
-}
-
-@media (max-width: 900px) {
-  .collection-roles-mobile-roles {
-    display: grid;
-  }
-
-  .collection-roles-mobile-storage .collection-storage-filter-list {
-    max-height: 140px;
-  }
 }
 
 .collection-storage-filter-section {
@@ -4039,6 +3952,31 @@ body {
 
 .card-interactive-overlay .card-copy-controls--overlay .card-interactive-status {
   text-align: center;
+}
+
+.card-copy-controls-storage-readonly {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.card-copy-controls-storage-readonly .storage-location-type-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.card-copy-controls-storage-readonly span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collection-search-art-details-list {
@@ -5031,7 +4969,9 @@ body {
 }
 
 .card-context-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -5042,6 +4982,37 @@ body {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.card-context-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.card-context-menu-item .storage-location-type-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.card-context-menu-item > span:last-child {
+  min-width: 0;
+}
+
+.card-context-menu-item.is-selected {
+  background: #eef3f8;
+  font-weight: 600;
+}
+
+.card-context-menu-item-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: #667;
+}
+
+.card-context-menu-item--sale .card-context-menu-item-icon {
+  color: #2e7d32;
 }
 
 .card-context-menu-item:hover,
@@ -5096,6 +5067,62 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.card-context-menu-submenu {
+  position: fixed;
+  z-index: 12001;
+  min-width: 200px;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: min(60vh, 420px);
+  overflow: auto;
+}
+
+.card-context-menu-submenu-trigger {
+  justify-content: flex-start;
+}
+
+.card-context-menu-submenu-trigger.is-open {
+  background: #f1f4f8;
+}
+
+.card-context-menu-submenu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-context-menu-submenu-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #778;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.card-context-menu-submenu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-context-menu-submenu-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #667;
+}
+
+.card-context-menu-submenu-heading .storage-location-type-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .card-context-menu-copy .browse-select {
@@ -6542,6 +6569,21 @@ button.card-variant {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
+}
+
+.home-subset-toggle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.home-subset-toggle-control input {
+  margin: 0;
 }
 
 .card-variant-link {

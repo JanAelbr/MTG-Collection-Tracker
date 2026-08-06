@@ -49,7 +49,12 @@ lotr/
 ├── scripts/                       # app launchers and frontend build helpers
 │   ├── run_app.ps1                    # build frontend + serve app on :8000
 │   ├── dev_app.ps1                    # dev: API + Vite on :5173
-│   └── build_frontend.ps1
+│   ├── build_frontend.ps1             # build + publish to runtime/
+│   ├── publish_runtime.ps1            # copy existing dist → runtime/frontend
+│   ├── start_lan_runtime.ps1          # LAN HTTPS service on :8080
+│   ├── install_lan_task.ps1           # auto-start at logon (task or Startup folder)
+│   └── uninstall_lan_task.ps1
+├── runtime/                       # ignored: published frontend, TLS, logs
 └── tests/
 ```
 
@@ -86,6 +91,7 @@ The repo tracks **source code**, not your local database or generated caches.
 | `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
 | `readme.md`, `requirements.txt` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
 | | Cardmarket cache, Scryfall cache |
+| | `runtime/` (LAN published frontend, TLS, logs) |
 
 After cloning:
 
@@ -134,11 +140,39 @@ Open http://localhost:8000
 .\scripts\build_frontend.ps1
 ```
 
+This also publishes the build into `runtime/frontend` for the LAN service (see below).
+
 The app is a **PWA** (installable; icons in `server-frontend/public/`). Regenerate icons with `npm run generate-pwa-icons` after changing `app-logo.svg`. See [docs/frontend.md](docs/frontend.md).
 
 **API docs (Swagger UI):** browse and try endpoints at http://localhost:8000/docs (or http://localhost:5173/docs during dev). ReDoc is at `/redoc`; the OpenAPI schema is at `/openapi.json`.
 
 The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` (Windows), or `~/MtgCollectionTracker/collection.db` elsewhere.
+
+#### LAN runtime (startup service)
+
+Always-on HTTPS on port **8080** for other devices on the LAN. Artifacts and logs live in the gitignored `runtime/` folder (`frontend/`, `tls/`, `logs/service.log`). Dev on `:8000` / `:5173` is unchanged.
+
+Auto-start runs **at your Windows logon**. `install_lan_task.ps1` tries Task Scheduler first; if that is blocked (common without elevation), it installs a launcher in your user **Startup** folder instead.
+
+One-time setup (frontend must already be built, or run `build_frontend.ps1` first):
+
+```powershell
+.\scripts\publish_runtime.ps1
+.\scripts\install_lan_task.ps1
+.\scripts\start_lan_runtime.ps1   # start immediately without re-logon
+```
+
+After frontend changes, rebuild (publishes automatically) or publish only, then restart the process (or re-logon):
+
+```powershell
+.\scripts\build_frontend.ps1
+# stop the old process if needed, then:
+.\scripts\start_lan_runtime.ps1
+```
+
+Open `https://127.0.0.1:8080` or `https://<lan-ip>:8080` and accept the self-signed certificate once. Allow Windows Firewall inbound TCP **8080** if phones/PCs cannot connect. Remove auto-start with `.\scripts\uninstall_lan_task.ps1`.
+
+Optional cleanup: if an old broken **At startup** scheduled task named `MtgCollectionTrackerLan` remains, delete it once from an **elevated** PowerShell: `schtasks /Delete /TN MtgCollectionTrackerLan /F`.
 
 #### Navigation
 

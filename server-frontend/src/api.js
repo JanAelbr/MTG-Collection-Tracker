@@ -530,36 +530,6 @@ export const api = {
 
     }),
 
-  ingestScan: (body) =>
-
-    apiRequest("/scan/ingest", {
-
-      method: "POST",
-
-      body: JSON.stringify(body),
-
-    }),
-
-  scanNameSearch: (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.q) query.set("q", params.q);
-    if (params.name) query.set("name", params.name);
-    if (params.limit != null) query.set("limit", String(params.limit));
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    return apiRequest(`/scan/name-search${suffix}`);
-  },
-
-  scanArtSearch: (body) =>
-    apiRequest("/scan/art-search", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  scanArtIndex: (limit = 80) =>
-    apiRequest(`/scan/art-index?limit=${encodeURIComponent(String(limit))}`, {
-      method: "POST",
-    }),
-
   setCardCopyAllocations: (body) =>
 
     apiRequest("/manager/copies/allocations", {
@@ -599,15 +569,6 @@ export const api = {
     }),
 
   getReportsMeta: () => apiRequest("/reports/meta"),
-
-  getOwnedRoles: (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.storageFilters?.length) {
-      query.set("storage", params.storageFilters.join(","));
-    }
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    return apiRequest(`/reports/owned-roles${suffix}`);
-  },
 
   getSearchFacets: () => apiRequest("/reports/search/facets"),
 
@@ -749,6 +710,44 @@ export const api = {
 
     if (params.foilFilter) query.set("foilFilter", params.foilFilter);
 
+    if (params.artStyle) query.set("artStyle", params.artStyle);
+
+    if (params.ownedFilter) query.set("ownedFilter", params.ownedFilter);
+
+    if (params.typeFilter && params.typeFilter !== "all") {
+      query.set("typeFilter", params.typeFilter);
+    }
+
+    if (params.colorFilters?.length) {
+      query.set("colors", params.colorFilters.join(","));
+    }
+
+    if (params.colorMode === "includes") {
+      query.set("colorMode", "includes");
+    }
+
+    if (params.storageFilters?.length) {
+      query.set("storage", params.storageFilters.join(","));
+    }
+
+    if (params.search) query.set("search", params.search);
+
+    if (params.rarityFilter && params.rarityFilter !== "all") {
+      query.set("rarity", params.rarityFilter);
+    }
+
+    if (params.cmcMin != null) query.set("cmcMin", String(params.cmcMin));
+
+    if (params.cmcMax != null) query.set("cmcMax", String(params.cmcMax));
+
+    if (params.priceMin != null) query.set("priceMin", String(params.priceMin));
+
+    if (params.priceMax != null) query.set("priceMax", String(params.priceMax));
+
+    if (params.powerMin != null) query.set("powMin", String(params.powerMin));
+
+    if (params.toughnessMin != null) query.set("tghMin", String(params.toughnessMin));
+
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
     return apiRequest(`/stats/collection${suffix}`);
@@ -801,6 +800,12 @@ export const api = {
   setDeckCardOwned: (deckId, body) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/owned`, {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  swapDeckCard: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/swap`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 

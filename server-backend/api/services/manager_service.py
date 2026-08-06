@@ -8,7 +8,7 @@ from lib.art_styles import (
     validate_art_style_rules,
 )
 from lib.config import EXCLUDED_SET_CODES, normalize_set_code
-from lib.deck_purchase import lookup_unit_market, upsert_purchase_value
+from lib.deck_purchase import default_purchase_value, upsert_purchase_value
 from lib.card_locations import sync_card_instances
 from lib.run_log import get_logger
 from report.manager_data import (
@@ -146,27 +146,76 @@ def list_available_sets(conn: sqlite3.Connection) -> list[dict]:
     return available
 
 
-def _scryfall_family_for_code(set_code: str) -> list[str]:
+def _valid_scryfall_family_members(set_code: str) -> tuple[list[str], dict[str, dict]]:
+    """Ordered Scryfall family codes (excluding invalid) and their relations."""
     from util.set_families import relations_from_scryfall_sets, scryfall_family_members
-    from util.set_family_sync import AUTO_LOAD_CHILD_TYPES
 
     normalized = normalize_set_code(set_code)
     if not normalized:
-        return []
+        return [], {}
     scryfall_sets = fetch_all_scryfall_sets()
     relations = relations_from_scryfall_sets(scryfall_sets)
     members = scryfall_family_members(normalized, relations=relations)
-    filtered: list[str] = []
-    for code in members:
-        if not code or code in EXCLUDED_SET_CODES or not code.isalnum():
-            continue
-        if code == members[0]:
-            filtered.append(code)
-            continue
+    filtered = [
+        code
+        for code in members
+        if code and code not in EXCLUDED_SET_CODES and code.isalnum()
+    ]
+    return (filtered or [normalized], relations)
+
+
+def _auto_load_scryfall_family(
+    members: list[str],
+    relations: dict[str, dict],
+) -> list[str]:
+    """Keep family root plus AUTO_LOAD child types (commander/token/etc.)."""
+    from util.set_family_sync import AUTO_LOAD_CHILD_TYPES
+
+    if not members:
+        return []
+    filtered = [members[0]]
+    for code in members[1:]:
         set_type = (relations.get(code) or {}).get("set_type") or ""
         if set_type in AUTO_LOAD_CHILD_TYPES:
             filtered.append(code)
-    return filtered or [normalized]
+    return filtered
+
+
+def _scryfall_family_for_code(set_code: str) -> list[str]:
+    """Root + AUTO_LOAD siblings — used when adding a set family."""
+    normalized = normalize_set_code(set_code)
+    members, relations = _valid_scryfall_family_members(normalized)
+    filtered = _auto_load_scryfall_family(members, relations)
+    return filtered or ([normalized] if normalized else [])
+
+
+def _family_scope_for_reload(conn: sqlite3.Connection, set_code: str) -> tuple[list[str], list[str]]:
+    """
+    Codes to consider when reloading a set catalog.
+
+    Returns (reload_scope, auto_import_codes):
+    - reload_scope: full Scryfall family ∪ locally known family members
+    - auto_import_codes: AUTO_LOAD subset (import missing siblings on refresh)
+    """
+    from util.set_families import resolve_set_codes_for_scope
+
+    normalized = normalize_set_code(set_code)
+    if not normalized:
+        return [], []
+
+    scryfall_members, relations = _valid_scryfall_family_members(normalized)
+    auto_import = _auto_load_scryfall_family(scryfall_members, relations) or [normalized]
+    local_members = resolve_set_codes_for_scope(conn, set_code=normalized, family=True) or []
+
+    scope: list[str] = []
+    seen: set[str] = set()
+    for code in [*scryfall_members, *local_members, *auto_import, normalized]:
+        code = normalize_set_code(code)
+        if not code or code in seen or code in EXCLUDED_SET_CODES or not code.isalnum():
+            continue
+        scope.append(code)
+        seen.add(code)
+    return scope or [normalized], auto_import
 
 
 def _import_tracked_set(conn: sqlite3.Connection, set_code: str) -> int:
@@ -431,14 +480,12 @@ def change_ownership_finish(
 
     cursor = conn.cursor()
     if purchase_value is None:
-        purchase_value = lookup_unit_market(
+        purchase_value = default_purchase_value(
             cursor,
             normalized_set,
             normalized_number,
             target_finish,
         )
-    if purchase_value is None:
-        purchase_value = 0.0
     upsert_purchase_value(
         cursor,
         normalized_set,
@@ -1278,9 +1325,12 @@ def _apply_ownership(
     if owned:
         value = purchase_value
         if value is None:
-            value = lookup_unit_market(cursor, normalized_set, normalized_number, finish)
-        if value is None:
-            value = 0.0
+            value = default_purchase_value(
+                cursor,
+                normalized_set,
+                normalized_number,
+                finish,
+            )
         upsert_purchase_value(
             cursor,
             normalized_set,
@@ -1404,7 +1454,8 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
     normalized = set_code.strip().upper()
     _validate_set_code(normalized)
 
-    family_codes = _scryfall_family_for_code(normalized)
+    family_codes, auto_family = _family_scope_for_reload(conn, normalized)
+    auto_family_set = set(auto_family)
     tracked = {normalize_set_code(code) for code in list_tracked_set_codes(conn)}
     deck_codes = {code.upper() for code in list_deck_sync_set_codes(conn)}
     reload_codes = [
@@ -1428,7 +1479,7 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
         nonlocal catalog_total
         was_tracked = is_set_tracked(conn, code)
         try:
-            if track_if_missing and not was_tracked and code in family_codes:
+            if track_if_missing and not was_tracked and code in auto_family_set:
                 add_tracked_set(conn, code)
             catalog_total += import_set_catalog_from_scryfall(conn, code)
             reloaded.append(code)
@@ -1446,9 +1497,9 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
                 raise ManagerError(str(exc), status_code=404) from exc
 
     for code in reload_codes:
-        _reload_one(code, track_if_missing=True)
-    # Also import any Scryfall siblings not yet tracked when reloading a family root.
-    for code in family_codes:
+        _reload_one(code, track_if_missing=code in auto_family_set)
+    # Import missing AUTO_LOAD Scryfall siblings (commander/token/etc.).
+    for code in auto_family:
         if code in reload_codes or code in reloaded or code in skipped:
             continue
         if is_set_tracked(conn, code):
@@ -1475,7 +1526,7 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
 
     bump_cache_epoch()
     set_names = get_set_display_names(refresh=True)
-    root = family_codes[0] if family_codes else normalized
+    root = auto_family[0] if auto_family else (family_codes[0] if family_codes else normalized)
     log.info(
         "Reloaded catalog for family %s members=%s skipped=%s (%s card(s))",
         root,

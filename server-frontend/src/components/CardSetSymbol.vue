@@ -7,7 +7,7 @@ import { scryfallSetIconUri, setFamilyRootCode } from "../utils/scryfall";
 const props = defineProps({
   setCode: { type: String, default: "" },
   familyRoot: { type: String, default: "" },
-  /** Preferred icon URL (e.g. API iconUri); tried before generated candidates. */
+  /** Preferred icon URL (e.g. API iconUri); used after rarity vectors when variant is rarity. */
   iconUri: { type: String, default: "" },
   rarity: { type: String, default: "" },
   /** rarity = tinted by print rarity; generic = Scryfall monochrome set icon */
@@ -26,12 +26,25 @@ const props = defineProps({
 
 const fallbackIndex = ref(0);
 
+const rarityKey = computed(() => String(props.rarity || "").trim().toLowerCase());
+
 const rootCode = computed(() =>
   setFamilyRootCode({
     setCode: props.setCode,
     familyRoot: props.familyRoot,
   }),
 );
+
+function uniqueUrls(urls) {
+  const seen = new Set();
+  return urls.filter((url) => {
+    if (!url || seen.has(url)) {
+      return false;
+    }
+    seen.add(url);
+    return true;
+  });
+}
 
 const candidates = computed(() => {
   const code = String(props.setCode || "").trim().toUpperCase();
@@ -41,37 +54,53 @@ const candidates = computed(() => {
   const root = rootCode.value;
   const preferred = String(props.iconUri || "").trim();
   const urls = [];
+
+  if (props.variant === "rarity") {
+    // Prefer colored rarity vectors (own set, then family root) before any
+    // monochrome Scryfall / API icons — otherwise a successful Scryfall load
+    // masks the rarity tint.
+    const vectorOwn = mtgVectorsCardSetIconUri(code, props.rarity);
+    const vectorRoot = root && root !== code
+      ? mtgVectorsCardSetIconUri(root, props.rarity)
+      : null;
+    if (props.preferFamilyRoot && vectorRoot) {
+      urls.push(vectorRoot, vectorOwn);
+    } else {
+      urls.push(vectorOwn, vectorRoot);
+    }
+    if (preferred && !preferred.includes("mtg-vectors")) {
+      // Keep API URI as a late fallback only when it is not already a vector.
+      urls.push(preferred);
+    } else if (preferred) {
+      urls.push(preferred);
+    }
+    urls.push(scryfallSetIconUri(code));
+    if (root && root !== code) {
+      urls.push(scryfallSetIconUri(root));
+    }
+    return uniqueUrls(urls);
+  }
+
   if (preferred) {
     urls.push(preferred);
   }
-  const own = [];
-  const parent = [];
-  if (props.variant === "rarity") {
-    own.push(mtgVectorsCardSetIconUri(code, props.rarity));
-  }
-  own.push(scryfallSetIconUri(code));
-  if (root && root !== code) {
-    if (props.variant === "rarity") {
-      parent.push(mtgVectorsCardSetIconUri(root, props.rarity));
-    }
-    parent.push(scryfallSetIconUri(root));
-  }
-  if (props.preferFamilyRoot && parent.length) {
-    urls.push(...parent, ...own);
+  if (props.preferFamilyRoot && root && root !== code) {
+    urls.push(scryfallSetIconUri(root), scryfallSetIconUri(code));
   } else {
-    urls.push(...own, ...parent);
-  }
-  const seen = new Set();
-  return urls.filter((url) => {
-    if (!url || seen.has(url)) {
-      return false;
+    urls.push(scryfallSetIconUri(code));
+    if (root && root !== code) {
+      urls.push(scryfallSetIconUri(root));
     }
-    seen.add(url);
-    return true;
-  });
+  }
+  return uniqueUrls(urls);
 });
 
 const src = computed(() => candidates.value[fallbackIndex.value] || "");
+
+const isScryfallFallback = computed(() => {
+  const current = src.value || "";
+  return current.includes("svgs.scryfall.io");
+});
 
 const title = computed(() => {
   const code = String(props.setCode || "").trim().toUpperCase();
@@ -81,8 +110,7 @@ const title = computed(() => {
   if (props.variant === "generic") {
     return code;
   }
-  const rarityKey = String(props.rarity || "").trim().toLowerCase();
-  const rarityLabel = COLLECTION_RARITY_LABELS[rarityKey];
+  const rarityLabel = COLLECTION_RARITY_LABELS[rarityKey.value];
   return rarityLabel ? `${code} · ${rarityLabel}` : code;
 });
 
@@ -90,6 +118,17 @@ const imgStyle = computed(() => ({
   width: `${props.size}px`,
   height: `${props.size}px`,
 }));
+
+const imgClass = computed(() => {
+  const classes = [`card-set-symbol--${props.variant}`];
+  if (props.variant === "rarity" && rarityKey.value) {
+    classes.push(`card-set-symbol-rarity--${rarityKey.value}`);
+  }
+  if (props.variant === "rarity" && isScryfallFallback.value) {
+    classes.push("is-scryfall-fallback");
+  }
+  return classes;
+});
 
 watch(
   () => [props.setCode, props.familyRoot, props.iconUri, props.rarity, props.variant, props.preferFamilyRoot],
@@ -113,7 +152,7 @@ function onError(event) {
   <img
     v-if="src"
     class="card-set-symbol"
-    :class="`card-set-symbol--${variant}`"
+    :class="imgClass"
     :src="src"
     alt=""
     loading="eager"

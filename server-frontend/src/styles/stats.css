@@ -320,13 +320,27 @@
   text-decoration: underline;
 }
 
-.stats-set-row {
+.stats-set-row.is-clickable {
   cursor: pointer;
 }
 
-.stats-set-row:hover {
+.stats-set-row:not(.is-clickable) {
+  cursor: default;
+}
+
+.stats-set-row.is-clickable:hover {
   background: #f8faf8;
 }
+
+.collection-stats-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-stats-page .collection-stats-panel {
+  margin-top: 8px;
+}
+
 @media (max-width: 900px) {
 
   .stats-set-collection-link {

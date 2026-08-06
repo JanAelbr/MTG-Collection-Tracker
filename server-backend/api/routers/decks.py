@@ -17,6 +17,7 @@ from api.schemas import (
     DeckCardOwnedUpdate,
     DeckCardQtyAdjust,
     DeckCardRemove,
+    DeckCardSwap,
     DeckCreate,
     DeckCsvImport,
     DeckRename,
@@ -382,6 +383,30 @@ def set_deck_card_owned(
             finish=body.finish,
             section=body.section,
             owned=body.owned,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.post("/{deck_id}/cards/swap")
+def swap_deck_card(
+    deck_id: str,
+    body: DeckCardSwap,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.swap_deck_card(
+            conn,
+            deck_id=deck_id,
+            remove_set_code=body.remove.setCode,
+            remove_collector_number=body.remove.collectorNumber,
+            remove_finish=body.remove.finish,
+            remove_section=body.remove.section,
+            remove_qty=body.remove.qty,
+            add_set_code=body.add.setCode,
+            add_collector_number=body.add.collectorNumber,
+            add_finish=body.add.finish,
+            destination_storage_location=body.destinationStorageLocation,
         )
     except DeckError as exc:
         raise _deck_error(exc) from exc

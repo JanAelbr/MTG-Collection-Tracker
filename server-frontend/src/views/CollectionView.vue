@@ -13,6 +13,8 @@ import FilterSidebar from "../components/FilterSidebar.vue";
 import ManagerSetTable from "../components/ManagerSetTable.vue";
 import ManagerCardStorageModal from "../components/ManagerCardStorageModal.vue";
 import ArtStyleRulesPanel from "../components/ArtStyleRulesPanel.vue";
+import CollectionStatsPanel from "../components/CollectionStatsPanel.vue";
+import "../styles/stats.css";
 import { useCollectionBulkSelect } from "../composables/useCollectionBulkSelect";
 import { useManagerSetTable } from "../composables/useManagerSetTable";
 import { fetchCardCopyState } from "../composables/cardContextMenu";
@@ -83,6 +85,8 @@ const syncMessage = ref("");
 const syncRunning = ref(false);
 let pollTimer = null;
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
+const { loading: loadingStats, run: runStatsLoad } = useAsyncLoad();
+const statsPayload = ref(null);
 const routeSyncReady = ref(false);
 const applyingRouteQuery = ref(false);
 const routeQuerySyncInFlight = ref(false);
@@ -121,8 +125,14 @@ const artStyles = computed(() => cardsPayload.value?.artStyles || []);
 const tableModeAvailable = computed(
   () => isAllView.value && !isAllSetsView.value && !familyScope.value,
 );
+const statsModeAvailable = computed(
+  () => isAllView.value && !isAllSetsView.value,
+);
 const isTableView = computed(() =>
   tableModeAvailable.value && collectionViewMode.value === "table",
+);
+const isStatsView = computed(() =>
+  statsModeAvailable.value && collectionViewMode.value === "stats",
 );
 
 const managerTable = useManagerSetTable(() => ({
@@ -144,6 +154,9 @@ const storageModalFinish = ref(0);
 const displayArtStyles = computed(() => {
   if (isTableView.value && managerTable.artStyles.value.length) {
     return managerTable.artStyles.value;
+  }
+  if (isStatsView.value && statsPayload.value?.artStyles?.length) {
+    return statsPayload.value.artStyles;
   }
   return artStyles.value;
 });
@@ -429,8 +442,40 @@ async function reloadManagerTable() {
   await managerTable.loadCards();
 }
 
+async function loadCollectionStats() {
+  if (!isStatsView.value) {
+    statsPayload.value = null;
+    return;
+  }
+  await runStatsLoad(async () => {
+    const filters = allCardsFilterParams();
+    statsPayload.value = await api.getCollectionStats({
+      setCode: filters.setCode,
+      family: filters.family,
+      artStyle: filters.artStyle,
+      ownedFilter: filters.ownedFilter,
+      foilFilter: filters.foilFilter,
+      typeFilter: filters.typeFilter,
+      colorFilters: filters.colorFilters,
+      colorMode: filters.colorMode,
+      storageFilters: filters.storageFilters,
+      search: filters.search,
+      rarityFilter: filters.rarityFilter,
+      cmcMin: filters.cmcMin,
+      cmcMax: filters.cmcMax,
+      priceMin: filters.priceMin,
+      priceMax: filters.priceMax,
+      powerMin: filters.powerMin,
+      toughnessMin: filters.toughnessMin,
+    });
+  });
+}
+
 function setCollectionViewMode(mode) {
   if (mode === "table" && !tableModeAvailable.value) {
+    return;
+  }
+  if (mode === "stats" && !statsModeAvailable.value) {
     return;
   }
   if (collectionViewMode.value === mode) {
@@ -443,7 +488,17 @@ function setCollectionViewMode(mode) {
   pushCollectionRoute();
   if (mode === "table") {
     reloadManagerTable();
+  } else if (mode === "stats") {
+    loadCollectionStats();
   }
+}
+
+function onStatsSelectSet(code) {
+  if (!code || String(code).toLowerCase() === "all") {
+    return;
+  }
+  familyScope.value = false;
+  setCode.value = code;
 }
 
 function toggleArtStyleEditor() {
@@ -929,7 +984,11 @@ function updateSearchQuery(value) {
   searchDebounceTimer = setTimeout(() => {
     if (routeSyncReady.value && !applyingRouteQuery.value && isAllView.value && !isTableView.value) {
       pushCollectionRoute();
-      loadCards();
+      if (isStatsView.value) {
+        loadCollectionStats();
+      } else {
+        loadCards();
+      }
     }
   }, 250);
   if (tableSearchDebounceTimer) {
@@ -1091,12 +1150,11 @@ function onCollectionScopeChange() {
   }
   invalidateAllViewScope();
   resetAllCardsPage();
-  if (!isAllView.value) {
-    pushCollectionRoute();
-    loadCards();
+  pushCollectionRoute();
+  if (isStatsView.value) {
+    loadCollectionStats();
     return;
   }
-  pushCollectionRoute();
   loadCards();
 }
 
@@ -1118,6 +1176,12 @@ watch(setCode, (newSet, oldSet) => {
 });
 
 watch(familyScope, (newFamily, oldFamily) => {
+  if (newFamily && artStyleRulesOpen.value) {
+    artStyleRulesOpen.value = false;
+  }
+  if (newFamily && collectionViewMode.value === "table") {
+    collectionViewMode.value = "gallery";
+  }
   if (
     !routeSyncReady.value
     || applyingRouteQuery.value
@@ -1156,6 +1220,10 @@ watch([ownedFilter, foilFilter, typeFilter, colorFilters, colorMode, storageFilt
   activeLens.value = resolvedActiveLens.value;
   focusedIndex.value = -1;
   pushCollectionRoute();
+  if (isStatsView.value) {
+    loadCollectionStats();
+    return;
+  }
   if (!isTableView.value) {
     loadCards();
   }
@@ -1230,7 +1298,11 @@ watch(
         || artStyle.value !== prevArt;
       if (isAllView.value) {
         pushCollectionRoute();
-        loadCards();
+        if (isStatsView.value) {
+          loadCollectionStats();
+        } else {
+          loadCards();
+        }
       } else {
         if (scopeChanged) {
           pushCollectionRoute();
@@ -1292,6 +1364,8 @@ watch(
     collectionViewMode.value = nextMode;
     if (nextMode === "table") {
       reloadManagerTable();
+    } else if (nextMode === "stats") {
+      loadCollectionStats();
     }
   },
 );
@@ -1310,18 +1384,12 @@ watch(isAllSetsView, (allSets) => {
   if (allSets && artStyleRulesOpen.value) {
     artStyleRulesOpen.value = false;
   }
-  if (!allSets || collectionViewMode.value !== "table") {
+  if (!allSets || (collectionViewMode.value !== "table" && collectionViewMode.value !== "stats")) {
     return;
   }
   collectionViewMode.value = "gallery";
   if (routeSyncReady.value && isAllView.value) {
     pushCollectionRoute();
-  }
-});
-
-watch(familyScope, (newFamily) => {
-  if (newFamily && artStyleRulesOpen.value) {
-    artStyleRulesOpen.value = false;
   }
 });
 
@@ -1347,9 +1415,13 @@ onMounted(async () => {
     artStyleRulesOpen.value = true;
   }
   routeSyncReady.value = true;
-  await loadCards();
-  if (isTableView.value) {
-    await managerTable.loadCards();
+  if (isStatsView.value) {
+    await loadCollectionStats();
+  } else {
+    await loadCards();
+    if (isTableView.value) {
+      await managerTable.loadCards();
+    }
   }
   collectionHydrated.value = true;
   if (syncStatus.value?.status === "running") {
@@ -1567,6 +1639,7 @@ onUnmounted(stopPolling);
             :mobile-filters-open="mobileFiltersOpen"
             :view-mode="collectionViewMode"
             :table-mode-available="tableModeAvailable"
+            :stats-mode-available="statsModeAvailable"
             :all-cards-sort="allCardsSort"
             :all-cards-sort-dir="allCardsSortDir"
             @update:search-query="updateSearchQuery"
@@ -1580,7 +1653,7 @@ onUnmounted(stopPolling);
             @update-sort="updateAllCardsSort"
             @toggle-sort-dir="toggleAllCardsSortDir"
           />
-          <p v-if="showSyncHint && !isTableView" class="collection-sync-hint">
+          <p v-if="showSyncHint && !isTableView && !isStatsView" class="collection-sync-hint">
             Prices may be outdated.
             <button type="button" class="collection-sync-hint-btn" @click="triggerPriceSync">
               Sync now
@@ -1607,6 +1680,15 @@ onUnmounted(stopPolling);
             @assign-storage="onTableAssignStorage"
             @load-more="managerTable.loadMoreCards"
             @sort="onTableSort"
+          />
+          <CollectionStatsPanel
+            v-else-if="isStatsView"
+            :stats="statsPayload?.stats || null"
+            :sets="statsPayload?.sets?.length ? statsPayload.sets : selectableSets"
+            :set-code="setCode"
+            :family-scope="familyScope"
+            :loading="loadingStats"
+            @select-set="onStatsSelectSet"
           />
           <template v-else>
           <div v-if="!sortedAllCards.length" class="storage-empty collection-gallery-empty">

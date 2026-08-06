@@ -12,6 +12,7 @@ export const SEARCH_GROUP_BY_OPTIONS = [
   { value: "role", label: "Role" },
   { value: "colorIdentity", label: "Color identity" },
   { value: "rarity", label: "Rarity" },
+  { value: "cmc", label: "CMC" },
   { value: "set", label: "Set" },
 ];
 
@@ -41,6 +42,9 @@ function normalizeGroupByField(value) {
   }
   if (lower === "subtypes" || lower === "sub-type" || lower === "sub_type") {
     return "subtype";
+  }
+  if (lower === "manavalue" || lower === "mana_value" || lower === "mv") {
+    return "cmc";
   }
   if (GROUP_BY_FIELD_SET.has(raw)) {
     return raw;
@@ -224,6 +228,27 @@ function rarityGroupLabel(key) {
   return COLLECTION_RARITY_LABELS[key] || formatRarityLabel(key);
 }
 
+function cmcGroupKey(card) {
+  const raw = card?.cmc ?? card?.manaValue ?? card?.mana_value;
+  if (raw == null || raw === "") {
+    return "__none__";
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return "__none__";
+  }
+  // Keep half-mana costs distinct (e.g. 0.5) while normalizing whole numbers.
+  const floored = Math.floor(value);
+  return value === floored ? String(floored) : String(value);
+}
+
+function cmcGroupLabel(key) {
+  if (!key || key === "__none__") {
+    return "Unknown CMC";
+  }
+  return `CMC ${key}`;
+}
+
 function groupMeta(groupBy, card, setLabelFor) {
   switch (groupBy) {
     case "type": {
@@ -248,6 +273,10 @@ function groupMeta(groupBy, card, setLabelFor) {
     case "rarity": {
       const key = rarityGroupKey(card);
       return { key, label: rarityGroupLabel(key) };
+    }
+    case "cmc": {
+      const key = cmcGroupKey(card);
+      return { key, label: cmcGroupLabel(key) };
     }
     case "set": {
       const key = setGroupKey(card);
@@ -295,6 +324,17 @@ function compareGroupKeys(groupBy, left, right) {
     if (byRank) {
       return byRank;
     }
+  }
+  if (groupBy === "cmc") {
+    if (left === "__none__" || right === "__none__") {
+      if (left === "__none__") {
+        return 1;
+      }
+      if (right === "__none__") {
+        return -1;
+      }
+    }
+    return Number(left) - Number(right);
   }
   if (
     (groupBy === "role" || groupBy === "subtype")

@@ -148,35 +148,6 @@ class CopyAdjust(BaseModel):
         return values
 
 
-class ScanIngest(BaseModel):
-    setCode: str = Field(min_length=1, max_length=16)
-    collectorNumber: str | None = Field(default=None, max_length=32)
-    finish: int | None = Field(default=0, ge=0, le=2)
-    foil: int | None = Field(default=None, ge=0, le=2)
-    nameHint: str | None = Field(default=None, max_length=200)
-
-    @model_validator(mode="before")
-    @classmethod
-    def resolve_finish(cls, values):
-        if isinstance(values, dict):
-            return _resolve_finish_field(values)
-        return values
-
-    @model_validator(mode="after")
-    def require_name_or_number(self):
-        number = str(self.collectorNumber or "").strip()
-        hint = str(self.nameHint or "").strip()
-        if not number and not hint:
-            raise ValueError("nameHint or collectorNumber is required")
-        return self
-
-
-class ScanArtSearch(BaseModel):
-    artHash: str = Field(min_length=8, max_length=32)
-    limit: int | None = Field(default=12, ge=1, le=40)
-    buildMissing: bool | None = Field(default=True)
-
-
 class CopyStorageUpdate(BaseModel):
     locationSlug: str = Field(min_length=1, max_length=120)
 
@@ -286,6 +257,42 @@ class DeckCardOwnedUpdate(BaseModel):
         if isinstance(values, dict):
             return _resolve_finish_field(values)
         return values
+
+
+class DeckCardSwapSide(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    section: str = Field(default="main", min_length=1, max_length=16)
+    qty: int = Field(default=1, ge=1, le=99)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckCardSwapAdd(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
+class DeckCardSwap(BaseModel):
+    remove: DeckCardSwapSide
+    add: DeckCardSwapAdd
+    destinationStorageLocation: str | None = Field(default=None, max_length=64)
 
 
 class DeckRename(BaseModel):

@@ -81,6 +81,128 @@ def load_reports_meta(conn: sqlite3.Connection) -> dict:
     }
 
 
+def build_collection_filter_scopes(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str = "All",
+    family: bool = False,
+    art_style: str = "",
+    owned_filter: str = "owned",
+    foil_filter: str = "all",
+    type_filter: str = "all",
+    color_filters: str | list[str] = "",
+    color_mode: str = "exact",
+    compare_date: str | None = None,
+    search: str = "",
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    storage_filters: list[str] | None = None,
+) -> dict:
+    """Load set-scoped cards and apply the same filters as the catalog all-cards view."""
+    normalized_owned = (owned_filter or "owned").strip().lower()
+    if normalized_owned not in OWNED_FILTERS:
+        raise ReportsError("Invalid owned filter")
+
+    normalized_foil = (foil_filter or "all").strip().lower()
+    if normalized_foil not in FOIL_FILTERS:
+        raise ReportsError("Invalid foil filter")
+
+    normalized_type = (type_filter or "all").strip().lower()
+    if normalized_type not in TYPE_FILTERS:
+        raise ReportsError("Invalid type filter")
+
+    parsed_colors = (
+        color_filters
+        if isinstance(color_filters, list)
+        else parse_collection_color_filters(color_filters)
+    )
+    parsed_color_mode = parse_collection_color_mode(color_mode)
+    use_family = bool(family) and (set_code or "").strip().upper() not in {"", "ALL"}
+
+    settings = settings_service.get_settings(conn)
+    strategy = settings["priceStrategy"]
+    selected_compare = compare_date or settings["compareDate"]
+    set_codes = _resolve_set_codes(conn, set_code=set_code, family=use_family)
+    cards, selected_compare = _load_enriched_report_cards(
+        conn,
+        set_codes=set_codes,
+        strategy=strategy,
+        compare_date=selected_compare,
+    )
+
+    effective_art = "" if use_family else art_style
+    art_styles = [] if use_family else build_art_style_options(conn, set_code)
+
+    scope_cards = _apply_filters(
+        cards,
+        set_code=set_code,
+        family=use_family,
+        art_style=effective_art,
+        owned_filter="all",
+        foil_filter="all",
+        type_filter="all",
+        color_filters=[],
+        color_mode=parsed_color_mode,
+    )
+    # Value/completion scope follows interactive filters (foil, type, rarity, …)
+    # but keeps owned_filter=all so "Owned / all value" stays meaningful.
+    filter_scope = _apply_filters(
+        scope_cards,
+        set_code=set_code,
+        family=use_family,
+        art_style=effective_art,
+        owned_filter="all",
+        foil_filter=normalized_foil,
+        type_filter=normalized_type,
+        color_filters=parsed_colors,
+        color_mode=parsed_color_mode,
+        storage_filters=storage_filters or [],
+    )
+    filter_scope = _apply_all_view_extra_filters(
+        filter_scope,
+        rarity_filter=rarity_filter,
+        cmc_min=cmc_min,
+        cmc_max=cmc_max,
+        price_min=price_min,
+        price_max=price_max,
+        power_min=power_min,
+        toughness_min=toughness_min,
+        search=search,
+    )
+    filtered = _apply_filters(
+        filter_scope,
+        set_code=set_code,
+        family=use_family,
+        art_style=effective_art,
+        owned_filter=normalized_owned,
+        foil_filter="all",
+        type_filter="all",
+        color_filters=[],
+        color_mode=parsed_color_mode,
+    )
+    return {
+        "setCode": set_code,
+        "family": use_family,
+        "artStyle": effective_art,
+        "ownedFilter": normalized_owned,
+        "foilFilter": normalized_foil,
+        "typeFilter": normalized_type,
+        "colorFilters": parsed_colors,
+        "colorMode": parsed_color_mode,
+        "artStyles": art_styles,
+        "priceStrategy": strategy,
+        "compareDate": selected_compare,
+        "settings": settings,
+        "filterScope": filter_scope,
+        "filtered": filtered,
+    }
+
+
 def list_report_cards(
     conn: sqlite3.Connection,
     *,
@@ -112,61 +234,18 @@ def list_report_cards(
     if normalized_report not in REPORT_TYPES:
         raise ReportsError("Invalid report type")
 
-    normalized_owned = (owned_filter or "owned").strip().lower()
-    if normalized_owned not in OWNED_FILTERS:
-        raise ReportsError("Invalid owned filter")
-
-    normalized_foil = (foil_filter or "all").strip().lower()
-    if normalized_foil not in FOIL_FILTERS:
-        raise ReportsError("Invalid foil filter")
-
-    normalized_type = (type_filter or "all").strip().lower()
-    if normalized_type not in TYPE_FILTERS:
-        raise ReportsError("Invalid type filter")
-
-    parsed_colors = parse_collection_color_filters(color_filters)
-    parsed_color_mode = parse_collection_color_mode(color_mode)
-    use_family = bool(family) and (set_code or "").strip().upper() not in {"", "ALL"}
-
-    settings = settings_service.get_settings(conn)
-    strategy = settings["priceStrategy"]
-    selected_compare = compare_date or settings["compareDate"]
-    set_codes = _resolve_set_codes(conn, set_code=set_code, family=use_family)
-    cards, selected_compare = _load_enriched_report_cards(
+    scopes = build_collection_filter_scopes(
         conn,
-        set_codes=set_codes,
-        strategy=strategy,
-        compare_date=selected_compare,
-    )
-
-    effective_art = "" if use_family else art_style
-    art_styles = [] if use_family else build_art_style_options(conn, set_code)
-
-    scope_cards = _apply_filters(
-        cards,
         set_code=set_code,
-        family=use_family,
-        art_style=effective_art,
-        owned_filter="all",
-        foil_filter="all",
-        type_filter="all",
-        color_filters=[],
-        color_mode=parsed_color_mode,
-    )
-    filtered = _apply_filters(
-        scope_cards,
-        set_code=set_code,
-        family=use_family,
-        art_style=effective_art,
-        owned_filter=normalized_owned,
-        foil_filter=normalized_foil,
-        type_filter=normalized_type,
-        color_filters=parsed_colors,
-        color_mode=parsed_color_mode,
-        storage_filters=storage_filters or [],
-    )
-    filtered = _apply_all_view_extra_filters(
-        filtered,
+        family=family,
+        art_style=art_style,
+        owned_filter=owned_filter,
+        foil_filter=foil_filter,
+        type_filter=type_filter,
+        color_filters=color_filters,
+        color_mode=color_mode,
+        compare_date=compare_date,
+        search=search,
         rarity_filter=rarity_filter,
         cmc_min=cmc_min,
         cmc_max=cmc_max,
@@ -174,8 +253,20 @@ def list_report_cards(
         price_max=price_max,
         power_min=power_min,
         toughness_min=toughness_min,
-        search=search,
+        storage_filters=storage_filters,
     )
+    filter_scope = scopes["filterScope"]
+    filtered = scopes["filtered"]
+    use_family = scopes["family"]
+    effective_art = scopes["artStyle"]
+    normalized_owned = scopes["ownedFilter"]
+    normalized_foil = scopes["foilFilter"]
+    normalized_type = scopes["typeFilter"]
+    parsed_colors = scopes["colorFilters"]
+    strategy = scopes["priceStrategy"]
+    selected_compare = scopes["compareDate"]
+    art_styles = scopes["artStyles"]
+
     scoped = _cards_for_report(filtered, normalized_report)
 
     result: dict = {
@@ -217,7 +308,7 @@ def list_report_cards(
             result["hasMore"] = safe_page < total_pages
         result["totalMatches"] = total
         result["cards"] = limited
-        result["scopeStats"] = compute_collection_scope_stats(scope_cards)
+        result["scopeStats"] = compute_collection_scope_stats(filter_scope)
         return result
 
     ranked = _rank_cards(scoped, normalized_report)

@@ -58,6 +58,7 @@ describe("searchResults helpers", () => {
     ]);
     expect(normalizeGroupByLevels("role,role,set")).toEqual(["role", "set"]);
     expect(normalizeGroupByLevels("type,subtypes")).toEqual(["type", "subtype"]);
+    expect(normalizeGroupByLevels("manavalue")).toEqual(["cmc"]);
     expect(normalizeGroupByLevels("none")).toEqual([]);
   });
 
@@ -80,7 +81,7 @@ describe("groupSearchCards", () => {
     ]);
   });
 
-  it("groups by type, subtype, role, color identity, rarity, and set", () => {
+  it("groups by type, subtype, role, color identity, rarity, cmc, and set", () => {
     const cards = [
       {
         name: "Bolt",
@@ -89,6 +90,7 @@ describe("groupSearchCards", () => {
         roles: ["removal"],
         colorIdentity: ["R"],
         rarity: "common",
+        cmc: 1,
         setCode: "M21",
       },
       {
@@ -98,6 +100,7 @@ describe("groupSearchCards", () => {
         roles: ["ramp"],
         colorIdentity: ["G"],
         rarity: "common",
+        cmc: 2,
         setCode: "M21",
       },
       {
@@ -107,6 +110,7 @@ describe("groupSearchCards", () => {
         roles: [],
         colorIdentity: [],
         rarity: "uncommon",
+        cmc: 1,
         setCode: "C21",
       },
       {
@@ -116,6 +120,7 @@ describe("groupSearchCards", () => {
         roles: [],
         colorIdentity: [],
         rarity: "rare",
+        cmc: 3,
         setCode: "C21",
       },
       {
@@ -125,6 +130,7 @@ describe("groupSearchCards", () => {
         roles: ["removal"],
         colorIdentity: ["W"],
         rarity: "common",
+        cmc: 2,
         setCode: "M21",
       },
     ];
@@ -156,6 +162,11 @@ describe("groupSearchCards", () => {
       "Common",
       "Uncommon",
       "Rare",
+    ]);
+    expect(groupSearchCards(cards, "cmc").map((group) => group.label)).toEqual([
+      "CMC 1",
+      "CMC 2",
+      "CMC 3",
     ]);
     expect(groupSearchCards([
       { name: "Counterspell", colorIdentity: ["U", "B"] },

@@ -1247,6 +1247,8 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(first_page["scopeStats"]["totalCount"], 3)
         self.assertEqual(first_page["scopeStats"]["ownedCount"], 2)
+        self.assertEqual(first_page["scopeStats"]["ownedValue"], 3.0)
+        self.assertEqual(first_page["scopeStats"]["totalValue"], 8.0)
 
         second_page = reports_service.list_report_cards(
             self.conn,
@@ -1263,7 +1265,7 @@ class ReportsApiServiceTests(unittest.TestCase):
             [card["collectorNumber"] for card in second_page["cards"]], ["3"]
         )
 
-        # Scope stats reflect the whole scope regardless of the interactive owned filter.
+        # Scope stats ignore the owned filter so Owned / all value stays meaningful.
         owned_only = reports_service.list_report_cards(
             self.conn,
             report="all",
@@ -1274,6 +1276,37 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(owned_only["totalMatches"], 2)
         self.assertEqual(owned_only["scopeStats"]["totalCount"], 3)
+        self.assertEqual(owned_only["scopeStats"]["totalValue"], 8.0)
+
+        # Other interactive filters shrink the value scope.
+        priced = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="LTR",
+            owned_filter="all",
+            price_min=2.0,
+            page_size=10,
+            page=1,
+        )
+        self.assertEqual(priced["totalMatches"], 2)
+        self.assertEqual(priced["scopeStats"]["totalCount"], 2)
+        self.assertEqual(priced["scopeStats"]["ownedCount"], 1)
+        self.assertEqual(priced["scopeStats"]["ownedValue"], 2.0)
+        self.assertEqual(priced["scopeStats"]["totalValue"], 7.0)
+
+        searched = reports_service.list_report_cards(
+            self.conn,
+            report="all",
+            set_code="LTR",
+            owned_filter="all",
+            search="Card 2",
+            page_size=10,
+            page=1,
+        )
+        self.assertEqual(searched["totalMatches"], 1)
+        self.assertEqual(searched["scopeStats"]["totalCount"], 1)
+        self.assertEqual(searched["scopeStats"]["ownedCount"], 0)
+        self.assertEqual(searched["scopeStats"]["totalValue"], 5.0)
 
     @patch("api.services.reports_service.values_by_strategy_for_finish")
     @patch("api.services.reports_service.load_ranked_cards_data_for_set")

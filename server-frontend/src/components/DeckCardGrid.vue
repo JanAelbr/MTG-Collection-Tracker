@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from "vue";
-import DeckAddCardModal from "./DeckAddCardModal.vue";
+import DeckSwapCardModal from "./DeckSwapCardModal.vue";
 import DeckCardTile from "./DeckCardTile.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
 import { deckTypeIconType, formatDeckGroupHeading } from "../utils/deckCards";
@@ -102,9 +102,10 @@ function onModalAdded(result) {
       </section>
     </template>
 
-    <DeckAddCardModal
+    <DeckSwapCardModal
       v-if="props.defaultDeckId"
       :open="addModal.open"
+      mode="add"
       :deck-id="props.defaultDeckId"
       :deck-name="props.deckName"
       :section="addModal.section"

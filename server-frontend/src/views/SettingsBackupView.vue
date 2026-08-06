@@ -1,13 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
-import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { fetchPricingSettings } from "../composables/pricingSettings";
 
 const meta = ref(null);
-const { settings: pricingSettings } = usePricingSettings();
-const settingsMessage = ref("");
-const catalogMessage = ref("");
-const catalogPruning = ref(false);
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
@@ -30,40 +26,6 @@ async function refreshMeta() {
   meta.value = next;
 }
 
-async function loadPricingSettings() {
-  await fetchPricingSettings(true);
-}
-
-async function updatePageSize(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ pageSize: Number(event.target.value) });
-    settingsMessage.value = "Display settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save display settings.";
-  }
-}
-
-function setSortModeLabel(mode) {
-  if (mode === "owned") {
-    return "Most owned";
-  }
-  if (mode === "chronological") {
-    return "Chronological (new to old)";
-  }
-  return "Alphabetical";
-}
-
-async function updateSetSortMode(event) {
-  settingsMessage.value = "";
-  try {
-    await savePricingSettings({ setSortMode: event.target.value });
-    settingsMessage.value = "Display settings saved.";
-  } catch (error) {
-    settingsMessage.value = error.message || "Could not save display settings.";
-  }
-}
-
 async function refreshSyncStatus() {
   const status = await ignoreAborted(api.getPriceSyncStatus());
   if (!status) {
@@ -71,12 +33,6 @@ async function refreshSyncStatus() {
   }
   syncStatus.value = status;
   syncRunning.value = syncStatus.value.status === "running";
-  if (syncStatus.value.lastPriceUpdate) {
-    meta.value = {
-      ...(meta.value || {}),
-      lastPriceUpdate: syncStatus.value.lastPriceUpdate,
-    };
-  }
   if (syncStatus.value.status === "completed") {
     syncMessage.value = syncStatus.value.message || "Price sync completed.";
   } else if (syncStatus.value.status === "failed") {
@@ -198,7 +154,7 @@ async function importCollectionBackup() {
     backupPreview.value = null;
     backupFile.value = null;
     backupConfirmReplace.value = false;
-    await Promise.all([refreshMeta(), loadPricingSettings()]);
+    await Promise.all([refreshMeta(), fetchPricingSettings(true)]);
   } catch (error) {
     backupError.value = error.message || "Could not import collection backup.";
   } finally {
@@ -206,32 +162,8 @@ async function importCollectionBackup() {
   }
 }
 
-async function pruneOrphanCatalogs() {
-  catalogMessage.value = "";
-  if (!window.confirm(
-    "Remove card catalogs for sets that are no longer tracked? Owned purchase CSVs and deck sets are kept.",
-  )) {
-    return;
-  }
-  catalogPruning.value = true;
-  try {
-    const result = await api.pruneOrphanCatalogs();
-    clearClientCache();
-    const count = result.removedSets?.length || 0;
-    if (!count) {
-      catalogMessage.value = "No orphan catalogs found.";
-      return;
-    }
-    catalogMessage.value = `Removed catalogs for ${count} set(s): ${result.removedSets.join(", ")}.`;
-  } catch (error) {
-    catalogMessage.value = error.message || "Could not clear orphan catalogs.";
-  } finally {
-    catalogPruning.value = false;
-  }
-}
-
 onMounted(async () => {
-  await Promise.all([refreshMeta(), loadPricingSettings(), refreshSyncStatus()]);
+  await Promise.all([refreshMeta(), refreshSyncStatus()]);
   if (syncStatus.value?.status === "running") {
     startPolling();
   }
@@ -242,75 +174,6 @@ onUnmounted(stopPolling);
 
 <template>
   <div class="home-page">
-    <section class="home-panel">
-      <h2>Settings</h2>
-      <p v-if="meta?.lastPriceUpdate" class="home-meta">
-        Last price snapshot: <strong>{{ meta.lastPriceUpdate }}</strong>
-      </p>
-      <p class="home-intro">
-        Sync Cardmarket prices and refresh the Scryfall catalog for your tracked sets.
-        Price data powers the collection views, stats, and deck valuations.
-      </p>
-
-      <div class="home-sync-panel">
-        <div class="home-sync-copy">
-          <strong>Price sync</strong>
-          <p>Fetch Cardmarket prices and refresh the Scryfall catalog for your tracked sets.</p>
-          <p v-if="syncMessage" class="home-sync-message" :class="{ error: syncStatus?.status === 'failed' }">
-            {{ syncMessage }}
-          </p>
-        </div>
-        <button
-          type="button"
-          class="btn btn-primary"
-          :disabled="syncRunning"
-          @click="triggerPriceSync"
-        >
-          {{ syncRunning ? "Syncing prices…" : "Sync prices now" }}
-        </button>
-      </div>
-    </section>
-
-    <section v-if="pricingSettings" class="home-panel">
-      <h2>Pricing &amp; display</h2>
-      <p class="home-intro">
-        Gallery prices show the lowest listing first, then Cardmarket trend when it
-        is higher. Rows per page applies to Collection gallery and table lists.
-        Price change columns compare against the previous price snapshot
-        automatically.
-      </p>
-      <div class="home-pricing-panel">
-        <label class="manager-filter">
-          <span>Rows per page</span>
-          <select :value="pricingSettings.pageSize" @change="updatePageSize">
-            <option
-              v-for="size in pricingSettings.pageSizeOptions"
-              :key="size"
-              :value="size"
-            >
-              {{ size }}
-            </option>
-          </select>
-        </label>
-        <label class="manager-filter">
-          <span>Set browser order</span>
-          <select
-            :value="pricingSettings.setSortMode ?? 'alphabetical'"
-            @change="updateSetSortMode"
-          >
-            <option
-              v-for="mode in (pricingSettings.setSortModeOptions ?? ['alphabetical', 'owned', 'chronological'])"
-              :key="mode"
-              :value="mode"
-            >
-              {{ setSortModeLabel(mode) }}
-            </option>
-          </select>
-        </label>
-      </div>
-      <p v-if="settingsMessage" class="home-sync-message">{{ settingsMessage }}</p>
-    </section>
-
     <section class="home-panel">
       <h2>Backup &amp; restore</h2>
       <p class="home-intro">
@@ -407,6 +270,9 @@ onUnmounted(stopPolling);
           Catalog sync will fetch Scryfall data for:
           {{ importComplete.setsNeedingCatalog.join(", ") }}.
         </p>
+        <p v-if="syncMessage" class="home-sync-message" :class="{ error: syncStatus?.status === 'failed' }">
+          {{ syncMessage }}
+        </p>
         <button
           type="button"
           class="btn btn-primary"
@@ -419,29 +285,6 @@ onUnmounted(stopPolling);
 
       <p v-if="backupMessage" class="home-sync-message">{{ backupMessage }}</p>
       <p v-if="backupError" class="home-sync-message error">{{ backupError }}</p>
-    </section>
-
-    <section class="home-panel">
-      <h2>Catalog maintenance</h2>
-      <p class="home-intro">
-        Removing a set from the browser only unregisters it from tracked sets. Use this to clear leftover
-        Scryfall catalogs for sets you no longer track.
-      </p>
-      <div class="home-sync-panel">
-        <div class="home-sync-copy">
-          <strong>Clear orphan catalogs</strong>
-          <p>Deletes card data for sets that are not tracked or referenced by decks.</p>
-          <p v-if="catalogMessage" class="home-sync-message">{{ catalogMessage }}</p>
-        </div>
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="catalogPruning"
-          @click="pruneOrphanCatalogs"
-        >
-          {{ catalogPruning ? "Clearing…" : "Clear orphan catalogs" }}
-        </button>
-      </div>
     </section>
   </div>
 </template>

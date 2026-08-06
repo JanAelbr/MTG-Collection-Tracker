@@ -18,12 +18,13 @@ const props = defineProps({
   mobileFiltersOpen: { type: Boolean, default: false },
   viewMode: { type: String, default: "gallery" },
   tableModeAvailable: { type: Boolean, default: false },
+  statsModeAvailable: { type: Boolean, default: false },
   showLenses: { type: Boolean, default: true },
   showBulk: { type: Boolean, default: true },
   showFiltersButton: { type: Boolean, default: true },
   showViewMode: { type: Boolean, default: true },
   showSort: { type: Boolean, default: true },
-  /** collection: number/value; search|roles: name/value/cmc/rarity (+ newest for search) */
+  /** collection: number/value; search: name/value/cmc/rarity (+ newest) */
   sortMode: { type: String, default: "collection" },
   allCardsSort: { type: String, default: "value" },
   allCardsSortDir: { type: String, default: "desc" },
@@ -47,6 +48,8 @@ const emit = defineEmits([
 ]);
 
 const isTableView = computed(() => props.viewMode === "table");
+const isStatsView = computed(() => props.viewMode === "stats");
+const hideGalleryChrome = computed(() => isTableView.value || isStatsView.value);
 
 const resolvedPlaceholder = computed(() => {
   if (props.searchPlaceholder) {
@@ -57,12 +60,12 @@ const resolvedPlaceholder = computed(() => {
 
 const matchSummary = computed(() => {
   if (props.summaryText) {
-    if (isTableView.value && !props.showSummaryInTable) {
+    if (hideGalleryChrome.value && !props.showSummaryInTable) {
       return null;
     }
     return props.summaryText;
   }
-  if (isTableView.value) {
+  if (hideGalleryChrome.value) {
     return null;
   }
   if (!props.scopeCount) {
@@ -76,7 +79,7 @@ const matchSummary = computed(() => {
 });
 
 const scopeValueLabel = computed(() => {
-  if (props.summaryText || isTableView.value) {
+  if (props.summaryText || hideGalleryChrome.value) {
     return "";
   }
   const ownedValue = props.scopeStats?.ownedValue ?? 0;
@@ -89,6 +92,9 @@ const scopeValueLabel = computed(() => {
 
 function setViewMode(mode) {
   if (mode === "table" && !props.tableModeAvailable) {
+    return;
+  }
+  if (mode === "stats" && !props.statsModeAvailable) {
     return;
   }
   if (props.viewMode !== mode) {
@@ -111,7 +117,7 @@ function setViewMode(mode) {
         >
       </label>
       <label
-        v-if="showSort && !isTableView"
+        v-if="showSort && !hideGalleryChrome"
         class="collection-all-sort"
       >
         <span class="visually-hidden">Sort by</span>
@@ -123,12 +129,7 @@ function setViewMode(mode) {
               <option value="value">Value</option>
               <option value="cmc">CMC</option>
               <option value="power">Power</option>
-              <option value="rarity">Rarity</option>
-            </template>
-            <template v-else-if="sortMode === 'roles'">
-              <option value="name">Name</option>
-              <option value="value">Value</option>
-              <option value="cmc">CMC</option>
+              <option value="toughness">Toughness</option>
               <option value="rarity">Rarity</option>
             </template>
             <template v-else>
@@ -171,6 +172,16 @@ function setViewMode(mode) {
         >
           Table
         </button>
+        <button
+          type="button"
+          class="filter-button"
+          :class="{ active: viewMode === 'stats' }"
+          :disabled="!statsModeAvailable"
+          :title="statsModeAvailable ? 'Stats view' : 'Select a set for stats view'"
+          @click="setViewMode('stats')"
+        >
+          Stats
+        </button>
       </div>
       <button
         v-if="showFiltersButton"
@@ -182,7 +193,7 @@ function setViewMode(mode) {
         Filters
       </button>
       <button
-        v-if="showBulk && !isTableView"
+        v-if="showBulk && !hideGalleryChrome"
         type="button"
         class="btn btn-secondary btn-small"
         :class="{ 'is-active': bulkSelectMode }"
@@ -191,7 +202,7 @@ function setViewMode(mode) {
         {{ bulkSelectMode ? "Done" : "Select" }}
       </button>
       <CollectionGalleryScaleControl
-        v-if="!isTableView"
+        v-if="!hideGalleryChrome"
         class="collection-gallery-toolbar-scale"
         :model-value="cardScale"
         :options="scaleOptions"
@@ -199,7 +210,7 @@ function setViewMode(mode) {
       />
     </div>
 
-    <div v-if="showLenses && !isTableView" class="collection-all-toolbar-row collection-all-lenses">
+    <div v-if="showLenses && !hideGalleryChrome" class="collection-all-toolbar-row collection-all-lenses">
       <button
         v-for="lens in COLLECTION_LENSES"
         :key="lens.id"
@@ -219,7 +230,7 @@ function setViewMode(mode) {
       </p>
     </div>
 
-    <div v-if="showBulk && !isTableView && bulkSelectMode && selectedCount" class="collection-bulk-bar">
+    <div v-if="showBulk && !hideGalleryChrome && bulkSelectMode && selectedCount" class="collection-bulk-bar">
       <span>{{ selectedCount }} selected</span>
       <button
         type="button"

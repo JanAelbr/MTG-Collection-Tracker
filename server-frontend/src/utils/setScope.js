@@ -34,7 +34,7 @@ export function collectionScopeFromRoute(route) {
 }
 
 const ALL_CARDS_SORT_FIELDS = new Set(["number", "value", "name", "artStyle"]);
-const SEARCH_SORT_FIELDS = new Set(["newest", "name", "value", "cmc", "rarity", "power"]);
+const SEARCH_SORT_FIELDS = new Set(["newest", "name", "value", "cmc", "rarity", "power", "toughness"]);
 const SEARCH_SORT_DIR_DEFAULTS = {
   newest: "desc",
   name: "asc",
@@ -42,13 +42,7 @@ const SEARCH_SORT_DIR_DEFAULTS = {
   cmc: "asc",
   rarity: "asc",
   power: "desc",
-};
-const ROLES_SORT_FIELDS = new Set(["name", "cmc", "rarity", "value"]);
-const ROLES_SORT_DIR_DEFAULTS = {
-  name: "asc",
-  cmc: "asc",
-  rarity: "asc",
-  value: "desc",
+  toughness: "desc",
 };
 const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
@@ -121,151 +115,6 @@ export function normalizeSearchSortDir(sort, dir) {
   return defaultSearchSortDirForField(normalizedSort);
 }
 
-export function defaultRolesSortDirForField(sort) {
-  return ROLES_SORT_DIR_DEFAULTS[sort] || "asc";
-}
-
-export function normalizeRolesSort(sort) {
-  return typeof sort === "string" && ROLES_SORT_FIELDS.has(sort) ? sort : "name";
-}
-
-export function normalizeRolesSortDir(sort, dir) {
-  const normalizedSort = normalizeRolesSort(sort);
-  if (dir === "asc" || dir === "desc") {
-    return dir;
-  }
-  return defaultRolesSortDirForField(normalizedSort);
-}
-
-export function normalizeRolesRole(role) {
-  const value = typeof role === "string" ? role.trim().toLowerCase() : "";
-  return SEARCH_ROLE_FILTERS.has(value) ? value : "";
-}
-
-export function rolesFiltersFromRoute(route) {
-  const role = normalizeRolesRole(route.query?.role);
-  const sort = normalizeRolesSort(route.query?.sort);
-  const sortDir = normalizeRolesSortDir(sort, route.query?.dir);
-  const storageFilters = parseStorageFiltersFromRoute(route);
-
-  const finish = route.query?.finish;
-  const foilFilter = ALL_CARDS_FINISH_FILTERS.has(finish) ? finish : "all";
-
-  const typeParam = route.query?.type;
-  const typeFilter = typeof typeParam === "string" && ALL_CARDS_TYPE_FILTERS.has(typeParam)
-    ? typeParam
-    : "all";
-
-  const colorsParam = route.query?.colors;
-  const colorFilters = typeof colorsParam === "string"
-    ? colorsParam
-      .split(",")
-      .map((value) => value.trim().toUpperCase())
-      .filter((value) => ALL_CARDS_COLOR_FILTERS.has(value))
-    : [];
-  const colorMode = parseColorModeFromRoute(route);
-
-  const rarityParam = route.query?.rarity;
-  const rarityFilter = typeof rarityParam === "string" && ALL_CARDS_RARITY_FILTERS.has(rarityParam)
-    ? rarityParam
-    : "all";
-
-  const nameParam = route.query?.q;
-  const searchQuery = typeof nameParam === "string" ? nameParam.trim() : "";
-
-  return {
-    role,
-    sort,
-    sortDir,
-    storageFilters,
-    foilFilter,
-    typeFilter,
-    colorFilters,
-    colorMode,
-    rarityFilter,
-    searchQuery,
-    cmcMin: parseOptionalNumber(route.query?.cmcMin),
-    cmcMax: parseOptionalNumber(route.query?.cmcMax),
-    priceMin: parseOptionalNumber(route.query?.priceMin),
-    priceMax: parseOptionalNumber(route.query?.priceMax),
-    powerMin: parseOptionalNumber(route.query?.powMin),
-    toughnessMin: parseOptionalNumber(route.query?.tghMin),
-  };
-}
-
-export function rolesRouteQuery({
-  role = "",
-  sort = "name",
-  sortDir = "asc",
-  storageFilters = [],
-  foilFilter = "all",
-  typeFilter = "all",
-  colorFilters = [],
-  colorMode = "exact",
-  rarityFilter = "all",
-  searchQuery = "",
-  cmcMin = null,
-  cmcMax = null,
-  priceMin = null,
-  priceMax = null,
-  powerMin = null,
-  toughnessMin = null,
-} = {}) {
-  const query = {};
-  const normalizedRole = normalizeRolesRole(role);
-  if (normalizedRole) {
-    query.role = normalizedRole;
-  }
-  if (searchQuery) {
-    query.q = searchQuery;
-  }
-  const normalizedSort = normalizeRolesSort(sort);
-  if (normalizedSort !== "name") {
-    query.sort = normalizedSort;
-  }
-  const normalizedDir = normalizeRolesSortDir(normalizedSort, sortDir);
-  if (normalizedDir !== defaultRolesSortDirForField(normalizedSort)) {
-    query.dir = normalizedDir;
-  }
-  if (foilFilter !== "all") {
-    query.finish = foilFilter;
-  }
-  if (typeFilter !== "all") {
-    query.type = typeFilter;
-  }
-  if (colorFilters?.length) {
-    query.colors = colorFilters.join(",");
-  }
-  if (colorMode === "includes") {
-    query.colorMode = "includes";
-  }
-  if (rarityFilter !== "all") {
-    query.rarity = rarityFilter;
-  }
-  if (cmcMin != null) {
-    query.cmcMin = String(cmcMin);
-  }
-  if (cmcMax != null) {
-    query.cmcMax = String(cmcMax);
-  }
-  if (priceMin != null) {
-    query.priceMin = String(priceMin);
-  }
-  if (priceMax != null) {
-    query.priceMax = String(priceMax);
-  }
-  if (powerMin != null) {
-    query.powMin = String(powerMin);
-  }
-  if (toughnessMin != null) {
-    query.tghMin = String(toughnessMin);
-  }
-  if (storageFilters?.length) {
-    query.storage = storageFilters.join(",");
-  }
-  return query;
-}
-
 export function allCardsFiltersFromRoute(route) {
   const owned = route.query?.owned;
   const ownedFilter = ALL_CARDS_OWNED_FILTERS.has(owned) ? owned : "owned";
@@ -320,7 +169,7 @@ export function allCardsFiltersFromRoute(route) {
   const lens = collectionLensFromRoute(route);
 
   const viewParam = route.query?.view;
-  const viewMode = viewParam === "table" ? "table" : "gallery";
+  const viewMode = viewParam === "table" || viewParam === "stats" ? viewParam : "gallery";
 
   const editArtStyles = route.query?.editArtStyles;
   const openArtStyleEditor = editArtStyles === "1" || editArtStyles === "true" || editArtStyles === "";
@@ -420,8 +269,8 @@ export function allCardsRouteQuery({
   if (lens) {
     query.lens = lens;
   }
-  if (viewMode === "table") {
-    query.view = "table";
+  if (viewMode === "table" || viewMode === "stats") {
+    query.view = viewMode;
   }
   if (editArtStyles) {
     query.editArtStyles = "1";
@@ -680,12 +529,6 @@ export function collectionNavQuery(route, targetPath) {
   const { setCode, artStyle, family } = collectionScopeFromRoute(route);
   if (targetPath === "/collection/search") {
     return searchNavQuery(route);
-  }
-  if (targetPath === "/collection/roles") {
-    if (route.path === "/collection/roles") {
-      return rolesRouteQuery(rolesFiltersFromRoute(route));
-    }
-    return rolesRouteQuery({ role: "", sort: "name", sortDir: "asc", storageFilters: [] });
   }
   if (targetPath === "/collection/all") {
     const filters = route.path === "/collection/all"

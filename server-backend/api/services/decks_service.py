@@ -621,6 +621,23 @@ def _move_instances_between_locations(
     return len(rows)
 
 
+def _resolve_release_destination(
+    conn: sqlite3.Connection,
+    destination_slug: str | None,
+) -> str:
+    from api.services.storage_service import StorageError, assert_location_assignable, get_location
+
+    destination = (destination_slug or "").strip() or settings_service.get_default_storage_location(
+        conn
+    )
+    try:
+        assert_location_assignable(conn, destination)
+        get_location(conn, destination)
+    except StorageError as exc:
+        raise DeckError(exc.message, status_code=exc.status_code) from exc
+    return destination
+
+
 def _release_owned_copies_to_storage(
     conn: sqlite3.Connection,
     *,
@@ -629,20 +646,16 @@ def _release_owned_copies_to_storage(
     collector_number: str,
     finish: int,
     count: int,
+    destination_slug: str | None = None,
 ) -> dict:
     from api.services.manager_service import _insert_copy_instance, _instance_count
-    from api.services.storage_service import StorageError, get_location
     from util.app_tables import ensure_app_tables
 
     if count <= 0:
         return {"movedToStorage": 0, "storageLocation": ""}
 
     ensure_app_tables(conn)
-    destination = settings_service.get_default_storage_location(conn)
-    try:
-        get_location(conn, destination)
-    except StorageError as exc:
-        raise DeckError(exc.message, status_code=exc.status_code) from exc
+    destination = _resolve_release_destination(conn, destination_slug)
 
     deck_location = f"deck:{str(deck_slug).lower()}"
     moved = _move_instances_between_locations(
@@ -1082,7 +1095,403 @@ def remove_card_from_deck(
     }
 
 
+def _count_non_deck_instances(
+    conn: sqlite3.Connection,
+    *,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) FROM card_instances
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+          AND location_slug NOT LIKE 'deck:%'
+        """,
+        (set_code, collector_number, finish),
+    ).fetchone()
+    return int(row[0]) if row else 0
 
+
+def _claim_one_non_deck_copy_to_deck(
+    conn: sqlite3.Connection,
+    *,
+    deck_slug: str,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+) -> int:
+    """Move one non-deck instance into deck storage. Raises if none available."""
+    from api.services.manager_service import _apply_ownership
+    from util.app_tables import ensure_app_tables
+
+    ensure_app_tables(conn)
+    deck_location = f"deck:{str(deck_slug).lower()}"
+    purchase_row = conn.execute(
+        """
+        SELECT 1 FROM purchases
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+        """,
+        (set_code, collector_number, finish),
+    ).fetchone()
+    if not purchase_row:
+        _apply_ownership(
+            conn,
+            set_code=set_code,
+            collector_number=collector_number,
+            finish=finish,
+            owned=True,
+        )
+
+    row = conn.execute(
+        """
+        SELECT instance_id
+        FROM card_instances
+        WHERE set_code = ? AND collector_number = ? AND finish = ?
+          AND location_slug NOT LIKE 'deck:%'
+        ORDER BY
+          CASE WHEN location_slug = ? THEN 0 ELSE 1 END,
+          instance_id DESC
+        LIMIT 1
+        """,
+        (
+            set_code,
+            collector_number,
+            finish,
+            settings_service.get_default_storage_location(conn),
+        ),
+    ).fetchone()
+    if not row:
+        raise DeckError(
+            "No owned copy available in storage for the replacement card",
+            status_code=400,
+        )
+    conn.execute(
+        "UPDATE card_instances SET location_slug = ? WHERE instance_id = ?",
+        (deck_location, row[0]),
+    )
+    return 1
+
+
+def _remove_one_deck_card_inplace(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: int,
+    deck_slug: str,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+    section: str,
+    qty: int,
+    destination_slug: str | None,
+) -> dict:
+    """Remove qty from a deck row without committing. Returns remove result fields."""
+    existing = conn.execute(
+        """
+        SELECT deck_card_id, qty, owned_qty, card_name, in_catalog
+        FROM deck_cards
+        WHERE deck_id = ? AND set_code = ? AND collector_number = ?
+          AND finish = ? AND section = ?
+        """,
+        (deck_id, set_code, collector_number, finish, section),
+    ).fetchone()
+    if existing is None:
+        raise DeckError("Card not in deck", status_code=404)
+
+    current_qty = int(existing[1])
+    current_owned = int(existing[2])
+    remove_qty = max(1, min(int(qty), 99))
+    if remove_qty > current_qty:
+        raise DeckError("Cannot remove more copies than are in the deck", status_code=400)
+
+    unowned_in_deck = max(0, current_qty - current_owned)
+    if remove_qty <= unowned_in_deck:
+        owned_to_release = 0
+    else:
+        owned_to_release = min(current_owned, remove_qty - unowned_in_deck)
+
+    storage_result = {"movedToStorage": 0, "storageLocation": ""}
+    if owned_to_release > 0:
+        storage_result = _release_owned_copies_to_storage(
+            conn,
+            deck_slug=deck_slug,
+            set_code=set_code,
+            collector_number=collector_number,
+            finish=finish,
+            count=owned_to_release,
+            destination_slug=destination_slug,
+        )
+
+    new_qty = current_qty - remove_qty
+    new_owned = current_owned - owned_to_release
+    removed_completely = new_qty <= 0
+    if removed_completely:
+        conn.execute("DELETE FROM deck_cards WHERE deck_card_id = ?", (existing[0],))
+        result_qty = 0
+        result_owned = 0
+    else:
+        conn.execute(
+            """
+            UPDATE deck_cards
+            SET qty = ?, owned_qty = ?
+            WHERE deck_card_id = ?
+            """,
+            (new_qty, new_owned, existing[0]),
+        )
+        result_qty = new_qty
+        result_owned = new_owned
+
+    return {
+        "removed": removed_completely,
+        "qty": result_qty,
+        "ownedQty": result_owned,
+        "section": section,
+        "movedToStorage": storage_result["movedToStorage"],
+        "storageLocation": storage_result.get("storageLocation", ""),
+        "card": {
+            "setCode": set_code,
+            "collectorNumber": collector_number,
+            "finish": finish,
+            "cardName": existing[3],
+            "inCatalog": bool(existing[4]),
+        },
+    }
+
+
+def _add_owned_deck_card_inplace(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: int,
+    deck_slug: str,
+    deck_name: str,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+    section: str,
+    qty: int = 1,
+) -> dict:
+    """Add qty as owned to a deck section without committing."""
+    from util.deck_helpers import resolve_deck_row
+
+    add_qty = max(1, min(int(qty), 99))
+    resolved = resolve_deck_row(
+        conn.cursor(),
+        {
+            "set_code": set_code.upper(),
+            "collector_number": str(collector_number),
+            "finish": finish,
+            "qty": add_qty,
+            "section": section,
+            "owned_qty": add_qty,
+            "sort_order": 0,
+        },
+    )
+    if not resolved.get("set_code") or not resolved.get("collector_number"):
+        raise DeckError("Card print is required", status_code=400)
+
+    if section == "main":
+        _assert_card_matches_deck_color_identity(
+            conn,
+            deck_id=deck_id,
+            set_code=resolved["set_code"],
+            collector_number=resolved["collector_number"],
+            card_name=resolved.get("card_name") or "",
+        )
+
+    if _count_non_deck_instances(
+        conn,
+        set_code=resolved["set_code"],
+        collector_number=resolved["collector_number"],
+        finish=resolved["finish"],
+    ) < add_qty:
+        raise DeckError(
+            "No owned copy available in storage for the replacement card",
+            status_code=400,
+        )
+
+    existing = conn.execute(
+        """
+        SELECT deck_card_id, qty, owned_qty
+        FROM deck_cards
+        WHERE deck_id = ? AND set_code = ? AND collector_number = ?
+          AND finish = ? AND section = ?
+        """,
+        (
+            deck_id,
+            resolved["set_code"],
+            resolved["collector_number"],
+            resolved["finish"],
+            section,
+        ),
+    ).fetchone()
+
+    created = existing is None
+    if existing:
+        new_qty = int(existing[1]) + add_qty
+        new_owned = int(existing[2]) + add_qty
+        conn.execute(
+            """
+            UPDATE deck_cards
+            SET qty = ?, owned_qty = ?, card_name = ?, in_catalog = ?
+            WHERE deck_card_id = ?
+            """,
+            (
+                new_qty,
+                new_owned,
+                resolved["card_name"],
+                resolved["in_catalog"],
+                existing[0],
+            ),
+        )
+        result_qty = new_qty
+        result_owned = new_owned
+    else:
+        sort_order_row = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM deck_cards WHERE deck_id = ?",
+            (deck_id,),
+        ).fetchone()
+        sort_order = int(sort_order_row[0]) if sort_order_row else 0
+        conn.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish, qty, owned_qty,
+                section, sort_order, in_catalog
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                deck_id,
+                resolved["card_name"],
+                resolved["set_code"],
+                resolved["collector_number"],
+                resolved["finish"],
+                add_qty,
+                add_qty,
+                section,
+                sort_order,
+                resolved["in_catalog"],
+            ),
+        )
+        result_qty = add_qty
+        result_owned = add_qty
+
+    claimed = 0
+    for _ in range(add_qty):
+        claimed += _claim_one_non_deck_copy_to_deck(
+            conn,
+            deck_slug=deck_slug,
+            set_code=resolved["set_code"],
+            collector_number=resolved["collector_number"],
+            finish=resolved["finish"],
+        )
+
+    return {
+        "deckId": str(deck_id),
+        "deckName": deck_name,
+        "created": created,
+        "qty": result_qty,
+        "ownedQty": result_owned,
+        "section": section,
+        "claimedToDeck": claimed,
+        "card": {
+            "setCode": resolved["set_code"],
+            "collectorNumber": resolved["collector_number"],
+            "finish": resolved["finish"],
+            "cardName": resolved["card_name"],
+            "inCatalog": bool(resolved["in_catalog"]),
+        },
+    }
+
+
+def swap_deck_card(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    remove_set_code: str,
+    remove_collector_number: str,
+    remove_finish: int,
+    remove_section: str = "main",
+    remove_qty: int = 1,
+    add_set_code: str,
+    add_collector_number: str,
+    add_finish: int,
+    destination_storage_location: str | None = None,
+) -> dict:
+    """Atomically swap one deck card for an owned non-deck replacement."""
+    from api.cache import bump_cache_epoch
+    from util.card_finishes import normalize_finish
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, name, slug FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    section_name = (remove_section or "main").strip().lower()
+    if section_name not in {"commander", "main", "sideboard"}:
+        raise DeckError("Invalid section", status_code=400)
+
+    rem_set = str(remove_set_code).upper()
+    rem_num = str(remove_collector_number).strip()
+    rem_finish = normalize_finish(remove_finish)
+    add_set = str(add_set_code).upper()
+    add_num = str(add_collector_number).strip()
+    add_fin = normalize_finish(add_finish)
+    qty = max(1, min(int(remove_qty), 99))
+
+    if rem_set == add_set and rem_num == add_num and rem_finish == add_fin:
+        raise DeckError("Cannot swap a card for the same printing", status_code=400)
+
+    # Validate destination up front so a bad slug fails before mutating.
+    _resolve_release_destination(conn, destination_storage_location)
+
+    try:
+        removed = _remove_one_deck_card_inplace(
+            conn,
+            deck_id=deck_row[0],
+            deck_slug=deck_row[2],
+            set_code=rem_set,
+            collector_number=rem_num,
+            finish=rem_finish,
+            section=section_name,
+            qty=qty,
+            destination_slug=destination_storage_location,
+        )
+        added = _add_owned_deck_card_inplace(
+            conn,
+            deck_id=deck_row[0],
+            deck_slug=deck_row[2],
+            deck_name=deck_row[1],
+            set_code=add_set,
+            collector_number=add_num,
+            finish=add_fin,
+            section=section_name,
+            qty=qty,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    bump_cache_epoch()
+
+    return {
+        "deckId": str(deck_row[0]),
+        "deckName": deck_row[1],
+        "section": section_name,
+        "removed": removed,
+        "added": added,
+        "movedToStorage": removed["movedToStorage"],
+        "storageLocation": removed["storageLocation"],
+        "claimedToDeck": added["claimedToDeck"],
+    }
 
 
 def adjust_deck_card_qty(
@@ -1302,6 +1711,7 @@ def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, 
         "cardTypes": card.get("card_types") or [],
         "manaCost": card.get("mana_cost") or "",
         "cmc": card.get("cmc"),
+        "rarity": (str(card.get("rarity") or "").strip().lower() or None),
         "oracleText": card.get("oracle_text") or "",
         "isBasicLand": bool(card.get("is_basic_land")),
         "roles": card_roles_for(card),
@@ -1770,6 +2180,7 @@ def _deck_cards_for_builder(conn: sqlite3.Connection, deck_id: str) -> tuple[lis
             "cardType": row.get("card_type") or "",
             "cmc": row.get("cmc"),
             "manaCost": row.get("mana_cost") or "",
+            "rarity": (str(row.get("rarity") or "").strip().lower() or None),
             "isBasicLand": bool(row.get("is_basic_land")),
             "colorIdentity": row.get("color_identity"),
         }

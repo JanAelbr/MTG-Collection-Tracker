@@ -25,7 +25,7 @@ from util.set_catalog import load_sets_catalog
 
 SEARCH_PAGE_SIZE = 25
 MAX_SEARCH_PAGE_SIZE = 100
-SEARCH_SORT_FIELDS = frozenset({"newest", "name", "value", "cmc", "rarity", "power"})
+SEARCH_SORT_FIELDS = frozenset({"newest", "name", "value", "cmc", "rarity", "power", "toughness"})
 SEARCH_SORT_DIR_DEFAULTS = {
     "newest": "desc",
     "name": "asc",
@@ -33,6 +33,7 @@ SEARCH_SORT_DIR_DEFAULTS = {
     "cmc": "asc",
     "rarity": "asc",
     "power": "desc",
+    "toughness": "desc",
 }
 RARITY_SORT_RANK = {
     "common": 0,
@@ -354,6 +355,12 @@ def _power_sort_value(card: dict) -> float | None:
     return _parse_numeric_stat(card.get("power"))
 
 
+def _toughness_sort_value(card: dict) -> float | None:
+    from util.card_metadata import _parse_numeric_stat
+
+    return _parse_numeric_stat(card.get("toughness"))
+
+
 def _rank_search_pool(
     pool: list[dict],
     *,
@@ -398,6 +405,14 @@ def _rank_search_pool(
             pool,
             key=lambda card: (
                 _numeric_nulls_last_key(_power_sort_value(card), ascending=ascending),
+                *tie_break(card),
+            ),
+        )
+    if normalized_sort == "toughness":
+        return sorted(
+            pool,
+            key=lambda card: (
+                _numeric_nulls_last_key(_toughness_sort_value(card), ascending=ascending),
                 *tie_break(card),
             ),
         )
@@ -875,6 +890,7 @@ def _pool_variants_by_print(pool: list[dict], name: str) -> dict[tuple, dict]:
 
 def _variant_from_catalog_row(row: sqlite3.Row, pool_card: dict | None) -> dict:
     variant = dict(pool_card) if pool_card else {}
+    rarity = row["rarity"] if "rarity" in row.keys() else None
     variant.update({
         "setCode": row["set_code"],
         "collectorNumber": str(row["collector_number"]),
@@ -883,6 +899,7 @@ def _variant_from_catalog_row(row: sqlite3.Row, pool_card: dict | None) -> dict:
         "imageUri": row["image_uri"] or variant.get("imageUri") or "",
         "imageUriBack": row["image_uri_back"] or variant.get("imageUriBack") or "",
         "typeLine": row["type_line"] or variant.get("typeLine") or "",
+        "rarity": (str(rarity or variant.get("rarity") or "").strip().lower() or None),
         "hasNonfoil": bool(row["has_nonfoil"]),
         "hasFoil": bool(row["has_foil"]),
         "hasEtched": bool(row["has_etched"]),
@@ -918,7 +935,8 @@ def _catalog_variants_for_name(
             has_nonfoil,
             has_foil,
             has_etched,
-            type_line
+            type_line,
+            rarity
         FROM cards
         WHERE name = ?
           AND {exclude_alchemy_sql()}
@@ -1276,96 +1294,6 @@ def search_cards(
         "totalMatches": total,
         "totalPages": total_pages,
         "cards": page_cards,
-    }
-
-
-def list_owned_role_counts(
-    conn: sqlite3.Connection,
-    *,
-    storage_filters: list[str] | None = None,
-) -> dict:
-    """Distinct owned card names per searchable role (a name can count in multiple roles)."""
-    from collections import Counter
-
-    from util.card_name_roles import ensure_card_name_roles_table, parse_roles
-
-    ensure_card_name_roles_table(conn)
-    selected_storage = [slug for slug in (storage_filters or []) if str(slug).strip()]
-    params: list = []
-
-    if selected_storage and _has_card_instances_table(conn):
-        placeholders = ", ".join("?" for _ in selected_storage)
-        params.extend(selected_storage)
-        rows = conn.execute(
-            f"""
-            SELECT DISTINCT c.name, r.roles
-            FROM cards c
-            JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE
-            JOIN card_instances ci
-              ON ci.set_code = c.set_code
-             AND CAST(ci.collector_number AS TEXT) = CAST(c.collector_number AS TEXT)
-            WHERE ci.location_slug IN ({placeholders})
-              AND {exclude_alchemy_sql("c.collector_number")}
-              AND {exclude_alchemy_art_style_sql("c.art_style")}
-            """,
-            params,
-        ).fetchall()
-    else:
-        owned_exists = _owned_print_exists_sql(
-            "c",
-            include_instances=_has_card_instances_table(conn),
-        )
-        rows = conn.execute(
-            f"""
-            SELECT DISTINCT c.name, r.roles
-            FROM cards c
-            JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE
-            WHERE {owned_exists}
-              AND {exclude_alchemy_sql("c.collector_number")}
-              AND {exclude_alchemy_art_style_sql("c.art_style")}
-            """,
-        ).fetchall()
-
-    counts: Counter[str] = Counter()
-    for row in rows:
-        for role in parse_roles(row[1]):
-            if role in SEARCHABLE_CARD_ROLES:
-                counts[role] += 1
-
-    # Stable order matching frontend SEARCH_ROLE_OPTIONS / CARD_ROLE_LABELS.
-    ordered = [
-        "ramp",
-        "draw",
-        "removal",
-        "interaction",
-        "protection",
-        "tutor",
-        "fast_mana",
-        "game_changer",
-        "combo_piece",
-        "synergy",
-        "recursion",
-        "reanimate",
-        "equipment",
-        "aura",
-        "graveyard_hate",
-        "extra_turn",
-        "mass_land_destruction",
-        "board_wipe",
-        "bounce",
-        "counterspell",
-        "land_destruction",
-        "mill",
-        "discard",
-        "sac_outlet",
-        "fog",
-    ]
-    return {
-        "roles": [
-            {"id": role_id, "count": int(counts.get(role_id, 0))}
-            for role_id in ordered
-            if role_id in SEARCHABLE_CARD_ROLES
-        ],
     }
 
 

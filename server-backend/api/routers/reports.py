@@ -11,7 +11,6 @@ from api.services.search_service import (
     _parse_role_filters,
     _parse_storage_filters,
     list_name_variants,
-    list_owned_role_counts,
     list_search_facets,
     search_cards,
 )
@@ -31,22 +30,6 @@ def reports_meta(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         params={},
         ttl=120,
         loader=lambda: load_reports_meta(conn),
-    )
-
-
-@router.get("/owned-roles")
-def report_owned_roles(
-    request: Request,
-    conn: sqlite3.Connection = Depends(get_db),
-    storage: str = Query(default=""),
-):
-    storage_filters = _parse_storage_filters(storage)
-    return serve_cached_json(
-        request,
-        namespace="reports.owned-roles",
-        params={"storage": ",".join(storage_filters)},
-        ttl=60,
-        loader=lambda: list_owned_role_counts(conn, storage_filters=storage_filters),
     )
 
 

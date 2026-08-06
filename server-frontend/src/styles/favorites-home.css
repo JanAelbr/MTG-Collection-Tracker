@@ -38,6 +38,25 @@
   margin-bottom: 12px;
 }
 
+.favorites-home-gallery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 4px;
+}
+
+.favorites-home-gallery-sort {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.favorites-home-gallery-summary {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
 .favorites-home-strategy {
   margin: 0;
 }

@@ -1,6 +1,7 @@
 <script setup>
 import CollectionSetLink from "./CollectionSetLink.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
 import DeckOwnedToggle from "./DeckOwnedToggle.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
@@ -64,6 +65,12 @@ function cardRoute(card) {
 
       <div class="deck-stacks-detail-meta">
         <div class="deck-stacks-expanded-name-row">
+          <CardSetSymbol
+            v-if="card.setCode"
+            :set-code="card.setCode"
+            :family-root="card.familyRoot || ''"
+            :rarity="card.rarity || ''"
+          />
           <ManaCost :mana-cost="card.manaCost || ''" :size="16" />
           <RouterLink
             v-if="cardRoute(card)"

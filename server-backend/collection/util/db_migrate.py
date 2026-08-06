@@ -29,7 +29,6 @@ CARD_COLUMNS = {
     "power": "TEXT",
     "toughness": "TEXT",
     "rarity": "TEXT",
-    "art_ahash": "TEXT",
 }
 
 
@@ -225,12 +224,9 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_art_style ON cards(set_code, art_style)"
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_cards_art_ahash ON cards(art_ahash)"
-    )
-    # Speeds up the many exact `WHERE name = ?` lookups (variant gallery, scan
-    # name search, print finish flags). Does not help `LIKE '%term%'` set search
-    # (leading wildcard), which stays a table scan by design.
+    # Speeds up the many exact `WHERE name = ?` lookups (variant gallery, print
+    # finish flags). Does not help `LIKE '%term%'` set search (leading wildcard),
+    # which stays a table scan by design.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name)"
     )

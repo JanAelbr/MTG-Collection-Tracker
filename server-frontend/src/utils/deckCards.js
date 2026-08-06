@@ -188,6 +188,42 @@ export function cardMatchesColorFilter(card, selectedColors, { mode = "exact" } 
   return identity.every((color, index) => color === pipFilters[index]);
 }
 
+/** True when card color identity is a subset of the commander's (empty card identity always ok). */
+export function cardWithinColorIdentity(card, allowedIdentity) {
+  if (allowedIdentity == null) {
+    return true;
+  }
+  const allowed = new Set(
+    (allowedIdentity || [])
+      .map((color) => String(color || "").toUpperCase())
+      .filter((color) => "WUBRG".includes(color)),
+  );
+  const identity = [
+    ...new Set(
+      (card?.colorIdentity?.length ? card.colorIdentity : (card?.colors || []))
+        .map((color) => String(color || "").toUpperCase())
+        .filter((color) => "WUBRG".includes(color)),
+    ),
+  ];
+  if (!identity.length) {
+    return true;
+  }
+  return identity.every((color) => allowed.has(color));
+}
+
+/** Color pips allowed in a deck: commander colors plus colorless. null → all. */
+export function visibleColorPipsForIdentity(allowedIdentity) {
+  if (allowedIdentity == null) {
+    return [...DECK_COLOR_ORDER];
+  }
+  const allowed = new Set(
+    (allowedIdentity || [])
+      .map((color) => String(color || "").toUpperCase())
+      .filter((color) => "WUBRG".includes(color)),
+  );
+  return DECK_COLOR_ORDER.filter((color) => color === "C" || allowed.has(color));
+}
+
 export function cardMatchesTypeFilter(card, typeFilter) {
   if (!typeFilter || typeFilter === "all") {
     return true;

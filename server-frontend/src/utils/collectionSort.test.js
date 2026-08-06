@@ -15,10 +15,18 @@ describe("collectionSort", () => {
 
   it("normalizes sort fields and defaults", () => {
     expect(normalizeCollectionSort("name")).toBe("name");
+    expect(normalizeCollectionSort("cmc")).toBe("cmc");
+    expect(normalizeCollectionSort("rarity")).toBe("rarity");
+    expect(normalizeCollectionSort("power")).toBe("power");
+    expect(normalizeCollectionSort("toughness")).toBe("toughness");
     expect(normalizeCollectionSort("set", { allowSet: true })).toBe("set");
     expect(normalizeCollectionSort("set")).toBe("value");
     expect(normalizeCollectionSort("nope")).toBe("value");
     expect(defaultCollectionSortDir("number")).toBe("asc");
+    expect(defaultCollectionSortDir("cmc")).toBe("asc");
+    expect(defaultCollectionSortDir("rarity")).toBe("asc");
+    expect(defaultCollectionSortDir("power")).toBe("desc");
+    expect(defaultCollectionSortDir("toughness")).toBe("desc");
     expect(defaultCollectionSortDir("value")).toBe("desc");
   });
 
@@ -58,6 +66,36 @@ describe("collectionSort", () => {
     expect(
       sortCollectionCards(withCopies, { sort: "copies", dir: "desc" }).map((card) => card.copyCount),
     ).toEqual([3, 2, 1]);
+  });
+
+  it("sorts by cmc ascending with missing last", () => {
+    const withCmc = [
+      { name: "Bolt", setCode: "M21", collectorNumber: "1", finish: 0, cmc: 1 },
+      { name: "Beast", setCode: "M21", collectorNumber: "2", finish: 0, cmc: 3 },
+      { name: "Unknown", setCode: "M21", collectorNumber: "3", finish: 0 },
+      { name: "Cantrip", setCode: "M21", collectorNumber: "4", finish: 0, cmc: 1 },
+    ];
+    expect(
+      sortCollectionCards(withCmc, { sort: "cmc", dir: "asc" }).map((card) => card.name),
+    ).toEqual(["Bolt", "Cantrip", "Beast", "Unknown"]);
+  });
+
+  it("sorts by rarity, power, and toughness", () => {
+    const withStats = [
+      { name: "Common", setCode: "M21", collectorNumber: "1", finish: 0, rarity: "common", power: "1", toughness: "1" },
+      { name: "Mythic", setCode: "M21", collectorNumber: "2", finish: 0, rarity: "mythic", power: "5", toughness: "4" },
+      { name: "Rare", setCode: "M21", collectorNumber: "3", finish: 0, rarity: "rare", power: "*", toughness: "3" },
+      { name: "Instant", setCode: "M21", collectorNumber: "4", finish: 0, rarity: "uncommon" },
+    ];
+    expect(
+      sortCollectionCards(withStats, { sort: "rarity", dir: "asc" }).map((card) => card.name),
+    ).toEqual(["Common", "Instant", "Rare", "Mythic"]);
+    expect(
+      sortCollectionCards(withStats, { sort: "power", dir: "desc" }).map((card) => card.name),
+    ).toEqual(["Mythic", "Common", "Rare", "Instant"]);
+    expect(
+      sortCollectionCards(withStats, { sort: "toughness", dir: "desc" }).map((card) => card.name),
+    ).toEqual(["Mythic", "Rare", "Common", "Instant"]);
   });
 
   it("does not mutate the input list", () => {

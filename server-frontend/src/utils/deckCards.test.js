@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cardMatchesColorFilter, cardMatchesOwnershipFilter, isDeckCardMissing } from "./deckCards.js";
+import {
+  cardMatchesColorFilter,
+  cardMatchesOwnershipFilter,
+  cardWithinColorIdentity,
+  isDeckCardMissing,
+  visibleColorPipsForIdentity,
+} from "./deckCards.js";
 
 describe("deckCards ownership filter", () => {
   it("detects partially and fully missing deck slots", () => {
@@ -35,5 +41,31 @@ describe("cardMatchesColorFilter", () => {
       ["R"],
       { mode: "includes" },
     )).toBe(true);
+  });
+});
+
+describe("cardWithinColorIdentity", () => {
+  it("allows subset and colorless cards for a multicolor commander", () => {
+    expect(cardWithinColorIdentity({ colorIdentity: ["U"] }, ["U", "R"])).toBe(true);
+    expect(cardWithinColorIdentity({ colorIdentity: ["U", "R"] }, ["U", "R"])).toBe(true);
+    expect(cardWithinColorIdentity({ colorIdentity: [] }, ["U", "R"])).toBe(true);
+    expect(cardWithinColorIdentity({ colorIdentity: ["G"] }, ["U", "R"])).toBe(false);
+  });
+
+  it("restricts colorless commanders to colorless cards", () => {
+    expect(cardWithinColorIdentity({ colorIdentity: [] }, [])).toBe(true);
+    expect(cardWithinColorIdentity({ colorIdentity: ["R"] }, [])).toBe(false);
+  });
+
+  it("skips filtering when identity is null", () => {
+    expect(cardWithinColorIdentity({ colorIdentity: ["G"] }, null)).toBe(true);
+  });
+});
+
+describe("visibleColorPipsForIdentity", () => {
+  it("shows commander colors plus colorless", () => {
+    expect(visibleColorPipsForIdentity(["U", "R"])).toEqual(["U", "R", "C"]);
+    expect(visibleColorPipsForIdentity([])).toEqual(["C"]);
+    expect(visibleColorPipsForIdentity(null)).toEqual(["W", "U", "B", "R", "G", "C"]);
   });
 });

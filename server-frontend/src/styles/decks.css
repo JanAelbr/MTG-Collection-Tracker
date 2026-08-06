@@ -14,6 +14,66 @@
   flex-shrink: 0;
 }
 
+.deck-swap-card-modal {
+  width: min(1400px, 96vw);
+}
+
+.deck-swap-card-toolbar {
+  flex-shrink: 0;
+  padding: 0 4px 8px;
+}
+
+.deck-swap-card-toolbar-row {
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.deck-swap-destination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 13px;
+  color: #555;
+}
+
+.deck-swap-destination > span {
+  white-space: nowrap;
+}
+
+.deck-cards-qty-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-card-swap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #607d8b;
+  cursor: pointer;
+}
+
+.deck-card-swap-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.deck-card-swap-btn:hover {
+  border-color: #90caf9;
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
 .deck-add-card-modal-head,
 .deck-add-card-modal > .collection-search-form,
 .deck-add-card-modal > .deck-add-card-modal-filters {

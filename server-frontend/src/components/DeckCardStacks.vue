@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import DeckAddCardModal from "./DeckAddCardModal.vue";
+import DeckSwapCardModal from "./DeckSwapCardModal.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckStackCardDetail from "./DeckStackCardDetail.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
@@ -176,9 +176,10 @@ function closeAddModal() {
         </section>
       </div>
 
-      <DeckAddCardModal
+      <DeckSwapCardModal
         v-if="defaultDeckId"
         :open="addModal.open"
+        mode="add"
         :deck-id="defaultDeckId"
         :deck-name="deckName"
         :section="addModal.section"

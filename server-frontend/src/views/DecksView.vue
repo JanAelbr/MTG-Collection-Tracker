@@ -9,11 +9,12 @@ import DeckPowerPanel from "../components/DeckPowerPanel.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
 import DeckOverview from "../components/DeckOverview.vue";
-import DeckAddCardModal from "../components/DeckAddCardModal.vue";
+import DeckSwapCardModal from "../components/DeckSwapCardModal.vue";
 import DeckCsvImportModal from "../components/DeckCsvImportModal.vue";
 import DeckCardQtyControl from "../components/DeckCardQtyControl.vue";
 import DeckOwnedToggle from "../components/DeckOwnedToggle.vue";
 import CardFinishBadge from "../components/CardFinishBadge.vue";
+import CardSetSymbol from "../components/CardSetSymbol.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
@@ -74,14 +75,15 @@ const deckColorFilters = ref([]);
 const deckCardSort = ref("name");
 const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
-const emptyDeckAddOpen = ref(false);
-const deckAddModal = ref({
+const csvImportOpen = ref(false);
+const storagePickModal = ref({
   open: false,
+  mode: "add",
+  card: null,
   section: "main",
   cardType: "",
   typeLabel: "",
 });
-const csvImportOpen = ref(false);
 const refreshingUnpricedMetadata = ref(false);
 const unpricedMetadataMessage = ref("");
 const unpricedMetadataError = ref("");
@@ -196,28 +198,36 @@ function deckTypeFilterLabel(type) {
 }
 
 function openEmptyDeckAdd() {
-  deckAddModal.value = {
+  storagePickModal.value = {
     open: true,
+    mode: "add",
+    card: null,
     section: "main",
     cardType: "",
     typeLabel: "",
   };
-  emptyDeckAddOpen.value = true;
 }
 
 function openTableTypeAdd(group) {
-  deckAddModal.value = {
+  storagePickModal.value = {
     open: true,
+    mode: "add",
+    card: null,
     section: group.section || "main",
     cardType: group.type || "",
     typeLabel: group.label || "",
   };
-  emptyDeckAddOpen.value = true;
 }
 
-function closeEmptyDeckAdd() {
-  emptyDeckAddOpen.value = false;
-  deckAddModal.value = { ...deckAddModal.value, open: false };
+function closeStoragePickModal() {
+  storagePickModal.value = {
+    open: false,
+    mode: "add",
+    card: null,
+    section: "main",
+    cardType: "",
+    typeLabel: "",
+  };
 }
 
 function openCsvImport() {
@@ -226,6 +236,25 @@ function openCsvImport() {
 
 function closeCsvImport() {
   csvImportOpen.value = false;
+}
+
+function openSwapModal(card) {
+  if (!card || !deckId.value) {
+    return;
+  }
+  storagePickModal.value = {
+    open: true,
+    mode: "swap",
+    card,
+    section: String(card.section || "main").trim().toLowerCase() || "main",
+    cardType: "",
+    typeLabel: "",
+  };
+}
+
+async function onDeckCardSwapped(result) {
+  closeStoragePickModal();
+  await refreshDeckPage(result?.deckId || deckId.value);
 }
 
 function toggleColorFilter(color) {
@@ -366,8 +395,7 @@ async function refreshDeckPage(deckKey = deckId.value) {
 }
 
 async function onDeckCardAdded() {
-  emptyDeckAddOpen.value = false;
-  deckAddModal.value = { ...deckAddModal.value, open: false };
+  closeStoragePickModal();
   await refreshDeckPage();
 }
 
@@ -1072,29 +1100,53 @@ onActivated(async () => {
                         >
                           <td><ManaCost :mana-cost="card.manaCost || ''" :size="18" /></td>
                           <td class="deck-cards-qty-cell">
-                            <DeckCardQtyControl
-                              :card="card"
-                              :deck-id="deckId"
-                              :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
-                              compact
-                              inline
-                              @changed="onDeckCardChanged"
-                              @removed="onDeckCardRemoved"
-                            />
+                            <div class="deck-cards-qty-actions">
+                              <DeckCardQtyControl
+                                :card="card"
+                                :deck-id="deckId"
+                                :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
+                                compact
+                                inline
+                                @changed="onDeckCardChanged"
+                                @removed="onDeckCardRemoved"
+                              />
+                              <button
+                                type="button"
+                                class="deck-card-swap-btn"
+                                aria-label="Swap card from storage"
+                                title="Swap with owned card from storage"
+                                @click.stop="openSwapModal(card)"
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                  <path
+                                    d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"
+                                    fill="currentColor"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                           <td>
                             <CardPreview
                               :image-uri="card.imageUri"
                               :image-uri-back="card.imageUriBack || ''"
                             >
-                              <RouterLink
-                                v-if="cardRoute(card)"
-                                :to="cardRoute(card)"
-                                class="reports-card-link"
-                              >
-                                {{ card.cardName }}
-                              </RouterLink>
-                              <span v-else>{{ card.cardName }}</span>
+                              <span class="deck-cards-name-row">
+                                <CardSetSymbol
+                                  v-if="card.setCode"
+                                  :set-code="card.setCode"
+                                  :family-root="card.familyRoot || ''"
+                                  :rarity="card.rarity || ''"
+                                />
+                                <RouterLink
+                                  v-if="cardRoute(card)"
+                                  :to="cardRoute(card)"
+                                  class="reports-card-link"
+                                >
+                                  {{ card.cardName }}
+                                </RouterLink>
+                                <span v-else>{{ card.cardName }}</span>
+                              </span>
                             </CardPreview>
                             <CardFinishBadge :card="card" compact />
                             <span
@@ -1154,17 +1206,20 @@ onActivated(async () => {
       </div>
     </template>
 
-    <DeckAddCardModal
+    <DeckSwapCardModal
       v-if="deckId"
-      :open="emptyDeckAddOpen"
+      :open="storagePickModal.open"
+      :mode="storagePickModal.mode"
       :deck-id="deckId"
       :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
-      :section="deckAddModal.section"
-      :card-type="deckAddModal.cardType"
-      :type-label="deckAddModal.typeLabel"
+      :card="storagePickModal.card"
+      :section="storagePickModal.section"
+      :card-type="storagePickModal.cardType"
+      :type-label="storagePickModal.typeLabel"
       :color-identity="deckColorIdentity"
-      @close="closeEmptyDeckAdd"
+      @close="closeStoragePickModal"
       @added="onDeckCardAdded"
+      @swapped="onDeckCardSwapped"
     />
 
     <DeckCsvImportModal

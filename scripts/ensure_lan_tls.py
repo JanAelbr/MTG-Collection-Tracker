@@ -1,4 +1,4 @@
-"""Ensure a self-signed TLS cert for LAN HTTPS (camera / getUserMedia)."""
+"""Ensure a self-signed TLS cert for LAN HTTPS."""
 
 from __future__ import annotations
 

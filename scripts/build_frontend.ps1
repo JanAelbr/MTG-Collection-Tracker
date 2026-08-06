@@ -13,3 +13,5 @@ try {
 finally {
     Pop-Location
 }
+
+& (Join-Path $PSScriptRoot "publish_runtime.ps1")

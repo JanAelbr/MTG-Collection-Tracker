@@ -12,6 +12,8 @@ import {
   storageLocations,
 } from "../composables/cardContextMenu";
 import { fetchPricingSettings } from "../composables/pricingSettings";
+import StorageLocationIcon from "./StorageLocationIcon.vue";
+import { findStorageLocation } from "../utils/storageLocationGroups";
 const MAX_COPIES = 99;
 
 const props = defineProps({
@@ -42,6 +44,35 @@ const ownedCount = computed(() => {
 });
 const maxCopies = computed(() => copyState.value?.maxCopies ?? MAX_COPIES);
 const canAddCopy = computed(() => ownedCount.value < maxCopies.value);
+const singleCopy = computed(() => {
+  if (ownedCount.value !== 1) {
+    return null;
+  }
+  const copies = copyState.value?.copies;
+  if (Array.isArray(copies) && copies.length === 1) {
+    return copies[0];
+  }
+  const slug = copyState.value?.locationSlug;
+  if (slug) {
+    const location = findStorageLocation(storageLocations.value, slug);
+    return {
+      locationSlug: slug,
+      label: location?.label || slug,
+    };
+  }
+  return null;
+});
+const singleCopyLocation = computed(() => {
+  const copy = singleCopy.value;
+  if (!copy) {
+    return null;
+  }
+  return findStorageLocation(storageLocations.value, copy.locationSlug) || {
+    slug: copy.locationSlug,
+    label: copy.label || copy.locationSlug || "Storage",
+    locationType: String(copy.locationSlug || "").startsWith("deck:") ? "deck" : "storage",
+  };
+});
 
 function resolveDefaultStorageSlug(state, settings) {
   if (settings?.defaultStorageLocation) {
@@ -194,6 +225,14 @@ defineExpose({ addCopy });
             +
           </button>
         </div>
+      </div>
+      <div
+        v-if="variant === 'overlay' && singleCopyLocation"
+        class="card-copy-controls-storage-readonly"
+        :title="singleCopyLocation.label"
+      >
+        <StorageLocationIcon :type="singleCopyLocation.locationType" />
+        <span>{{ singleCopyLocation.label }}</span>
       </div>
     </div>
 

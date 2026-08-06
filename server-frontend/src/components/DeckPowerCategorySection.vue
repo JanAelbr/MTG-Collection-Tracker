@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import {
   componentScoreClass,
   formatComponentCount,
@@ -71,6 +72,12 @@ const countLabel = computed(() => formatComponentCount(props.component.id, props
 
         <figcaption class="deck-power-card-caption">
           <span class="deck-power-card-name-row">
+            <CardSetSymbol
+              v-if="card.setCode"
+              :set-code="card.setCode"
+              :family-root="card.familyRoot || ''"
+              :rarity="card.rarity || ''"
+            />
             <RouterLink
               v-if="powerCardRoute(card, deckId)"
               :to="powerCardRoute(card, deckId)"

@@ -1235,6 +1235,7 @@ onMounted(async () => {
                         <option value="value">Value</option>
                         <option value="cmc">CMC</option>
                         <option value="power">Power</option>
+                        <option value="toughness">Toughness</option>
                         <option value="rarity">Rarity</option>
                       </select>
                       <button

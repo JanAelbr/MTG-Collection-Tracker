@@ -6,6 +6,7 @@ import DeckLandManaChart from "./DeckLandManaChart.vue";
 import DeckManaCurveChart from "./DeckManaCurveChart.vue";
 import ManaCost from "./ManaCost.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
@@ -179,6 +180,12 @@ function cardRoute(card) {
 
           <figcaption class="deck-overview-top-caption">
             <span class="deck-overview-top-name-row">
+              <CardSetSymbol
+                v-if="card.setCode"
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="12" />
               <RouterLink
                 v-if="cardRoute(card)"

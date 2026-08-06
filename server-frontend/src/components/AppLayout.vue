@@ -10,17 +10,24 @@ import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
 const route = useRoute();
-const { setGalleryFilter, showSetBrowserSubsets } = useSetGalleryFilter();
+const { setGalleryFilter } = useSetGalleryFilter();
 
 const collectionSubnav = [
-  { to: "/collection/all", label: "All cards" },
-  { to: "/collection/roles", label: "Roles" },
-  { to: "/stats", label: "Stats" },
+  { to: "/collection/all", label: "Catalog" },
+  { to: "/storage", label: "Storage" },
 ];
 
 const printSubnav = [
   { to: "/print/cards", label: "Cards" },
   { to: "/print/separators", label: "Separators" },
+];
+
+const settingsSubnav = [
+  { to: "/settings/display", label: "Display" },
+  { to: "/settings/sets", label: "Sets" },
+  { to: "/settings/stats", label: "Stats" },
+  { to: "/settings/sync", label: "Sync" },
+  { to: "/settings/backup", label: "Backup" },
 ];
 
 const navItems = [
@@ -31,8 +38,6 @@ const navItems = [
     matchPrefix: "/collection",
     subnav: collectionSubnav,
   },
-  { to: "/sets", label: "Sets", matchPrefix: false },
-  { to: "/storage", label: "Storage", matchPrefix: false },
   {
     to: "/print/cards",
     label: "Print",
@@ -40,16 +45,22 @@ const navItems = [
     subnav: printSubnav,
   },
   { to: "/sell", label: "Sell", matchPrefix: false },
-  { to: "/scan", label: "Scan", matchPrefix: false },
   { to: "/decks", label: "Decks", matchPrefix: false },
-  { to: "/settings", label: "Settings", matchPrefix: false },
+  {
+    to: "/settings/display",
+    label: "Settings",
+    matchPrefix: "/settings",
+    subnav: settingsSubnav,
+  },
 ];
 
 const showCollectionSubnav = computed(() =>
-  route.path.startsWith("/collection") || route.path === "/stats",
+  route.path.startsWith("/collection") || route.path === "/storage",
 );
 
 const showPrintSubnav = computed(() => route.path.startsWith("/print"));
+
+const showSettingsSubnav = computed(() => route.path.startsWith("/settings"));
 
 const activeSubnav = computed(() => {
   if (showCollectionSubnav.value) {
@@ -58,16 +69,15 @@ const activeSubnav = computed(() => {
   if (showPrintSubnav.value) {
     return { items: printSubnav, label: "Print views" };
   }
+  if (showSettingsSubnav.value) {
+    return { items: settingsSubnav, label: "Settings views" };
+  }
   return null;
 });
 
-const showSetGalleryFilter = computed(() => showCollectionSubnav.value);
+const showSetGalleryFilter = computed(() => route.path.startsWith("/collection"));
 
-const showNavbarSearch = computed(() =>
-  route.path !== "/collection/search" && route.path !== "/scan",
-);
-
-const showAdvancedSearchLink = computed(() => route.path !== "/scan");
+const showNavbarSearch = computed(() => route.path !== "/collection/search");
 
 const isAdvancedSearchActive = computed(() => route.path === "/collection/search");
 
@@ -85,7 +95,10 @@ function isNavActive(item) {
     return route.path === "/";
   }
   if (item.matchPrefix === "/collection") {
-    return route.path.startsWith(item.matchPrefix) || route.path === "/stats";
+    return (
+      route.path.startsWith(item.matchPrefix)
+      || route.path === "/storage"
+    );
   }
   if (item.matchPrefix) {
     return route.path.startsWith(item.matchPrefix);
@@ -111,14 +124,12 @@ function navLinkTo(item) {
 }
 
 function subnavLinkTo(subItem) {
-  if (subItem.to.startsWith("/print/")) {
+  if (
+    subItem.to.startsWith("/print/")
+    || subItem.to.startsWith("/settings/")
+    || subItem.to === "/storage"
+  ) {
     return subItem.to;
-  }
-  if (subItem.to === "/stats") {
-    return {
-      path: "/stats",
-      query: setScopeQueryFromRoute(route),
-    };
   }
   return {
     path: subItem.to,
@@ -154,10 +165,9 @@ onMounted(() => {
           </nav>
         </div>
 
-        <div v-if="showNavbarSearch || showAdvancedSearchLink" class="app-topbar-search-cluster">
+        <div class="app-topbar-search-cluster">
           <NavbarSearch v-if="showNavbarSearch" class="app-topbar-search" />
           <RouterLink
-            v-if="showAdvancedSearchLink"
             :to="advancedSearchLink"
             class="app-topbar-advanced-search"
             :class="{ 'is-active': isAdvancedSearchActive }"
@@ -192,14 +202,6 @@ onMounted(() => {
               autocomplete="off"
               spellcheck="false"
             />
-          </label>
-          <label
-            v-if="index === 0 && showSetGalleryFilter"
-            class="app-subnav-subset-toggle"
-            title="Show token, art card, promo, and minigame family subsets"
-          >
-            <input v-model="showSetBrowserSubsets" type="checkbox" />
-            <span>Tokens &amp; promos</span>
           </label>
         </template>
       </nav>

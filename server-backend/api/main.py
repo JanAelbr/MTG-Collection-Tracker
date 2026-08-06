@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.db import connect
-from api.routers import backup, cards, deck_builder, decks, favorites, health, manager, meta, prices, reports, sales, scan, settings, stats, storage
+from api.routers import backup, cards, deck_builder, decks, favorites, health, manager, meta, prices, reports, sales, settings, stats, storage
 from lib.config import FRONTEND_DIST
 from lib.run_log import configure_logging, get_logger
 from util.schema import ensure_database_schema
@@ -136,7 +136,6 @@ app.include_router(stats.router, prefix="/api")
 app.include_router(decks.router, prefix="/api")
 app.include_router(deck_builder.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
-app.include_router(scan.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 

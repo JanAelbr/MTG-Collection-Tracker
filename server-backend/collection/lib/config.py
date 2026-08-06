@@ -7,7 +7,16 @@ COLLECTION_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = COLLECTION_DIR.parent
 REPO_ROOT = BACKEND_DIR.parent
 FRONTEND_DIR = REPO_ROOT / "server-frontend"
-FRONTEND_DIST = FRONTEND_DIR / "dist"
+
+
+def resolve_frontend_dist() -> Path:
+    override = (os.environ.get("MTG_FRONTEND_DIST") or "").strip()
+    if override:
+        return Path(override)
+    return FRONTEND_DIR / "dist"
+
+
+FRONTEND_DIST = resolve_frontend_dist()
 
 APP_TITLE = "MTG - Collection tracker"
 HTTP_USER_AGENT = "MtgCollectionTracker/1.0"

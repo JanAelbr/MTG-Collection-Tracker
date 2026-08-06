@@ -2,23 +2,22 @@ import { createRouter, createWebHistory } from "vue-router";
 import { APP_TITLE } from "./constants/app";
 
 // Route components are lazy-loaded so the initial bundle only pays for the
-// view the user actually lands on. ScanView pulls in tesseract.js (OCR), by
-// far the heaviest dependency, so it benefits the most from code-splitting.
+// view the user actually lands on.
 const StorageView = () => import("./views/StorageView.vue");
 const SellView = () => import("./views/SellView.vue");
 const CollectionView = () => import("./views/CollectionView.vue");
 const CollectionSearchView = () => import("./views/CollectionSearchView.vue");
-const CollectionRolesView = () => import("./views/CollectionRolesView.vue");
-const StatsView = () => import("./views/StatsView.vue");
 const DecksView = () => import("./views/DecksView.vue");
 const DeckBuilderView = () => import("./views/DeckBuilderView.vue");
 const CardDetailView = () => import("./views/CardDetailView.vue");
-const HomeView = () => import("./views/HomeView.vue");
 const FavoritesHomeView = () => import("./views/FavoritesHomeView.vue");
+const SettingsDisplayView = () => import("./views/SettingsDisplayView.vue");
+const SettingsStatsView = () => import("./views/SettingsStatsView.vue");
+const SettingsSyncView = () => import("./views/SettingsSyncView.vue");
+const SettingsBackupView = () => import("./views/SettingsBackupView.vue");
 const SetsView = () => import("./views/SetsView.vue");
 const PrintCardsView = () => import("./views/PrintCardsView.vue");
 const SeparatorsView = () => import("./views/SeparatorsView.vue");
-const ScanView = () => import("./views/ScanView.vue");
 
 const router = createRouter({
   history: createWebHistory(),
@@ -40,12 +39,7 @@ const router = createRouter({
       component: CollectionSearchView,
       meta: { title: "Collection" },
     },
-    {
-      path: "/collection/roles",
-      name: "collection-roles",
-      component: CollectionRolesView,
-      meta: { title: "Roles" },
-    },
+    { path: "/collection/roles", redirect: "/collection/search" },
     {
       path: "/collection/all",
       name: "collection",
@@ -62,19 +56,39 @@ const router = createRouter({
     },
     { path: "/reports/risers", redirect: "/collection/all" },
     { path: "/reports/fallers", redirect: "/collection/all" },
+    { path: "/settings", redirect: "/settings/display" },
     {
-      path: "/settings",
-      name: "settings",
-      component: HomeView,
+      path: "/settings/display",
+      name: "settings-display",
+      component: SettingsDisplayView,
       meta: { title: "Settings" },
     },
-    { path: "/home", redirect: "/" },
     {
-      path: "/sets",
-      name: "sets",
+      path: "/settings/sets",
+      name: "settings-sets",
       component: SetsView,
       meta: { title: "Sets" },
     },
+    {
+      path: "/settings/stats",
+      name: "settings-stats",
+      component: SettingsStatsView,
+      meta: { title: "Stats" },
+    },
+    {
+      path: "/settings/sync",
+      name: "settings-sync",
+      component: SettingsSyncView,
+      meta: { title: "Settings" },
+    },
+    {
+      path: "/settings/backup",
+      name: "settings-backup",
+      component: SettingsBackupView,
+      meta: { title: "Settings" },
+    },
+    { path: "/home", redirect: "/" },
+    { path: "/sets", redirect: "/settings/sets" },
     {
       path: "/storage",
       name: "storage",
@@ -101,12 +115,7 @@ const router = createRouter({
       component: SellView,
       meta: { title: "Sell" },
     },
-    {
-      path: "/scan",
-      name: "scan",
-      component: ScanView,
-      meta: { title: "Scan" },
-    },
+    { path: "/scan", redirect: "/" },
     {
       path: "/manager",
       redirect: (to) => ({
@@ -120,9 +129,20 @@ const router = createRouter({
     },
     {
       path: "/stats",
-      name: "stats",
-      component: StatsView,
-      meta: { title: "Collection Stats" },
+      redirect: (to) => {
+        const set = typeof to.query.set === "string" ? to.query.set : "";
+        if (set && set.toLowerCase() !== "all") {
+          return {
+            path: "/collection/all",
+            query: {
+              set,
+              ...(to.query.family != null ? { family: to.query.family } : {}),
+              view: "stats",
+            },
+          };
+        }
+        return "/settings/stats";
+      },
     },
     { path: "/decks/browse", redirect: "/decks" },
     { path: "/decks/stats", redirect: "/decks" },

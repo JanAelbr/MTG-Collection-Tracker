@@ -193,6 +193,14 @@ function setIconUri(set) {
   return resolveSetGalleryIconUri(set);
 }
 
+/** Icon shown on a family root tile — follows the selected subset when expanded. */
+function cardIconSet(set) {
+  if (isCardActive(set) && set.setCode !== "All") {
+    return activeTitleSet(set);
+  }
+  return set;
+}
+
 function onSetIconError(event, set) {
   applySetGalleryIconFallback(event.target, set);
 }
@@ -438,13 +446,13 @@ onMounted(positionActiveSet);
         <div class="set-gallery-card-main">
           <div class="set-gallery-icon-wrap">
             <img
-              v-if="setIconUri(set)"
-              :key="`${set.setCode}:${setIconUri(set)}`"
-              :src="setIconUri(set)"
-              :alt="`${set.setCode} set icon`"
+              v-if="setIconUri(cardIconSet(set))"
+              :key="`${set.setCode}:${cardIconSet(set).setCode}:${setIconUri(cardIconSet(set))}`"
+              :src="setIconUri(cardIconSet(set))"
+              :alt="`${cardIconSet(set).setCode} set icon`"
               class="set-gallery-icon"
               loading="lazy"
-              @error="onSetIconError($event, set)"
+              @error="onSetIconError($event, cardIconSet(set))"
             >
             <div v-else class="set-gallery-icon set-gallery-icon-placeholder" aria-hidden="true">
               All

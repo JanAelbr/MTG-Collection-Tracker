@@ -303,7 +303,7 @@ class ManagerApiServiceTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(instance[0], 1)
 
-    @patch("api.services.manager_service._scryfall_family_for_code", return_value=["LTR"])
+    @patch("api.services.manager_service._family_scope_for_reload", return_value=(["LTR"], ["LTR"]))
     @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=42)
     def test_reload_set_catalog(self, mock_import, _mock_family):
         self.conn.execute(
@@ -353,7 +353,10 @@ class ManagerApiServiceTests(unittest.TestCase):
             ).fetchone()
         )
 
-    @patch("api.services.manager_service._scryfall_family_for_code", return_value=["IMA", "TIMA"])
+    @patch(
+        "api.services.manager_service._family_scope_for_reload",
+        return_value=(["IMA", "TIMA"], ["IMA", "TIMA"]),
+    )
     @patch("api.services.manager_service.import_set_catalog_from_scryfall")
     def test_reload_set_catalog_continues_when_family_child_missing(
         self, mock_import, _mock_family
@@ -379,6 +382,71 @@ class ManagerApiServiceTests(unittest.TestCase):
                 "SELECT 1 FROM tracked_sets WHERE UPPER(set_code) = 'TIMA'"
             ).fetchone()
         )
+
+    @patch("api.services.manager_service._valid_scryfall_family_members")
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=7)
+    def test_reload_set_catalog_reloads_tracked_non_autoload_siblings(
+        self, mock_import, mock_family
+    ):
+        """Promo (and other non-auto-load) siblings that are already tracked refresh too."""
+        mock_family.return_value = (
+            ["LTR", "LTC", "PLTR"],
+            {
+                "LTR": {"set_type": "expansion", "parent_set_code": None},
+                "LTC": {"set_type": "commander", "parent_set_code": "LTR"},
+                "PLTR": {"set_type": "promo", "parent_set_code": "LTR"},
+            },
+        )
+        add_tracked_set(self.conn, "LTR")
+        add_tracked_set(self.conn, "PLTR")
+
+        result = manager_service.reload_set_catalog(self.conn, "LTR")
+
+        imported = [call.args[1] for call in mock_import.call_args_list]
+        self.assertEqual(imported, ["LTR", "PLTR", "LTC"])
+        self.assertEqual(result["familyMembers"], ["LTR", "PLTR", "LTC"])
+        self.assertTrue(
+            self.conn.execute(
+                "SELECT 1 FROM tracked_sets WHERE UPPER(set_code) = 'LTC'"
+            ).fetchone()
+        )
+
+    @patch("api.services.manager_service._valid_scryfall_family_members")
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=3)
+    def test_reload_set_catalog_reloads_local_family_siblings(
+        self, mock_import, mock_family
+    ):
+        """Local DB siblings reload even when Scryfall family listing is incomplete."""
+        mock_family.return_value = (
+            ["LTR"],
+            {"LTR": {"set_type": "expansion", "parent_set_code": None}},
+        )
+        ensure_sets_table(self.conn)
+        from util.set_catalog import ensure_sets_columns, upsert_set_row
+
+        ensure_sets_columns(self.conn)
+        cursor = self.conn.cursor()
+        upsert_set_row(cursor, "LTR", "LOTR", None, None, "2023-01-01", set_type="expansion")
+        upsert_set_row(
+            cursor,
+            "LTC",
+            "Commander",
+            None,
+            None,
+            "2023-01-01",
+            set_type="commander",
+            parent_set_code="LTR",
+        )
+        add_tracked_set(self.conn, "LTR")
+        add_tracked_set(self.conn, "LTC")
+        self.conn.commit()
+
+        result = manager_service.reload_set_catalog(self.conn, "LTR")
+
+        imported = [call.args[1] for call in mock_import.call_args_list]
+        self.assertEqual(imported, ["LTR", "LTC"])
+        self.assertEqual(result["familyMembers"], ["LTR", "LTC"])
+
     def test_bulk_assign_storage(self):
         manager_service.set_ownership(
             self.conn,

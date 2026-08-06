@@ -16,7 +16,7 @@ import {
 import { usePrintList } from "../composables/printList";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import ListForSaleModal from "./ListForSaleModal.vue";
-import StorageLocationSelect from "./StorageLocationSelect.vue";
+import StorageLocationIcon from "./StorageLocationIcon.vue";
 import {
   canManageFinish,
   cardFinish,
@@ -28,8 +28,13 @@ import {
   finishLabel,
   normalizeFinish,
 } from "../utils/finishes";
+import {
+  findStorageLocation,
+  groupStorageLocations,
+} from "../utils/storageLocationGroups";
 
 const MAX_COPIES = 99;
+const STORAGE_INCLUDE_TYPES = ["storage", "binder"];
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -43,18 +48,32 @@ const emit = defineEmits(["close", "ownership-changed", "finish-changed"]);
 const router = useRouter();
 const printList = usePrintList();
 const menuRef = ref(null);
+const submenuRef = ref(null);
 const panelLoading = ref(false);
 const panelError = ref("");
 const defaultStorageSlug = ref("");
 const saleModal = ref(null);
 const finishStates = ref({});
 const menuStyle = ref({ left: "0px", top: "0px" });
+const openSubmenu = ref(null);
+const submenuStyle = ref({});
 let loadToken = 0;
 let listenersBound = false;
 
 const target = computed(() => normalizeCardMenuTarget(props.card));
 const isInteractive = computed(() => Boolean(target.value));
 const inPrintList = computed(() => printList.has(props.card));
+
+const storageLocationSections = computed(() => {
+  const allowed = new Set(STORAGE_INCLUDE_TYPES);
+  const filtered = storageLocations.value.filter((location) => {
+    if (allowed.has(String(location.locationType || "").toLowerCase())) {
+      return true;
+    }
+    return location.slug === openSubmenu.value?.copy?.locationSlug;
+  });
+  return groupStorageLocations(filtered);
+});
 
 const manageableFinishes = computed(() => {
   if (!props.card) {
@@ -80,7 +99,6 @@ const finishRows = computed(() => {
   ownershipRevision.value;
   return manageableFinishes.value.map((finish) => {
     const state = finishStates.value[finish];
-    // Never fall back to another finish's top-level ownedQty on the gallery tile.
     const ownedCount = state?.ownedCount != null
       ? state.ownedCount
       : ownedCountForFinishFallback(props.card, finish);
@@ -109,7 +127,6 @@ function cardWithFinish(card, finish) {
   };
 }
 
-/** Finish-scoped count when /manager/copies has not loaded yet. */
 function ownedCountForFinishFallback(card, finish) {
   if (!card) {
     return 0;
@@ -118,7 +135,6 @@ function ownedCountForFinishFallback(card, finish) {
   const isSameFinish = cardFinish(card) === normalized;
   return effectiveDeckOwnedQty({
     ...cardWithFinish(card, normalized),
-    // Drop tile-level ownership that belongs only to the clicked finish.
     ownedQty: isSameFinish ? card.ownedQty : undefined,
     owned: isSameFinish ? card.owned : undefined,
     purchaseValue: isSameFinish ? card.purchaseValue : undefined,
@@ -140,6 +156,22 @@ function storageLabel(slug) {
 
 function copyFinish(copy, fallback) {
   return normalizeFinish(copy?.finish ?? fallback);
+}
+
+function copyLocation(copy) {
+  return findStorageLocation(storageLocations.value, copy?.locationSlug) || {
+    slug: copy?.locationSlug,
+    label: copy?.label || copy?.locationSlug || "Storage",
+    locationType: String(copy?.locationSlug || "").startsWith("deck:") ? "deck" : "storage",
+  };
+}
+
+function copyMenuLabel(copy, index, total) {
+  const location = copyLocation(copy);
+  if (total <= 1) {
+    return location.label;
+  }
+  return `Copy ${index + 1} · ${location.label}`;
 }
 
 async function ensureDefaultsForAdd() {
@@ -214,7 +246,51 @@ function positionMenu() {
   };
 }
 
+function positionSubmenu(triggerEl) {
+  const submenuEl = submenuRef.value;
+  if (!triggerEl || !submenuEl) {
+    return;
+  }
+  const pad = 8;
+  const gap = 4;
+  const triggerRect = triggerEl.getBoundingClientRect();
+  const submenuWidth = submenuEl.offsetWidth || 220;
+  const submenuHeight = submenuEl.offsetHeight || 240;
+  let left = triggerRect.right + gap;
+  if (left + submenuWidth + pad > window.innerWidth) {
+    left = Math.max(pad, triggerRect.left - gap - submenuWidth);
+  }
+  let top = triggerRect.top;
+  if (top + submenuHeight + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - submenuHeight - pad);
+  }
+  submenuStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
+}
+
+function closeSubmenu() {
+  openSubmenu.value = null;
+  submenuStyle.value = {};
+}
+
+async function toggleSubmenu(finish, copy, event) {
+  if (!copy || typeof copy.instanceId !== "number") {
+    return;
+  }
+  const key = `${finish}|${copy.instanceId}`;
+  if (openSubmenu.value?.key === key) {
+    closeSubmenu();
+    return;
+  }
+  openSubmenu.value = { key, finish, copy };
+  await nextTick();
+  positionSubmenu(event.currentTarget);
+}
+
 function close() {
+  closeSubmenu();
   emit("close");
 }
 
@@ -222,15 +298,15 @@ function onDocumentPointerDown(event) {
   if (saleModal.value) {
     return;
   }
-  const el = menuRef.value;
   const targetEl = event.target;
   if (
     targetEl instanceof Element
-    && targetEl.closest(".storage-location-picker-menu, .list-for-sale-modal-backdrop, .sell-dialog")
+    && targetEl.closest(".card-context-menu-submenu, .list-for-sale-modal-backdrop, .sell-dialog")
   ) {
     return;
   }
-  if (el && targetEl instanceof Node && el.contains(targetEl)) {
+  const menuEl = menuRef.value;
+  if (menuEl && targetEl instanceof Node && menuEl.contains(targetEl)) {
     return;
   }
   close();
@@ -240,6 +316,10 @@ function onKeydown(event) {
   if (event.key === "Escape") {
     if (saleModal.value) {
       closeSaleModal();
+      return;
+    }
+    if (openSubmenu.value) {
+      closeSubmenu();
       return;
     }
     close();
@@ -282,10 +362,10 @@ watch(
       finishStates.value = {};
       panelError.value = "";
       saleModal.value = null;
+      closeSubmenu();
       unbindListeners();
       return;
     }
-    // Defer so the opening right-click does not immediately close the menu.
     await nextTick();
     if (!props.open) {
       return;
@@ -405,6 +485,15 @@ async function onCopyStorageSelect(finish, copy, slug) {
       ...finishStates.value,
       [finish]: state,
     };
+    if (openSubmenu.value?.copy?.instanceId === copy.instanceId) {
+      const updatedCopy = state.copies?.find((item) => item.instanceId === copy.instanceId);
+      if (updatedCopy) {
+        openSubmenu.value = {
+          ...openSubmenu.value,
+          copy: updatedCopy,
+        };
+      }
+    }
     emit("ownership-changed");
   } catch (error) {
     panelError.value = error.message || "Could not assign storage.";
@@ -428,6 +517,7 @@ function openSaleModal(finish, copy) {
   if (!isInteractive.value || panelLoading.value || typeof copy.instanceId !== "number") {
     return;
   }
+  closeSubmenu();
   saleModal.value = {
     card: cardWithFinish(props.card, copyFinish(copy, finish)),
     instanceId: copy.instanceId,
@@ -512,35 +602,81 @@ async function onSaleModalSaved(result) {
           </div>
         </div>
 
-        <div
+        <button
           v-for="(copy, index) in row.copies"
           :key="copy.instanceId"
-          class="card-context-menu-copy"
+          type="button"
+          class="card-context-menu-item card-context-menu-submenu-trigger"
+          :class="{ 'is-open': openSubmenu?.key === `${row.finish}|${copy.instanceId}` }"
+          :disabled="panelLoading || typeof copy.instanceId !== 'number'"
+          role="menuitem"
+          :aria-haspopup="true"
+          :aria-expanded="openSubmenu?.key === `${row.finish}|${copy.instanceId}` ? 'true' : 'false'"
+          @click="toggleSubmenu(row.finish, copy, $event)"
         >
-          <StorageLocationSelect
-            :model-value="copy.locationSlug"
-            :locations="storageLocations"
-            :include-types="['storage', 'binder']"
-            :disabled="panelLoading || !storageLocations.length || typeof copy.instanceId !== 'number'"
-            compact
-            :aria-label="`${row.label} storage for copy ${index + 1}`"
-            @update:model-value="(slug) => onCopyStorageSelect(row.finish, copy, slug)"
-          />
-          <button
-            v-if="typeof copy.instanceId === 'number'"
-            type="button"
-            class="btn btn-small card-interactive-sell-btn"
-            :disabled="panelLoading"
-            :title="copy.forSale ? 'Update asking price' : 'List this copy for sale'"
-            @click="openSaleModal(row.finish, copy)"
-          >
-            {{ copy.forSale ? "For sale" : "Sell" }}
-          </button>
-        </div>
+          <StorageLocationIcon :type="copyLocation(copy).locationType" />
+          <span class="card-context-menu-submenu-label">{{ copyMenuLabel(copy, index, row.copies.length) }}</span>
+          <span class="card-context-menu-submenu-chevron" aria-hidden="true">›</span>
+        </button>
       </div>
 
       <p v-if="panelLoading" class="card-context-menu-status">Updating…</p>
       <p v-else-if="panelError" class="card-context-menu-status is-error">{{ panelError }}</p>
+    </div>
+
+    <div
+      v-if="openSubmenu"
+      ref="submenuRef"
+      class="card-context-menu card-context-menu-submenu"
+      role="menu"
+      :style="submenuStyle"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <template v-for="(section, sectionIndex) in storageLocationSections" :key="section.type">
+        <div
+          v-if="sectionIndex > 0"
+          class="card-context-menu-divider"
+        />
+        <div class="card-context-menu-submenu-section">
+          <div class="card-context-menu-submenu-heading">
+            <StorageLocationIcon :type="section.type" />
+            <span>{{ section.label }}</span>
+          </div>
+          <button
+            v-for="location in section.locations"
+            :key="location.slug"
+            type="button"
+            class="card-context-menu-item"
+            :class="{ 'is-selected': location.slug === openSubmenu.copy.locationSlug }"
+            role="menuitem"
+            :disabled="panelLoading"
+            @click="onCopyStorageSelect(openSubmenu.finish, openSubmenu.copy, location.slug)"
+          >
+            <StorageLocationIcon :type="location.locationType" />
+            <span>{{ location.label }}</span>
+          </button>
+        </div>
+      </template>
+
+      <div class="card-context-menu-divider" />
+
+      <button
+        v-if="typeof openSubmenu.copy.instanceId === 'number'"
+        type="button"
+        class="card-context-menu-item card-context-menu-item--sale"
+        role="menuitem"
+        :disabled="panelLoading"
+        @click="openSaleModal(openSubmenu.finish, openSubmenu.copy)"
+      >
+        <svg class="card-context-menu-item-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"
+            fill="currentColor"
+          />
+        </svg>
+        <span>{{ openSubmenu.copy.forSale ? "Update for sale" : "List for sale" }}</span>
+      </button>
     </div>
 
     <ListForSaleModal

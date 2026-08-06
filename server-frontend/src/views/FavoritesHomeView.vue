@@ -20,12 +20,28 @@ import {
   favoriteCardKey,
 } from "../utils/favorites";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
+import { filterCollectionCards } from "../utils/collectionFilters";
+import {
+  defaultCollectionSortDir,
+  sortCollectionCards,
+} from "../utils/collectionSort";
+
+const GALLERY_SORT_OPTIONS = [
+  { id: "value", label: "Value" },
+  { id: "name", label: "Name" },
+  { id: "number", label: "Number" },
+  { id: "cmc", label: "CMC" },
+  { id: "rarity", label: "Rarity" },
+];
 
 const payload = ref(null);
 const loading = ref(true);
 const loadError = ref("");
 const dragArtFrom = ref(-1);
 const dragArtOver = ref(-1);
+const galleryOwnedFilter = ref("owned");
+const gallerySort = ref("number");
+const gallerySortDir = ref(defaultCollectionSortDir("number"));
 const { settings: pricingSettings, collectionCardScale } = usePricingSettings();
 const { toggleArtStyleFavorite, favoriteCards, favoriteArtStyles } = useFavorites();
 
@@ -33,14 +49,77 @@ const sets = computed(() => payload.value?.sets || []);
 const artStyles = computed(() => payload.value?.artStyles || []);
 const cards = computed(() => payload.value?.cards || []);
 
-const displayCards = computed(() => applyGalleryDisplayToCards(cards.value));
+const displayCards = computed(() => {
+  const filtered = filterCollectionCards(cards.value, {
+    ownedFilter: galleryOwnedFilter.value,
+  });
+  return applyGalleryDisplayToCards(filtered);
+});
 
 const displayArtStyles = computed(() =>
-  artStyles.value.map((style) => ({
-    ...style,
-    cards: applyGalleryDisplayToCards(style.cards || []),
-  })),
+  artStyles.value.map((style) => {
+    const filtered = filterCollectionCards(style.cards || [], {
+      ownedFilter: galleryOwnedFilter.value,
+    });
+    const sorted = sortCollectionCards(filtered, {
+      sort: gallerySort.value,
+      dir: gallerySortDir.value,
+    });
+    return {
+      ...style,
+      cards: applyGalleryDisplayToCards(sorted),
+    };
+  }),
 );
+
+const galleryCardCount = computed(() => {
+  const favouriteCards = displayCards.value.length;
+  const artGalleryCards = displayArtStyles.value.reduce(
+    (sum, style) => sum + (style.cards?.length || 0),
+    0,
+  );
+  return favouriteCards + artGalleryCards;
+});
+
+const galleryTotalCardCount = computed(() => {
+  const favouriteCards = cards.value.length;
+  const artGalleryCards = artStyles.value.reduce(
+    (sum, style) => sum + (style.cards?.length || 0),
+    0,
+  );
+  return favouriteCards + artGalleryCards;
+});
+
+const gallerySummary = computed(() => {
+  const shown = galleryCardCount.value;
+  const total = galleryTotalCardCount.value;
+  if (galleryOwnedFilter.value === "owned") {
+    return `${shown} owned card${shown === 1 ? "" : "s"}`;
+  }
+  return `${shown} shown · ${total} total`;
+});
+
+const cardsReorderable = computed(() => galleryOwnedFilter.value === "all");
+
+function setGalleryOwnedFilter(next) {
+  if (galleryOwnedFilter.value === next) {
+    return;
+  }
+  galleryOwnedFilter.value = next;
+}
+
+function onGallerySortChange(event) {
+  const next = event.target.value;
+  if (next === gallerySort.value) {
+    return;
+  }
+  gallerySort.value = next;
+  gallerySortDir.value = defaultCollectionSortDir(next);
+}
+
+function toggleGallerySortDir() {
+  gallerySortDir.value = gallerySortDir.value === "asc" ? "desc" : "asc";
+}
 
 const isEmpty = computed(
   () => !sets.value.length && !artStyles.value.length && !cards.value.length,
@@ -272,22 +351,80 @@ onMounted(async () => {
         No favourites yet. Star a card tile, an art style in the filter list, or a set in the gallery.
       </p>
 
+      <div
+        v-if="cards.length || artStyles.length"
+        class="favorites-home-gallery-toolbar"
+      >
+        <div
+          class="button-group collection-ownership-group collection-ownership-group--binary"
+          role="group"
+          aria-label="Ownership filter"
+        >
+          <button
+            type="button"
+            class="filter-button"
+            :class="{ active: galleryOwnedFilter === 'owned' }"
+            @click="setGalleryOwnedFilter('owned')"
+          >
+            Owned
+          </button>
+          <button
+            type="button"
+            class="filter-button"
+            :class="{ active: galleryOwnedFilter === 'all' }"
+            @click="setGalleryOwnedFilter('all')"
+          >
+            All
+          </button>
+        </div>
+        <label class="collection-all-sort favorites-home-gallery-sort" for="favorites-gallery-sort">
+          <span class="visually-hidden">Sort art styles by</span>
+          <div class="collection-sort-row">
+            <select id="favorites-gallery-sort" :value="gallerySort" @change="onGallerySortChange">
+              <option
+                v-for="option in GALLERY_SORT_OPTIONS"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-secondary collection-sort-dir"
+              :title="gallerySortDir === 'asc' ? 'Ascending' : 'Descending'"
+              :aria-label="`Sort ${gallerySortDir === 'asc' ? 'ascending' : 'descending'}`"
+              @click="toggleGallerySortDir"
+            >
+              {{ gallerySortDir === "asc" ? "↑" : "↓" }}
+            </button>
+          </div>
+        </label>
+        <p class="favorites-home-gallery-summary">{{ gallerySummary }}</p>
+      </div>
+
       <section v-if="cards.length" class="favorites-home-section home-panel">
         <div class="favorites-home-section-header">
           <h2>Cards</h2>
         </div>
-        <div class="favorites-home-cards collection-gallery-panel">
+        <div
+          v-if="displayCards.length"
+          class="favorites-home-cards collection-gallery-panel"
+        >
           <CollectionCardGrid
             :cards="displayCards"
             show-set-label
             show-unowned-badge
-            reorderable
+            :reorderable="cardsReorderable"
             :card-scale="collectionCardScale"
             @ownership-changed="onOwnershipChanged"
             @favorite-changed="onCardFavoriteChanged"
             @reorder="onReorderCards"
           />
         </div>
+        <p v-else class="favorites-home-muted">
+          {{ galleryOwnedFilter === "owned" ? "No owned favourite cards." : "No favourite cards." }}
+        </p>
       </section>
 
       <section v-if="artStyles.length" class="favorites-home-section home-panel">
@@ -351,7 +488,9 @@ onMounted(async () => {
               @favorite-changed="onCardFavoriteChanged"
             />
           </div>
-          <p v-else class="favorites-home-muted">No cards in this art style yet.</p>
+          <p v-else class="favorites-home-muted">
+            {{ galleryOwnedFilter === "owned" ? "No owned cards in this art style." : "No cards in this art style yet." }}
+          </p>
         </div>
       </section>
 

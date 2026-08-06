@@ -1,4 +1,6 @@
 import { compareCollectorNumbers } from "../composables/useManagerSetTable.js";
+import { COLLECTION_RARITY_ORDER } from "./collectionRarities.js";
+import { parseNumericStat } from "./collectionFilters.js";
 
 export const COLLECTION_SORT_FIELDS = new Set([
   "number",
@@ -8,10 +10,22 @@ export const COLLECTION_SORT_FIELDS = new Set([
   "set",
   "finish",
   "copies",
+  "cmc",
+  "rarity",
+  "power",
+  "toughness",
 ]);
 
 export function defaultCollectionSortDir(sort) {
-  if (sort === "number" || sort === "set" || sort === "name" || sort === "finish" || sort === "artStyle") {
+  if (
+    sort === "number"
+    || sort === "set"
+    || sort === "name"
+    || sort === "finish"
+    || sort === "artStyle"
+    || sort === "cmc"
+    || sort === "rarity"
+  ) {
     return "asc";
   }
   return "desc";
@@ -105,6 +119,42 @@ export function sortCollectionCards(cards = [], { sort = "value", dir = "desc", 
       const leftCopies = Number(left.copyCount ?? left.ownedQty ?? 0);
       const rightCopies = Number(right.copyCount ?? right.ownedQty ?? 0);
       primary = ascending ? leftCopies - rightCopies : rightCopies - leftCopies;
+    } else if (normalizedSort === "cmc") {
+      const leftCmc = Number(left.cmc);
+      const rightCmc = Number(right.cmc);
+      const leftMissing = !Number.isFinite(leftCmc);
+      const rightMissing = !Number.isFinite(rightCmc);
+      if (leftMissing || rightMissing) {
+        if (leftMissing && rightMissing) {
+          primary = 0;
+        } else {
+          primary = leftMissing ? 1 : -1;
+        }
+      } else {
+        primary = ascending ? leftCmc - rightCmc : rightCmc - leftCmc;
+      }
+    } else if (normalizedSort === "rarity") {
+      const leftRank = COLLECTION_RARITY_ORDER.indexOf(
+        String(left.rarity || "").trim().toLowerCase(),
+      );
+      const rightRank = COLLECTION_RARITY_ORDER.indexOf(
+        String(right.rarity || "").trim().toLowerCase(),
+      );
+      const leftValue = leftRank === -1 ? 99 : leftRank;
+      const rightValue = rightRank === -1 ? 99 : rightRank;
+      primary = ascending ? leftValue - rightValue : rightValue - leftValue;
+    } else if (normalizedSort === "power" || normalizedSort === "toughness") {
+      const leftStat = parseNumericStat(left[normalizedSort]);
+      const rightStat = parseNumericStat(right[normalizedSort]);
+      if (leftStat == null || rightStat == null) {
+        if (leftStat == null && rightStat == null) {
+          primary = 0;
+        } else {
+          primary = leftStat == null ? 1 : -1;
+        }
+      } else {
+        primary = ascending ? leftStat - rightStat : rightStat - leftStat;
+      }
     } else {
       primary = compareCollectorNumbers(left.collectorNumber, right.collectorNumber);
       if (primary !== 0) {
