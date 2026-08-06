@@ -4,7 +4,6 @@ import { computed, nextTick, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
-import DeckHero from "../components/DeckHero.vue";
 import DeckPowerPanel from "../components/DeckPowerPanel.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
@@ -17,7 +16,6 @@ import CardFinishBadge from "../components/CardFinishBadge.vue";
 import CardSetSymbol from "../components/CardSetSymbol.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
-import CollectionSetLink from "../components/CollectionSetLink.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
 import ManaCost from "../components/ManaCost.vue";
@@ -34,11 +32,11 @@ import {
 } from "../composables/cardContextMenu";
 import {
   DECK_CARDS_VIEW_KEY,
-  GALLERY_SORT_KEY,
+  filterDecksForGallery,
   getStoredDeckCardsView,
-  getStoredGallerySort,
   sortDecksForGallery,
 } from "../utils/deckBrowse";
+import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import {
   buildDeckCardGroups,
   buildEmptyDeckCardGroups,
@@ -54,7 +52,7 @@ import {
   sortDeckCards,
   splitCommanderCards,
 } from "../utils/deckCards";
-import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
+import { cardFinish, cardRouteQuery } from "../utils/finishes";
 import { formatCardRoles } from "../utils/deckPower";
 import {
   formatEuro,
@@ -64,16 +62,15 @@ defineOptions({ name: "DecksView" });
 
 const route = useRoute();
 const router = useRouter();
+const { deckGalleryFilter } = useDeckGalleryFilter();
 
 const deckId = ref("");
 const browseIndex = ref(null);
-const gallerySort = ref(getStoredGallerySort());
 const deckCardsView = ref(getStoredDeckCardsView());
 const deckTypeFilter = ref("all");
 const deckOwnershipFilter = ref("all");
 const deckColorFilters = ref([]);
 const deckCardSort = ref("name");
-const deckDetailRef = ref(null);
 const createDeckOpen = ref(false);
 const csvImportOpen = ref(false);
 const storagePickModal = ref({
@@ -98,16 +95,6 @@ const browseStats = computed(() => browsePages.value[String(deckId.value)] || nu
 const activeBrowseDeck = computed(
   () => decks.value.find((deck) => String(deck.id) === String(deckId.value)) || null,
 );
-
-const unknownCards = computed(() => browseStats.value?.unknownCards || []);
-const hasUnknownCards = computed(() => (browseStats.value?.unknownCount ?? 0) > 0);
-const unpricedCardCount = computed(() => {
-  const qty = Number(browseStats.value?.unknownQty);
-  if (Number.isFinite(qty) && qty > 0) {
-    return qty;
-  }
-  return Number(browseStats.value?.unknownCount) || 0;
-});
 
 const commanderCards = computed(() => {
   const source = Array.isArray(browseStats.value?.cards)
@@ -420,6 +407,17 @@ async function onDeckRenamed(updatedDeck) {
   }
 }
 
+async function onDeckFavorited(updatedDeck) {
+  if (updatedDeck && browseIndex.value?.decks) {
+    browseIndex.value = {
+      ...browseIndex.value,
+      decks: browseIndex.value.decks.map((deck) =>
+        String(deck.id) === String(updatedDeck.id) ? { ...deck, ...updatedDeck } : deck,
+      ),
+    };
+  }
+}
+
 async function onDeckDeleted(deletedDeckId) {
   const deletedKey = String(deletedDeckId);
   if (browseIndex.value) {
@@ -434,7 +432,9 @@ async function onDeckDeleted(deletedDeckId) {
     };
   }
   if (String(deckId.value) === deletedKey) {
-    const remaining = browseIndex.value?.decks || [];
+    const remaining = visibleGalleryDecks().filter(
+      (deck) => String(deck.id) !== deletedKey,
+    );
     if (remaining.length) {
       selectBrowseDeck(String(remaining[0].id));
     } else {
@@ -487,23 +487,6 @@ function cardRoute(card) {
   };
 }
 
-function unknownCardRoute(card) {
-  const setCode = card.setCode || card.set_code || "";
-  const collectorNumber = String(card.collectorNumber ?? card.collector_number ?? "");
-  if (!setCode || !collectorNumber) {
-    return null;
-  }
-  return {
-    name: "card",
-    params: { setCode, collectorNumber },
-    query: cardRouteQuery(card.finish ?? card.foil ?? 0),
-  };
-}
-
-function unknownCardName(card) {
-  return card.cardName || card.card_name || "Unknown";
-}
-
 async function refreshUnpricedMetadata() {
   if (!deckId.value || refreshingUnpricedMetadata.value) {
     return;
@@ -524,53 +507,75 @@ async function refreshUnpricedMetadata() {
   }
 }
 
-function leftmostGalleryDeckId() {
-  const sorted = sortDecksForGallery(decks.value, browsePages.value, gallerySort.value);
-  return sorted.length ? String(sorted[0].id) : "";
+watch(deckId, () => {
+  unpricedMetadataMessage.value = "";
+  unpricedMetadataError.value = "";
+});
+
+function isOnDecksRoute() {
+  return route.name === "decks" || route.path.startsWith("/collection/decks");
+}
+
+function visibleGalleryDecks() {
+  return filterDecksForGallery(
+    sortDecksForGallery(decks.value, browsePages.value),
+    browsePages.value,
+    deckGalleryFilter.value,
+  );
+}
+
+function firstGalleryDeckId() {
+  const visible = visibleGalleryDecks();
+  return visible.length ? String(visible[0].id) : "";
 }
 
 function syncDeckIdFromRoute() {
-  if (typeof route.query.deck === "string" && route.query.deck.trim()) {
-    deckId.value = route.query.deck;
+  const requested = typeof route.query.deck === "string" ? route.query.deck.trim() : "";
+  const visible = visibleGalleryDecks();
+  if (requested && visible.some((deck) => String(deck.id) === requested)) {
+    deckId.value = requested;
     return;
   }
-  // No deck query: always pick the leftmost deck after the current gallery sort.
-  const nextId = leftmostGalleryDeckId();
+  const nextId = firstGalleryDeckId();
   if (nextId) {
     deckId.value = nextId;
+  } else {
+    deckId.value = "";
+  }
+}
+
+function ensureVisibleDeckSelected() {
+  if (!browseIndex.value) {
+    return;
+  }
+  const visible = visibleGalleryDecks();
+  if (!visible.length) {
+    if (deckId.value) {
+      deckId.value = "";
+      syncDeckRoute();
+    }
+    return;
+  }
+  if (!visible.some((deck) => String(deck.id) === String(deckId.value))) {
+    selectBrowseDeck(String(visible[0].id));
   }
 }
 
 function syncDeckRoute() {
+  // DecksView is KeepAlive'd: never rewrite the URL while another page is active.
+  // Otherwise leaving /collection/decks?deck=<non-first> clears ?deck, the route watcher falls
+  // back to the first gallery deck, and this replace hijacks the navigation.
+  if (!isOnDecksRoute()) {
+    return;
+  }
+  const desiredDeck = deckId.value ? String(deckId.value) : "";
+  const currentDeck = typeof route.query.deck === "string" ? route.query.deck : "";
+  if (currentDeck === desiredDeck) {
+    return;
+  }
   router.replace({
-    path: "/decks",
-    query: deckId.value ? { deck: deckId.value } : {},
-  });
-}
-
-function scrollDeckDetailIntoView() {
-  nextTick(() => {
-    deckDetailRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-}
-
-function scrollAfterDeckSwitch() {
-  nextTick(() => {
-    if (browseStats.value && deckDetailRef.value) {
-      scrollDeckDetailIntoView();
-      return;
-    }
-    const stop = watch(
-      () => Boolean(browseStats.value && deckDetailRef.value),
-      (ready) => {
-        if (!ready) {
-          return;
-        }
-        scrollDeckDetailIntoView();
-        stop();
-      },
-      { flush: "post" },
-    );
+    path: "/collection/decks",
+    query: desiredDeck ? { deck: desiredDeck } : {},
   });
 }
 
@@ -581,14 +586,8 @@ function selectBrowseDeck(nextDeckId) {
   deckColorFilters.value = [];
   syncDeckRoute();
   if (changed) {
-    scrollAfterDeckSwitch();
     void ensureActiveDeckCardsLoaded();
   }
-}
-
-function changeGallerySort(nextSort) {
-  gallerySort.value = nextSort;
-  localStorage.setItem(GALLERY_SORT_KEY, nextSort);
 }
 
 function changeDeckCardsView(nextView) {
@@ -622,7 +621,13 @@ watch(deckId, () => {
 watch(
   () => route.query.deck,
   () => {
+    if (!isOnDecksRoute()) {
+      return;
+    }
     syncDeckIdFromRoute();
+    if (deckId.value && !route.query.deck) {
+      syncDeckRoute();
+    }
   },
 );
 
@@ -633,6 +638,16 @@ watch(deckId, () => {
 watch(ownershipRevision, () => {
   mergeOwnershipPatchesIntoPages(browseIndex.value?.pages);
 });
+
+watch(
+  [deckGalleryFilter, decks, () => browseIndex.value?.pages],
+  () => {
+    if (!isOnDecksRoute() || !hasMounted.value) {
+      return;
+    }
+    ensureVisibleDeckSelected();
+  },
+);
 
 onMounted(async () => {
   await loadBrowseIndex();
@@ -650,12 +665,23 @@ onActivated(async () => {
   }
   if (!browseIndex.value) {
     await loadBrowseIndex();
-    syncDeckIdFromRoute();
+    if (isOnDecksRoute()) {
+      syncDeckIdFromRoute();
+      if (deckId.value && !route.query.deck) {
+        syncDeckRoute();
+      }
+    }
     await ensureActiveDeckCardsLoaded();
     return;
   }
   if (!browseIndexCacheFresh()) {
     await loadBrowseIndex();
+  }
+  if (isOnDecksRoute()) {
+    syncDeckIdFromRoute();
+    if (deckId.value && !route.query.deck) {
+      syncDeckRoute();
+    }
   }
   await ensureActiveDeckCardsLoaded();
 });
@@ -669,34 +695,6 @@ onActivated(async () => {
 
     <template v-else-if="browseIndex">
       <div class="deck-gallery-wrap">
-        <div class="deck-gallery-toolbar">
-          <button type="button" class="btn btn-secondary btn-small" @click="openCreateDeck">
-            New deck
-          </button>
-          <button type="button" class="btn btn-primary btn-small" @click="router.push('/decks/build')">
-            Build deck
-          </button>
-          <span class="deck-gallery-toolbar-label">Sort by</span>
-          <div class="button-group deck-gallery-sort-group">
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: gallerySort === 'year' }"
-              @click="changeGallerySort('year')"
-            >
-              Year
-            </button>
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: gallerySort === 'value' }"
-              @click="changeGallerySort('value')"
-            >
-              Value
-            </button>
-          </div>
-        </div>
-
         <GalleryLoadingOverlay
           :loading="loadingBrowse && !!browseIndex"
           label="Refreshing decks…"
@@ -705,84 +703,20 @@ onActivated(async () => {
             :decks="decks"
             :pages="browsePages"
             :active-deck-id="deckId"
-            :sort-by="gallerySort"
             :on-renamed="onDeckRenamed"
             :on-deleted="onDeckDeleted"
+            :on-favorited="onDeckFavorited"
             @select="selectBrowseDeck"
             @create="openCreateDeck"
+            @build="router.push('/decks/build')"
           />
         </GalleryLoadingOverlay>
       </div>
 
       <div
         v-if="browseStats && activeBrowseDeck"
-        ref="deckDetailRef"
         class="deck-detail"
       >
-        <DeckHero :deck="activeBrowseDeck" :stats="browseStats" :deck-id="deckId" />
-
-        <details
-          v-if="hasUnknownCards"
-          class="table-panel deck-unknown-panel"
-          aria-label="Unpriced cards"
-        >
-          <summary class="deck-unknown-summary">
-            <div class="deck-unknown-head">
-              <h2>Unpriced cards ({{ unpricedCardCount }})</h2>
-              <button
-                type="button"
-                class="btn btn-secondary btn-small"
-                :disabled="refreshingUnpricedMetadata"
-                @click.stop="refreshUnpricedMetadata"
-              >
-                {{ refreshingUnpricedMetadata ? "Refreshing…" : "Refresh set metadata" }}
-              </button>
-            </div>
-          </summary>
-          <p class="deck-unknown-intro">
-            These deck cards have no current market price.
-            Re-import Scryfall catalog data for the affected sets, then run a price sync if needed.
-          </p>
-          <p v-if="unpricedMetadataMessage" class="deck-unknown-status">{{ unpricedMetadataMessage }}</p>
-          <p v-if="unpricedMetadataError" class="deck-unknown-status error">{{ unpricedMetadataError }}</p>
-          <table class="reports-table deck-unknown-table">
-            <thead>
-              <tr>
-                <th>Set</th>
-                <th>#</th>
-                <th>Name</th>
-                <th>Qty</th>
-                <th>Finish</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(card, index) in unknownCards"
-                :key="`${card.set_code || card.setCode}-${card.collector_number || card.collectorNumber}-${index}`"
-              >
-                <td>
-                  <CollectionSetLink
-                    :set-code="card.setCode || card.set_code || ''"
-                  />
-                </td>
-                <td>{{ card.collectorNumber ?? card.collector_number ?? "—" }}</td>
-                <td>
-                  <RouterLink
-                    v-if="unknownCardRoute(card)"
-                    :to="unknownCardRoute(card)"
-                    class="reports-card-link"
-                  >
-                    {{ unknownCardName(card) }}
-                  </RouterLink>
-                  <span v-else>{{ unknownCardName(card) }}</span>
-                </td>
-                <td>{{ card.qty ?? 1 }}</td>
-                <td>{{ finishLabel(card.finish ?? card.foil ?? 0) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-
         <section class="table-panel deck-cards-panel">
           <div class="deck-cards-sticky">
             <div class="deck-cards-sticky-head deck-cards-sticky-head--actions-only">
@@ -1009,8 +943,13 @@ onActivated(async () => {
                 <DeckOverview
                   v-else-if="deckCardsView === 'overview'"
                   :cards="browseStats?.cards || []"
+                  :stats="browseStats"
                   :deck-id="deckId"
                   :refresh-key="powerRefreshKey"
+                  :refreshing-unpriced="refreshingUnpricedMetadata"
+                  :unpriced-message="unpricedMetadataMessage"
+                  :unpriced-error="unpricedMetadataError"
+                  @refresh-unpriced="refreshUnpricedMetadata"
                 />
 
                 <DeckCardStacks

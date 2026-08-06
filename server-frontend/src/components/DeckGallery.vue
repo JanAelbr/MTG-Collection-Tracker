@@ -1,30 +1,41 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, clearClientCache } from "../api";
+import CardSetSymbol from "./CardSetSymbol.vue";
+import ManaSymbols from "./ManaSymbols.vue";
 import { useDeckRename } from "../composables/useDeckRename";
 import {
+  buildDeckGalleryItems,
   deckCardImageUri,
-  getGalleryCommanders,
-  sortDecksForGallery,
+  deckColorIdentityFromPages,
 } from "../utils/deckBrowse";
 import { cardDisplayName } from "../utils/finishes";
-import { formatDeckOwned, formatDeckValueRange, formatEuro } from "../utils/format";
+import { formatDeckOwned, formatEuro } from "../utils/format";
+import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 
 const props = defineProps({
   decks: { type: Array, default: () => [] },
   pages: { type: Object, default: () => ({}) },
   activeDeckId: { type: String, default: "" },
-  sortBy: { type: String, default: "year" },
   onRenamed: { type: Function, default: null },
   onDeleted: { type: Function, default: null },
+  onFavorited: { type: Function, default: null },
 });
 
-const emit = defineEmits(["select", "create"]);
+const emit = defineEmits(["select", "create", "build"]);
+
+const { deckGalleryFilter } = useDeckGalleryFilter();
 
 const galleryRef = ref(null);
+const menuRef = ref(null);
+const newMenuRef = ref(null);
+const contextMenu = ref(null);
+const newMenuOpen = ref(false);
+const deleting = ref(false);
+const favoriting = ref(false);
 
-const sortedDecks = computed(() =>
-  sortDecksForGallery(props.decks, props.pages, props.sortBy),
+const galleryItems = computed(() =>
+  buildDeckGalleryItems(props.decks, props.pages, deckGalleryFilter.value),
 );
 
 const activeDeck = computed(
@@ -47,28 +58,6 @@ const {
   (updatedDeck) => props.onRenamed?.(updatedDeck),
 );
 
-const deleting = ref(false);
-
-async function deleteActiveDeck() {
-  if (!props.activeDeckId || deleting.value || renaming.value) {
-    return;
-  }
-  const deckName = activeDeck.value?.name || "this deck";
-  if (!window.confirm(`Delete "${deckName}"? This cannot be undone.`)) {
-    return;
-  }
-  deleting.value = true;
-  try {
-    await api.deleteDeck(props.activeDeckId);
-    clearClientCache();
-    await props.onDeleted?.(props.activeDeckId);
-  } catch (err) {
-    window.alert(err?.message || "Could not delete deck.");
-  } finally {
-    deleting.value = false;
-  }
-}
-
 function deckStats(deck) {
   return props.pages[String(deck.id)] || {};
 }
@@ -81,10 +70,33 @@ function deckCards(deck) {
   return stats.previewCards || [];
 }
 
+function commandersFor(deck) {
+  return (deckCards(deck) || [])
+    .filter((card) => String(card?.section || "") === "commander")
+    .slice(0, 2);
+}
+
+function primaryCommander(deck) {
+  return commandersFor(deck)[0] || null;
+}
+
+function commanderSetCode(deck) {
+  return String(primaryCommander(deck)?.setCode || "").trim().toUpperCase();
+}
+
+function deckDisplayName(deck) {
+  return String(deck?.name || deck?.label || "").trim() || "Deck";
+}
+
+function deckColorIdentity(deck) {
+  const identity = deckColorIdentityFromPages(deck, props.pages);
+  return identity.length ? identity : null;
+}
+
 function deckValueLabel(deck) {
   const stats = deckStats(deck);
-  if (stats.ownedCurrent != null && stats.current != null) {
-    return formatDeckValueRange(stats.ownedCurrent, stats.current);
+  if (stats.ownedCurrent != null) {
+    return formatEuro(stats.ownedCurrent);
   }
   return formatEuro(stats.current);
 }
@@ -94,8 +106,20 @@ function deckOwnedLabel(deck) {
   return formatDeckOwned(stats.ownedQty, stats.deckSize);
 }
 
-function commandersFor(deck) {
-  return getGalleryCommanders(deckCards(deck));
+function deckInfoLine(deck) {
+  const parts = [];
+  if (deck.releaseYear) {
+    parts.push(String(deck.releaseYear));
+  }
+  const value = deckValueLabel(deck);
+  if (value) {
+    parts.push(value);
+  }
+  const owned = deckOwnedLabel(deck);
+  if (owned) {
+    parts.push(`${owned} owned`);
+  }
+  return parts.join(" · ");
 }
 
 function isActiveDeck(deck) {
@@ -113,6 +137,137 @@ function onCardKeydown(event, deckId) {
   }
 }
 
+function closeContextMenu() {
+  contextMenu.value = null;
+}
+
+function closeNewMenu() {
+  newMenuOpen.value = false;
+}
+
+function toggleNewMenu() {
+  closeContextMenu();
+  newMenuOpen.value = !newMenuOpen.value;
+}
+
+function onCreateDeck() {
+  closeNewMenu();
+  emit("create");
+}
+
+function onBuildDeck() {
+  closeNewMenu();
+  emit("build");
+}
+
+function onCardContextMenu(event, deck) {
+  if (!deck?.id) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  closeNewMenu();
+  const pad = 8;
+  const menuWidth = 260;
+  const menuHeight = 220;
+  const x = Math.min(event.clientX, window.innerWidth - menuWidth - pad);
+  const y = Math.min(event.clientY, window.innerHeight - menuHeight - pad);
+  contextMenu.value = {
+    deck,
+    x: Math.max(pad, x),
+    y: Math.max(pad, y),
+  };
+}
+
+const menuStyle = computed(() => {
+  if (!contextMenu.value) {
+    return {};
+  }
+  return {
+    left: `${contextMenu.value.x}px`,
+    top: `${contextMenu.value.y}px`,
+  };
+});
+
+const contextMenuDeck = computed(() => contextMenu.value?.deck || null);
+
+async function onContextFavorite() {
+  const deck = contextMenuDeck.value;
+  closeContextMenu();
+  if (!deck?.id || favoriting.value) {
+    return;
+  }
+  favoriting.value = true;
+  try {
+    const result = await api.toggleDeckFavorite(deck.id);
+    clearClientCache();
+    await props.onFavorited?.(result?.deck || { ...deck, favorite: result?.favorite });
+  } catch (err) {
+    window.alert(err?.message || "Could not update favourite deck.");
+  } finally {
+    favoriting.value = false;
+  }
+}
+
+async function onContextRename() {
+  const deck = contextMenuDeck.value;
+  closeContextMenu();
+  if (!deck?.id || deleting.value) {
+    return;
+  }
+  if (!isActiveDeck(deck)) {
+    selectDeck(deck.id);
+    await nextTick();
+  }
+  startRename();
+}
+
+async function deleteDeck(deckId) {
+  if (!deckId || deleting.value || renaming.value) {
+    return;
+  }
+  const deck = props.decks.find((item) => String(item.id) === String(deckId));
+  const deckName = deck?.name || "this deck";
+  if (!window.confirm(`Delete "${deckName}"? This cannot be undone.`)) {
+    return;
+  }
+  deleting.value = true;
+  try {
+    await api.deleteDeck(deckId);
+    clearClientCache();
+    await props.onDeleted?.(deckId);
+  } catch (err) {
+    window.alert(err?.message || "Could not delete deck.");
+  } finally {
+    deleting.value = false;
+  }
+}
+
+async function onContextDelete() {
+  const deck = contextMenuDeck.value;
+  closeContextMenu();
+  if (!deck?.id) {
+    return;
+  }
+  await deleteDeck(deck.id);
+}
+
+function onDocumentPointerDown(event) {
+  if (contextMenu.value && !menuRef.value?.contains(event.target)) {
+    closeContextMenu();
+  }
+  if (newMenuOpen.value && !newMenuRef.value?.contains(event.target)) {
+    closeNewMenu();
+  }
+}
+
+function onDocumentKeydown(event) {
+  if (event.key === "Escape") {
+    closeContextMenu();
+    closeNewMenu();
+  }
+}
+
 function scrollActiveIntoView(behavior = "smooth") {
   nextTick(() => {
     const root = galleryRef.value;
@@ -123,12 +278,26 @@ function scrollActiveIntoView(behavior = "smooth") {
     if (!active) {
       return;
     }
-    const rootRect = root.getBoundingClientRect();
-    const activeRect = active.getBoundingClientRect();
-    const activeCenter = activeRect.left - rootRect.left + root.scrollLeft + activeRect.width / 2;
-    const targetScroll = activeCenter - root.clientWidth / 2;
+    const sticky = root.querySelector(".deck-gallery-new-wrap");
+    const stickyWidth = sticky ? sticky.getBoundingClientRect().width : 0;
+    const pad = 8;
+    const visibleLeft = root.scrollLeft + stickyWidth + pad;
+    const visibleRight = root.scrollLeft + root.clientWidth - pad;
+    const cardLeft = active.offsetLeft;
+    const cardRight = cardLeft + active.offsetWidth;
+    let nextScroll = root.scrollLeft;
+    if (cardLeft < visibleLeft) {
+      nextScroll = Math.max(0, cardLeft - stickyWidth - pad);
+    } else if (cardRight > visibleRight) {
+      nextScroll = Math.max(0, cardRight - root.clientWidth + pad);
+    } else {
+      return;
+    }
+    if (Math.abs(nextScroll - root.scrollLeft) < 1) {
+      return;
+    }
     root.scrollTo({
-      left: Math.max(0, targetScroll),
+      left: nextScroll,
       behavior: behavior === "auto" ? "auto" : behavior,
     });
   });
@@ -136,121 +305,218 @@ function scrollActiveIntoView(behavior = "smooth") {
 
 watch(() => props.activeDeckId, () => {
   cancelRename();
+  closeContextMenu();
+  closeNewMenu();
   scrollActiveIntoView();
 });
 watch(
-  () => [props.sortBy, sortedDecks.value.length],
-  () => scrollActiveIntoView("auto"),
+  () => galleryItems.value.map((item) => item.key).join("|"),
+  () => {
+    // Re-layout (sort/favourites/filter) can clip the active tile; only nudge if needed.
+    scrollActiveIntoView("auto");
+  },
 );
 
-onMounted(() => scrollActiveIntoView("auto"));
+onMounted(() => {
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+  document.addEventListener("keydown", onDocumentKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+  document.removeEventListener("keydown", onDocumentKeydown);
+});
 </script>
 
 <template>
   <div ref="galleryRef" class="deck-gallery" aria-label="All decks">
-    <div
-      v-for="deck in sortedDecks"
-      :key="deck.id"
-      class="deck-gallery-card"
-      :class="{ active: isActiveDeck(deck) }"
-      role="button"
-      tabindex="0"
-      @click="selectDeck(deck.id)"
-      @keydown="onCardKeydown($event, deck.id)"
-    >
-      <div class="deck-gallery-visual">
-        <div class="deck-gallery-commanders">
-          <figure
-            v-for="(card, index) in commandersFor(deck)"
-            :key="`${deck.id}-commander-${index}`"
-            class="deck-gallery-commander"
-          >
-            <img
-              :src="deckCardImageUri(card)"
-              :alt="cardDisplayName(card)"
-              :title="cardDisplayName(card)"
-              loading="lazy"
-            />
-          </figure>
-          <div v-if="!commandersFor(deck).length" class="deck-gallery-placeholder">
-            No commander image
-          </div>
+    <div ref="newMenuRef" class="deck-gallery-new-wrap">
+      <button
+        type="button"
+        class="deck-gallery-card deck-gallery-card--add"
+        aria-label="New deck"
+        :aria-expanded="newMenuOpen ? 'true' : 'false'"
+        aria-haspopup="menu"
+        @click="toggleNewMenu"
+      >
+        <div class="deck-gallery-card-main">
+          <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
+          <span class="deck-gallery-name">New deck</span>
         </div>
-      </div>
-
-      <div class="deck-gallery-meta">
-        <div
-          v-if="isActiveDeck(deck)"
-          class="deck-rename-wrap deck-gallery-name-wrap"
-          @click.stop
+      </button>
+      <div
+        v-if="newMenuOpen"
+        class="card-context-menu deck-gallery-new-menu"
+        role="menu"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="card-context-menu-item"
+          role="menuitem"
+          @click="onCreateDeck"
         >
-          <div class="deck-rename-title-row">
-            <h3 v-if="!renaming" class="deck-gallery-name">{{ deck.label }}</h3>
-            <input
-              v-else
-              ref="renameInputRef"
-              v-model="draft"
-              class="deck-gallery-name deck-rename-input"
-              type="text"
-              maxlength="120"
-              :disabled="renameSaving"
-              @keydown.enter.prevent="saveRename"
-              @keydown.esc.prevent="cancelRename"
-              @blur="onRenameBlur"
-              @click.stop
-            />
-            <button
-              v-if="!renaming"
-              type="button"
-              class="deck-rename-edit-button"
-              aria-label="Rename deck"
-              title="Rename deck"
-              :disabled="deleting"
-              @click.stop="startRename"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="deck-gallery-delete"
-              :class="{ 'is-loading': deleting }"
-              aria-label="Delete deck"
-              title="Delete deck"
-              :disabled="renaming || deleting"
-              @click.stop="deleteActiveDeck"
-            >
-              <span v-if="deleting" class="loading-spinner deck-gallery-delete-spinner" aria-hidden="true" />
-              <span v-else aria-hidden="true">×</span>
-            </button>
-          </div>
-          <p v-if="renameError" class="deck-rename-error">{{ renameError }}</p>
-        </div>
-        <h3 v-else class="deck-gallery-name">{{ deck.label }}</h3>
-        <div class="deck-gallery-stats">
-          <span v-if="deck.releaseYear" class="deck-gallery-year">{{ deck.releaseYear }}</span>
-          <span class="deck-gallery-value">{{ deckValueLabel(deck) }}</span>
-          <span v-if="deckOwnedLabel(deck)" class="deck-gallery-owned">{{ deckOwnedLabel(deck) }} owned</span>
-        </div>
+          Create deck
+        </button>
+        <button
+          type="button"
+          class="card-context-menu-item"
+          role="menuitem"
+          @click="onBuildDeck"
+        >
+          Build deck
+        </button>
       </div>
     </div>
 
-    <button
-      type="button"
-      class="deck-gallery-card deck-gallery-card--add"
-      aria-label="Create deck"
-      @click="emit('create')"
-    >
-      <div class="deck-gallery-visual">
-        <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
+    <template v-for="item in galleryItems" :key="item.key">
+      <div
+        v-if="item.type === 'separator'"
+        class="deck-gallery-separator"
+        role="separator"
+        :aria-label="item.ariaLabel || 'Decks'"
+      />
+      <span
+        v-else-if="item.type === 'color'"
+        class="deck-gallery-color-label"
+        aria-hidden="true"
+      >
+        <ManaSymbols :colors="item.colors" :size="14" />
+      </span>
+      <div
+        v-else
+        class="deck-gallery-card"
+        :class="{
+          active: isActiveDeck(item.deck),
+          'deck-gallery-card--renaming': isActiveDeck(item.deck) && renaming,
+          'deck-gallery-card--favorite': item.deck.favorite,
+        }"
+        role="button"
+        tabindex="0"
+        :aria-label="`Select ${deckDisplayName(item.deck)}`"
+        :aria-current="isActiveDeck(item.deck) ? 'true' : undefined"
+        :title="deckDisplayName(item.deck)"
+        @click="selectDeck(item.deck.id)"
+        @keydown="onCardKeydown($event, item.deck.id)"
+        @contextmenu="onCardContextMenu($event, item.deck)"
+      >
+        <div class="deck-gallery-card-main">
+          <div class="deck-gallery-icon-wrap">
+            <CardSetSymbol
+              v-if="commanderSetCode(item.deck)"
+              :set-code="commanderSetCode(item.deck)"
+              variant="generic"
+              :size="28"
+            />
+            <div v-else class="deck-gallery-icon-placeholder" aria-hidden="true">?</div>
+            <span
+              v-if="item.deck.favorite"
+              class="deck-gallery-favorite-mark"
+              aria-hidden="true"
+            >★</span>
+          </div>
+
+          <div class="deck-gallery-meta">
+            <template v-if="isActiveDeck(item.deck) && renaming">
+              <div class="deck-rename-wrap deck-gallery-name-wrap" @click.stop>
+                <input
+                  ref="renameInputRef"
+                  v-model="draft"
+                  class="deck-gallery-name deck-rename-input"
+                  type="text"
+                  maxlength="120"
+                  :disabled="renameSaving"
+                  @keydown.enter.prevent="saveRename"
+                  @keydown.esc.prevent="cancelRename"
+                  @blur="onRenameBlur"
+                  @click.stop
+                />
+                <p v-if="renameError" class="deck-rename-error">{{ renameError }}</p>
+              </div>
+            </template>
+            <template v-else>
+              <span class="deck-gallery-name" :title="deckDisplayName(item.deck)">
+                {{ deckDisplayName(item.deck) }}
+              </span>
+              <ManaSymbols
+                v-if="deckColorIdentity(item.deck)"
+                class="deck-gallery-identity"
+                :colors="deckColorIdentity(item.deck)"
+                :size="12"
+              />
+            </template>
+          </div>
+        </div>
       </div>
-      <div class="deck-gallery-meta">
-        <h3 class="deck-gallery-name">New deck</h3>
-      </div>
-    </button>
+    </template>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="contextMenuDeck"
+      ref="menuRef"
+      class="card-context-menu deck-gallery-context-menu"
+      role="menu"
+      :style="menuStyle"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <div class="deck-gallery-context-preview" aria-hidden="true">
+        <figure
+          v-for="(card, index) in commandersFor(contextMenuDeck)"
+          :key="`${contextMenuDeck.id}-ctx-${index}`"
+          class="deck-gallery-context-commander"
+        >
+          <img
+            v-if="deckCardImageUri(card)"
+            :src="deckCardImageUri(card)"
+            :alt="cardDisplayName(card)"
+            loading="lazy"
+          />
+          <figcaption>{{ cardDisplayName(card) }}</figcaption>
+        </figure>
+        <p v-if="!commandersFor(contextMenuDeck).length" class="deck-gallery-context-empty">
+          No commander image
+        </p>
+      </div>
+
+      <div class="deck-gallery-context-info">
+        <strong class="deck-gallery-context-title">{{ deckDisplayName(contextMenuDeck) }}</strong>
+        <span v-if="deckInfoLine(contextMenuDeck)" class="deck-gallery-context-stats">
+          {{ deckInfoLine(contextMenuDeck) }}
+        </span>
+      </div>
+
+      <div class="card-context-menu-divider" role="separator" />
+
+      <button
+        type="button"
+        class="card-context-menu-item"
+        role="menuitem"
+        :disabled="favoriting || deleting || renaming"
+        @click="onContextFavorite"
+      >
+        {{ contextMenuDeck.favorite ? "Unfavourite deck" : "Favourite deck" }}
+      </button>
+      <button
+        type="button"
+        class="card-context-menu-item"
+        role="menuitem"
+        :disabled="deleting || renaming || favoriting"
+        @click="onContextRename"
+      >
+        Rename deck
+      </button>
+      <button
+        type="button"
+        class="card-context-menu-item"
+        role="menuitem"
+        :disabled="deleting || renaming || favoriting"
+        @click="onContextDelete"
+      >
+        <span v-if="deleting">Deleting…</span>
+        <span v-else>Delete deck</span>
+      </button>
+    </div>
+  </Teleport>
 </template>

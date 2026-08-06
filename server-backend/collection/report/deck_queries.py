@@ -65,7 +65,8 @@ SELECT
     d.slug,
     d.purchase_price,
     d.format,
-    CAST(strftime('%Y', MAX(s.released_at)) AS INTEGER) AS release_year
+    CAST(strftime('%Y', MAX(s.released_at)) AS INTEGER) AS release_year,
+    COALESCE(d.favorite, 0) AS favorite
 FROM decks d
 LEFT JOIN deck_cards dc
     ON dc.deck_id = d.deck_id
@@ -73,7 +74,7 @@ LEFT JOIN deck_cards dc
 LEFT JOIN sets s
     ON s.set_code = dc.set_code
 GROUP BY d.deck_id
-ORDER BY release_year, d.name
+ORDER BY favorite DESC, release_year, d.name
 """
 
 
@@ -126,8 +127,9 @@ def load_deck_list(conn: sqlite3.Connection | None = None) -> list[dict]:
             "format": deck_format or "commander",
             "releaseYear": int(release_year) if release_year is not None else None,
             "purchasePrice": float(purchase_price) if purchase_price is not None else None,
+            "favorite": bool(favorite),
         }
-        for deck_id, name, slug, purchase_price, deck_format, release_year in rows
+        for deck_id, name, slug, purchase_price, deck_format, release_year, favorite in rows
     ]
 
 

@@ -424,6 +424,17 @@ def rename_deck(
         raise _deck_error(exc) from exc
 
 
+@router.post("/{deck_id}/favorite")
+def toggle_deck_favorite(
+    deck_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.toggle_deck_favorite(conn, deck_id=deck_id)
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
 @router.delete("/{deck_id}")
 def delete_deck(
     deck_id: str,

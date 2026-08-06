@@ -815,6 +815,11 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  toggleDeckFavorite: (deckId) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/favorite`, {
+      method: "POST",
+    }),
+
   deleteDeck: (deckId) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}`, {
       method: "DELETE",

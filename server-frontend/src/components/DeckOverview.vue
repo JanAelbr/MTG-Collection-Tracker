@@ -5,11 +5,13 @@ import DeckBreakdownChart from "./DeckBreakdownChart.vue";
 import DeckLandManaChart from "./DeckLandManaChart.vue";
 import DeckManaCurveChart from "./DeckManaCurveChart.vue";
 import ManaCost from "./ManaCost.vue";
+import ManaSymbols from "./ManaSymbols.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
+import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
-import { cardFinish, cardRouteQuery } from "../utils/finishes";
+import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { buildManaCurveChartData } from "../utils/manaCurve";
 import {
   buildColorPipBreakdown,
@@ -27,17 +29,27 @@ import {
   mainDeckCardsForOverview,
   overviewTopCards,
 } from "../utils/deckOverview";
+import { commanderColorIdentity, splitCommanderCards } from "../utils/deckCards";
+import { formatDeckOwned, formatDeckValueRange, formatEuro } from "../utils/format";
 
 const props = defineProps({
   cards: { type: Array, default: () => [] },
+  stats: { type: Object, default: null },
   deckId: { type: String, default: "" },
   refreshKey: { type: [String, Number], default: "" },
+  refreshingUnpriced: { type: Boolean, default: false },
+  unpricedMessage: { type: String, default: "" },
+  unpricedError: { type: String, default: "" },
 });
+
+const emit = defineEmits(["refresh-unpriced"]);
 
 const powerPayload = ref(null);
 const powerLoading = ref(false);
 const powerError = ref("");
 
+const commanderCards = computed(() => splitCommanderCards(props.cards).commanders);
+const commanderIdentity = computed(() => commanderColorIdentity(commanderCards.value));
 const typeBreakdown = computed(() => buildTypeBreakdown(props.cards));
 const roleBreakdown = computed(() => buildRoleBreakdown(powerPayload.value?.counts || {}));
 const pipBreakdown = computed(() => buildColorPipBreakdown(props.cards));
@@ -97,6 +109,51 @@ const summaryBits = computed(() => {
   return bits;
 });
 
+const deckSize = computed(() => props.stats?.deckSize || 0);
+const ownedQty = computed(() => props.stats?.ownedQty || 0);
+const missingQty = computed(() => props.stats?.missingQty || 0);
+
+const completionPercent = computed(() => {
+  if (props.stats?.ownedCoverage != null) {
+    return Math.min(100, Math.max(0, props.stats.ownedCoverage));
+  }
+  if (!deckSize.value) {
+    return 0;
+  }
+  return Math.min(100, (ownedQty.value / deckSize.value) * 100);
+});
+
+const completionLabel = computed(() => {
+  const ownedText = formatDeckOwned(ownedQty.value, deckSize.value) || String(ownedQty.value);
+  if (missingQty.value > 0) {
+    return `${ownedText} owned · ${missingQty.value} missing`;
+  }
+  return `${ownedText} owned · complete`;
+});
+
+const secondaryMeta = computed(() => {
+  const parts = [];
+  if (props.stats?.purchasePrice != null) {
+    parts.push(`Purchase ${formatEuro(props.stats.purchasePrice)}`);
+  }
+  if (props.stats?.trackedCoverage != null) {
+    parts.push(`Priced ${props.stats.trackedCoverage}%`);
+  }
+  return parts.join(" · ");
+});
+
+const hasStatusTile = computed(() => Boolean(props.stats));
+
+const unknownCards = computed(() => props.stats?.unknownCards || []);
+const hasUnpricedTile = computed(() => (Number(props.stats?.unknownCount) || 0) > 0);
+const unpricedCardCount = computed(() => {
+  const qty = Number(props.stats?.unknownQty);
+  if (Number.isFinite(qty) && qty > 0) {
+    return qty;
+  }
+  return Number(props.stats?.unknownCount) || 0;
+});
+
 async function loadPower() {
   if (!props.deckId) {
     powerPayload.value = null;
@@ -136,6 +193,27 @@ function cardRoute(card) {
     query,
   };
 }
+
+function unknownCardRoute(card) {
+  const setCode = card.setCode || card.set_code || "";
+  const collectorNumber = String(card.collectorNumber ?? card.collector_number ?? "");
+  if (!setCode || !collectorNumber) {
+    return null;
+  }
+  const query = cardRouteQuery(card.finish ?? card.foil ?? 0);
+  if (props.deckId) {
+    query.deck = props.deckId;
+  }
+  return {
+    name: "card",
+    params: { setCode, collectorNumber },
+    query,
+  };
+}
+
+function unknownCardName(card) {
+  return card.cardName || card.card_name || "Unknown";
+}
 </script>
 
 <template>
@@ -150,61 +228,233 @@ function cardRoute(card) {
       </span>
     </header>
 
-    <section class="deck-overview-panel deck-overview-top">
-      <header class="deck-overview-panel-head">
-        <h3 class="deck-overview-panel-title">Top value</h3>
-        <span class="deck-overview-panel-meta">{{ OVERVIEW_TOP_CARD_LIMIT }} highest</span>
-      </header>
+    <div class="deck-overview-top-row">
+      <section
+        v-if="commanderCards.length"
+        class="deck-overview-panel deck-overview-commander"
+        aria-label="Commander"
+      >
+        <header class="deck-overview-panel-head">
+          <h3 class="deck-overview-panel-title">
+            {{ commanderCards.length > 1 ? "Commanders" : "Commander" }}
+          </h3>
+          <ManaSymbols
+            v-if="commanderIdentity?.length"
+            class="deck-overview-commander-identity"
+            :colors="commanderIdentity"
+            :size="14"
+          />
+        </header>
 
-      <p v-if="!topCards.length" class="deck-overview-empty">
-        No priced cards in this deck yet.
-      </p>
-
-      <div v-else class="deck-overview-top-grid">
-        <figure
-          v-for="(card, index) in topCards"
-          :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
-          class="deck-overview-top-card"
+        <div
+          class="deck-overview-commander-list"
+          :class="{ 'is-partner': commanderCards.length > 1 }"
         >
-          <div class="deck-overview-top-image-wrap">
-            <span class="deck-overview-top-rank">{{ index + 1 }}</span>
-            <RouterLink
-              v-if="cardRoute(card)"
-              :to="cardRoute(card)"
-              class="deck-overview-top-image-link"
-            >
-              <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
-            </RouterLink>
-            <img v-else :src="card.imageUri" :alt="card.cardName" loading="lazy">
-          </div>
+          <figure
+            v-for="(card, index) in commanderCards"
+            :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
+            class="deck-overview-commander-card"
+          >
+            <div class="deck-overview-commander-image-wrap">
+              <RouterLink
+                v-if="card.imageUri && cardRoute(card)"
+                :to="cardRoute(card)"
+                class="deck-overview-commander-image-link"
+              >
+                <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
+              </RouterLink>
+              <img
+                v-else-if="card.imageUri"
+                :src="card.imageUri"
+                :alt="card.cardName"
+                loading="lazy"
+              >
+              <div v-else class="deck-overview-commander-placeholder">No art</div>
+            </div>
+            <figcaption class="deck-overview-commander-caption">
+              <span class="deck-overview-commander-name-row">
+                <CardSetSymbol
+                  v-if="card.setCode"
+                  :set-code="card.setCode"
+                  :family-root="card.familyRoot || ''"
+                  :rarity="card.rarity || ''"
+                />
+                <ManaCost
+                  class="deck-overview-commander-mana"
+                  :mana-cost="card.manaCost || ''"
+                  :size="12"
+                />
+                <RouterLink
+                  v-if="cardRoute(card)"
+                  :to="cardRoute(card)"
+                  class="deck-overview-commander-name"
+                  :title="card.cardName"
+                >
+                  {{ card.cardName }}
+                </RouterLink>
+                <span v-else class="deck-overview-commander-name is-plain" :title="card.cardName">
+                  {{ card.cardName }}
+                </span>
+                <CardFinishBadge :card="card" compact />
+              </span>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
 
-          <figcaption class="deck-overview-top-caption">
-            <span class="deck-overview-top-name-row">
-              <CardSetSymbol
-                v-if="card.setCode"
-                :set-code="card.setCode"
-                :family-root="card.familyRoot || ''"
-                :rarity="card.rarity || ''"
-              />
-              <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="12" />
+      <section
+        v-if="hasStatusTile"
+        class="deck-overview-panel deck-overview-status"
+        aria-label="Deck completion"
+      >
+        <header class="deck-overview-panel-head">
+          <h3 class="deck-overview-panel-title">Completion</h3>
+          <span class="deck-overview-panel-meta">{{ Math.round(completionPercent) }}%</span>
+        </header>
+
+        <p class="deck-overview-status-value">
+          {{ formatDeckValueRange(stats.ownedCurrent, stats.current) }}
+        </p>
+
+        <div class="deck-overview-status-completion">
+          <div
+            class="deck-overview-status-bar"
+            role="progressbar"
+            :aria-valuenow="Math.round(completionPercent)"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-label="`${Math.round(completionPercent)}% owned`"
+          >
+            <span
+              class="deck-overview-status-fill"
+              :class="{ 'is-complete': completionPercent >= 100 }"
+              :style="{ width: `${completionPercent}%` }"
+            />
+          </div>
+          <p class="deck-overview-status-meta">
+            <strong>{{ Math.round(completionPercent) }}%</strong>
+            <span>{{ completionLabel }}</span>
+          </p>
+          <p v-if="secondaryMeta" class="deck-overview-status-secondary">{{ secondaryMeta }}</p>
+        </div>
+      </section>
+
+      <section
+        v-if="hasUnpricedTile"
+        class="deck-overview-panel deck-overview-unpriced"
+        aria-label="Unpriced cards"
+      >
+        <header class="deck-overview-panel-head">
+          <h3 class="deck-overview-panel-title">Unpriced</h3>
+          <span class="deck-overview-panel-meta">{{ unpricedCardCount }}</span>
+        </header>
+
+        <p class="deck-overview-unpriced-intro">
+          No current market price. Refresh set metadata, then sync prices if needed.
+        </p>
+
+        <button
+          type="button"
+          class="btn btn-secondary btn-small deck-overview-unpriced-refresh"
+          :disabled="refreshingUnpriced"
+          @click="emit('refresh-unpriced')"
+        >
+          {{ refreshingUnpriced ? "Refreshing…" : "Refresh set metadata" }}
+        </button>
+
+        <p v-if="unpricedMessage" class="deck-overview-unpriced-status">{{ unpricedMessage }}</p>
+        <p v-if="unpricedError" class="deck-overview-unpriced-status is-error">{{ unpricedError }}</p>
+
+        <ul class="deck-overview-unpriced-list">
+          <li
+            v-for="(card, index) in unknownCards"
+            :key="`${card.set_code || card.setCode}-${card.collector_number || card.collectorNumber}-${index}`"
+            class="deck-overview-unpriced-item"
+          >
+            <CollectionSetLink
+              class="deck-overview-unpriced-set"
+              :set-code="card.setCode || card.set_code || ''"
+            />
+            <span class="deck-overview-unpriced-num">
+              {{ card.collectorNumber ?? card.collector_number ?? "—" }}
+            </span>
+            <RouterLink
+              v-if="unknownCardRoute(card)"
+              :to="unknownCardRoute(card)"
+              class="deck-overview-unpriced-name"
+              :title="unknownCardName(card)"
+            >
+              {{ unknownCardName(card) }}
+            </RouterLink>
+            <span v-else class="deck-overview-unpriced-name is-plain" :title="unknownCardName(card)">
+              {{ unknownCardName(card) }}
+            </span>
+            <span class="deck-overview-unpriced-meta">
+              ×{{ card.qty ?? 1 }}
+              <template v-if="finishLabel(card.finish ?? card.foil ?? 0) !== 'Non-foil'">
+                · {{ finishLabel(card.finish ?? card.foil ?? 0) }}
+              </template>
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="deck-overview-panel deck-overview-top">
+        <header class="deck-overview-panel-head">
+          <h3 class="deck-overview-panel-title">Top value</h3>
+          <span class="deck-overview-panel-meta">{{ OVERVIEW_TOP_CARD_LIMIT }} highest</span>
+        </header>
+
+        <p v-if="!topCards.length" class="deck-overview-empty">
+          No priced cards in this deck yet.
+        </p>
+
+        <div v-else class="deck-overview-top-grid">
+          <figure
+            v-for="(card, index) in topCards"
+            :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
+            class="deck-overview-top-card"
+          >
+            <div class="deck-overview-top-image-wrap">
+              <span class="deck-overview-top-rank">{{ index + 1 }}</span>
               <RouterLink
                 v-if="cardRoute(card)"
                 :to="cardRoute(card)"
-                class="deck-overview-top-name"
-                :title="card.cardName"
+                class="deck-overview-top-image-link"
               >
-                {{ card.cardName }}
+                <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
               </RouterLink>
-              <span v-else class="deck-overview-top-name is-plain" :title="card.cardName">
-                {{ card.cardName }}
+              <img v-else :src="card.imageUri" :alt="card.cardName" loading="lazy">
+            </div>
+
+            <figcaption class="deck-overview-top-caption">
+              <span class="deck-overview-top-name-row">
+                <CardSetSymbol
+                  v-if="card.setCode"
+                  :set-code="card.setCode"
+                  :family-root="card.familyRoot || ''"
+                  :rarity="card.rarity || ''"
+                />
+                <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="12" />
+                <RouterLink
+                  v-if="cardRoute(card)"
+                  :to="cardRoute(card)"
+                  class="deck-overview-top-name"
+                  :title="card.cardName"
+                >
+                  {{ card.cardName }}
+                </RouterLink>
+                <span v-else class="deck-overview-top-name is-plain" :title="card.cardName">
+                  {{ card.cardName }}
+                </span>
+                <CardFinishBadge :card="card" compact />
               </span>
-              <CardFinishBadge :card="card" compact />
-            </span>
-            <PriceStrategyValue :card="card" class="deck-overview-top-value" />
-          </figcaption>
-        </figure>
-      </div>
-    </section>
+              <PriceStrategyValue :card="card" class="deck-overview-top-value" />
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+    </div>
 
     <div class="deck-overview-grid">
       <DeckBreakdownChart

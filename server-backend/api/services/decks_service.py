@@ -86,7 +86,9 @@ def _assert_card_matches_deck_color_identity(
 
 
 def list_decks(conn: sqlite3.Connection) -> dict:
+    from util.deck_tables import ensure_deck_tables
 
+    ensure_deck_tables(conn)
     return {"decks": load_deck_list(conn)}
 
 
@@ -358,7 +360,9 @@ def load_deck_stats(
 
 
 def load_deck_browse_index(conn: sqlite3.Connection) -> dict:
+    from util.deck_tables import ensure_deck_tables
 
+    ensure_deck_tables(conn)
     strategy, deck_df = _load_strategy_deck_df(conn)
 
     decks = load_deck_list(conn)
@@ -1639,6 +1643,42 @@ def rename_deck(conn: sqlite3.Connection, *, deck_id: str, name: str) -> dict:
     decks = load_deck_list(conn)
     deck = next((item for item in decks if item["id"] == deck_key), None)
     return {"deck": deck}
+
+
+def toggle_deck_favorite(conn: sqlite3.Connection, *, deck_id: str) -> dict:
+    from datetime import datetime, timezone
+
+    from api.cache import bump_cache_epoch
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    row = conn.execute(
+        "SELECT deck_id, COALESCE(favorite, 0) FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    next_favorite = 0 if int(row[1] or 0) else 1
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    conn.execute(
+        "UPDATE decks SET favorite = ?, updated_at = ? WHERE deck_id = ?",
+        (next_favorite, now, deck_key),
+    )
+    conn.commit()
+    bump_cache_epoch()
+
+    decks = load_deck_list(conn)
+    deck = next((item for item in decks if item["id"] == deck_key), None)
+    return {
+        "deck": deck,
+        "favorite": bool(next_favorite),
+    }
 
 
 def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:

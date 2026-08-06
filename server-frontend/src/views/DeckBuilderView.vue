@@ -82,9 +82,9 @@ function goBack() {
   const index = stepIndex.value;
   if (index <= 0 || (isExistingDeckFlow.value && step.value === "options")) {
     if (targetDeckId.value) {
-      router.push({ path: "/decks", query: { deck: targetDeckId.value } });
+      router.push({ path: "/collection/decks", query: { deck: targetDeckId.value } });
     } else {
-      router.push("/decks");
+      router.push("/collection/decks");
     }
     return;
   }
@@ -179,7 +179,7 @@ async function applyProposal() {
         cards: proposalCardsPayload(),
       });
       clearClientCache();
-      router.push({ path: "/decks", query: { deck: targetDeckId.value } });
+      router.push({ path: "/collection/decks", query: { deck: targetDeckId.value } });
       return;
     }
     if (!selectedCommander.value) {
@@ -205,7 +205,7 @@ async function applyProposal() {
       cards: proposalCardsPayload(),
     });
     clearClientCache();
-    router.push({ path: "/decks", query: { deck: String(deckId) } });
+    router.push({ path: "/collection/decks", query: { deck: String(deckId) } });
   } catch (err) {
     error.value = err?.message || "Could not apply deck.";
   } finally {

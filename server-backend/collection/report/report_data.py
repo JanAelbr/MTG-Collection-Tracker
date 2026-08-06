@@ -59,7 +59,13 @@ def format_set_option_label(
 def scryfall_set_icon_uri(set_code: str) -> str | None:
     if not set_code or set_code == "All":
         return None
-    return f"https://svgs.scryfall.io/sets/{set_code.lower()}.svg"
+    # Scryfall icon file names do not always match the set code (e.g. SLD → star.svg).
+    icon_codes = {
+        "SLD": "star",
+    }
+    code = str(set_code).strip().upper()
+    icon_code = icon_codes.get(code, code.lower())
+    return f"https://svgs.scryfall.io/sets/{icon_code}.svg"
 
 
 def build_set_option(

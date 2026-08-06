@@ -16,6 +16,8 @@ const SET_SYMBOL_ROUTES = {
   G99: "6ED",
   JGP: "USG",
   PWOR: "STAR",
+  // Scryfall ships Secret Lair as star.svg; mtg-vectors has no SLD glyph.
+  SLD: "STAR",
 };
 
 /** Scryfall icon code -> catalog symbol code (from data/set/alias.yml). */

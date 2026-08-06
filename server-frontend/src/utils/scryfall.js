@@ -1,11 +1,28 @@
 import { setCompletionRarity } from "./format";
 import { mtgVectorsSetIconUri } from "./mtgVectors";
 
-export function scryfallSetIconUri(setCode) {
-  if (!setCode || String(setCode).toLowerCase() === "all") {
+/**
+ * Scryfall set codes whose icon file name differs from the set code.
+ * Secret Lair Drop uses star.svg (there is no sld.svg).
+ */
+const SCRYFALL_SET_ICON_CODES = {
+  SLD: "star",
+};
+
+export function scryfallSetIconCode(setCode) {
+  const normalized = String(setCode || "").trim().toUpperCase();
+  if (!normalized || normalized === "ALL") {
     return null;
   }
-  return `https://svgs.scryfall.io/sets/${String(setCode).toLowerCase()}.svg`;
+  return SCRYFALL_SET_ICON_CODES[normalized] || normalized.toLowerCase();
+}
+
+export function scryfallSetIconUri(setCode) {
+  const iconCode = scryfallSetIconCode(setCode);
+  if (!iconCode) {
+    return null;
+  }
+  return `https://svgs.scryfall.io/sets/${String(iconCode).toLowerCase()}.svg`;
 }
 
 /** Canonical Scryfall page for a specific printing. */

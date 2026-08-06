@@ -39,6 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_deck_cards_print
 DECK_COLUMNS = {
     "purchase_price": "REAL",
     "format": "TEXT NOT NULL DEFAULT 'commander'",
+    "favorite": "INTEGER NOT NULL DEFAULT 0",
 }
 
 DECK_CARD_COLUMNS = {

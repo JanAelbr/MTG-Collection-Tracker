@@ -69,10 +69,9 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
 | **Favourites** | `/` | — |
-| **Collection** | `/collection/all` | Catalog · Storage |
+| **Collection** | `/collection/all` | Catalog · Storage · Decks |
 | **Print** | `/print` | Cards · Separators |
 | **Sell** | `/sell` | — |
-| **Decks** | `/decks` | — |
 | **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
 
 Storage views use `?view=gallery|table|breakdown`. Catalog uses `?view=gallery|table|stats` (table/stats need a specific set).
@@ -104,6 +103,12 @@ The gallery shows **one card per family**, and by default only families with **o
 Set gallery cards show **set code** and completion count (and a richer title when selected).
 
 Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with rarity tint from completion %; Scryfall monochrome SVG is used on load failure.
+
+---
+
+## Decks
+
+**Collection → Decks** (`/collection/decks`; `/decks` redirects here). The deck browser sits above the selected deck. Use the subnav **Search decks** field to filter by deck name or commander name. Deck builder remains at `/decks/build`.
 
 ---
 

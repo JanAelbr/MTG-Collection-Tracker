@@ -144,8 +144,12 @@ const router = createRouter({
         return "/settings/stats";
       },
     },
-    { path: "/decks/browse", redirect: "/decks" },
-    { path: "/decks/stats", redirect: "/decks" },
+    { path: "/decks/browse", redirect: "/collection/decks" },
+    { path: "/decks/stats", redirect: "/collection/decks" },
+    {
+      path: "/decks",
+      redirect: (to) => ({ path: "/collection/decks", query: to.query }),
+    },
     {
       path: "/decks/build",
       name: "deck-builder",
@@ -153,7 +157,14 @@ const router = createRouter({
       meta: { title: "Deck Builder" },
     },
     {
-      path: "/decks",
+      path: "/collection/decks/build",
+      redirect: (to) => ({
+        path: "/decks/build",
+        query: to.query,
+      }),
+    },
+    {
+      path: "/collection/decks",
       name: "decks",
       component: DecksView,
       meta: { title: "Decks" },

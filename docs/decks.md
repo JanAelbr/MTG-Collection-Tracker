@@ -1,6 +1,6 @@
 # Commander decks
 
-Decks are stored in **SQLite** (`decks` and `deck_cards` tables). Create and edit them in the **Decks** section of the web app. Ownership is tracked in `purchases` when you mark cards as owned in Catalog, Storage, or on the deck.
+Decks are stored in **SQLite** (`decks` and `deck_cards` tables). Create and edit them under **Collection → Decks** in the web app. Ownership is tracked in `purchases` when you mark cards as owned in Catalog, Storage, or on the deck.
 
 The portable format for moving collections between machines is **Settings → Backup & restore** (`.mtgbackup.zip`). See [readme.md](../readme.md).
 
@@ -56,7 +56,7 @@ Deck `purchase_price` is stored on the deck row for aggregate invested/ROI figur
 **New install**
 
 1. Start the app (`scripts/dev_app.ps1` or `scripts/run_app.ps1`) — the database is created on first API start
-2. Load sets in **Settings → Sets**, create decks in **Decks**, mark ownership
+2. Load sets in **Settings → Sets**, create decks under **Collection → Decks**, mark ownership
 
 **Moving to another machine**
 

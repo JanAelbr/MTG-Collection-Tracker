@@ -186,10 +186,9 @@ Optional cleanup: if an old broken **At startup** scheduled task named `MtgColle
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
 | **Favourites** | `/` | — |
-| **Collection** | `/collection/all` | Catalog · Storage |
+| **Collection** | `/collection/all` | Catalog · Storage · Decks |
 | **Print** | `/print` | Cards · Separators |
 | **Sell** | `/sell` | — |
-| **Decks** | `/decks` | — |
 | **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
 
 `/collection`, old `/stats`, and `/reports/*` URLs redirect into Collection or Settings as appropriate.
@@ -236,7 +235,7 @@ Favourited sets also sort first in set dropdowns elsewhere.
 | **Print cards** | `/print/cards` |
 | **Separators** | `/print/separators` |
 | **Sell** | `/sell` |
-| **Decks** | `/decks` |
+| **Decks** | `/collection/decks` |
 | **Card detail** | `/card/:setCode/:collectorNumber` |
 | **Settings** | `/settings/display` (and nested settings routes) |
 

@@ -5,16 +5,19 @@ import { useRoute } from "vue-router";
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
+import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
 const route = useRoute();
 const { setGalleryFilter } = useSetGalleryFilter();
+const { deckGalleryFilter } = useDeckGalleryFilter();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "Catalog" },
   { to: "/storage", label: "Storage" },
+  { to: "/collection/decks", label: "Decks" },
 ];
 
 const printSubnav = [
@@ -45,7 +48,6 @@ const navItems = [
     subnav: printSubnav,
   },
   { to: "/sell", label: "Sell", matchPrefix: false },
-  { to: "/decks", label: "Decks", matchPrefix: false },
   {
     to: "/settings/display",
     label: "Settings",
@@ -75,7 +77,11 @@ const activeSubnav = computed(() => {
   return null;
 });
 
-const showSetGalleryFilter = computed(() => route.path.startsWith("/collection"));
+const showSetGalleryFilter = computed(() =>
+  route.path === "/collection/all" || route.path.startsWith("/collection/search"),
+);
+
+const showDeckGalleryFilter = computed(() => route.path.startsWith("/collection/decks"));
 
 const showNavbarSearch = computed(() => route.path !== "/collection/search");
 
@@ -107,6 +113,9 @@ function isNavActive(item) {
 }
 
 function isSubnavActive(item) {
+  if (item.to === "/collection/decks") {
+    return route.path.startsWith("/collection/decks");
+  }
   return route.path === item.to;
 }
 
@@ -128,6 +137,7 @@ function subnavLinkTo(subItem) {
     subItem.to.startsWith("/print/")
     || subItem.to.startsWith("/settings/")
     || subItem.to === "/storage"
+    || subItem.to === "/collection/decks"
   ) {
     return subItem.to;
   }
@@ -182,7 +192,7 @@ onMounted(() => {
         class="app-subnav"
         :aria-label="activeSubnav.label"
       >
-        <template v-for="(subItem, index) in activeSubnav.items" :key="subItem.to">
+        <template v-for="subItem in activeSubnav.items" :key="subItem.to">
           <RouterLink
             :to="subnavLinkTo(subItem)"
             class="app-subnav-link"
@@ -191,7 +201,7 @@ onMounted(() => {
             {{ subItem.label }}
           </RouterLink>
           <label
-            v-if="index === 0 && showSetGalleryFilter"
+            v-if="subItem.to === '/collection/all' && showSetGalleryFilter"
             class="app-subnav-set-filter"
           >
             <span class="sr-only">Search sets</span>
@@ -199,6 +209,19 @@ onMounted(() => {
               v-model="setGalleryFilter"
               type="search"
               placeholder="Search sets"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <label
+            v-else-if="subItem.to === '/collection/decks' && showDeckGalleryFilter"
+            class="app-subnav-set-filter"
+          >
+            <span class="sr-only">Search decks</span>
+            <input
+              v-model="deckGalleryFilter"
+              type="search"
+              placeholder="Search decks"
               autocomplete="off"
               spellcheck="false"
             />
