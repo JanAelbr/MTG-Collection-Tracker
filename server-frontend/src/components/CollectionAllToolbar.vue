@@ -148,6 +148,31 @@ function setViewMode(mode) {
           </button>
         </div>
       </label>
+      <button
+        v-if="showFiltersButton"
+        type="button"
+        class="btn btn-secondary btn-small collection-all-filters-btn"
+        :aria-expanded="mobileFiltersOpen ? 'true' : 'false'"
+        @click="emit('open-mobile-filters')"
+      >
+        Filters
+      </button>
+      <button
+        v-if="showBulk && !hideGalleryChrome"
+        type="button"
+        class="btn btn-secondary btn-small"
+        :class="{ 'is-active': bulkSelectMode }"
+        @click="emit('toggle-bulk-mode')"
+      >
+        {{ bulkSelectMode ? "Done" : "Select" }}
+      </button>
+      <CollectionGalleryScaleControl
+        v-if="!hideGalleryChrome"
+        class="collection-gallery-toolbar-scale"
+        :model-value="cardScale"
+        :options="scaleOptions"
+        @update:model-value="emit('update:cardScale', $event)"
+      />
       <div
         v-if="showViewMode"
         class="button-group collection-view-mode-group"
@@ -183,31 +208,6 @@ function setViewMode(mode) {
           Stats
         </button>
       </div>
-      <button
-        v-if="showFiltersButton"
-        type="button"
-        class="btn btn-secondary btn-small collection-all-filters-btn"
-        :aria-expanded="mobileFiltersOpen ? 'true' : 'false'"
-        @click="emit('open-mobile-filters')"
-      >
-        Filters
-      </button>
-      <button
-        v-if="showBulk && !hideGalleryChrome"
-        type="button"
-        class="btn btn-secondary btn-small"
-        :class="{ 'is-active': bulkSelectMode }"
-        @click="emit('toggle-bulk-mode')"
-      >
-        {{ bulkSelectMode ? "Done" : "Select" }}
-      </button>
-      <CollectionGalleryScaleControl
-        v-if="!hideGalleryChrome"
-        class="collection-gallery-toolbar-scale"
-        :model-value="cardScale"
-        :options="scaleOptions"
-        @update:model-value="emit('update:cardScale', $event)"
-      />
     </div>
 
     <div v-if="showLenses && !hideGalleryChrome" class="collection-all-toolbar-row collection-all-lenses">

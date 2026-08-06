@@ -9,6 +9,7 @@ from report.stats_data import compute_stats_page
 from util.price_history import load_price_snapshot_cache
 from util.set_completion import (
     count_completion_keys,
+    count_completion_keys_by_art_style,
     count_completion_keys_by_rarity,
     count_completion_keys_by_set,
 )
@@ -128,12 +129,22 @@ def load_collection_stats(
         member_set = set(family_members)
         catalog_df = catalog_df[catalog_df["set_code"].isin(member_set)].copy()
 
+    catalog_art_lookup: dict[tuple[str, str], int] = {}
+    if stats_page_key != "All":
+        from report.report_data import _load_art_style_catalog_counts
+
+        for style, count in _load_art_style_catalog_counts(
+            conn,
+            set_code=stats_page_key,
+        ).items():
+            catalog_art_lookup[(stats_page_key, str(style))] = int(count)
+
     favorite_sets = settings_service.get_favorite_sets(conn)
     page_stats = compute_stats_page(
         stats_page_key,
         owned_df,
         catalog_df,
-        {},
+        catalog_art_lookup,
         conn,
         load_price_snapshot_cache(conn),
         include_client_drilldowns=False,
@@ -380,7 +391,11 @@ def _compute_stats_from_filtered_cards(
     if set_code == "All" or family:
         stats["setBreakdown"] = _filtered_set_breakdown(owned_cards, filter_scope)
     else:
-        stats["artStyles"] = _filtered_art_style_breakdown(owned_cards)
+        stats["artStyles"] = _filtered_art_style_breakdown(
+            owned_cards,
+            filter_scope,
+            set_code=set_code,
+        )
         stats["rarityBreakdown"] = _filtered_rarity_breakdown(
             owned_cards,
             filter_scope,
@@ -416,7 +431,27 @@ def _filtered_set_breakdown(owned_cards: list[dict], filter_scope: list[dict]) -
     return sorted(rows, key=lambda row: row["setCode"])
 
 
-def _filtered_art_style_breakdown(owned_cards: list[dict]) -> list[dict]:
+def _art_style_completion_rows(cards: list[dict]) -> list[tuple[str, str, str]]:
+    return [
+        (
+            str(card.get("setCode") or ""),
+            str(card.get("collectorNumber") or ""),
+            str(card.get("artStyle") or ""),
+        )
+        for card in cards
+    ]
+
+
+def _filtered_art_style_breakdown(
+    owned_cards: list[dict],
+    filter_scope: list[dict],
+    *,
+    set_code: str,
+) -> list[dict]:
+    catalog_by_style = count_completion_keys_by_art_style(
+        _art_style_completion_rows(filter_scope),
+        set_code=set_code,
+    )
     grouped: dict[str, list[dict]] = {}
     for card in owned_cards:
         style = str(card.get("artStyle") or "").strip() or "Unknown"
@@ -424,16 +459,17 @@ def _filtered_art_style_breakdown(owned_cards: list[dict]) -> list[dict]:
 
     rows = []
     for style, cards in grouped.items():
-        set_code = str(cards[0].get("setCode") or "")
+        code = str(cards[0].get("setCode") or set_code or "")
         current = _sum_nullable(card.get("currentValue") for card in cards)
         invested = _sum_nullable(card.get("purchaseValue") for card in cards)
         profit = None
         if current is not None or invested is not None:
             profit = (current or 0) - (invested or 0)
         rows.append({
-            "setCode": set_code,
+            "setCode": code,
             "artStyle": style,
-            "count": count_completion_keys(_completion_rows(cards), set_code=set_code or None),
+            "count": count_completion_keys(_completion_rows(cards), set_code=code or None),
+            "catalogCount": catalog_by_style.get(style, 0),
             "current": current,
             "invested": invested,
             "profit": profit,
@@ -656,9 +692,10 @@ def _serialize_stats_page(page: dict) -> dict:
         ],
         "artStyles": [
             {
-                "setCode": row.get("set_code"),
-                "artStyle": row.get("art_style"),
+                "setCode": row.get("set_code") or row.get("setCode"),
+                "artStyle": row.get("art_style") or row.get("artStyle"),
                 "count": row.get("count"),
+                "catalogCount": row.get("catalogCount", row.get("catalog_count")),
                 "current": row.get("current"),
                 "invested": row.get("invested"),
                 "profit": row.get("profit"),

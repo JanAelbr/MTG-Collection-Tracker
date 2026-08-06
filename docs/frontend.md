@@ -68,16 +68,16 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
-| **Collection** | `/collection/all` | All cards, Search, Stats |
-| **Storage** | `/storage` | Gallery / Table / Breakdown (`?view=`) |
-
-Storage **Breakdown** shows value tiles, finish/set charts, and top prints for the **selected location** (`?view=breakdown`).
+| **Favourites** | `/` | — |
+| **Collection** | `/collection/all` | Catalog · Storage |
+| **Print** | `/print` | Cards · Separators |
+| **Sell** | `/sell` | — |
 | **Decks** | `/decks` | — |
-| **Settings** | `/settings` | — |
+| **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
 
-`/`, `/collection`, and old `/reports/*` URLs redirect to `/collection/all` or the matching collection view.
+Storage views use `?view=gallery|table|breakdown`. Catalog uses `?view=gallery|table|stats` (table/stats need a specific set).
 
-**Stats** (`/stats`) is grouped under Collection in the subnav but is its own route.
+`/collection`, old `/stats`, and `/reports/*` URLs redirect into Collection or Settings as appropriate.
 
 ---
 
@@ -85,21 +85,23 @@ Storage **Breakdown** shows value tiles, finish/set charts, and top prints for t
 
 `/` is the **Favourites** home. Sections appear in order: **Cards**, **Art styles**, **Sets**.
 
-- **Cards** — collection-style card grid (print + finish); drag to reorder
+- **Cards** — collection-style card grid (print + finish); drag to reorder; Owned / All filter and shared sort controls
 - **Art styles** — one horizontal scrolling gallery row per favourited style; drag rows to reorder
-- **Sets** — links into collection scoped to that set
+- **Sets** — links into catalog scoped to that set
 
-Favourite ★ toggles on cards and sets appear on hover. Star art styles in the filter list. Settings remain at `/settings`.
+Favourite ★ toggles on cards and sets appear on hover. Star art styles in the filter list. Right-click a set in the catalog set browser to favourite it.
 
 ---
 
-## Set picker
+## Set picker / set browser
 
-Collection and Stats use a horizontal set gallery (banner) with coloured set symbols. The filter sidebar shows the **full set name** for the active set.
+Collection Catalog uses a horizontal set gallery (banner) with coloured set symbols. The filter sidebar shows the **full set name** for the active set.
 
-The gallery shows **one card per family**, and by default only families with **owned cards** (plus All and the active set). Use the navbar **Search sets** field to find any set already in the DB or on Scryfall (first 12 matches). Selecting a set that is not in the library yet **imports and populates** it automatically — there is no separate add/remove control. Related set codes appear as **tags to the right** (root first) only while that family is selected, in a scrollable column list. On startup / first sets load, missing Scryfall siblings for tracked families are imported automatically.
+The gallery shows **one card per family**, and by default only families with **owned cards** (plus the active set). **Favourite** sets appear first (with a divider); remaining sets show **year labels** and dividers when the release year changes. Use the navbar **Search sets** field to find any set already in the DB or on Scryfall (first 12 matches).
 
-Set gallery cards show **set code** and completion count only (not the full name). Favourited sets can be starred in the gallery.
+**Right-click** a set tile to favourite / unfavourite or **refresh** its Scryfall catalog (family siblings reload together; a spinner overlays the tile while refreshing). Load new families from **Settings → Sets**. Related set codes appear as **tags** only while that family is selected. On startup / first sets load, missing Scryfall auto-load siblings for tracked families are imported automatically.
+
+Set gallery cards show **set code** and completion count (and a richer title when selected).
 
 Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with rarity tint from completion %; Scryfall monochrome SVG is used on load failure.
 
@@ -107,13 +109,13 @@ Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with 
 
 ## Collection filters
 
-Filter sidebar (collapsible) on **All cards**, **Search**, and **Stats**:
+Filter sidebar (collapsible) on **Catalog** (including Catalog stats):
 
-- **Set** — scope; full name in sidebar; favourites starred in the gallery
-- **Art style** — list picker per set; pencil icon on All cards opens the inline art-style rules editor (`/collection/all?set=CODE&editArtStyles=1`)
-- **Ownership / Finish** — compact button groups (All cards gallery & Search)
-- **Type / Colour / Sort** — All cards gallery only
-- **Table view** — on All cards with a specific set selected (`?view=table`); per-finish ownership, price health, bulk storage assign
+- **Set** — scope via the set browser; full name in sidebar
+- **Art style** — list picker per set; pencil icon opens the inline art-style rules editor (`/collection/all?set=CODE&editArtStyles=1`)
+- **Ownership / Finish** — compact button groups
+- **Type / Colour / Sort** — Catalog gallery
+- **View mode** — Gallery · Table · Stats on the far right of the toolbar (`?view=`); table and stats require a specific set
 
 Filter state is reflected in the URL query string where applicable (`?set=LTR&family=1&owned=…`).
 
@@ -143,7 +145,7 @@ server-frontend/
 ├── public/              # static assets + PWA icons
 ├── src/
 │   ├── components/      # SetPicker, SetGallery, FilterSidebar, …
-│   ├── views/           # FavoritesHomeView, CollectionView, StorageView, …
+│   ├── views/           # FavoritesHomeView, CollectionView, StorageView, Settings*View, …
 │   ├── utils/           # format.js, setScope.js, favorites.js, mtgVectors.js, …
 │   └── styles/app.css
 └── vite.config.js       # Vite + PWA plugin

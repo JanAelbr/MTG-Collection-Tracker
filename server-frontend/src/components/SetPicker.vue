@@ -98,6 +98,7 @@ function onSelectFamily(setCode) {
         :active-art-style="activeArtStyle"
         @select="onSelect"
         @select-family="onSelectFamily"
+        @sets-changed="emit('sets-changed', $event)"
       />
     </div>
   </div>

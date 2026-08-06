@@ -1,6 +1,6 @@
 # Commander decks
 
-Decks are stored in **SQLite** (`decks` and `deck_cards` tables). Create and edit them in the **Decks** section of the web app. Ownership is tracked in `purchases` when you mark cards as owned in Set Manager or Storage.
+Decks are stored in **SQLite** (`decks` and `deck_cards` tables). Create and edit them in the **Decks** section of the web app. Ownership is tracked in `purchases` when you mark cards as owned in Catalog, Storage, or on the deck.
 
 The portable format for moving collections between machines is **Settings → Backup & restore** (`.mtgbackup.zip`). See [readme.md](../readme.md).
 
@@ -35,7 +35,7 @@ Rows are unique per `(deck_id, set_code, collector_number, finish, section)` —
 
 ### Catalog matching
 
-When you add a card, the API resolves the print against the `cards` table. If the set has not been added in Set Manager yet, the row is stored with `in_catalog = 0` until you register that set and run a price/catalog sync.
+When you add a card, the API resolves the print against the `cards` table. If the set has not been loaded yet (Settings → Sets), the row is stored with `in_catalog = 0` until you register that set and run a price/catalog sync.
 
 Set codes referenced by deck cards are included in price-update set discovery (`util/deck_tables.list_deck_sync_set_codes`).
 
@@ -43,7 +43,7 @@ Set codes referenced by deck cards are included in price-update set discovery (`
 
 ## Ownership
 
-Deck reports use `purchases` for owned value and ROI. Mark cards as owned in **Set Manager** or on the deck with the owned toggle. The `owned_qty` column on `deck_cards` tracks how many deck slots you consider filled from your collection.
+Deck reports use `purchases` for owned value and ROI. Mark cards as owned in **Catalog**, **Storage**, or on the deck with the owned toggle. The `owned_qty` column on `deck_cards` tracks how many deck slots you consider filled from your collection.
 
 **Deck storage** (`deck:{slug}` locations on the Storage page) is calculated automatically from that ownership: when you mark a deck card owned, matching copies move into that deck’s storage (including LTR/LTC prints); when you unown or remove them, copies return to default storage or binders. You cannot assign copies to deck storage manually — use binders and general storage for physical placement outside decks.
 
@@ -56,23 +56,23 @@ Deck `purchase_price` is stored on the deck row for aggregate invested/ROI figur
 **New install**
 
 1. Start the app (`scripts/dev_app.ps1` or `scripts/run_app.ps1`) — the database is created on first API start
-2. Add sets in **Set Manager**, create decks in **Decks**, mark ownership
+2. Load sets in **Settings → Sets**, create decks in **Decks**, mark ownership
 
 **Moving to another machine**
 
 1. **Settings → Export collection** (backup ZIP)
 2. Install the app on the new machine
 3. **Settings → Restore from backup**
-4. Add any missing sets in Set Manager, then **Sync prices**
+4. Add any missing sets in Settings → Sets, then **Settings → Sync**
 
 **Refresh prices**
 
-Use **Settings → Sync prices** in the app (Cardmarket only).
+Use **Settings → Sync** in the app (Cardmarket only).
 
 ---
 
 ## Backup contents
 
-Collection backups include purchases, decks, deck cards, storage locations, card instances, art-style rules, tracked sets, and user settings. They do **not** include the full Scryfall catalog or price history — restore those with Set Manager and price sync after import.
+Collection backups include purchases, decks, deck cards, storage locations, card instances, art-style rules, tracked sets, and user settings. They do **not** include the full Scryfall catalog or price history — restore those by loading sets in Settings → Sets and running price sync after import.
 
 Implementation: `server-backend/collection/util/collection_backup.py`.

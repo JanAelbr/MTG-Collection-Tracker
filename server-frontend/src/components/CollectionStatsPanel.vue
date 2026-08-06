@@ -4,7 +4,15 @@ import LoadingIndicator from "./LoadingIndicator.vue";
 import GalleryLoadingOverlay from "./GalleryLoadingOverlay.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import StatsRarityChart from "./StatsRarityChart.vue";
-import { formatCompletion, formatEuro, formatProfit, formatRoi, setShortName } from "../utils/format";
+import {
+  completionPercent,
+  completionRarityFromPercent,
+  formatCompletion,
+  formatEuro,
+  formatProfit,
+  formatRoi,
+  setShortName,
+} from "../utils/format";
 import { finishLabel } from "../utils/finishes";
 import { resolveSetIconUri } from "../utils/scryfall";
 import { collectionScopeToQuery } from "../utils/setScope";
@@ -104,13 +112,75 @@ function valueBarPercent(row) {
   return Math.max(6, (current / maxSetValue.value) * 100);
 }
 
+function rowCatalogCount(row) {
+  if (row?.catalogCount != null && !Number.isNaN(Number(row.catalogCount))) {
+    return Number(row.catalogCount);
+  }
+  const set = props.sets.find((item) => item.setCode === row?.setCode);
+  return set?.catalogCount ?? 0;
+}
+
+function rowOwnedCount(row) {
+  return row?.count ?? 0;
+}
+
+function rowCompletionPercent(row) {
+  return completionPercent(rowOwnedCount(row), rowCatalogCount(row));
+}
+
+function completionBarPercent(row) {
+  const percent = rowCompletionPercent(row);
+  if (percent == null || percent <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(4, percent));
+}
+
+function completionBarClass(row) {
+  const percent = rowCompletionPercent(row);
+  if (percent == null) {
+    return "";
+  }
+  if (percent >= 100) {
+    return "is-complete";
+  }
+  const rarity = completionRarityFromPercent(percent);
+  return rarity ? `is-${rarity}` : "";
+}
+
+function formatCollectedPercent(row) {
+  const percent = rowCompletionPercent(row);
+  if (percent == null) {
+    return "—";
+  }
+  return `${percent.toFixed(percent >= 10 || percent === 0 ? 0 : 1)}%`;
+}
+
+function collectedTitle(row) {
+  return formatCompletion(rowOwnedCount(row), rowCatalogCount(row));
+}
+
 const unknownCards = computed(() => props.stats?.unknownCards || []);
 const hasUnknownCards = computed(() => (props.stats?.unknownCount ?? 0) > 0);
-const showInvestedTile = computed(() => {
-  const invested = props.stats?.invested;
-  return invested != null && !Number.isNaN(invested) && Number(invested) !== 0;
+
+function hasInvestedValue(value) {
+  return value != null && !Number.isNaN(Number(value)) && Number(value) !== 0;
+}
+
+const showInvestedTile = computed(() => hasInvestedValue(props.stats?.invested));
+const showFinanceColumns = computed(() => {
+  if (showInvestedTile.value) {
+    return true;
+  }
+  if (showSetBreakdown.value) {
+    return setBreakdownRows.value.some((row) => hasInvestedValue(row.invested));
+  }
+  return (props.stats?.artStyles || []).some((row) => hasInvestedValue(row.invested));
 });
 const showProfitTile = computed(() => {
+  if (!showFinanceColumns.value) {
+    return false;
+  }
   const profit = props.stats?.profit;
   return profit != null && !Number.isNaN(profit);
 });
@@ -118,7 +188,8 @@ const showRoiTile = computed(() => {
   const profit = props.stats?.profit;
   const invested = props.stats?.invested;
   return (
-    profit != null
+    showFinanceColumns.value
+    && profit != null
     && invested != null
     && !Number.isNaN(profit)
     && !Number.isNaN(invested)
@@ -129,6 +200,19 @@ const rarityBreakdown = computed(() => (
   !isAllSetsView.value && !props.familyScope ? (props.stats?.rarityBreakdown || []) : []
 ));
 const hasRarityBreakdown = computed(() => rarityBreakdown.value.length > 0);
+
+const raritySetMeta = computed(() => {
+  const code = String(props.setCode || "").trim().toUpperCase();
+  if (!code || code === "ALL") {
+    return { setCode: "", familyRoot: "", iconUri: "" };
+  }
+  const set = props.sets.find((item) => String(item.setCode || "").toUpperCase() === code);
+  return {
+    setCode: code,
+    familyRoot: set?.familyRoot || "",
+    iconUri: set?.iconUri || "",
+  };
+});
 
 function unknownCardSetCode(card) {
   return card.setCode || card.set_code || "";
@@ -229,7 +313,12 @@ function onSelectSet(code) {
         <p class="stats-rarity-intro">
           Completion slots you own versus the full set catalog, by rarity.
         </p>
-        <StatsRarityChart :rows="rarityBreakdown" />
+        <StatsRarityChart
+          :rows="rarityBreakdown"
+          :set-code="raritySetMeta.setCode"
+          :family-root="raritySetMeta.familyRoot"
+          :icon-uri="raritySetMeta.iconUri"
+        />
       </section>
 
       <details
@@ -309,9 +398,10 @@ function onSelectSet(code) {
             <tr>
               <th>Set</th>
               <th>Cards</th>
+              <th>Collected</th>
               <th>Value</th>
-              <th>Invested</th>
-              <th>Profit / loss</th>
+              <th v-if="showFinanceColumns">Invested</th>
+              <th v-if="showFinanceColumns">Profit / loss</th>
             </tr>
           </thead>
           <tbody>
@@ -353,6 +443,20 @@ function onSelectSet(code) {
                 </div>
               </td>
               <td>{{ row.count }}</td>
+              <td class="stats-completion-cell">
+                <div
+                  class="stats-completion-bar-wrap"
+                  :title="collectedTitle(row)"
+                  :aria-label="collectedTitle(row)"
+                >
+                  <div
+                    class="stats-completion-bar"
+                    :class="completionBarClass(row)"
+                    :style="{ width: `${completionBarPercent(row)}%` }"
+                  />
+                  <span class="stats-completion-label">{{ formatCollectedPercent(row) }}</span>
+                </div>
+              </td>
               <td class="stats-value-cell">
                 <div class="stats-value-bar-wrap">
                   <div
@@ -363,8 +467,13 @@ function onSelectSet(code) {
                   <span class="stats-value-label">{{ formatEuro(row.current) }}</span>
                 </div>
               </td>
-              <td>{{ formatEuro(row.invested) }}</td>
-              <td :class="profitClass(row.profit)">{{ formatProfit(row.profit) }}</td>
+              <td v-if="showFinanceColumns">{{ formatEuro(row.invested) }}</td>
+              <td
+                v-if="showFinanceColumns"
+                :class="profitClass(row.profit)"
+              >
+                {{ formatProfit(row.profit) }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -377,9 +486,10 @@ function onSelectSet(code) {
             <tr>
               <th>Art style</th>
               <th>Cards</th>
+              <th>Collected</th>
               <th>Value</th>
-              <th>Invested</th>
-              <th>Profit / loss</th>
+              <th v-if="showFinanceColumns">Invested</th>
+              <th v-if="showFinanceColumns">Profit / loss</th>
             </tr>
           </thead>
           <tbody>
@@ -393,9 +503,28 @@ function onSelectSet(code) {
                 </RouterLink>
               </td>
               <td>{{ row.count }}</td>
+              <td class="stats-completion-cell">
+                <div
+                  class="stats-completion-bar-wrap"
+                  :title="collectedTitle(row)"
+                  :aria-label="collectedTitle(row)"
+                >
+                  <div
+                    class="stats-completion-bar"
+                    :class="completionBarClass(row)"
+                    :style="{ width: `${completionBarPercent(row)}%` }"
+                  />
+                  <span class="stats-completion-label">{{ formatCollectedPercent(row) }}</span>
+                </div>
+              </td>
               <td>{{ formatEuro(row.current) }}</td>
-              <td>{{ formatEuro(row.invested) }}</td>
-              <td :class="profitClass(row.profit)">{{ formatProfit(row.profit) }}</td>
+              <td v-if="showFinanceColumns">{{ formatEuro(row.invested) }}</td>
+              <td
+                v-if="showFinanceColumns"
+                :class="profitClass(row.profit)"
+              >
+                {{ formatProfit(row.profit) }}
+              </td>
             </tr>
           </tbody>
         </table>

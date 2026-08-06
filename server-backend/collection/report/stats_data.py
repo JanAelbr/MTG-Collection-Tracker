@@ -163,7 +163,11 @@ def _compute_stats_from_owned(
     }
 
 
-def _compute_art_style_stats(owned: pd.DataFrame, page: str) -> list[dict]:
+def _compute_art_style_stats(
+    owned: pd.DataFrame,
+    page: str,
+    catalog_art_lookup: dict[tuple[str, str], int] | None = None,
+) -> list[dict]:
     if owned.empty:
         return []
 
@@ -172,10 +176,14 @@ def _compute_art_style_stats(owned: pd.DataFrame, page: str) -> list[dict]:
     grouped = owned.groupby(group_keys, dropna=False)
     for key, group in grouped:
         set_code, art_style = _group_set_and_art(page, key)
+        catalog_count = 0
+        if catalog_art_lookup is not None:
+            catalog_count = _lookup_catalog_art_count(catalog_art_lookup, set_code, art_style)
         rows.append({
             "set_code": set_code,
             "art_style": art_style,
             "count": _owned_completion_count(group, set_code=set_code),
+            "catalog_count": catalog_count,
             "current": _float_or_none(group["current_value"].sum(min_count=1)),
             "invested": _float_or_none(group["purchase_value"].sum(min_count=1)),
             "profit": _float_or_none(group["profit_loss"].sum(min_count=1)),
@@ -226,7 +234,7 @@ def _build_by_foil(
         if subset.empty:
             continue
         stats = _compute_stats_from_owned(subset, catalog_count, conn, snapshot_cache)
-        stats["artStyles"] = _compute_art_style_stats(subset, page)
+        stats["artStyles"] = _compute_art_style_stats(subset, page, catalog_art_lookup)
         if page == "All":
             stats["setBreakdown"] = _compute_set_stats(subset, catalog_df)
         stats["byArtStyle"] = _build_by_art_style(
@@ -284,7 +292,7 @@ def compute_stats_page(
     owned, catalog = stats_scope(page, owned_df, catalog_df)
     catalog_count = int(catalog["catalog_cards"].sum()) if not catalog.empty else 0
     stats = _compute_stats_from_owned(owned, catalog_count, conn, snapshot_cache)
-    stats["artStyles"] = _compute_art_style_stats(owned, page)
+    stats["artStyles"] = _compute_art_style_stats(owned, page, catalog_art_lookup)
     if page == "All":
         stats["setBreakdown"] = _compute_set_stats(owned, catalog_df)
         stats["rarityBreakdown"] = []

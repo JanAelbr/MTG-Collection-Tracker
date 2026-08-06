@@ -668,6 +668,60 @@
   font-size: 10px;
   color: #888;
 }
+
+.set-gallery-favorite-mark {
+  margin-right: 1px;
+  color: #f57f17;
+  font-size: 10px;
+}
+
+.set-gallery-favorites-separator,
+.set-gallery-separator {
+  flex: 0 0 1px;
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 2px;
+  background: #cfd8dc;
+  border-radius: 1px;
+}
+
+.set-gallery-year-label {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 0 1px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #b0b8bf;
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+}
+
+.set-gallery-card.is-reloading {
+  pointer-events: none;
+}
+
+.set-gallery-reloading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.set-gallery-reload-spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.set-gallery-context-menu {
+  min-width: 180px;
+}
+
 @media (max-width: 900px) {
 
   .set-gallery {

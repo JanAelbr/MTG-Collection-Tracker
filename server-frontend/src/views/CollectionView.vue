@@ -419,7 +419,11 @@ async function onSetsChanged(event) {
     clearClientCache();
     invalidateAllViewScope();
     if (isAllView.value || event.setCode === setCode.value) {
-      await loadCards();
+      if (isStatsView.value) {
+        await loadCollectionStats();
+      } else {
+        await loadCards();
+      }
       if (isTableView.value) {
         await managerTable.loadCards();
       }

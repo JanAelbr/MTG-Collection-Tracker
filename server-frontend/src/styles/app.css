@@ -6959,6 +6959,7 @@ button.card-variant {
 
 .collection-view-mode-group {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .collection-all-filters-btn {

@@ -8,24 +8,32 @@ The application:
 
 - stores everything in a **SQLite** database (`collection.db`)
 - syncs card catalogs via the Scryfall API and EUR prices via Cardmarket
-- tracks sets in **`tracked_sets`**; add/remove sets from the All cards set picker
+- tracks sets in **`tracked_sets`**; load catalogs from **Settings → Sets** (or right-click refresh in the set browser)
 - tracks commander deck contents and ownership in **`decks`** / **`deck_cards`** / **`purchases`**
 - stores card **colors**, **type line**, and **primary card type** for filtering
 - calculates market value and profit/loss per card, art style, and deck
-- serves an interactive **Vue + FastAPI** web app (Collection, stats, storage, decks, card detail)
+- serves an interactive **Vue + FastAPI** web app (Collection catalog & storage, print, decks, settings)
 - exports and imports portable **backup ZIP** files from Settings
 
 **Upgrading from an older CSV-based workflow:** export a backup from the current app before upgrading, then restore it on the new version. There is no CSV import path in current releases.
 
 ## UI examples
 
-**Collection** — set browser, filters, and card gallery:
+**Collection — Catalog** — set browser (favourites, year markers), filters, Gallery / Table / Stats:
 
-![Collection view](docs/images/collection-view.png)
+![Collection catalog](docs/images/collection-view.png)
 
-**Decks** — deck browser with value, progress, and card grid:
+**Collection — Storage** — locations and binders, grouped gallery:
+
+![Storage view](docs/images/storage-view.png)
+
+**Decks** — commander deck with stacks view and completion:
 
 ![Decks view](docs/images/decks-view.png)
+
+**Print — Separators** — binder / storage divider printing by set and year:
+
+![Separators view](docs/images/separators-view.png)
 
 ---
 
@@ -68,7 +76,6 @@ See **[docs/frontend.md](docs/frontend.md)** for the Vue app, PWA, navigation, a
 - Python 3.10+
 - **Node.js 22 LTS** (for building the frontend; see [docs/frontend.md](docs/frontend.md))
 - internet access for Scryfall and Cardmarket requests
-- Node.js for building the frontend (see [docs/frontend.md](docs/frontend.md))
 
 ### Installation
 
@@ -111,7 +118,7 @@ The database is created automatically on first API start. Use **Settings → Bac
 
 ## Workflow
 
-Start the app, register sets from **All cards** (imports the Scryfall catalog), mark ownership, and use **Settings → Sync prices** for Cardmarket updates.
+Start the app, load sets from **Settings → Sets** (imports the Scryfall catalog; family siblings refresh together), mark ownership in Catalog or Storage, and use **Settings → Sync** for Cardmarket updates.
 
 ### Interactive web app
 
@@ -178,27 +185,38 @@ Optional cleanup: if an old broken **At startup** scheduled task named `MtgColle
 
 | Section | Default route | Sub-navigation |
 |---------|---------------|----------------|
-| **Collection** | `/collection/all` | All cards, Search, Stats |
-| **Storage** | `/storage` | — |
+| **Favourites** | `/` | — |
+| **Collection** | `/collection/all` | Catalog · Storage |
+| **Print** | `/print` | Cards · Separators |
+| **Sell** | `/sell` | — |
 | **Decks** | `/decks` | — |
-| **Settings** | `/settings` | — |
+| **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
 
-`/`, `/collection`, and old `/reports/*` URLs redirect to `/collection/all` or the matching collection view.
+`/collection`, old `/stats`, and `/reports/*` URLs redirect into Collection or Settings as appropriate.
 
-The top bar and collection subnav stay fixed while scrolling.
+The top bar and Collection subnav stay fixed while scrolling.
 
-#### Settings (`/settings`)
+#### Settings
 
-- **Backup & restore** — export/import `.mtgbackup.zip` (purchases, decks, storage, art-style rules, settings). **Export before upgrading** the app.
-- **Price sync** — apply Cardmarket prices only (fast; typically a few seconds). Does not re-run the full Scryfall catalog pipeline.
-- **Price strategy** — which EUR field to use (applies everywhere: Collection, Stats, Storage, Decks, card detail)
-- **Set dropdown order** — alphabetical or most-owned (favourites still sort first)
+| Page | Route | Purpose |
+|------|-------|---------|
+| **Display** | `/settings/display` | Page size, set browser order, tokens & promos in the gallery |
+| **Sets** | `/settings/sets` | Load / remove set families, favourites, reload catalogs from Scryfall |
+| **Stats** | `/settings/stats` | Portfolio stats across all tracked sets |
+| **Sync** | `/settings/sync` | Cardmarket price sync; clear orphan catalogs |
+| **Backup** | `/settings/backup` | Export / import `.mtgbackup.zip` |
 
 When prices are older than today, Collection also shows a **Sync prices** banner until you sync or prices catch up.
 
-#### Set favourites
+#### Set browser & favourites
 
-In **All cards**, star a set in the set picker to favourite it. Favourited sets sort first in all set dropdowns and show a ★ prefix in the label.
+On **Catalog**, the horizontal set gallery:
+
+- Groups **favourite** sets first (divider), then the rest with **year labels** and dividers when the release year changes
+- Right-click a set to **favourite / unfavourite** or **refresh** its Scryfall catalog (siblings in the family reload too; a spinner shows while refreshing)
+- Shows completion counts on each tile; expand a family to pick subset codes (tokens & promos optional via Settings → Display)
+
+Favourited sets also sort first in set dropdowns elsewhere.
 
 ---
 
@@ -210,25 +228,29 @@ In **All cards**, star a set in the set picker to favourite it. Favourited sets 
 
 | View | Route |
 |------|-------|
-| **Collection — all cards** | `/` or `/collection/all` |
-| **Collection — all cards** | `/collection/all` |
-| **Collection — search** | `/collection/search` |
-| **Collection stats** | `/stats` |
+| **Favourites** | `/` |
+| **Catalog** | `/collection/all` |
+| **Catalog — search** | `/collection/search` |
+| **Catalog — stats** | `/collection/all?set=CODE&view=stats` |
 | **Storage** | `/storage` |
+| **Print cards** | `/print/cards` |
+| **Separators** | `/print/separators` |
+| **Sell** | `/sell` |
 | **Decks** | `/decks` |
 | **Card detail** | `/card/:setCode/:collectorNumber` |
-| **Settings** | `/settings` |
+| **Settings** | `/settings/display` (and nested settings routes) |
 
-Default landing page: **`/collection/all`**. Old `/reports/*` and `/collection/risers|fallers` URLs redirect to `/collection/all`.
+Default landing page: **Favourites** (`/`). Catalog is `/collection/all`. Old `/reports/*`, `/manager`, and standalone `/stats` URLs redirect into Catalog or Settings.
 
 ### Filters and behaviour
 
-- **Filter sidebar** on Collection, Search, and Stats (collapsible; width toggle on wide screens)
-- **Set filter** — URL query (`?set=LTR`); full set name in sidebar; favourited sets sort first with ★
-- **Art style** — per-set list filter; edit link (✎) on All cards opens the inline art-style rules editor
-- **All cards** — Gallery/Table toggle; gallery has ownership, finish, type, colour, and sort filters with a virtualized card grid; table mode (single set only) has per-finish ownership checkboxes, price health, bulk storage assign, and infinite scroll
+- **Filter sidebar** on Catalog (and Catalog stats); collapsible on wide screens
+- **Set browser** — favourites first, year markers for the rest; URL query (`?set=LTR`); family scope with `?family=1`
+- **Art style** — per-set list filter; edit link (✎) opens the inline art-style rules editor
+- **Catalog views** — **Gallery · Table · Stats** (far right of the toolbar). Gallery has ownership, finish, type, colour, and sort filters with a virtualized card grid. Table (single set only) has per-finish ownership, price health, bulk storage assign, and infinite scroll. Stats shows value tiles, rarity completion, and by-set / by-art-style tables for the selected set (filters apply)
+- **Storage** — Gallery · Table · Breakdown; group by set (and nested group-by); locations include general storage, binders, and decks
 - **Price change** sort columns compare against the previous price snapshot automatically
-- Collection filter changes are cached in memory on the server for fast repeat loads (~50 ms after warm-up)
+- Collection filter changes are cached in memory on the server for fast repeat loads
 
 Old `/manager` URLs redirect to `/collection/all?view=table`.
 
@@ -236,15 +258,16 @@ Old `/manager` URLs redirect to `/collection/all?view=table`.
 
 Owned/catalog counts per set use **distinct base collector numbers**. Serialized prints (collector number ending in `Z`) are excluded. `014` and `14` count as one slot. See `server-backend/collection/util/set_completion.py` and [docs/frontend.md](docs/frontend.md).
 
-### All cards — table mode
+### Catalog — table mode
 
-When a specific set is selected on **All cards**, switch to **Table** view to:
+When a specific set is selected on **Catalog**, switch to **Table** view to:
 
 - Toggle non-foil / foil / etched ownership with checkboxes per print
 - Filter owned cards with URL/price issues
 - Bulk-assign storage to selected owned rows
 - Edit **art style rules** inline (collector-number groups for filters and stats)
-- Add/remove sets and reload Scryfall catalogs from the set picker
+
+Reload Scryfall catalogs from the set browser context menu or **Settings → Sets**.
 
 `/manager?set=CODE` redirects to `/collection/all?set=CODE&view=table`.
 
@@ -271,10 +294,11 @@ Available on Collection, Storage, Decks, and card detail responses.
 
 ### Decks
 
-- **Browse decks** — deck list with Detail / Overview toggle; per-deck hero gallery and card list with **Images / Table** toggle
-- **Deck stats** — aggregate or single-deck metrics, portfolio history chart, card table
-- **Owned** on a deck card requires a matching `purchases` row (mark ownership in All cards table view or Storage)
+- **Browse decks** — deck list; open a deck for Overview / Images / Stacks / Table / Power
+- **Stacks** — cards grouped by type with expandable rows and a detail pane
+- **Owned** on a deck card requires a matching `purchases` row (mark ownership in Catalog table view, Storage, or on the deck)
 - Deck purchase price is stored on the deck row for invested / ROI figures
+- Swap or add cards from storage via the deck card context actions
 
 ---
 
@@ -294,16 +318,16 @@ Daily price updates use the **Cardmarket price guide** (one JSON download per ru
 
 | Step | Source | When |
 |------|--------|------|
-| Catalog sync | Scryfall | Once per tracked set, when first added from All cards |
+| Catalog sync | Scryfall | Once per tracked set, when first loaded from Settings → Sets or the set browser |
 | Metadata backfill | Scryfall | When `colors`, `type_line`, or `card_type` are missing for cards in a tracked set |
 | Set metadata | Scryfall | Once per set, when the set row is not yet in `collection.db` |
 | Price sync | Cardmarket price guide | Every run: owned cards; unowned only in qualifying sets |
 
 Unowned prices in other sets are cleared and no longer updated.
 
-The **Settings → Sync prices** button in the web app runs **Cardmarket only** (no Scryfall, set metadata, or history restore). Bulk card updates use temp-table SQL for speed (typically 1–2 seconds for a full collection after the guide is cached).
+The **Settings → Sync** button in the web app runs **Cardmarket only** (no Scryfall, set metadata, or history restore). Bulk card updates use temp-table SQL for speed (typically 1–2 seconds for a full collection after the guide is cached).
 
-Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is synced from All cards. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
+Scryfall provides card names, images, finish flags, Cardmarket product URLs, colors, and type information when a set is loaded from Settings → Sets or refreshed from the set browser. Cards without a Cardmarket match keep their last known price or stay empty until one is found.
 
 ---
 
@@ -417,11 +441,11 @@ If `type_line` is present but `card_type` is empty, it is derived automatically 
 
 ### `purchases`
 
-Owned finishes. Updated when you change ownership in All cards or Storage.
+Owned finishes. Updated when you change ownership in Catalog or Storage.
 
 ### `tracked_sets`
 
-Set codes registered in All cards (`tracked_sets` table in `collection.db`).
+Set codes registered from Settings → Sets (`tracked_sets` table in `collection.db`).
 
 ### `decks` / `deck_cards`
 
@@ -431,7 +455,7 @@ Commander deck definitions. See [docs/decks.md](docs/decks.md).
 
 ## Art style mapping
 
-Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules from **All cards** (✎ on the art-style filter or table view). Legacy `data/art_styles/*.json` files are imported once on upgrade if present. See **[docs/art-styles.md](docs/art-styles.md)** for the seed generator workflow.
+Art-style labels are stored in the local SQLite database (`art_style_rules` table). On first run, bundled rules for sets with custom collector-number groupings are seeded automatically; other sets default to a single `"All"` group. Rules use collector-number ranges, prefixes, or suffixes to split cards into display groups (e.g. LTR main set vs showcase). Edit rules from **Catalog** (✎ on the art-style filter or table view). Legacy `data/art_styles/*.json` files are imported once on upgrade if present. See **[docs/art-styles.md](docs/art-styles.md)** for the seed generator workflow.
 
 Set code **PLIST** is treated as an alias for **PLST** in the database and UI.
 

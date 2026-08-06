@@ -145,32 +145,62 @@
 
 .stats-rarity-chart-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .stats-rarity-chart-summary li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  align-items: baseline;
-  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
   background: #f8fafc;
   border-radius: 8px;
   font-size: 0.9rem;
   color: #444;
 }
 
-.stats-rarity-chart-summary strong {
-  color: #111;
+.stats-rarity-chart-summary.has-set-icons li {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 8px;
 }
 
-.stats-rarity-chart-summary-pct {
-  color: var(--chart-accent, #1b5e20);
-  font-weight: 600;
+.stats-rarity-chart-set-icon {
+  grid-row: 1 / span 2;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.stats-rarity-chart-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.stats-rarity-chart-summary strong {
+  font-weight: 700;
+}
+
+.stats-rarity-chart-counts {
+  color: #607d8b;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-rarity-chart-summary.has-set-icons .stats-rarity-chart-bar {
+  grid-column: 2;
+}
+
+.stats-rarity-chart-bar {
+  min-width: 0;
+  width: 100%;
 }
 
 .stats-panels {
@@ -232,29 +262,81 @@
   min-width: 160px;
 }
 
-.stats-value-bar-wrap {
+.stats-completion-cell {
+  min-width: 110px;
+}
+
+.stats-value-bar-wrap,
+.stats-completion-bar-wrap {
   position: relative;
   display: flex;
   align-items: center;
   min-height: 28px;
 }
 
-.stats-value-bar {
+.stats-completion-bar-wrap {
+  min-width: 88px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #eceff1;
+}
+
+.stats-value-bar,
+.stats-completion-bar {
   position: absolute;
   left: 0;
   top: 3px;
   bottom: 3px;
   border-radius: 4px;
-  background: linear-gradient(90deg, #e8f5e9 0%, #c8e6c9 100%);
   z-index: 0;
   transition: width 0.2s ease;
 }
 
-.stats-value-label {
+.stats-value-bar {
+  background: linear-gradient(90deg, #e8f5e9 0%, #c8e6c9 100%);
+}
+
+.stats-completion-bar {
+  background: linear-gradient(90deg, #d5dbe0 0%, #b0bec5 100%);
+}
+
+.stats-completion-bar.is-uncommon {
+  background: linear-gradient(90deg, #cfd8dc 0%, #90a4ae 100%);
+}
+
+.stats-completion-bar.is-rare {
+  background: linear-gradient(90deg, #fff3c4 0%, #ffd54f 100%);
+}
+
+.stats-completion-bar.is-mythic {
+  background: linear-gradient(90deg, #ffccbc 0%, #ff8a65 100%);
+}
+
+.stats-completion-bar.is-complete {
+  background: linear-gradient(90deg, #c8e6c9 0%, #81c784 100%);
+}
+
+.stats-value-label,
+.stats-completion-label {
   position: relative;
   z-index: 1;
-  padding-right: 4px;
   font-variant-numeric: tabular-nums;
+}
+
+.stats-value-label {
+  padding-right: 4px;
+}
+
+.stats-completion-label {
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1px rgba(38, 50, 56, 0.14);
+  color: #102027;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .stats-art-drill {
