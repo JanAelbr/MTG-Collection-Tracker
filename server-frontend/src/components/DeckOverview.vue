@@ -8,6 +8,7 @@ import ManaCost from "./ManaCost.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
+import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
@@ -47,9 +48,49 @@ const emit = defineEmits(["refresh-unpriced"]);
 const powerPayload = ref(null);
 const powerLoading = ref(false);
 const powerError = ref("");
+const commanderIndex = ref(0);
 
 const commanderCards = computed(() => splitCommanderCards(props.cards).commanders);
+const activeCommander = computed(
+  () => commanderCards.value[commanderIndex.value] || commanderCards.value[0] || null,
+);
+const hasCommanderCarousel = computed(() => commanderCards.value.length > 1);
 const commanderIdentity = computed(() => commanderColorIdentity(commanderCards.value));
+
+watch(
+  () => [
+    props.deckId,
+    commanderCards.value
+      .map((card) => `${card.setCode}-${card.collectorNumber}-${cardFinish(card)}`)
+      .join("|"),
+  ],
+  () => {
+    commanderIndex.value = 0;
+  },
+);
+
+watch(commanderCards, (cards) => {
+  if (commanderIndex.value >= cards.length) {
+    commanderIndex.value = Math.max(0, cards.length - 1);
+  }
+});
+
+function showPrevCommander() {
+  const total = commanderCards.value.length;
+  if (total < 2) {
+    return;
+  }
+  commanderIndex.value = (commanderIndex.value - 1 + total) % total;
+}
+
+function showNextCommander() {
+  const total = commanderCards.value.length;
+  if (total < 2) {
+    return;
+  }
+  commanderIndex.value = (commanderIndex.value + 1) % total;
+}
+
 const typeBreakdown = computed(() => buildTypeBreakdown(props.cards));
 const roleBreakdown = computed(() => buildRoleBreakdown(powerPayload.value?.counts || {}));
 const pipBreakdown = computed(() => buildColorPipBreakdown(props.cards));
@@ -230,76 +271,99 @@ function unknownCardName(card) {
 
     <div class="deck-overview-top-row">
       <section
-        v-if="commanderCards.length"
+        v-if="activeCommander"
         class="deck-overview-panel deck-overview-commander"
         aria-label="Commander"
       >
         <header class="deck-overview-panel-head">
           <h3 class="deck-overview-panel-title">
-            {{ commanderCards.length > 1 ? "Commanders" : "Commander" }}
+            {{ hasCommanderCarousel ? "Commanders" : "Commander" }}
           </h3>
+          <span v-if="hasCommanderCarousel" class="deck-overview-panel-meta">
+            {{ commanderIndex + 1 }}/{{ commanderCards.length }}
+          </span>
           <ManaSymbols
-            v-if="commanderIdentity?.length"
+            v-else-if="commanderIdentity?.length"
             class="deck-overview-commander-identity"
             :colors="commanderIdentity"
             :size="14"
           />
         </header>
 
-        <div
-          class="deck-overview-commander-list"
-          :class="{ 'is-partner': commanderCards.length > 1 }"
-        >
-          <figure
-            v-for="(card, index) in commanderCards"
-            :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
-            class="deck-overview-commander-card"
+        <div class="deck-overview-commander-stage">
+          <button
+            v-if="hasCommanderCarousel"
+            type="button"
+            class="deck-overview-commander-nav"
+            aria-label="Previous commander"
+            @click="showPrevCommander"
           >
+            ‹
+          </button>
+
+          <figure class="deck-overview-commander-card">
             <div class="deck-overview-commander-image-wrap">
-              <RouterLink
-                v-if="card.imageUri && cardRoute(card)"
-                :to="cardRoute(card)"
-                class="deck-overview-commander-image-link"
-              >
-                <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
-              </RouterLink>
-              <img
-                v-else-if="card.imageUri"
-                :src="card.imageUri"
-                :alt="card.cardName"
-                loading="lazy"
-              >
+              <CardInteractiveImage
+                v-if="activeCommander.imageUri"
+                :src="activeCommander.imageUri"
+                :alt="activeCommander.cardName"
+                :card="activeCommander"
+                img-class="deck-overview-commander-image"
+                :show-details="false"
+                :show-copy-controls="false"
+              />
               <div v-else class="deck-overview-commander-placeholder">No art</div>
             </div>
             <figcaption class="deck-overview-commander-caption">
               <span class="deck-overview-commander-name-row">
                 <CardSetSymbol
-                  v-if="card.setCode"
-                  :set-code="card.setCode"
-                  :family-root="card.familyRoot || ''"
-                  :rarity="card.rarity || ''"
+                  v-if="activeCommander.setCode"
+                  :set-code="activeCommander.setCode"
+                  :family-root="activeCommander.familyRoot || ''"
+                  :rarity="activeCommander.rarity || ''"
                 />
                 <ManaCost
                   class="deck-overview-commander-mana"
-                  :mana-cost="card.manaCost || ''"
+                  :mana-cost="activeCommander.manaCost || ''"
                   :size="12"
                 />
                 <RouterLink
-                  v-if="cardRoute(card)"
-                  :to="cardRoute(card)"
+                  v-if="cardRoute(activeCommander)"
+                  :to="cardRoute(activeCommander)"
                   class="deck-overview-commander-name"
-                  :title="card.cardName"
+                  :title="activeCommander.cardName"
                 >
-                  {{ card.cardName }}
+                  {{ activeCommander.cardName }}
                 </RouterLink>
-                <span v-else class="deck-overview-commander-name is-plain" :title="card.cardName">
-                  {{ card.cardName }}
+                <span
+                  v-else
+                  class="deck-overview-commander-name is-plain"
+                  :title="activeCommander.cardName"
+                >
+                  {{ activeCommander.cardName }}
                 </span>
-                <CardFinishBadge :card="card" compact />
+                <CardFinishBadge :card="activeCommander" compact />
               </span>
             </figcaption>
           </figure>
+
+          <button
+            v-if="hasCommanderCarousel"
+            type="button"
+            class="deck-overview-commander-nav"
+            aria-label="Next commander"
+            @click="showNextCommander"
+          >
+            ›
+          </button>
         </div>
+
+        <ManaSymbols
+          v-if="hasCommanderCarousel && commanderIdentity?.length"
+          class="deck-overview-commander-identity deck-overview-commander-identity--footer"
+          :colors="commanderIdentity"
+          :size="14"
+        />
       </section>
 
       <section

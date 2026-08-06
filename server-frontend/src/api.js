@@ -803,6 +803,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  moveDeckCardSection: (deckId, body) =>
+    apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/section`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   swapDeckCard: (deckId, body) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}/cards/swap`, {
       method: "POST",

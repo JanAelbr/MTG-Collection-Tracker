@@ -108,7 +108,7 @@ Set symbols use [mtg-vectors](https://github.com/Investigamer/mtg-vectors) with 
 
 ## Decks
 
-**Collection → Decks** (`/collection/decks`; `/decks` redirects here). The deck browser sits above the selected deck. Use the subnav **Search decks** field to filter by deck name or commander name. Deck builder remains at `/decks/build`.
+**Collection → Decks** (`/collection/decks`; `/decks` redirects here). The deck browser sits above the selected deck. Use the subnav **Search decks** field to filter by deck name or commander name. **New deck** opens commander selection (also available at `/decks/build`).
 
 ---
 

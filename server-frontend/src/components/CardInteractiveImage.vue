@@ -18,11 +18,20 @@ const props = defineProps({
   /** Kept for callers; Details now lives in the context menu. */
   showDetails: { type: Boolean, default: false },
   showZoom: { type: Boolean, default: true },
-  /** When false, hover overlay only shows zoom. */
+  /** When false, hover overlay only shows zoom; click opens zoom. */
   showCopyControls: { type: Boolean, default: true },
+  deckId: { type: [String, Number], default: "" },
+  showDeckSwap: { type: Boolean, default: false },
+  showDeckRemove: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["finish-changed", "ownership-changed"]);
+const emit = defineEmits([
+  "finish-changed",
+  "ownership-changed",
+  "deck-changed",
+  "deck-swap",
+  "deck-removed",
+]);
 
 const rootRef = ref(null);
 const isHovered = ref(false);
@@ -37,8 +46,12 @@ const ownedCount = computed(() => {
   ownershipRevision.value;
   return effectiveDeckOwnedQty(props.card);
 });
+const zoomImageSrc = computed(() => props.src || props.card?.imageUri || "");
 const canClickToAdd = computed(
   () => props.showCopyControls && isInteractive.value && ownedCount.value === 0,
+);
+const canClickToZoom = computed(
+  () => props.showZoom && !props.showCopyControls && Boolean(zoomImageSrc.value),
 );
 const showOverlay = computed(() => {
   if (!isInteractive.value) {
@@ -53,7 +66,6 @@ const effectivelyOwned = computed(() => {
   ownershipRevision.value;
   return isEffectivelyOwned(props.card);
 });
-const zoomImageSrc = computed(() => props.src || props.card?.imageUri || "");
 const canOpenContextMenu = computed(() => Boolean(normalizeCardMenuTarget(props.card)));
 
 function clearLeaveTimer() {
@@ -105,16 +117,25 @@ function onOverlayClick(event) {
   event.stopPropagation();
   if (canClickToAdd.value) {
     copyControlsRef.value?.addCopy();
+    return;
+  }
+  if (canClickToZoom.value) {
+    imageZoomOpen.value = true;
   }
 }
 
 function onCardClick(event) {
-  if (!canClickToAdd.value) {
+  if (canClickToAdd.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    copyControlsRef.value?.addCopy();
     return;
   }
-  event.preventDefault();
-  event.stopPropagation();
-  copyControlsRef.value?.addCopy();
+  if (canClickToZoom.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    imageZoomOpen.value = true;
+  }
 }
 
 function stopNavigation(event) {
@@ -191,6 +212,7 @@ onUnmounted(() => {
       'is-owned': effectivelyOwned,
       'is-unowned': isInteractive && !effectivelyOwned,
       'is-clickable-add': canClickToAdd,
+      'is-clickable-zoom': canClickToZoom,
     }"
     @click="onCardClick"
     @contextmenu="onContextMenu"
@@ -279,9 +301,15 @@ onUnmounted(() => {
       :card="card"
       :x="contextMenu.x"
       :y="contextMenu.y"
+      :deck-id="deckId"
+      :show-deck-swap="showDeckSwap"
+      :show-deck-remove="showDeckRemove"
       @close="closeContextMenu"
       @ownership-changed="emit('ownership-changed')"
       @finish-changed="emit('finish-changed', $event)"
+      @deck-changed="emit('deck-changed', $event)"
+      @deck-swap="emit('deck-swap', $event)"
+      @deck-removed="emit('deck-removed', $event)"
     />
   </div>
 </template>

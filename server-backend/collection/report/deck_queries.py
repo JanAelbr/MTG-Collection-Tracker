@@ -105,9 +105,7 @@ def load_deck_cards_df(
 
 
 # Format one deck name for selectors and tables.
-def format_deck_label(name: str, release_year: int | None) -> str:
-    if release_year:
-        return f"{release_year} - {name}"
+def format_deck_label(name: str, release_year: int | None = None) -> str:
     return name
 
 

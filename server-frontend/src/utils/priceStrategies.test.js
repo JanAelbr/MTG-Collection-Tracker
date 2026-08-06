@@ -65,6 +65,13 @@ describe("priceStrategies", () => {
     })).toEqual({ low: 1.2, high: null });
   });
 
+  it("prefers unitValue over line-total currentValue when strategies are missing", () => {
+    expect(galleryPricePair({
+      unitValue: 2.5,
+      currentValue: 7.5,
+    })).toEqual({ low: 2.5, high: null });
+  });
+
   it("builds tooltip rows with active strategy", () => {
     const rows = strategyPriceRows(
       card,

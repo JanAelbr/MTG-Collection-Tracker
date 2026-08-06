@@ -24,13 +24,16 @@ def _assert_card_matches_deck_color_identity(
     set_code: str,
     collector_number: str,
     card_name: str = "",
+    exclude_deck_card_ids: set[int] | frozenset[int] | None = None,
 ) -> None:
     """Reject maindeck adds outside the commander's color identity."""
     from util.commander_rules import card_is_legal_for_deck, commander_color_identity
 
+    excluded = {int(value) for value in (exclude_deck_card_ids or ())}
     commander_rows = conn.execute(
         """
         SELECT
+            dc.deck_card_id,
             COALESCE(c.name, dc.card_name) AS name,
             c.color_identity,
             c.colors,
@@ -43,9 +46,6 @@ def _assert_card_matches_deck_color_identity(
         """,
         (deck_id,),
     ).fetchall()
-    if not commander_rows:
-        return
-
     commanders = [
         {
             "name": row["name"],
@@ -54,7 +54,11 @@ def _assert_card_matches_deck_color_identity(
             "legalities": row["legalities"],
         }
         for row in commander_rows
+        if int(row["deck_card_id"]) not in excluded
     ]
+    if not commanders:
+        return
+
     allowed = commander_color_identity(commanders)
 
     card_row = conn.execute(
@@ -902,6 +906,133 @@ def reconcile_all_deck_owned_storage(conn: sqlite3.Connection) -> dict:
     }
 
 
+def move_deck_card_section(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    set_code: str,
+    collector_number: str,
+    finish: int,
+    from_section: str,
+    to_section: str,
+) -> dict:
+    """Move a deck printing between sections (e.g. main ↔ command zone)."""
+    from api.cache import bump_cache_epoch
+    from util.card_finishes import normalize_finish
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    try:
+        deck_key = int(deck_id)
+    except (TypeError, ValueError) as exc:
+        raise DeckError("Deck not found", status_code=404) from exc
+
+    deck_row = conn.execute(
+        "SELECT deck_id, name FROM decks WHERE deck_id = ?",
+        (deck_key,),
+    ).fetchone()
+    if deck_row is None:
+        raise DeckError("Deck not found", status_code=404)
+
+    finish_id = normalize_finish(finish)
+    source_section = (from_section or "main").strip().lower()
+    target_section = (to_section or "main").strip().lower()
+    allowed = {"commander", "main", "sideboard"}
+    if source_section not in allowed or target_section not in allowed:
+        raise DeckError("Invalid section", status_code=400)
+    if source_section == target_section:
+        raise DeckError("Card is already in that section", status_code=400)
+
+    normalized_set = str(set_code).upper()
+    normalized_number = str(collector_number).strip()
+    if not normalized_set or not normalized_number:
+        raise DeckError("Card print is required", status_code=400)
+
+    source = conn.execute(
+        """
+        SELECT deck_card_id, qty, owned_qty, card_name, in_catalog, sort_order
+        FROM deck_cards
+        WHERE deck_id = ? AND set_code = ? AND collector_number = ?
+          AND finish = ? AND section = ?
+        """,
+        (deck_key, normalized_set, normalized_number, finish_id, source_section),
+    ).fetchone()
+    if source is None:
+        raise DeckError("Card not in deck", status_code=404)
+
+    source_id = int(source[0])
+    source_qty = int(source[1])
+    source_owned = int(source[2] or 0)
+    card_name = source[3] or ""
+    in_catalog = int(source[4] or 0)
+    sort_order = int(source[5] or 0)
+
+    if target_section == "main":
+        exclude_ids = {source_id} if source_section == "commander" else None
+        _assert_card_matches_deck_color_identity(
+            conn,
+            deck_id=deck_row[0],
+            set_code=normalized_set,
+            collector_number=normalized_number,
+            card_name=card_name,
+            exclude_deck_card_ids=exclude_ids,
+        )
+
+    destination = conn.execute(
+        """
+        SELECT deck_card_id, qty, owned_qty
+        FROM deck_cards
+        WHERE deck_id = ? AND set_code = ? AND collector_number = ?
+          AND finish = ? AND section = ?
+        """,
+        (deck_key, normalized_set, normalized_number, finish_id, target_section),
+    ).fetchone()
+
+    if destination is None:
+        conn.execute(
+            "UPDATE deck_cards SET section = ? WHERE deck_card_id = ?",
+            (target_section, source_id),
+        )
+        result_qty = source_qty
+        result_owned = source_owned
+        merged = False
+    else:
+        dest_id = int(destination[0])
+        result_qty = int(destination[1]) + source_qty
+        result_owned = min(result_qty, int(destination[2] or 0) + source_owned)
+        conn.execute(
+            """
+            UPDATE deck_cards
+            SET qty = ?, owned_qty = ?, card_name = ?, in_catalog = ?
+            WHERE deck_card_id = ?
+            """,
+            (result_qty, result_owned, card_name, in_catalog, dest_id),
+        )
+        conn.execute("DELETE FROM deck_cards WHERE deck_card_id = ?", (source_id,))
+        merged = True
+
+    conn.commit()
+    bump_cache_epoch()
+
+    return {
+        "deckId": str(deck_row[0]),
+        "deckName": deck_row[1],
+        "merged": merged,
+        "qty": result_qty,
+        "ownedQty": result_owned,
+        "fromSection": source_section,
+        "section": target_section,
+        "sortOrder": sort_order,
+        "card": {
+            "setCode": normalized_set,
+            "collectorNumber": normalized_number,
+            "finish": finish_id,
+            "cardName": card_name,
+            "inCatalog": bool(in_catalog),
+        },
+    }
+
+
 def set_deck_card_owned(
     conn: sqlite3.Connection,
     *,
@@ -1724,9 +1855,12 @@ def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
 def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, include_alternatives: bool = True) -> dict:
     from util.card_role_seed import card_roles_for
     from util.deck_helpers import cheapest_owned_printing_by_name
+    from api.services.pricing_service import values_by_strategy_for_finish
 
     owned_qty = int(card.get("owned_qty") or 0)
     qty = int(card.get("qty") or 0)
+    finish = int(card.get("finish") or 0)
+    values_by_strategy = values_by_strategy_for_finish(card, finish)
     entry = {
         "deckId": card.get("deck_id"),
         "deckName": card.get("deck_name"),
@@ -1741,7 +1875,9 @@ def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, 
         "currentValue": card.get("current_value"),
         "unitValue": card.get("unit_value"),
         "invested": card.get("invested"),
+        "purchaseValue": card.get("purchase_value"),
         "profitLoss": card.get("profit_loss"),
+        "valuesByStrategy": values_by_strategy,
         "imageUri": card.get("image_uri"),
         "imageUriBack": card.get("image_uri_back") or "",
         "colors": card.get("colors") or [],
@@ -1756,6 +1892,10 @@ def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, 
         "isBasicLand": bool(card.get("is_basic_land")),
         "roles": card_roles_for(card),
         "cardmarketUrl": card.get("cardmarket_url"),
+        "cardmarketUrlFoil": card.get("cardmarket_url_foil"),
+        "hasNonfoil": card.get("has_nonfoil"),
+        "hasFoil": card.get("has_foil"),
+        "hasEtched": card.get("has_etched"),
         "inCatalog": card.get("in_catalog"),
     }
     if include_alternatives and conn is not None and owned_qty < qty:

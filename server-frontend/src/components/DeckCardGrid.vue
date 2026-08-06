@@ -11,9 +11,10 @@ const props = defineProps({
   showDeckRemove: { type: Boolean, default: false },
   deckName: { type: String, default: "" },
   colorIdentity: { type: Array, default: null },
+  isTypeExpanded: { type: Function, default: () => true },
 });
 
-const emit = defineEmits(["deck-added", "deck-removed", "deck-changed"]);
+const emit = defineEmits(["deck-added", "deck-removed", "deck-changed", "deck-swap", "toggle-type"]);
 
 const addModal = ref({
   open: false,
@@ -30,6 +31,13 @@ function sectionHeading(group) {
     return formatDeckGroupHeading(group);
   }
   return group.label;
+}
+
+function typeExpanded(group) {
+  if (group.kind !== "type") {
+    return true;
+  }
+  return props.isTypeExpanded(group.key);
 }
 
 function openAddModal(group) {
@@ -66,19 +74,35 @@ function onModalAdded(result) {
       <section
         v-else-if="group.kind === 'type' || group.cards?.length"
         class="deck-card-grid-section"
+        :class="{ 'is-collapsed': group.kind === 'type' && !typeExpanded(group) }"
       >
+        <button
+          v-if="group.kind === 'type'"
+          type="button"
+          class="deck-card-grid-heading deck-type-heading deck-type-collapse-button"
+          :class="{
+            'deck-card-grid-heading-type': true,
+            'is-collapsed': !typeExpanded(group),
+          }"
+          :aria-expanded="typeExpanded(group)"
+          @click="emit('toggle-type', group.key)"
+        >
+          <span class="deck-type-collapse-chevron" aria-hidden="true">▾</span>
+          <DeckTypeIcon :type="deckTypeIconType(group)" />
+          <span>{{ sectionHeading(group) }}</span>
+        </button>
         <h3
+          v-else
           class="deck-card-grid-heading deck-type-heading"
           :class="{
             'deck-card-grid-heading-section': group.kind === 'section',
-            'deck-card-grid-heading-type': group.kind === 'type',
           }"
         >
           <DeckTypeIcon :type="deckTypeIconType(group)" />
           <span>{{ sectionHeading(group) }}</span>
         </h3>
 
-        <div class="deck-card-grid-items">
+        <div v-show="typeExpanded(group)" class="deck-card-grid-items">
           <DeckCardTile
             v-for="card in group.cards"
             :key="`${group.key}-${card.section}-${card.setCode}-${card.collectorNumber}`"
@@ -88,6 +112,7 @@ function onModalAdded(result) {
             :deck-name="props.deckName"
             @deck-removed="$emit('deck-removed', $event)"
             @deck-changed="$emit('deck-changed', $event)"
+            @deck-swap="$emit('deck-swap', $event)"
           />
           <button
             v-if="group.kind === 'type' && props.defaultDeckId"

@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
+import ConfirmDialogHost from "./ConfirmDialogHost.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
@@ -233,5 +234,6 @@ onMounted(() => {
     <main class="app-main">
       <slot />
     </main>
+    <ConfirmDialogHost />
   </div>
 </template>

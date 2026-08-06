@@ -17,6 +17,7 @@ import CardSetSymbol from "../components/CardSetSymbol.vue";
 import DeckCommanderPane from "../components/DeckCommanderPane.vue";
 import DeckTypeIcon from "../components/DeckTypeIcon.vue";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
+import CollectionGalleryScaleControl from "../components/CollectionGalleryScaleControl.vue";
 import ManaSymbols from "../components/ManaSymbols.vue";
 import ManaCost from "../components/ManaCost.vue";
 import CardPreview from "../components/CardPreview.vue";
@@ -24,6 +25,7 @@ import { api, clearClientCache } from "../api";
 import { cacheKeyFor, getCachedEntry } from "../apiCache";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
+import { usePricingSettings } from "../composables/pricingSettings";
 import {
   effectiveDeckOwnedQty,
   isDeckCardFullyOwned,
@@ -32,18 +34,20 @@ import {
 } from "../composables/cardContextMenu";
 import {
   DECK_CARDS_VIEW_KEY,
+  DECK_CARD_SCALE_OPTIONS,
   filterDecksForGallery,
+  getStoredDeckCardScale,
   getStoredDeckCardsView,
+  setStoredDeckCardScale,
   sortDecksForGallery,
 } from "../utils/deckBrowse";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
+import { useDeckRename } from "../composables/useDeckRename";
 import {
   buildDeckCardGroups,
   buildEmptyDeckCardGroups,
   cardTypeGroup,
-  collectDeckCardTypes,
   commanderColorIdentity,
-  deckTypeCounts,
   deckTypeIconType,
   deckTypeLabel,
   formatDeckGroupHeading,
@@ -67,10 +71,12 @@ const { deckGalleryFilter } = useDeckGalleryFilter();
 const deckId = ref("");
 const browseIndex = ref(null);
 const deckCardsView = ref(getStoredDeckCardsView());
-const deckTypeFilter = ref("all");
+const deckSearchQuery = ref("");
 const deckOwnershipFilter = ref("all");
 const deckColorFilters = ref([]);
 const deckCardSort = ref("name");
+/** Collapsed type-group keys shared across Images / Stacks / Table. */
+const collapsedDeckTypeKeys = ref(new Set());
 const createDeckOpen = ref(false);
 const csvImportOpen = ref(false);
 const storagePickModal = ref({
@@ -88,6 +94,39 @@ const loadingDeckCards = ref(false);
 const hasMounted = ref(false);
 
 const { loading: loadingBrowse, run: runBrowseLoad } = useAsyncLoad();
+const {
+  settings: pricingSettings,
+  fetchPricingSettings,
+} = usePricingSettings();
+
+const deckImagesCardScale = ref(getStoredDeckCardScale("images"));
+const deckStacksCardScale = ref(getStoredDeckCardScale("stacks"));
+
+const showCardScaleControl = computed(
+  () => deckCardsView.value === "images" || deckCardsView.value === "stacks",
+);
+
+const activeDeckCardScale = computed(() =>
+  (deckCardsView.value === "stacks" ? deckStacksCardScale.value : deckImagesCardScale.value),
+);
+
+const deckCardScaleStyle = computed(() => (
+  showCardScaleControl.value
+    ? { "--collection-card-scale": String(activeDeckCardScale.value / 100) }
+    : undefined
+));
+
+function setDeckCardScale(scale) {
+  const value = Number(scale);
+  const normalized = DECK_CARD_SCALE_OPTIONS.includes(value) ? value : 100;
+  if (deckCardsView.value === "stacks") {
+    deckStacksCardScale.value = normalized;
+    setStoredDeckCardScale("stacks", normalized);
+    return;
+  }
+  deckImagesCardScale.value = normalized;
+  setStoredDeckCardScale("images", normalized);
+}
 
 const decks = computed(() => browseIndex.value?.decks || []);
 const browsePages = computed(() => browseIndex.value?.pages || {});
@@ -95,6 +134,32 @@ const browseStats = computed(() => browsePages.value[String(deckId.value)] || nu
 const activeBrowseDeck = computed(
   () => decks.value.find((deck) => String(deck.id) === String(deckId.value)) || null,
 );
+
+const activeDeckDisplayName = computed(() =>
+  String(activeBrowseDeck.value?.name || activeBrowseDeck.value?.label || "").trim() || "Deck",
+);
+
+const {
+  renaming: stickyRenaming,
+  draft: stickyRenameDraft,
+  error: stickyRenameError,
+  saving: stickyRenameSaving,
+  inputRef: stickyRenameInputRef,
+  startRename: startStickyRename,
+  cancelRename: cancelStickyRename,
+  onRenameBlur: onStickyRenameBlur,
+  saveRename: saveStickyRename,
+} = useDeckRename(
+  () => deckId.value,
+  () => activeBrowseDeck.value?.name || "",
+  (updatedDeck) => onDeckRenamed(updatedDeck),
+);
+
+watch(deckId, () => {
+  cancelStickyRename();
+  collapsedDeckTypeKeys.value = new Set();
+  deckSearchQuery.value = "";
+});
 
 const commanderCards = computed(() => {
   const source = Array.isArray(browseStats.value?.cards)
@@ -127,7 +192,7 @@ const showDeckCardsLoading = computed(() => (
 
 const filteredDeckCards = computed(() =>
   filterDeckCards(mainDeckCards.value, {
-    typeFilter: deckTypeFilter.value,
+    searchQuery: deckSearchQuery.value,
     colorFilters: deckColorFilters.value,
     ownershipFilter: deckOwnershipFilter.value,
   }),
@@ -135,7 +200,7 @@ const filteredDeckCards = computed(() =>
 
 const filteredAllDeckCards = computed(() =>
   filterDeckCards(browseStats.value?.cards || [], {
-    typeFilter: deckTypeFilter.value,
+    searchQuery: deckSearchQuery.value,
     colorFilters: deckColorFilters.value,
     ownershipFilter: deckOwnershipFilter.value,
   }),
@@ -175,13 +240,39 @@ const groupedStackCards = computed(() => {
   return buildDeckCardGroups(filteredAllDeckCards.value, deckCardSort.value);
 });
 
-const deckTypeFilterOptions = computed(() => collectDeckCardTypes(mainDeckCards.value));
+const activeTypeGroupKeys = computed(() => {
+  const groups =
+    deckCardsView.value === "stacks" ? groupedStackCards.value : groupedBrowseCards.value;
+  return (groups || []).filter((group) => group.kind === "type").map((group) => group.key);
+});
 
-const deckTypeCountByType = computed(() => deckTypeCounts(mainDeckCards.value));
+const anyDeckTypeCollapsed = computed(() =>
+  activeTypeGroupKeys.value.some((key) => collapsedDeckTypeKeys.value.has(key)),
+);
 
-function deckTypeFilterLabel(type) {
-  const count = deckTypeCountByType.value.get(type) || 0;
-  return `${deckTypeLabel(type)} (${count})`;
+function isDeckTypeExpanded(key) {
+  return !collapsedDeckTypeKeys.value.has(key);
+}
+
+function toggleDeckTypeCollapsed(key) {
+  if (!key) {
+    return;
+  }
+  const next = new Set(collapsedDeckTypeKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  collapsedDeckTypeKeys.value = next;
+}
+
+function expandAllDeckTypes() {
+  collapsedDeckTypeKeys.value = new Set();
+}
+
+function collapseAllDeckTypes() {
+  collapsedDeckTypeKeys.value = new Set(activeTypeGroupKeys.value);
 }
 
 function openEmptyDeckAdd() {
@@ -582,7 +673,7 @@ function syncDeckRoute() {
 function selectBrowseDeck(nextDeckId) {
   const changed = String(nextDeckId) !== String(deckId.value);
   deckId.value = nextDeckId;
-  deckTypeFilter.value = "all";
+  deckSearchQuery.value = "";
   deckColorFilters.value = [];
   syncDeckRoute();
   if (changed) {
@@ -607,12 +698,6 @@ function deckCardOwnershipClass(card) {
   }
   return "is-missing";
 }
-
-watch(deckTypeFilterOptions, (options) => {
-  if (deckTypeFilter.value !== "all" && !options.includes(deckTypeFilter.value)) {
-    deckTypeFilter.value = "all";
-  }
-});
 
 watch(deckId, () => {
   syncDeckRoute();
@@ -650,7 +735,7 @@ watch(
 );
 
 onMounted(async () => {
-  await loadBrowseIndex();
+  await Promise.all([loadBrowseIndex(), fetchPricingSettings()]);
   syncDeckIdFromRoute();
   if (deckId.value && !route.query.deck) {
     syncDeckRoute();
@@ -708,7 +793,6 @@ onActivated(async () => {
             :on-favorited="onDeckFavorited"
             @select="selectBrowseDeck"
             @create="openCreateDeck"
-            @build="router.push('/decks/build')"
           />
         </GalleryLoadingOverlay>
       </div>
@@ -719,7 +803,43 @@ onActivated(async () => {
       >
         <section class="table-panel deck-cards-panel">
           <div class="deck-cards-sticky">
-            <div class="deck-cards-sticky-head deck-cards-sticky-head--actions-only">
+            <div class="deck-cards-sticky-head">
+              <div class="deck-rename-wrap deck-cards-sticky-title-wrap">
+                <div v-if="stickyRenaming" class="deck-rename-title-row">
+                  <input
+                    ref="stickyRenameInputRef"
+                    v-model="stickyRenameDraft"
+                    class="deck-cards-sticky-title deck-rename-input"
+                    type="text"
+                    maxlength="120"
+                    :disabled="stickyRenameSaving"
+                    aria-label="Deck name"
+                    @keydown.enter.prevent="saveStickyRename"
+                    @keydown.esc.prevent="cancelStickyRename"
+                    @blur="onStickyRenameBlur"
+                  >
+                </div>
+                <div v-else class="deck-rename-title-row">
+                  <h2 class="deck-cards-sticky-title" :title="activeDeckDisplayName">
+                    {{ activeDeckDisplayName }}
+                  </h2>
+                  <button
+                    type="button"
+                    class="deck-rename-edit-button"
+                    title="Rename deck"
+                    aria-label="Rename deck"
+                    @click="startStickyRename"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path
+                        fill="currentColor"
+                        d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <p v-if="stickyRenameError" class="deck-rename-error">{{ stickyRenameError }}</p>
+              </div>
               <div class="deck-cards-sticky-actions">
                 <div class="button-group deck-cards-view-group">
                 <button
@@ -770,20 +890,12 @@ onActivated(async () => {
               >
                 Quick import
               </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-small"
-                @click="router.push({ path: '/decks/build', query: { deck: String(deckId), mode: 'improve' } })"
-              >
-                Improve deck
-              </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-small"
-                @click="router.push({ path: '/decks/build', query: { deck: String(deckId), mode: 'rebuild' } })"
-              >
-                Rebuild deck
-              </button>
+              <CollectionGalleryScaleControl
+                v-if="showCardScaleControl"
+                :model-value="activeDeckCardScale"
+                :options="pricingSettings?.collectionCardScaleOptions ?? DECK_CARD_SCALE_OPTIONS"
+                @update:model-value="setDeckCardScale"
+              />
               </div>
             </div>
 
@@ -791,19 +903,26 @@ onActivated(async () => {
               v-if="deckCardsView !== 'power' && deckCardsView !== 'overview'"
               class="deck-cards-toolbar-compact"
             >
-              <label class="manager-filter deck-cards-type-filter">
-                <span class="deck-cards-filter-label">Type</span>
-                <select :value="deckTypeFilter" @change="deckTypeFilter = $event.target.value">
-                  <option value="all">All types</option>
-                  <option
-                    v-for="type in deckTypeFilterOptions"
-                    :key="type"
-                    :value="type"
-                  >
-                    {{ deckTypeFilterLabel(type) }}
-                  </option>
-                </select>
+              <label class="manager-filter deck-cards-search-filter">
+                <span class="deck-cards-filter-label">Search</span>
+                <input
+                  v-model="deckSearchQuery"
+                  type="search"
+                  class="deck-cards-search-input"
+                  placeholder="Card name, type, set…"
+                  autocomplete="off"
+                  spellcheck="false"
+                >
               </label>
+
+              <button
+                v-if="activeTypeGroupKeys.length"
+                type="button"
+                class="filter-button deck-cards-type-collapse-all"
+                @click="anyDeckTypeCollapsed ? expandAllDeckTypes() : collapseAllDeckTypes()"
+              >
+                {{ anyDeckTypeCollapsed ? "Expand all" : "Collapse all" }}
+              </button>
 
               <div class="deck-cards-filter-group-compact">
                 <span class="deck-cards-filter-label">Color</span>
@@ -921,9 +1040,10 @@ onActivated(async () => {
                 :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
                 @deck-removed="onDeckCardRemoved"
                 @deck-changed="onDeckCardChanged"
+                @deck-swap="openSwapModal"
               />
 
-              <div class="deck-cards-main-pane">
+              <div class="deck-cards-main-pane" :style="deckCardScaleStyle">
                 <p v-if="isFilterEmpty" class="storage-empty deck-cards-filter-empty">
                   No other cards match the current filters.
                 </p>
@@ -935,9 +1055,12 @@ onActivated(async () => {
                   :show-deck-remove="true"
                   :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
                   :color-identity="deckColorIdentity"
+                  :is-type-expanded="isDeckTypeExpanded"
+                  @toggle-type="toggleDeckTypeCollapsed"
                   @deck-added="onDeckCardAdded"
                   @deck-removed="onDeckCardRemoved"
                   @deck-changed="onDeckCardChanged"
+                  @deck-swap="openSwapModal"
                 />
 
                 <DeckOverview
@@ -959,6 +1082,8 @@ onActivated(async () => {
                   :show-deck-remove="true"
                   :deck-name="activeBrowseDeck?.label || activeBrowseDeck?.name || ''"
                   :color-identity="deckColorIdentity"
+                  :is-type-expanded="isDeckTypeExpanded"
+                  @toggle-type="toggleDeckTypeCollapsed"
                   @deck-added="onDeckCardAdded"
                   @deck-removed="onDeckCardRemoved"
                   @deck-changed="onDeckCardChanged"
@@ -1013,18 +1138,38 @@ onActivated(async () => {
                       <template v-else-if="group.cards?.length">
                         <tr
                           class="deck-cards-group-row"
-                          :class="{ 'deck-cards-type-group-row': group.kind === 'type' }"
+                          :class="{
+                            'deck-cards-type-group-row': group.kind === 'type',
+                            'is-collapsed': group.kind === 'type' && !isDeckTypeExpanded(group.key),
+                          }"
                         >
                           <td colspan="7">
-                            <div class="deck-cards-group-heading">
-                              <DeckTypeIcon :type="deckTypeIconType(group)" />
-                              <span>{{ formatDeckGroupHeading(group) }}</span>
+                            <div
+                              class="deck-cards-group-heading"
+                              :class="{ 'deck-type-collapse-toggle': group.kind === 'type' }"
+                            >
+                              <button
+                                v-if="group.kind === 'type'"
+                                type="button"
+                                class="deck-type-collapse-button"
+                                :aria-expanded="isDeckTypeExpanded(group.key)"
+                                :aria-label="`${isDeckTypeExpanded(group.key) ? 'Collapse' : 'Expand'} ${group.label}`"
+                                @click="toggleDeckTypeCollapsed(group.key)"
+                              >
+                                <span class="deck-type-collapse-chevron" aria-hidden="true">▾</span>
+                                <DeckTypeIcon :type="deckTypeIconType(group)" />
+                                <span>{{ formatDeckGroupHeading(group) }}</span>
+                              </button>
+                              <template v-else>
+                                <DeckTypeIcon :type="deckTypeIconType(group)" />
+                                <span>{{ formatDeckGroupHeading(group) }}</span>
+                              </template>
                               <button
                                 v-if="group.kind === 'type' && deckId"
                                 type="button"
                                 class="deck-cards-group-add"
                                 :title="`Add ${group.label.toLowerCase()} to deck`"
-                                @click="openTableTypeAdd(group)"
+                                @click.stop="openTableTypeAdd(group)"
                               >
                                 +
                               </button>
@@ -1033,6 +1178,7 @@ onActivated(async () => {
                         </tr>
                         <tr
                           v-for="card in group.cards"
+                          v-show="group.kind !== 'type' || isDeckTypeExpanded(group.key)"
                           :key="`${group.key}-${card.section}-${card.cardName}-${card.setCode}-${card.collectorNumber}`"
                           class="deck-cards-row"
                           :class="deckCardOwnershipClass(card)"

@@ -259,6 +259,22 @@ class DeckCardOwnedUpdate(BaseModel):
         return values
 
 
+class DeckCardSectionMove(BaseModel):
+    setCode: str = Field(min_length=1, max_length=16)
+    collectorNumber: str = Field(min_length=1, max_length=32)
+    finish: int | None = Field(default=None, ge=0, le=2)
+    foil: int | None = Field(default=None, ge=0, le=2)
+    fromSection: str = Field(default="main", min_length=1, max_length=16)
+    toSection: str = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_finish(cls, values):
+        if isinstance(values, dict):
+            return _resolve_finish_field(values)
+        return values
+
+
 class DeckCardSwapSide(BaseModel):
     setCode: str = Field(min_length=1, max_length=16)
     collectorNumber: str = Field(min_length=1, max_length=32)

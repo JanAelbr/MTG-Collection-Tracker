@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { api, clearClientCache } from "../api";
 import { normalizeCardMenuTarget } from "../composables/cardContextMenu";
+import { confirmDialog } from "../composables/confirmDialog";
 import { cardFinish } from "../utils/finishes";
 
 const MAX_DECK_COPIES = 99;
@@ -13,9 +14,13 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
   /** Flatten chrome for dense table rows. */
   inline: { type: Boolean, default: false },
+  showSwap: { type: Boolean, default: false },
+  showRemove: { type: Boolean, default: true },
+  /** Hide − / count / + (e.g. commander slot). */
+  hideStepper: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["changed", "removed"]);
+const emit = defineEmits(["changed", "removed", "swap"]);
 
 const busy = ref(false);
 const error = ref("");
@@ -27,6 +32,12 @@ const target = computed(() => normalizeCardMenuTarget(props.card));
 const canAdjust = computed(() => Boolean(target.value?.setCode && target.value?.collectorNumber && props.deckId));
 const canIncrease = computed(() => deckQty.value < MAX_DECK_COPIES);
 const canDecrease = computed(() => deckQty.value > 0);
+const visible = computed(() =>
+  ready.value
+  && canAdjust.value
+  && (deckQty.value > 0 || props.hideStepper)
+  && (props.showSwap || props.showRemove || !props.hideStepper),
+);
 
 function cardPayload() {
   return {
@@ -48,7 +59,9 @@ function pickDeckRow(cards) {
   if (!matches.length) {
     return null;
   }
-  return matches.find((row) => row.section === "main") || matches[0];
+  return matches.find((row) => row.section === "commander")
+    || matches.find((row) => row.section === "main")
+    || matches[0];
 }
 
 async function syncFromDeck() {
@@ -80,7 +93,7 @@ async function syncFromDeck() {
 }
 
 async function onAdjust(delta) {
-  if (!canAdjust.value || busy.value) {
+  if (!canAdjust.value || busy.value || props.hideStepper) {
     return;
   }
   if (delta > 0 && !canIncrease.value) {
@@ -115,15 +128,27 @@ async function onAdjust(delta) {
 }
 
 async function onDelete() {
-  if (!canAdjust.value || busy.value || deckQty.value <= 0) {
+  if (!canAdjust.value || busy.value || !props.showRemove) {
     return;
   }
+  const name = props.card?.cardName || props.card?.name || "this card";
+  const deck = props.deckName ? ` from “${props.deckName}”` : " from this deck";
+  const ok = await confirmDialog({
+    title: "Remove card",
+    message: `Remove ${name}${deck}?`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) {
+    return;
+  }
+  const qty = Math.max(1, deckQty.value || Number(props.card?.qty) || 1);
   busy.value = true;
   error.value = "";
   try {
     const result = await api.removeCardFromDeck(props.deckId, {
       ...cardPayload(),
-      qty: deckQty.value,
+      qty,
     });
     clearClientCache();
     deckQty.value = 0;
@@ -134,6 +159,13 @@ async function onDelete() {
   } finally {
     busy.value = false;
   }
+}
+
+function onSwap() {
+  if (!props.showSwap || busy.value) {
+    return;
+  }
+  emit("swap", props.card);
 }
 
 onMounted(syncFromDeck);
@@ -153,17 +185,38 @@ watch(
 
 <template>
   <div
-    v-if="ready && canAdjust && deckQty > 0"
+    v-if="visible"
     class="deck-card-qty-tile"
     :class="{
       'deck-card-qty-tile-compact': compact,
       'deck-card-qty-tile-inline': inline,
+      'deck-card-qty-tile--actions-only': hideStepper,
     }"
     @click.stop
     @mousedown.stop
   >
     <div class="deck-card-qty-tile-row">
-      <div class="card-interactive-stepper deck-card-qty-tile-stepper">
+      <button
+        v-if="showSwap"
+        type="button"
+        class="deck-card-qty-tile-action deck-card-qty-tile-swap"
+        aria-label="Swap with owned card from storage"
+        title="Swap with owned card"
+        :disabled="busy"
+        @click.stop="onSwap"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+
+      <div
+        v-if="!hideStepper"
+        class="card-interactive-stepper deck-card-qty-tile-stepper"
+      >
         <button
           type="button"
           class="card-interactive-step"
@@ -184,9 +237,11 @@ watch(
           +
         </button>
       </div>
+
       <button
+        v-if="showRemove"
         type="button"
-        class="deck-card-qty-tile-remove"
+        class="deck-card-qty-tile-action deck-card-qty-tile-remove"
         aria-label="Remove from deck"
         title="Remove from deck"
         :disabled="busy"

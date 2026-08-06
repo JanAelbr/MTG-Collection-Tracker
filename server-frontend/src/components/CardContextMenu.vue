@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { api, clearClientCache } from "../api";
 import {
   adjustCardCopyCount,
   applyListingResultToCard,
@@ -13,10 +14,12 @@ import {
   storageLocations,
   updateCardCopyStorage,
 } from "../composables/cardContextMenu";
+import { confirmDialog } from "../composables/confirmDialog";
 import { usePrintList } from "../composables/printList";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import ListForSaleModal from "./ListForSaleModal.vue";
 import StorageLocationIcon from "./StorageLocationIcon.vue";
+import DeckOwnedToggle from "./DeckOwnedToggle.vue";
 import {
   canManageFinish,
   cardFinish,
@@ -41,9 +44,35 @@ const props = defineProps({
   card: { type: Object, default: null },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
+  /** When set, show deck-list owned toggle and optional swap/remove. */
+  deckId: { type: [String, Number], default: "" },
+  showDeckSwap: { type: Boolean, default: false },
+  showDeckRemove: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["close", "ownership-changed", "finish-changed"]);
+const emit = defineEmits([
+  "close",
+  "ownership-changed",
+  "finish-changed",
+  "deck-changed",
+  "deck-swap",
+  "deck-removed",
+]);
+
+const showDeckActions = computed(() => Boolean(props.deckId && props.card));
+const deckRemoveBusy = ref(false);
+const deckSectionBusy = ref(false);
+
+const deckCardSection = computed(() => {
+  const section = String(props.card?.section || "main").trim().toLowerCase();
+  return section || "main";
+});
+const canMoveToCommandZone = computed(
+  () => showDeckActions.value && deckCardSection.value === "main",
+);
+const canMoveToMainDeck = computed(
+  () => showDeckActions.value && deckCardSection.value === "commander",
+);
 
 const router = useRouter();
 const printList = usePrintList();
@@ -301,7 +330,9 @@ function onDocumentPointerDown(event) {
   const targetEl = event.target;
   if (
     targetEl instanceof Element
-    && targetEl.closest(".card-context-menu-submenu, .list-for-sale-modal-backdrop, .sell-dialog")
+    && targetEl.closest(
+      ".card-context-menu-submenu, .list-for-sale-modal-backdrop, .sell-dialog, .confirm-modal-backdrop",
+    )
   ) {
     return;
   }
@@ -314,6 +345,9 @@ function onDocumentPointerDown(event) {
 
 function onKeydown(event) {
   if (event.key === "Escape") {
+    if (document.querySelector(".confirm-modal-backdrop")) {
+      return;
+    }
     if (saleModal.value) {
       closeSaleModal();
       return;
@@ -399,6 +433,91 @@ function onViewDetails() {
 
 function togglePrintList() {
   printList.toggle(props.card);
+}
+
+function onDeckOwnedChanged(result) {
+  emit("deck-changed", result);
+  emit("ownership-changed");
+}
+
+function onDeckSwap() {
+  emit("deck-swap", props.card);
+  close();
+}
+
+async function onMoveDeckSection(toSection) {
+  if (!props.deckId || !props.card || deckSectionBusy.value) {
+    return;
+  }
+  const setCode = props.card.setCode;
+  const collectorNumber = props.card.collectorNumber;
+  if (!setCode || collectorNumber == null || String(collectorNumber).trim() === "") {
+    return;
+  }
+  const fromSection = deckCardSection.value;
+  if (fromSection === toSection) {
+    return;
+  }
+  deckSectionBusy.value = true;
+  panelError.value = "";
+  try {
+    const result = await api.moveDeckCardSection(props.deckId, {
+      setCode,
+      collectorNumber,
+      finish: cardFinish(props.card),
+      fromSection,
+      toSection,
+    });
+    clearClientCache();
+    emit("deck-changed", result);
+    close();
+  } catch (error) {
+    panelError.value = error?.message || "Could not move card.";
+  } finally {
+    deckSectionBusy.value = false;
+  }
+}
+
+async function onDeckRemove() {
+  if (!props.deckId || !props.card || deckRemoveBusy.value) {
+    return;
+  }
+  const setCode = props.card.setCode;
+  const collectorNumber = props.card.collectorNumber;
+  if (!setCode || collectorNumber == null || String(collectorNumber).trim() === "") {
+    return;
+  }
+  const name = props.card.cardName || props.card.name || "this card";
+  const ok = await confirmDialog({
+    title: "Remove card",
+    message: `Remove ${name} from this deck?`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) {
+    return;
+  }
+  const qty = Math.max(1, Number(props.card.qty) || 1);
+  const section = String(props.card.section || "main").trim().toLowerCase() || "main";
+  deckRemoveBusy.value = true;
+  panelError.value = "";
+  try {
+    const result = await api.removeCardFromDeck(props.deckId, {
+      setCode,
+      collectorNumber,
+      finish: cardFinish(props.card),
+      section,
+      qty,
+    });
+    clearClientCache();
+    emit("deck-removed", result);
+    emit("deck-changed", result);
+    close();
+  } catch (error) {
+    panelError.value = error?.message || "Could not remove card from deck.";
+  } finally {
+    deckRemoveBusy.value = false;
+  }
 }
 
 async function onAdjustFinish(finish, delta) {
@@ -569,6 +688,57 @@ async function onSaleModalSaved(result) {
       >
         {{ inPrintList ? "Remove from print list" : "Add to print list" }}
       </button>
+
+      <template v-if="showDeckActions">
+        <div class="card-context-menu-divider" />
+        <div class="card-context-menu-deck-owned" @click.stop>
+          <DeckOwnedToggle
+            :card="card"
+            :deck-id="String(deckId)"
+            show-label
+            @changed="onDeckOwnedChanged"
+          />
+        </div>
+        <button
+          v-if="showDeckSwap"
+          type="button"
+          class="card-context-menu-item"
+          role="menuitem"
+          @click="onDeckSwap"
+        >
+          Swap with owned card…
+        </button>
+        <button
+          v-if="canMoveToCommandZone"
+          type="button"
+          class="card-context-menu-item"
+          role="menuitem"
+          :disabled="deckSectionBusy || panelLoading"
+          @click="onMoveDeckSection('commander')"
+        >
+          {{ deckSectionBusy ? "Moving…" : "Move to command zone" }}
+        </button>
+        <button
+          v-if="canMoveToMainDeck"
+          type="button"
+          class="card-context-menu-item"
+          role="menuitem"
+          :disabled="deckSectionBusy || panelLoading"
+          @click="onMoveDeckSection('main')"
+        >
+          {{ deckSectionBusy ? "Moving…" : "Move to main deck" }}
+        </button>
+        <button
+          v-if="showDeckRemove"
+          type="button"
+          class="card-context-menu-item card-context-menu-item--danger"
+          role="menuitem"
+          :disabled="deckRemoveBusy || panelLoading"
+          @click="onDeckRemove"
+        >
+          {{ deckRemoveBusy ? "Removing…" : "Remove from deck" }}
+        </button>
+      </template>
 
       <div class="card-context-menu-divider" />
 

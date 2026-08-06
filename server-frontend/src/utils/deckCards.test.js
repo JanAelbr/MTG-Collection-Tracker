@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cardMatchesColorFilter,
+  cardMatchesDeckSearchQuery,
   cardMatchesOwnershipFilter,
   cardWithinColorIdentity,
   isDeckCardMissing,
@@ -24,6 +25,24 @@ describe("deckCards ownership filter", () => {
     expect(
       cards.filter((card) => cardMatchesOwnershipFilter(card, "missing")),
     ).toHaveLength(1);
+  });
+});
+
+describe("cardMatchesDeckSearchQuery", () => {
+  it("matches name, type, and set fields", () => {
+    const card = {
+      cardName: "Sol Ring",
+      setCode: "LTC",
+      collectorNumber: "284",
+      typeLine: "Artifact",
+      cardType: "artifact",
+    };
+    expect(cardMatchesDeckSearchQuery(card, "")).toBe(true);
+    expect(cardMatchesDeckSearchQuery(card, "sol")).toBe(true);
+    expect(cardMatchesDeckSearchQuery(card, "artifact")).toBe(true);
+    expect(cardMatchesDeckSearchQuery(card, "ltc")).toBe(true);
+    expect(cardMatchesDeckSearchQuery(card, "284")).toBe(true);
+    expect(cardMatchesDeckSearchQuery(card, "lightning")).toBe(false);
   });
 });
 

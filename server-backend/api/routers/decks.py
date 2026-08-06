@@ -17,6 +17,7 @@ from api.schemas import (
     DeckCardOwnedUpdate,
     DeckCardQtyAdjust,
     DeckCardRemove,
+    DeckCardSectionMove,
     DeckCardSwap,
     DeckCreate,
     DeckCsvImport,
@@ -363,6 +364,26 @@ def adjust_deck_card_qty(
             finish=body.finish,
             section=body.section,
             delta=body.delta,
+        )
+    except DeckError as exc:
+        raise _deck_error(exc) from exc
+
+
+@router.patch("/{deck_id}/cards/section")
+def move_deck_card_section(
+    deck_id: str,
+    body: DeckCardSectionMove,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return decks_service.move_deck_card_section(
+            conn,
+            deck_id=deck_id,
+            set_code=body.setCode,
+            collector_number=body.collectorNumber,
+            finish=body.finish,
+            from_section=body.fromSection,
+            to_section=body.toSection,
         )
     except DeckError as exc:
         raise _deck_error(exc) from exc

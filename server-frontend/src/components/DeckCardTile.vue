@@ -1,11 +1,9 @@
 <script setup>
 import { computed } from "vue";
-import ManaCost from "./ManaCost.vue";
-import CardSetSymbol from "./CardSetSymbol.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardSetSymbol from "./CardSetSymbol.vue";
 import DeckCardQtyControl from "./DeckCardQtyControl.vue";
-import DeckOwnedToggle from "./DeckOwnedToggle.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import {
   effectiveDeckOwnedQty,
@@ -19,12 +17,22 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
   defaultDeckId: { type: String, default: "" },
   showDeckRemove: { type: Boolean, default: false },
+  /** Deck qty −/+ on the tile. Defaults on when showDeckRemove is on. */
+  showDeckQty: { type: Boolean, default: undefined },
+  showDeckSwap: { type: Boolean, default: true },
   deckName: { type: String, default: "" },
 });
 
-defineEmits(["deck-removed", "deck-changed"]);
+const emit = defineEmits(["deck-removed", "deck-changed", "deck-swap"]);
 
 const ownershipTick = computed(() => ownershipRevision.value);
+const showQtyStepper = computed(() =>
+  props.showDeckQty !== undefined ? Boolean(props.showDeckQty) : Boolean(props.showDeckRemove),
+);
+const showManageRow = computed(() =>
+  Boolean(props.defaultDeckId)
+  && (showQtyStepper.value || props.showDeckSwap || props.showDeckRemove),
+);
 
 function cardRoute(card) {
   if (!card.setCode || !card.collectorNumber) {
@@ -63,30 +71,27 @@ function ownershipState(card) {
     <span v-if="card.qty > 1 && !showDeckRemove" class="deck-card-grid-qty">×{{ card.qty }}</span>
 
     <div class="deck-card-grid-image-wrap">
-      <RouterLink
-        v-if="card.imageUri && cardRoute(card)"
-        :to="cardRoute(card)"
-        class="deck-card-grid-link"
-      >
-        <img
-          :src="card.imageUri"
-          :alt="card.cardName"
-          class="card-interactive-image deck-card-grid-image"
-          loading="lazy"
-        >
-      </RouterLink>
       <CardInteractiveImage
-        v-else-if="card.imageUri"
+        v-if="card.imageUri"
         :src="card.imageUri"
         :alt="card.cardName"
         :card="card"
+        img-class="deck-card-grid-image"
         :show-details="false"
+        :show-copy-controls="false"
+        :deck-id="defaultDeckId"
+        :show-deck-swap="Boolean(defaultDeckId && showDeckSwap)"
+        :show-deck-remove="Boolean(defaultDeckId && showDeckRemove)"
+        @deck-changed="emit('deck-changed', $event)"
+        @deck-swap="emit('deck-swap', $event)"
+        @deck-removed="emit('deck-removed', $event)"
+        @ownership-changed="emit('deck-changed', $event)"
       />
       <div v-else class="deck-card-grid-placeholder">{{ card.cardName }}</div>
     </div>
 
     <div
-      v-if="showDeckRemove && defaultDeckId"
+      v-if="showManageRow"
       class="deck-card-grid-manage"
     >
       <DeckCardQtyControl
@@ -94,14 +99,12 @@ function ownershipState(card) {
         :deck-id="defaultDeckId"
         :deck-name="deckName"
         compact
-        @changed="$emit('deck-changed', $event)"
-        @removed="$emit('deck-removed', $event)"
-      />
-      <DeckOwnedToggle
-        :card="card"
-        :deck-id="defaultDeckId"
-        compact
-        @changed="$emit('deck-changed', $event)"
+        :show-swap="showDeckSwap"
+        :show-remove="showDeckRemove"
+        :hide-stepper="!showQtyStepper"
+        @changed="emit('deck-changed', $event)"
+        @removed="emit('deck-removed', $event)"
+        @swap="emit('deck-swap', $event)"
       />
     </div>
 
@@ -113,7 +116,6 @@ function ownershipState(card) {
           :family-root="card.familyRoot || ''"
           :rarity="card.rarity || ''"
         />
-        <ManaCost :mana-cost="card.manaCost || ''" :size="16" />
         <RouterLink
           v-if="cardRoute(card)"
           :to="cardRoute(card)"
@@ -125,7 +127,7 @@ function ownershipState(card) {
         <CardFinishBadge :card="card" compact />
       </span>
       <span class="deck-card-grid-meta">
-        <PriceStrategyValue v-if="card.currentValue != null" :card="card" />
+        <PriceStrategyValue :card="card" />
       </span>
     </figcaption>
   </figure>

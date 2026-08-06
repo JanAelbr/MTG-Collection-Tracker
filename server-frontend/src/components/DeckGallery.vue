@@ -4,10 +4,10 @@ import { api, clearClientCache } from "../api";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import { useDeckRename } from "../composables/useDeckRename";
+import { confirmDialog } from "../composables/confirmDialog";
 import {
   buildDeckGalleryItems,
   deckCardImageUri,
-  deckColorIdentityFromPages,
 } from "../utils/deckBrowse";
 import { cardDisplayName } from "../utils/finishes";
 import { formatDeckOwned, formatEuro } from "../utils/format";
@@ -22,15 +22,13 @@ const props = defineProps({
   onFavorited: { type: Function, default: null },
 });
 
-const emit = defineEmits(["select", "create", "build"]);
+const emit = defineEmits(["select", "create"]);
 
 const { deckGalleryFilter } = useDeckGalleryFilter();
 
 const galleryRef = ref(null);
 const menuRef = ref(null);
-const newMenuRef = ref(null);
 const contextMenu = ref(null);
-const newMenuOpen = ref(false);
 const deleting = ref(false);
 const favoriting = ref(false);
 
@@ -88,11 +86,6 @@ function deckDisplayName(deck) {
   return String(deck?.name || deck?.label || "").trim() || "Deck";
 }
 
-function deckColorIdentity(deck) {
-  const identity = deckColorIdentityFromPages(deck, props.pages);
-  return identity.length ? identity : null;
-}
-
 function deckValueLabel(deck) {
   const stats = deckStats(deck);
   if (stats.ownedCurrent != null) {
@@ -141,23 +134,9 @@ function closeContextMenu() {
   contextMenu.value = null;
 }
 
-function closeNewMenu() {
-  newMenuOpen.value = false;
-}
-
-function toggleNewMenu() {
-  closeContextMenu();
-  newMenuOpen.value = !newMenuOpen.value;
-}
-
 function onCreateDeck() {
-  closeNewMenu();
+  closeContextMenu();
   emit("create");
-}
-
-function onBuildDeck() {
-  closeNewMenu();
-  emit("build");
 }
 
 function onCardContextMenu(event, deck) {
@@ -166,7 +145,6 @@ function onCardContextMenu(event, deck) {
   }
   event.preventDefault();
   event.stopPropagation();
-  closeNewMenu();
   const pad = 8;
   const menuWidth = 260;
   const menuHeight = 220;
@@ -228,7 +206,13 @@ async function deleteDeck(deckId) {
   }
   const deck = props.decks.find((item) => String(item.id) === String(deckId));
   const deckName = deck?.name || "this deck";
-  if (!window.confirm(`Delete "${deckName}"? This cannot be undone.`)) {
+  const ok = await confirmDialog({
+    title: "Delete deck",
+    message: `Delete “${deckName}”? This cannot be undone.`,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   deleting.value = true;
@@ -256,15 +240,11 @@ function onDocumentPointerDown(event) {
   if (contextMenu.value && !menuRef.value?.contains(event.target)) {
     closeContextMenu();
   }
-  if (newMenuOpen.value && !newMenuRef.value?.contains(event.target)) {
-    closeNewMenu();
-  }
 }
 
 function onDocumentKeydown(event) {
   if (event.key === "Escape") {
     closeContextMenu();
-    closeNewMenu();
   }
 }
 
@@ -306,7 +286,6 @@ function scrollActiveIntoView(behavior = "smooth") {
 watch(() => props.activeDeckId, () => {
   cancelRename();
   closeContextMenu();
-  closeNewMenu();
   scrollActiveIntoView();
 });
 watch(
@@ -330,43 +309,18 @@ onUnmounted(() => {
 
 <template>
   <div ref="galleryRef" class="deck-gallery" aria-label="All decks">
-    <div ref="newMenuRef" class="deck-gallery-new-wrap">
+    <div class="deck-gallery-new-wrap">
       <button
         type="button"
         class="deck-gallery-card deck-gallery-card--add"
         aria-label="New deck"
-        :aria-expanded="newMenuOpen ? 'true' : 'false'"
-        aria-haspopup="menu"
-        @click="toggleNewMenu"
+        @click="onCreateDeck"
       >
         <div class="deck-gallery-card-main">
           <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
           <span class="deck-gallery-name">New deck</span>
         </div>
       </button>
-      <div
-        v-if="newMenuOpen"
-        class="card-context-menu deck-gallery-new-menu"
-        role="menu"
-        @click.stop
-      >
-        <button
-          type="button"
-          class="card-context-menu-item"
-          role="menuitem"
-          @click="onCreateDeck"
-        >
-          Create deck
-        </button>
-        <button
-          type="button"
-          class="card-context-menu-item"
-          role="menuitem"
-          @click="onBuildDeck"
-        >
-          Build deck
-        </button>
-      </div>
     </div>
 
     <template v-for="item in galleryItems" :key="item.key">
@@ -438,12 +392,6 @@ onUnmounted(() => {
               <span class="deck-gallery-name" :title="deckDisplayName(item.deck)">
                 {{ deckDisplayName(item.deck) }}
               </span>
-              <ManaSymbols
-                v-if="deckColorIdentity(item.deck)"
-                class="deck-gallery-identity"
-                :colors="deckColorIdentity(item.deck)"
-                :size="12"
-              />
             </template>
           </div>
         </div>

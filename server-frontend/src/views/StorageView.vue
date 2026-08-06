@@ -13,6 +13,7 @@ import StorageGroupGallery from "../components/StorageGroupGallery.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
+import { confirmDialog } from "../composables/confirmDialog";
 import VirtualizedStorageTable from "../components/VirtualizedStorageTable.vue";
 import ListForSaleModal from "../components/ListForSaleModal.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
@@ -698,7 +699,13 @@ async function deleteLocation(location) {
   if (!location.canDelete) {
     return;
   }
-  if (!window.confirm(`Delete empty storage "${location.label}"?`)) {
+  const ok = await confirmDialog({
+    title: "Delete storage",
+    message: `Delete empty storage “${location.label}”?`,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   await api.deleteStorageLocation(location.slug);
@@ -710,7 +717,13 @@ async function removeOneCopy(card) {
   if (!instanceId) {
     return;
   }
-  if (!window.confirm(`Remove one copy of ${cardDisplayName(card)}?`)) {
+  const ok = await confirmDialog({
+    title: "Remove copy",
+    message: `Remove one copy of ${cardDisplayName(card)}?`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   await api.deleteInstance(instanceId);

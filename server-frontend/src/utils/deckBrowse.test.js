@@ -69,7 +69,7 @@ describe("deckBrowse gallery helpers", () => {
     ]);
   });
 
-  it("builds favourite divider and colour pip markers for each identity", () => {
+  it("builds favourite divider and colour pip markers beside each group", () => {
     const decks = [
       { id: "fav", name: "Favourite", favorite: true },
       { id: "w", name: "White", favorite: false },

@@ -231,6 +231,33 @@ export function cardMatchesTypeFilter(card, typeFilter) {
   return cardTypeGroup(card) === typeFilter;
 }
 
+export function cardMatchesDeckSearchQuery(card, searchQuery) {
+  const query = String(searchQuery || "").trim().toLowerCase();
+  if (!query) {
+    return true;
+  }
+  const name = String(card?.cardName || card?.name || "").toLowerCase();
+  const setCode = String(card?.setCode || card?.set_code || "").toLowerCase();
+  const number = String(card?.collectorNumber ?? card?.collector_number ?? "").toLowerCase();
+  const padded = number.padStart(3, "0");
+  const typeLine = String(card?.typeLine || card?.type_line || "").toLowerCase();
+  const cardType = String(card?.cardType || card?.card_type || "").toLowerCase();
+  const typeGroup = String(cardTypeGroup(card) || "").toLowerCase();
+  const typeLabel = String(deckTypeLabel(cardTypeGroup(card)) || "").toLowerCase();
+  return (
+    name.includes(query)
+    || setCode.includes(query)
+    || number.includes(query)
+    || padded.includes(query)
+    || typeLine.includes(query)
+    || cardType.includes(query)
+    || typeGroup.includes(query)
+    || typeLabel.includes(query)
+    || `#${number}`.includes(query)
+    || `#${padded}`.includes(query)
+  );
+}
+
 function compareNames(left, right) {
   return String(left?.cardName || "").localeCompare(String(right?.cardName || ""));
 }
@@ -300,9 +327,15 @@ export function cardMatchesOwnershipFilter(card, ownershipFilter = "all") {
   return true;
 }
 
-export function filterDeckCards(cards, { typeFilter = "all", colorFilters = [], ownershipFilter = "all" } = {}) {
+export function filterDeckCards(cards, {
+  searchQuery = "",
+  typeFilter = "all",
+  colorFilters = [],
+  ownershipFilter = "all",
+} = {}) {
   return (cards || []).filter(
-    (card) => cardMatchesTypeFilter(card, typeFilter)
+    (card) => cardMatchesDeckSearchQuery(card, searchQuery)
+      && cardMatchesTypeFilter(card, typeFilter)
       && cardMatchesColorFilter(card, colorFilters, { mode: "includes" })
       && cardMatchesOwnershipFilter(card, ownershipFilter),
   );

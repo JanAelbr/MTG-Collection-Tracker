@@ -62,7 +62,13 @@ export function galleryPricePair(card) {
   const trend = numericStrategyValue(card, TREND_STRATEGY_ID);
 
   if (lowest == null && trend == null) {
-    const fallback = card?.currentValue ?? card?.current_value ?? null;
+    // Prefer unit price when present (deck line totals use currentValue = qty × unit).
+    const fallback =
+      card?.unitValue ??
+      card?.unit_value ??
+      card?.currentValue ??
+      card?.current_value ??
+      null;
     if (fallback == null || Number.isNaN(Number(fallback))) {
       return { low: null, high: null };
     }

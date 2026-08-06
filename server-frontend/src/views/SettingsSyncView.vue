@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
+import { confirmDialog } from "../composables/confirmDialog";
 
 const meta = ref(null);
 const catalogMessage = ref("");
@@ -78,9 +79,14 @@ async function triggerPriceSync() {
 
 async function pruneOrphanCatalogs() {
   catalogMessage.value = "";
-  if (!window.confirm(
-    "Remove card catalogs for sets that are no longer tracked? Owned purchase CSVs and deck sets are kept.",
-  )) {
+  const ok = await confirmDialog({
+    title: "Prune orphan catalogs",
+    message:
+      "Remove card catalogs for sets that are no longer tracked? Owned purchase CSVs and deck sets are kept.",
+    confirmLabel: "Prune",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   catalogPruning.value = true;

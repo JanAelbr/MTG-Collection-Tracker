@@ -106,7 +106,7 @@ function cardRoute(card) {
             <dt>Finish</dt>
             <dd>{{ finishLabel(card.finish ?? card.foil ?? 0) }}</dd>
           </div>
-          <div v-if="card.currentValue != null" class="deck-stacks-detail-row">
+          <div class="deck-stacks-detail-row">
             <dt>Value</dt>
             <dd><PriceStrategyValue :card="card" /></dd>
           </div>

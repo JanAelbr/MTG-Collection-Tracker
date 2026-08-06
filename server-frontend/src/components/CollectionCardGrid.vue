@@ -128,8 +128,12 @@ function printKey(card) {
 }
 
 function isCardSelected(card) {
-  if (props.pickPrints && props.selectedKey) {
-    return printKey(card) === props.selectedKey;
+  if (props.pickPrints) {
+    const key = printKey(card);
+    if (props.selectedKeys?.has?.(key)) {
+      return true;
+    }
+    return Boolean(props.selectedKey && key === props.selectedKey);
   }
   return Boolean(props.browseNames && props.selectedName && card.name === props.selectedName);
 }

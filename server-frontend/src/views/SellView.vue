@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import { api } from "../api";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import SellListingsTable from "../components/SellListingsTable.vue";
+import { confirmDialog } from "../composables/confirmDialog";
 import { fetchPricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { cardMatchesSearchQuery } from "../utils/collectionFilters";
 import { formatEuro } from "../utils/format";
@@ -379,7 +380,13 @@ async function saveSoldPrice(card, event) {
 }
 
 async function onUnlist(card) {
-  if (!window.confirm(`Unlist ${card.name}? The copy stays in your collection.`)) {
+  const ok = await confirmDialog({
+    title: "Unlist card",
+    message: `Unlist ${card.name}? The copy stays in your collection.`,
+    confirmLabel: "Unlist",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   busyId.value = card.listingId;
@@ -451,7 +458,13 @@ async function confirmSell() {
 }
 
 async function onDeleteSold(card) {
-  if (!window.confirm(`Remove ${card.name} from the sold archive?`)) {
+  const ok = await confirmDialog({
+    title: "Remove sold listing",
+    message: `Remove ${card.name} from the sold archive?`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) {
     return;
   }
   busyId.value = card.listingId;

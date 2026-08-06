@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { api, clearClientCache } from "../api";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import CardPreview from "./CardPreview.vue";
+import { confirmDialog } from "../composables/confirmDialog";
 import { cardFinish, finishLabel } from "../utils/finishes";
 
 const MODES = [
@@ -85,12 +86,18 @@ function closeModal() {
   emit("close");
 }
 
-function requestClose() {
+async function requestClose() {
   if (hasUnhandledChanges.value) {
     const message = preview.value?.canApply
       ? "You have unapplied deck changes. Close without applying?"
       : "You have unsaved import text. Close and discard it?";
-    if (!window.confirm(message)) {
+    const ok = await confirmDialog({
+      title: "Discard changes?",
+      message,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
   }

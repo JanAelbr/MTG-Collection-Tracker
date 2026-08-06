@@ -14,6 +14,12 @@ def _float_or_none(value):
     return float(value)
 
 
+def _bool_or_none(value):
+    if value is None or pd.isna(value):
+        return None
+    return bool(int(value))
+
+
 def _serialize_deck_cards(deck_df: pd.DataFrame) -> list[dict]:
     cards = []
     for _, row in deck_df.iterrows():
@@ -39,6 +45,10 @@ def _serialize_deck_cards(deck_df: pd.DataFrame) -> list[dict]:
             "profit_loss": _float_or_none(row["profit_loss"]),
             "image_uri": str_or_empty(row["image_uri"]),
             "cardmarket_url": str_or_empty(row["cardmarket_url"]),
+            "cardmarket_url_foil": str_or_empty(row.get("cardmarket_url_foil")),
+            "has_nonfoil": _bool_or_none(row.get("has_nonfoil")),
+            "has_foil": _bool_or_none(row.get("has_foil")),
+            "has_etched": _bool_or_none(row.get("has_etched")),
             **card_metadata_snake(row),
         })
     return cards

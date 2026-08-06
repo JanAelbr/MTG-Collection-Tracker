@@ -4,6 +4,9 @@ const GALLERY_TOP_CARD_COUNT = 4;
 export const HERO_TOP_CARD_COUNT = 5;
 export const GALLERY_SORT_KEY = "reportDeckGallerySort";
 export const DECK_CARDS_VIEW_KEY = "reportDeckCardsView";
+export const DECK_IMAGES_CARD_SCALE_KEY = "deckImagesCardScale";
+export const DECK_STACKS_CARD_SCALE_KEY = "deckStacksCardScale";
+export const DECK_CARD_SCALE_OPTIONS = [75, 100, 125, 150, 175, 200, 225, 250];
 export const DECK_COLOR_ORDER = ["W", "U", "B", "R", "G"];
 
 export function getStoredGallerySort() {
@@ -26,6 +29,28 @@ export function getStoredDeckCardsView() {
     return stored;
   }
   return "images";
+}
+
+function normalizeDeckCardScale(value, fallback = 100) {
+  const parsed = Number(value);
+  if (DECK_CARD_SCALE_OPTIONS.includes(parsed)) {
+    return parsed;
+  }
+  return fallback;
+}
+
+export function getStoredDeckCardScale(view, fallback = 100) {
+  const key = view === "stacks" ? DECK_STACKS_CARD_SCALE_KEY : DECK_IMAGES_CARD_SCALE_KEY;
+  const stored = localStorage.getItem(key);
+  if (stored == null) {
+    return fallback;
+  }
+  return normalizeDeckCardScale(stored, fallback);
+}
+
+export function setStoredDeckCardScale(view, scale) {
+  const key = view === "stacks" ? DECK_STACKS_CARD_SCALE_KEY : DECK_IMAGES_CARD_SCALE_KEY;
+  localStorage.setItem(key, String(normalizeDeckCardScale(scale)));
 }
 
 export function deckCardImageUri(card) {
@@ -160,8 +185,8 @@ export function filterDecksForGallery(decks, pages, query) {
 }
 
 /**
- * Flat gallery rows: decks, favourite divider, and colour-pip markers
- * (mirrors set browser favourites + year markers).
+ * Flat gallery rows: decks, favourite/colour dividers, and colour-pip markers
+ * beside each colour group (mirrors set browser favourites + year markers).
  */
 export function buildDeckGalleryItems(decks, pages, query = "") {
   const sorted = filterDecksForGallery(

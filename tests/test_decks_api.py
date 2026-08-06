@@ -423,6 +423,43 @@ class DecksApiServiceTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(location, "storage:general")
 
+    def test_move_deck_card_section_between_main_and_commander(self):
+        deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()
+        deck_id = str(deck_row[0])
+
+        to_main = decks_service.move_deck_card_section(
+            self.conn,
+            deck_id=deck_id,
+            set_code="LTC",
+            collector_number="284",
+            finish=0,
+            from_section="commander",
+            to_section="main",
+        )
+        self.assertEqual(to_main["section"], "main")
+        self.assertEqual(to_main["fromSection"], "commander")
+
+        section = self.conn.execute(
+            """
+            SELECT section FROM deck_cards
+            WHERE deck_id = ? AND set_code = 'LTC' AND collector_number = '284' AND finish = 0
+            """,
+            (int(deck_id),),
+        ).fetchone()[0]
+        self.assertEqual(section, "main")
+
+        to_commander = decks_service.move_deck_card_section(
+            self.conn,
+            deck_id=deck_id,
+            set_code="LTC",
+            collector_number="284",
+            finish=0,
+            from_section="main",
+            to_section="commander",
+        )
+        self.assertEqual(to_commander["section"], "commander")
+        self.assertEqual(to_commander["fromSection"], "main")
+
     def test_adjust_deck_card_qty_increments_and_decrements(self):
         deck_row = self.conn.execute("SELECT deck_id FROM decks LIMIT 1").fetchone()
         deck_id = str(deck_row[0])
