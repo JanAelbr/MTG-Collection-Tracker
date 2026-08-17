@@ -54,6 +54,19 @@ function requestEndpointKey(method, path) {
   return `${method}:${path}`;
 }
 
+function requestAbortFamilyKey(method, path) {
+  // Search re-fires as filters/query change; abort the previous in-flight
+  // search (any query string) so superseded responses cannot win the race.
+  const pathOnly = String(path || "").split("?")[0];
+  if (
+    pathOnly === "/reports/search" ||
+    pathOnly === "/reports/search/variants"
+  ) {
+    return `${method}:${pathOnly}`;
+  }
+  return requestEndpointKey(method, path);
+}
+
 function cancelActiveRequest(key) {
   const existing = activeControllers.get(key);
   if (existing) {
@@ -144,16 +157,16 @@ async function performApiRequest(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const cacheKey = cacheKeyFor(method, path);
   const useCache = shouldUseClientCache(method, path);
-  const endpointKey = requestEndpointKey(method, path);
+  const abortFamilyKey = requestAbortFamilyKey(method, path);
 
-  cancelActiveRequest(endpointKey);
+  cancelActiveRequest(abortFamilyKey);
   const controller = new AbortController();
-  activeControllers.set(endpointKey, controller);
+  activeControllers.set(abortFamilyKey, controller);
 
   if (useCache) {
     const cached = getCachedEntry(cacheKey);
     if (cached) {
-      activeControllers.delete(endpointKey);
+      activeControllers.delete(abortFamilyKey);
       return cached.data;
     }
   }
@@ -231,8 +244,8 @@ async function performApiRequest(path, options = {}) {
     }
     throw error;
   } finally {
-    if (activeControllers.get(endpointKey) === controller) {
-      activeControllers.delete(endpointKey);
+    if (activeControllers.get(abortFamilyKey) === controller) {
+      activeControllers.delete(abortFamilyKey);
     }
   }
 }
@@ -870,12 +883,6 @@ export const api = {
 
   applyDeckProposal: (deckId, body) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}/apply-proposal`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  assessBuilderPower: (body) =>
-    apiRequest("/builder/assess-power", {
       method: "POST",
       body: JSON.stringify(body),
     }),

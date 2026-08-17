@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  bracketDescription,
-  bracketLabel,
   componentScoreClass,
   formatBasicLandSummary,
   formatCardRoles,
@@ -14,11 +12,6 @@ import {
 } from "./deckPower.js";
 
 describe("deckPower helpers", () => {
-  it("labels brackets and descriptions", () => {
-    expect(bracketLabel(3)).toBe("Bracket 3");
-    expect(bracketDescription(3)).toContain("Upgraded");
-  });
-
   it("formats card roles for the deck table", () => {
     expect(formatCardRoles(["fast_mana", "ramp", "land"])).toEqual([
       "Fast mana",

@@ -226,10 +226,61 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
     )
     # Speeds up the many exact `WHERE name = ?` lookups (variant gallery, print
     # finish flags). Does not help `LIKE '%term%'` set search (leading wildcard),
-    # which stays a table scan by design.
+    # which stays a table scan by design — use cards_fts for substring/prefix search.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name)"
     )
+
+
+def ensure_cards_fts(conn: sqlite3.Connection) -> None:
+    """FTS5 index over card name/text for catalog search (prefix + token match)."""
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts USING fts5(
+            name,
+            oracle_text,
+            type_line,
+            content='cards',
+            content_rowid='rowid'
+        )
+        """
+    )
+    # Keep the external-content index in sync with cards mutations.
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS cards_fts_ai AFTER INSERT ON cards BEGIN
+            INSERT INTO cards_fts(rowid, name, oracle_text, type_line)
+            VALUES (new.rowid, new.name, new.oracle_text, new.type_line);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS cards_fts_ad AFTER DELETE ON cards BEGIN
+            INSERT INTO cards_fts(cards_fts, rowid, name, oracle_text, type_line)
+            VALUES ('delete', old.rowid, old.name, old.oracle_text, old.type_line);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS cards_fts_au AFTER UPDATE OF name, oracle_text, type_line
+        ON cards BEGIN
+            INSERT INTO cards_fts(cards_fts, rowid, name, oracle_text, type_line)
+            VALUES ('delete', old.rowid, old.name, old.oracle_text, old.type_line);
+            INSERT INTO cards_fts(rowid, name, oracle_text, type_line)
+            VALUES (new.rowid, new.name, new.oracle_text, new.type_line);
+        END
+        """
+    )
+    try:
+        fts_count = int(conn.execute("SELECT COUNT(*) FROM cards_fts").fetchone()[0])
+        cards_count = int(conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0])
+    except sqlite3.Error:
+        return
+    if fts_count == cards_count:
+        return
+    conn.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
 
 
 # Remove duplicate purchase rows, keeping the earliest insert per card finish.

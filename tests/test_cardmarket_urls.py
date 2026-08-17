@@ -362,7 +362,7 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertIn("834121", row[0] or "")
         self.assertIsNone(row[1])
 
-    def test_backfill_repairs_price_outlier_nonfoil_url(self):
+    def test_backfill_keeps_expensive_valid_nonfoil_url_among_cheap_neighbors(self):
         import sqlite3
 
         conn = sqlite3.connect(":memory:")
@@ -398,13 +398,12 @@ class CardmarketUrlTests(unittest.TestCase):
             718040: {"trend": 527.88, "low": 800},
             671291: {"trend": 2.22},
         }
-        updated = backfill_cardmarket_urls(conn, guide)
+        backfill_cardmarket_urls(conn, guide)
         row = conn.execute(
             "SELECT cardmarket_url, cardmarket_url_foil FROM cards WHERE collector_number = '249'"
         ).fetchone()
         conn.close()
-        self.assertGreaterEqual(updated, 1)
-        self.assertIn("671291", row[0] or "")
+        self.assertIn("718040", row[0] or "")
         self.assertIsNone(row[1])
 
     def test_backfill_updates_misplaced_foil_url(self):
@@ -458,6 +457,42 @@ class CardmarketUrlTests(unittest.TestCase):
             guide=guide,
         )
         self.assertIn("671291", nonfoil or "")
+        self.assertIsNone(foil)
+
+    def test_merge_prefers_scryfall_mid_price_nonfoil_over_cheap_stored(self):
+        """Chase EA cards: cheap wrong link must yield to Scryfall's real product."""
+        guide = {
+            701774: {"trend": 0.85},
+            717741: {"trend": 16.10},
+            717756: {"trend": 0.93},
+            716036: {"trend": 19.73},
+        }
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=701774",
+            None,
+            {
+                "finishes": ["nonfoil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=717741",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIn("717741", nonfoil or "")
+        self.assertIsNone(foil)
+
+        nonfoil, foil = merge_cardmarket_urls(
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=717756",
+            None,
+            {
+                "finishes": ["nonfoil"],
+                "purchase_uris": {
+                    "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=716036",
+                },
+            },
+            guide=guide,
+        )
+        self.assertIn("716036", nonfoil or "")
         self.assertIsNone(foil)
 
     def test_normalize_does_not_pair_scryfall_foil_product_to_outlier_nonfoil(self):

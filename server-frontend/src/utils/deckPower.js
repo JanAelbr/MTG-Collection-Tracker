@@ -68,31 +68,6 @@ export const EXCLUDE_CATEGORY_OPTIONS = [
   { id: "mass_land_destruction", label: "Mass land destruction" },
 ];
 
-export function bracketLabel(bracket) {
-  const value = Number(bracket) || 1;
-  return `Bracket ${value}`;
-}
-
-export function bracketDescription(bracket) {
-  const descriptions = {
-    1: "Exhibition — battlecruiser, theme-first",
-    2: "Core — precon strength",
-    3: "Upgraded — strong synergies, limited tutors",
-    4: "Optimized — fast mana and tutors",
-    5: "cEDH — highly tuned combo potential",
-  };
-  return descriptions[Number(bracket) || 1] || descriptions[1];
-}
-
-export function confidenceLabel(confidence) {
-  const labels = {
-    low: "Low confidence",
-    medium: "Medium confidence",
-    high: "High confidence",
-  };
-  return labels[String(confidence || "").toLowerCase()] || labels.medium;
-}
-
 export function componentScoreClass(score) {
   const value = Number(score) || 0;
   if (value >= 80) return "power-score-high";

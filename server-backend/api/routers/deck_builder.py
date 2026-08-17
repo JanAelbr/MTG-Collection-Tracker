@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.deps import get_db
 from api.http_cache import serve_cached_json
 from api.schemas import (
-    BuilderAssessPowerRequest,
     BuilderGenerateRequest,
     BuilderImproveRequest,
     BuilderPoolPreview,
@@ -113,23 +112,4 @@ def improve_deck(body: BuilderImproveRequest, conn: sqlite3.Connection = Depends
             rebuild=body.rebuild,
         )
     except (DeckBuilderError, DeckError) as exc:
-        raise _builder_error(exc) from exc
-
-
-@router.post("/assess-power")
-def assess_builder_power(body: BuilderAssessPowerRequest, conn: sqlite3.Connection = Depends(get_db)):
-    try:
-        return deck_builder_service.assess_builder_proposal(
-            conn,
-            commanders=[
-                {
-                    "setCode": commander.setCode,
-                    "collectorNumber": commander.collectorNumber,
-                    "finish": commander.finish,
-                }
-                for commander in body.commanders
-            ],
-            cards=body.cards,
-        )
-    except DeckBuilderError as exc:
         raise _builder_error(exc) from exc

@@ -325,6 +325,7 @@ defineExpose({
         :cards="gridCards"
         pick-prints
         zoom-only
+        pick-action-label="Select"
         :card-scale="cardScale"
         :selected-keys="selectedKeys"
         @pick-card="pickCard"

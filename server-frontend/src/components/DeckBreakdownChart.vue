@@ -9,6 +9,7 @@ import { buildDonutSegments } from "../utils/deckOverview";
 import { powerCardRoute } from "../utils/deckPower";
 import { MANA_COLORS } from "../utils/manaPips";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardInteractiveImage from "./CardInteractiveImage.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 
 const props = defineProps({
@@ -201,30 +202,17 @@ watch(
           >
             <div class="deck-power-card-image-wrap">
               <CardFinishBadge :card="card" variant="overlay" compact />
-              <RouterLink
-                v-if="powerCardRoute(card, deckId)"
-                :to="powerCardRoute(card, deckId)"
-                class="deck-power-card-image-link"
-              >
-                <img
-                  v-if="card.imageUri"
-                  :src="card.imageUri"
-                  :alt="card.cardName"
-                  class="deck-power-card-image"
-                  loading="lazy"
-                >
-                <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-              </RouterLink>
-              <template v-else>
-                <img
-                  v-if="card.imageUri"
-                  :src="card.imageUri"
-                  :alt="card.cardName"
-                  class="deck-power-card-image"
-                  loading="lazy"
-                >
-                <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-              </template>
+              <CardInteractiveImage
+                v-if="card.imageUri"
+                :src="card.imageUri"
+                :alt="card.cardName"
+                :card="card"
+                img-class="deck-power-card-image"
+                :show-details="false"
+                :show-copy-controls="false"
+                :deck-id="deckId"
+              />
+              <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
             </div>
 
             <figcaption class="deck-power-card-caption">

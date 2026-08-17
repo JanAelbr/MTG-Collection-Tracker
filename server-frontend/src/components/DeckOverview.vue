@@ -4,7 +4,7 @@ import { api } from "../api";
 import DeckBreakdownChart from "./DeckBreakdownChart.vue";
 import DeckLandManaChart from "./DeckLandManaChart.vue";
 import DeckManaCurveChart from "./DeckManaCurveChart.vue";
-import ManaCost from "./ManaCost.vue";
+import DeckPowerCategorySection from "./DeckPowerCategorySection.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
@@ -30,6 +30,7 @@ import {
   mainDeckCardsForOverview,
   overviewTopCards,
 } from "../utils/deckOverview";
+import { POWER_COMPONENTS } from "../utils/deckPower";
 import { commanderColorIdentity, splitCommanderCards } from "../utils/deckCards";
 import { formatDeckOwned, formatDeckValueRange, formatEuro } from "../utils/format";
 
@@ -111,6 +112,9 @@ const roleCardsById = computed(() => {
   }
   return groups;
 });
+const tagComponents = computed(() => powerPayload.value?.components || {});
+const tagCounts = computed(() => powerPayload.value?.counts || {});
+const tagCategoryCards = computed(() => powerPayload.value?.categoryCards || {});
 const pipCardsById = computed(() => {
   const groups = {};
   for (const row of pipBreakdown.value.rows) {
@@ -322,11 +326,6 @@ function unknownCardName(card) {
                   :family-root="activeCommander.familyRoot || ''"
                   :rarity="activeCommander.rarity || ''"
                 />
-                <ManaCost
-                  class="deck-overview-commander-mana"
-                  :mana-cost="activeCommander.manaCost || ''"
-                  :size="12"
-                />
                 <RouterLink
                   v-if="cardRoute(activeCommander)"
                   :to="cardRoute(activeCommander)"
@@ -481,14 +480,17 @@ function unknownCardName(card) {
           >
             <div class="deck-overview-top-image-wrap">
               <span class="deck-overview-top-rank">{{ index + 1 }}</span>
-              <RouterLink
-                v-if="cardRoute(card)"
-                :to="cardRoute(card)"
-                class="deck-overview-top-image-link"
-              >
-                <img :src="card.imageUri" :alt="card.cardName" loading="lazy">
-              </RouterLink>
-              <img v-else :src="card.imageUri" :alt="card.cardName" loading="lazy">
+              <CardInteractiveImage
+                v-if="card.imageUri"
+                :src="card.imageUri"
+                :alt="card.cardName"
+                :card="card"
+                img-class="deck-overview-top-image"
+                :show-details="false"
+                :show-copy-controls="false"
+                :deck-id="deckId"
+              />
+              <div v-else class="deck-overview-top-placeholder">{{ card.cardName }}</div>
             </div>
 
             <figcaption class="deck-overview-top-caption">
@@ -499,7 +501,6 @@ function unknownCardName(card) {
                   :family-root="card.familyRoot || ''"
                   :rarity="card.rarity || ''"
                 />
-                <ManaCost class="deck-overview-top-mana" :mana-cost="card.manaCost || ''" :size="12" />
                 <RouterLink
                   v-if="cardRoute(card)"
                   :to="cardRoute(card)"
@@ -521,85 +522,114 @@ function unknownCardName(card) {
     </div>
 
     <div class="deck-overview-grid">
-      <DeckBreakdownChart
-        class="deck-overview-panel"
-        title="Card types"
-        :rows="typeBreakdown.rows"
-        :total="typeBreakdown.total"
-        :colors="TYPE_CHART_COLORS"
-        :cards-by-id="typeCardsById"
-        :deck-id="deckId"
-        interactive
-        empty-label="No cards in this deck yet."
-      />
-
-      <div class="deck-overview-panel deck-overview-roles">
+      <div class="deck-overview-pies">
         <DeckBreakdownChart
-          v-if="!powerLoading && !powerError"
-          title="Deck roles"
-          :rows="roleBreakdown.rows"
-          :total="roleBreakdown.total"
-          :colors="ROLE_CHART_COLORS"
-          :cards-by-id="roleCardsById"
+          class="deck-overview-panel"
+          title="Card types"
+          :rows="typeBreakdown.rows"
+          :total="typeBreakdown.total"
+          :colors="TYPE_CHART_COLORS"
+          :cards-by-id="typeCardsById"
           :deck-id="deckId"
           interactive
-          unit-label="roles"
-          empty-label="No ramp, draw, or interaction tags found yet."
+          empty-label="No cards in this deck yet."
         />
-        <template v-else>
-          <header class="deck-breakdown-chart-head">
-            <h3 class="deck-breakdown-chart-title">Deck roles</h3>
-          </header>
-          <div v-if="powerLoading" class="deck-overview-roles-status">
-            <LoadingIndicator label="Loading roles…" />
-          </div>
-          <p v-else class="deck-overview-roles-status is-error">{{ powerError }}</p>
-        </template>
+
+        <div class="deck-overview-panel deck-overview-roles">
+          <DeckBreakdownChart
+            v-if="!powerLoading && !powerError"
+            title="Deck roles"
+            :rows="roleBreakdown.rows"
+            :total="roleBreakdown.total"
+            :colors="ROLE_CHART_COLORS"
+            :cards-by-id="roleCardsById"
+            :deck-id="deckId"
+            interactive
+            unit-label="roles"
+            empty-label="No ramp, draw, or interaction tags found yet."
+          />
+          <template v-else>
+            <header class="deck-breakdown-chart-head">
+              <h3 class="deck-breakdown-chart-title">Deck roles</h3>
+            </header>
+            <div v-if="powerLoading" class="deck-overview-roles-status">
+              <LoadingIndicator label="Loading roles…" />
+            </div>
+            <p v-else class="deck-overview-roles-status is-error">{{ powerError }}</p>
+          </template>
+        </div>
+
+        <DeckBreakdownChart
+          class="deck-overview-panel deck-overview-pips"
+          title="Color pips"
+          :rows="pipBreakdown.rows"
+          :total="pipBreakdown.total"
+          :colors="PIP_CHART_COLORS"
+          :cards-by-id="pipCardsById"
+          :deck-id="deckId"
+          interactive
+          mana-legend
+          unit-label="pips"
+          empty-label="No colored mana symbols in this deck yet."
+        />
       </div>
 
-      <DeckBreakdownChart
-        class="deck-overview-panel deck-overview-pips"
-        title="Color pips"
-        :rows="pipBreakdown.rows"
-        :total="pipBreakdown.total"
-        :colors="PIP_CHART_COLORS"
-        :cards-by-id="pipCardsById"
-        :deck-id="deckId"
-        interactive
-        mana-legend
-        unit-label="pips"
-        empty-label="No colored mana symbols in this deck yet."
-      />
+      <div class="deck-overview-mana-row">
+        <section class="deck-overview-panel deck-overview-land-mana">
+          <header class="deck-overview-panel-head">
+            <h3 class="deck-overview-panel-title">Mana sources</h3>
+            <span v-if="manaSourceStack.hasData" class="deck-overview-panel-meta">
+              {{ manaSourceStack.sourceCount }} sources
+              <template v-if="manaSourceStack.anyColorCount">
+                · {{ manaSourceStack.anyColorCount }} any-color
+              </template>
+            </span>
+          </header>
+          <DeckLandManaChart
+            :comparison="manaSourceStack"
+            :deck-id="deckId"
+          />
+        </section>
 
-      <section class="deck-overview-panel deck-overview-land-mana">
-        <header class="deck-overview-panel-head">
-          <h3 class="deck-overview-panel-title">Mana sources</h3>
-          <span v-if="manaSourceStack.hasData" class="deck-overview-panel-meta">
-            {{ manaSourceStack.sourceCount }} sources
-            <template v-if="manaSourceStack.anyColorCount">
-              · {{ manaSourceStack.anyColorCount }} any-color
-            </template>
-          </span>
-        </header>
-        <DeckLandManaChart
-          :comparison="manaSourceStack"
-          :deck-id="deckId"
-        />
-      </section>
+        <section class="deck-overview-panel deck-overview-curve">
+          <header class="deck-overview-panel-head">
+            <h3 class="deck-overview-panel-title">Mana curve</h3>
+            <span v-if="curveMeta.hasData" class="deck-overview-panel-meta">
+              {{ curveMeta.total }} spells · avg {{ curveMeta.averageCmc }}
+            </span>
+          </header>
+          <DeckManaCurveChart
+            :cards="curveCards"
+            :deck-id="deckId"
+            :show-meta="false"
+            empty-message="No mana-cost data for nonland spells yet."
+          />
+        </section>
+      </div>
 
-      <section class="deck-overview-panel deck-overview-curve">
+      <section class="deck-overview-panel deck-overview-tags" aria-label="Deck role tags">
         <header class="deck-overview-panel-head">
-          <h3 class="deck-overview-panel-title">Mana curve</h3>
-          <span v-if="curveMeta.hasData" class="deck-overview-panel-meta">
-            {{ curveMeta.total }} spells · avg {{ curveMeta.averageCmc }}
-          </span>
+          <h3 class="deck-overview-panel-title">Role tags</h3>
         </header>
-        <DeckManaCurveChart
-          :cards="curveCards"
-          :deck-id="deckId"
-          :show-meta="false"
-          empty-message="No mana-cost data for nonland spells yet."
-        />
+
+        <div v-if="powerLoading" class="deck-overview-tags-status">
+          <LoadingIndicator label="Loading tags…" />
+        </div>
+        <p v-else-if="powerError" class="deck-overview-tags-status is-error">{{ powerError }}</p>
+        <p v-else-if="!powerPayload" class="deck-overview-empty">
+          Role tags are not available for this deck yet.
+        </p>
+        <div v-else class="deck-power-categories">
+          <DeckPowerCategorySection
+            v-for="component in POWER_COMPONENTS"
+            :key="component.id"
+            :component="component"
+            :score="tagComponents[component.id] ?? 0"
+            :counts="tagCounts"
+            :cards="tagCategoryCards[component.id] || []"
+            :deck-id="deckId"
+          />
+        </div>
       </section>
     </div>
   </div>

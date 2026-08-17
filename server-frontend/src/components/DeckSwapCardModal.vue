@@ -23,6 +23,7 @@ import {
   cardWithinColorIdentity,
   visibleColorPipsForIdentity,
 } from "../utils/deckCards";
+import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collectionTypes";
 import { cardFinish } from "../utils/finishes";
 import { setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
@@ -63,6 +64,7 @@ const { loading, run } = useAsyncLoad();
 const locations = ref([]);
 const locationCards = ref([]);
 const cardsLoaded = ref(false);
+const setupReady = ref(false);
 const setsCatalog = ref([]);
 const searchQuery = ref("");
 const setFilter = ref("");
@@ -73,7 +75,9 @@ const cardsSortDir = ref(defaultCollectionSortDir("name"));
 const destinationSlug = ref("");
 const busy = ref(false);
 const actionError = ref("");
+const actionSuccess = ref("");
 const selectedKey = ref("");
+const typeFilter = ref("");
 
 const isSwapMode = computed(() => props.mode === "swap");
 
@@ -82,11 +86,12 @@ const outgoingName = computed(
 );
 
 const targetLabel = computed(() => {
+  const type = typeFilter.value || props.cardType;
+  if (type) {
+    return (COLLECTION_TYPE_LABELS[type] || type).toLowerCase();
+  }
   if (props.typeLabel) {
     return props.typeLabel.toLowerCase();
-  }
-  if (props.cardType) {
-    return props.cardType.toLowerCase();
   }
   return "card";
 });
@@ -132,6 +137,11 @@ const outgoingKey = computed(() => {
     String(cardFinish(props.card)),
   ].join("|");
 });
+
+const pickActionLabel = computed(() =>
+  isSwapMode.value ? "Swap this card" : "Add to deck",
+);
+const pickActionIcon = computed(() => (isSwapMode.value ? "" : "+"));
 
 const hasActiveFilter = computed(
   () =>
@@ -197,7 +207,7 @@ const filteredCards = computed(() => {
     colorMode: colorMode.value,
     ownedFilter: "all",
   });
-  const type = String(props.cardType || "").trim();
+  const type = String(typeFilter.value || "").trim();
   return cards.filter((card) => {
     if (type && cardTypeGroup(card) !== type) {
       return false;
@@ -287,15 +297,18 @@ async function onCardScaleChange(scale) {
 function resetState() {
   searchQuery.value = "";
   setFilter.value = "";
-  colorFilters.value = [];
+  colorFilters.value = [...visibleColorPips.value];
   colorMode.value = "includes";
   cardsSort.value = "name";
   cardsSortDir.value = defaultCollectionSortDir("name");
   busy.value = false;
   actionError.value = "";
+  actionSuccess.value = "";
   selectedKey.value = "";
+  typeFilter.value = String(props.cardType || "").trim();
   locationCards.value = [];
   cardsLoaded.value = false;
+  setupReady.value = false;
 }
 
 function resolveDefaultDestination(settings, locs) {
@@ -321,16 +334,18 @@ async function loadSetup() {
     setsCatalog.value = meta?.sets || [];
     const pool = nonDeckLocations.value;
     destinationSlug.value = resolveDefaultDestination(settings || pricingSettings.value, pool);
-    pruneColorFiltersToVisible();
+    colorFilters.value = [...visibleColorPips.value];
+    setupReady.value = true;
   });
 }
 
 async function ensureCardsLoaded() {
-  if (cardsLoaded.value || !nonDeckLocations.value.length) {
-    if (!nonDeckLocations.value.length) {
-      cardsLoaded.value = true;
-      locationCards.value = [];
-    }
+  if (cardsLoaded.value || !setupReady.value) {
+    return;
+  }
+  if (!nonDeckLocations.value.length) {
+    cardsLoaded.value = true;
+    locationCards.value = [];
     return;
   }
   await run(async () => {
@@ -346,6 +361,20 @@ async function ensureCardsLoaded() {
 function closeModal() {
   resetState();
   emit("close");
+}
+
+function consumePickedPrint(card) {
+  const key = cardPickKey(card);
+  locationCards.value = locationCards.value.flatMap((item) => {
+    if (cardPickKey(item) !== key) {
+      return [item];
+    }
+    const nextCount = Math.max(0, (Number(item.copyCount) || 0) - 1);
+    if (nextCount <= 0) {
+      return [];
+    }
+    return [{ ...item, copyCount: nextCount }];
+  });
 }
 
 async function addPickedCard(card) {
@@ -400,17 +429,21 @@ async function onPickCard(card) {
   selectedKey.value = cardPickKey(card);
   busy.value = true;
   actionError.value = "";
+  actionSuccess.value = "";
   try {
     if (isSwapMode.value) {
       const result = await swapPickedCard(card);
       clearClientCache();
       emit("swapped", result);
-    } else {
-      const result = await addPickedCard(card);
-      clearClientCache();
-      emit("added", result);
+      closeModal();
+      return;
     }
-    closeModal();
+    const result = await addPickedCard(card);
+    clearClientCache();
+    consumePickedPrint(card);
+    actionSuccess.value = `Added ${card.cardName || card.name || "card"}`;
+    selectedKey.value = "";
+    emit("added", result);
   } catch (error) {
     actionError.value = error.message
       || (isSwapMode.value ? "Could not swap card." : "Could not add card.");
@@ -429,13 +462,14 @@ watch(
     }
     resetState();
     await loadSetup();
+    await ensureCardsLoaded();
   },
 );
 
 watch(
   hasActiveFilter,
   async (active) => {
-    if (active && props.open) {
+    if (active && props.open && setupReady.value) {
       await ensureCardsLoaded();
     }
   },
@@ -501,6 +535,30 @@ onUnmounted(() => {
               aria-label="Filter by set"
               portal-panel
             />
+
+            <label class="deck-swap-type-filter">
+              <span class="visually-hidden">Card type</span>
+              <select
+                :value="typeFilter"
+                aria-label="Filter by card type"
+                @change="typeFilter = $event.target.value"
+              >
+                <option value="">All types</option>
+                <option
+                  v-for="type in COLLECTION_TYPE_ORDER"
+                  :key="type"
+                  :value="type"
+                >
+                  {{ COLLECTION_TYPE_LABELS[type] || type }}
+                </option>
+                <option
+                  v-if="typeFilter && !COLLECTION_TYPE_ORDER.includes(typeFilter)"
+                  :value="typeFilter"
+                >
+                  {{ COLLECTION_TYPE_LABELS[typeFilter] || typeFilter }}
+                </option>
+              </select>
+            </label>
 
             <div class="storage-color-filter" role="group" aria-label="Color identity">
               <div class="storage-color-filter-pips">
@@ -601,6 +659,9 @@ onUnmounted(() => {
               :show-unowned-badge="false"
               :card-scale="collectionCardScale"
               pick-prints
+              zoom-only
+              :pick-action-label="pickActionLabel"
+              :pick-action-icon="pickActionIcon"
               :selected-key="selectedKey"
               @pick-card="onPickCard"
             />
@@ -610,6 +671,7 @@ onUnmounted(() => {
             {{ isSwapMode ? "Swapping…" : "Adding…" }}
           </p>
           <p v-else-if="actionError" class="deck-add-card-modal-status error">{{ actionError }}</p>
+          <p v-else-if="actionSuccess" class="deck-add-card-modal-status">{{ actionSuccess }}</p>
         </div>
       </div>
     </div>

@@ -17,6 +17,7 @@ const SettingsSyncView = () => import("./views/SettingsSyncView.vue");
 const SettingsBackupView = () => import("./views/SettingsBackupView.vue");
 const SetsView = () => import("./views/SetsView.vue");
 const PrintCardsView = () => import("./views/PrintCardsView.vue");
+const PrintPricesView = () => import("./views/PrintPricesView.vue");
 const SeparatorsView = () => import("./views/SeparatorsView.vue");
 
 const router = createRouter({
@@ -101,6 +102,12 @@ const router = createRouter({
       name: "print-cards",
       component: PrintCardsView,
       meta: { title: "Print Cards" },
+    },
+    {
+      path: "/print/prices",
+      name: "print-prices",
+      component: PrintPricesView,
+      meta: { title: "Print Prices" },
     },
     {
       path: "/print/separators",

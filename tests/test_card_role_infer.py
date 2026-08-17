@@ -7,7 +7,6 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from util.card_role_infer import infer_card_roles  # noqa: E402
 from util.card_role_seed import (  # noqa: E402
-    card_bracket_weight,
     card_roles,
     card_roles_for,
 )
@@ -204,7 +203,7 @@ class CardRoleInferTests(unittest.TestCase):
         self.assertIn("graveyard_hate", roles)
         self.assertNotIn("ramp", roles)
 
-    def test_seed_merges_fast_mana_and_weight(self):
+    def test_seed_merges_fast_mana(self):
         card = {
             "name": "Sol Ring",
             "type_line": "Artifact",
@@ -213,7 +212,6 @@ class CardRoleInferTests(unittest.TestCase):
         roles = set(card_roles_for(card))
         self.assertIn("ramp", roles)
         self.assertIn("fast_mana", roles)
-        self.assertEqual(card_bracket_weight("Sol Ring"), 4)
 
     def test_suppress_removes_inferred_role(self):
         from unittest.mock import patch
@@ -226,7 +224,7 @@ class CardRoleInferTests(unittest.TestCase):
             "oracle_text": "Draw two cards.",
         }
         fake_seed = {
-            "Fake Draw": {"roles": [], "suppress": ["draw"], "bracketWeight": 1},
+            "Fake Draw": {"roles": [], "suppress": ["draw"]},
         }
         with patch.object(seed_mod, "load_card_role_seed", return_value=fake_seed):
             self.assertNotIn("draw", card_roles_for(card))

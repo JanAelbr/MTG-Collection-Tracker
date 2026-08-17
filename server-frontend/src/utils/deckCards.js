@@ -374,6 +374,40 @@ export function commanderColorIdentity(commanders) {
   return [...colors].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 }
 
+function typeGroupsForSection(section, sectionCards, sortBy = "name") {
+  const present = new Set();
+  for (const card of sectionCards || []) {
+    const type = cardTypeGroup(card);
+    if (type) {
+      present.add(type);
+    }
+  }
+  const types = [...COLLECTION_TYPE_ORDER];
+  for (const type of [...present].sort((left, right) => {
+    const sortDiff = deckTypeSortIndex(left) - deckTypeSortIndex(right);
+    if (sortDiff !== 0) {
+      return sortDiff;
+    }
+    return left.localeCompare(right);
+  })) {
+    if (!types.includes(type)) {
+      types.push(type);
+    }
+  }
+  return types.map((type) => {
+    const typeCards = (sectionCards || []).filter((card) => cardTypeGroup(card) === type);
+    return {
+      key: `${section}-${type}`,
+      kind: "type",
+      section,
+      type,
+      label: deckTypeLabel(type),
+      count: countDeckCards(typeCards),
+      cards: sortDeckCards(typeCards, sortBy),
+    };
+  });
+}
+
 export function buildEmptyDeckCardGroups(section = "main") {
   const sectionLabel = section === "sideboard" ? "Sideboard" : "Main deck";
   return [
@@ -384,14 +418,7 @@ export function buildEmptyDeckCardGroups(section = "main") {
       label: sectionLabel,
       cards: [],
     },
-    {
-      key: `${section}-any`,
-      kind: "type",
-      section,
-      type: "",
-      label: "Cards",
-      cards: [],
-    },
+    ...typeGroupsForSection(section, [], "name"),
   ];
 }
 
@@ -436,21 +463,7 @@ export function buildDeckCardGroups(cards, sortBy = "name") {
       cards: [],
     });
 
-    for (const type of collectDeckCardTypes(sectionCards)) {
-      const typeCards = sectionCards.filter((card) => cardTypeGroup(card) === type);
-      if (!typeCards.length) {
-        continue;
-      }
-      groups.push({
-        key: `${section}-${type}`,
-        kind: "type",
-        section,
-        type,
-        label: deckTypeLabel(type),
-        count: countDeckCards(typeCards),
-        cards: sortDeckCards(typeCards, sortBy),
-      });
-    }
+    groups.push(...typeGroupsForSection(section, sectionCards, sortBy));
   }
 
   return groups;

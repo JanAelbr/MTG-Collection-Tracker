@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import CardFinishBadge from "./CardFinishBadge.vue";
+import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import {
   componentScoreClass,
@@ -22,7 +23,7 @@ const countLabel = computed(() => formatComponentCount(props.component.id, props
 </script>
 
 <template>
-  <details class="deck-power-category" :open="hasCards">
+  <details class="deck-power-category">
     <summary class="deck-power-category-summary">
       <div class="deck-power-category-heading">
         <span class="deck-power-category-title">{{ component.label }}</span>
@@ -44,30 +45,17 @@ const countLabel = computed(() => formatComponentCount(props.component.id, props
         class="deck-power-card"
       >
         <div class="deck-power-card-image-wrap">
-          <RouterLink
-            v-if="powerCardRoute(card, deckId)"
-            :to="powerCardRoute(card, deckId)"
-            class="deck-power-card-image-link"
-          >
-            <img
-              v-if="card.imageUri"
-              :src="card.imageUri"
-              :alt="card.cardName"
-              class="deck-power-card-image"
-              loading="lazy"
-            >
-            <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-          </RouterLink>
-          <template v-else>
-            <img
-              v-if="card.imageUri"
-              :src="card.imageUri"
-              :alt="card.cardName"
-              class="deck-power-card-image"
-              loading="lazy"
-            >
-            <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
-          </template>
+          <CardInteractiveImage
+            v-if="card.imageUri"
+            :src="card.imageUri"
+            :alt="card.cardName"
+            :card="card"
+            img-class="deck-power-card-image"
+            :show-details="false"
+            :show-copy-controls="false"
+            :deck-id="deckId"
+          />
+          <div v-else class="deck-power-card-placeholder">{{ card.cardName }}</div>
         </div>
 
         <figcaption class="deck-power-card-caption">

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ignoreAborted } from "../api";
 import BrowseSelect from "../components/BrowseSelect.vue";
@@ -83,6 +83,7 @@ const filterSidebarRef = ref(null);
 const { loading, run } = useAsyncLoad();
 const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
 let searchRequestToken = 0;
+let detailFilterRouteTimer = null;
 
 const sets = computed(() => meta.value?.sets || []);
 const cards = computed(() => accumulatedCards.value);
@@ -916,11 +917,25 @@ async function onArtOwnershipChanged() {
   }
 }
 
-watch([ownedFilter, foilFilter, typeFilter, colorFilters, colorMode, storageFilters, roleFilters, rarityFilter, cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin, searchViewMode, searchSort, searchSortDir], () => {
+watch([ownedFilter, foilFilter, typeFilter, colorFilters, colorMode, storageFilters, roleFilters, rarityFilter, searchViewMode, searchSort, searchSortDir], () => {
   if (!routeSyncReady.value) {
     return;
   }
   syncSearchRoute();
+});
+
+watch([cmcMin, cmcMax, priceMin, priceMax, powerMin, toughnessMin], () => {
+  if (!routeSyncReady.value) {
+    return;
+  }
+  clearTimeout(detailFilterRouteTimer);
+  detailFilterRouteTimer = setTimeout(() => {
+    syncSearchRoute();
+  }, 300);
+});
+
+onBeforeUnmount(() => {
+  clearTimeout(detailFilterRouteTimer);
 });
 
 watch(

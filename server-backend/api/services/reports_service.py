@@ -4,6 +4,7 @@ from api.cache import get_cache_epoch, memory_cache
 from report.card_detail_data import collector_sort_key
 from report.ranked_cards_data import (
     DEFAULT_PAGE_SIZE,
+    load_ranked_cards_data_for_prints,
     load_ranked_cards_data_for_set,
     serialize_ranked_cards,
 )
@@ -688,6 +689,55 @@ def _load_enriched_set(
     ]
     memory_cache.set(cache_key, enriched, _ENRICHED_REPORTS_TTL)
     return enriched
+
+
+def _load_enriched_prints(
+    conn: sqlite3.Connection,
+    prints: list[tuple[str, str]],
+    *,
+    strategy: str | None = None,
+    compare_date: str | None = None,
+) -> list[dict]:
+    """Enrich a small list of prints without loading whole sets."""
+    if not prints:
+        return []
+    settings = settings_service.get_settings(conn)
+    selected_strategy = strategy or settings["priceStrategy"]
+    selected_compare, snapshot_cache = _resolve_compare_date(
+        conn,
+        compare_date if compare_date is not None else settings.get("compareDate"),
+    )
+    locations_map = _load_card_locations(conn)
+    owned_keys = _load_owned_print_keys(conn)
+    listing_prices = _load_listed_asking_prices(conn)
+    roles_by_name = load_card_name_roles_map(conn)
+    if snapshot_cache is None:
+        snapshot_cache = load_price_snapshot_cache(conn)
+    snapshot_prices = snapshot_cache.snapshots.get(selected_compare or "", {})
+
+    from util.set_families import effective_family_root, load_set_relations
+
+    relations = load_set_relations(conn)
+    known = set(relations.keys())
+    cards_df = load_ranked_cards_data_for_prints(conn, prints)
+    base_cards = serialize_ranked_cards(cards_df)
+    enriched = []
+    for card in base_cards:
+        set_code = str(card.get("set_code") or "").strip().upper()
+        family_root = effective_family_root(set_code, relations, known) or set_code
+        enriched.append(
+            _enrich_card(
+                card,
+                locations_map=locations_map,
+                owned_keys=owned_keys,
+                listing_prices=listing_prices,
+                snapshot_prices=snapshot_prices,
+                compare_date=selected_compare,
+                roles_by_name=roles_by_name,
+                family_root=family_root,
+            )
+        )
+    return _apply_strategy_to_cards(enriched, selected_strategy)
 
 
 def _apply_strategy_to_cards(cards: list[dict], strategy: str) -> list[dict]:

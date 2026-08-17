@@ -390,11 +390,6 @@ class BuilderImproveRequest(BaseModel):
     rebuild: bool = False
 
 
-class BuilderAssessPowerRequest(BaseModel):
-    commanders: list[BuilderCommanderPrint] = Field(min_length=1, max_length=4)
-    cards: list[dict] = Field(min_length=1)
-
-
 class DeckBulkCardItem(BaseModel):
     setCode: str = Field(min_length=0, max_length=16)
     collectorNumber: str = Field(min_length=0, max_length=32)

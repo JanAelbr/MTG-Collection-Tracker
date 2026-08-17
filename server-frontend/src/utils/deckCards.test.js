@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { COLLECTION_TYPE_ORDER } from "./collectionTypes.js";
 import {
+  buildDeckCardGroups,
+  buildEmptyDeckCardGroups,
   cardMatchesColorFilter,
   cardMatchesDeckSearchQuery,
   cardMatchesOwnershipFilter,
@@ -86,5 +89,43 @@ describe("visibleColorPipsForIdentity", () => {
     expect(visibleColorPipsForIdentity(["U", "R"])).toEqual(["U", "R", "C"]);
     expect(visibleColorPipsForIdentity([])).toEqual(["C"]);
     expect(visibleColorPipsForIdentity(null)).toEqual(["W", "U", "B", "R", "G", "C"]);
+  });
+});
+
+describe("buildDeckCardGroups", () => {
+  it("includes empty type groups for types not yet in the deck", () => {
+    const groups = buildDeckCardGroups([
+      { section: "main", cardType: "creature", cardName: "Bear", qty: 1 },
+    ]);
+    const typeGroups = groups.filter((group) => group.kind === "type");
+    expect(typeGroups.map((group) => group.type)).toEqual([...COLLECTION_TYPE_ORDER]);
+    const creatures = typeGroups.find((group) => group.type === "creature");
+    const instants = typeGroups.find((group) => group.type === "instant");
+    const lands = typeGroups.find((group) => group.type === "land");
+    expect(creatures.cards).toHaveLength(1);
+    expect(creatures.count).toBe(1);
+    expect(instants.cards).toEqual([]);
+    expect(instants.count).toBe(0);
+    expect(lands.cards).toEqual([]);
+    expect(lands.count).toBe(0);
+  });
+
+  it("keeps extra types after the standard order", () => {
+    const groups = buildDeckCardGroups([
+      { section: "main", cardType: "creature", cardName: "Bear", qty: 1 },
+      { section: "main", cardType: "dungeon", cardName: "Undercity", qty: 1 },
+    ]);
+    const types = groups.filter((group) => group.kind === "type").map((group) => group.type);
+    expect(types.at(-1)).toBe("dungeon");
+    expect(types.slice(0, -1)).toEqual([...COLLECTION_TYPE_ORDER]);
+  });
+});
+
+describe("buildEmptyDeckCardGroups", () => {
+  it("uses the standard type list instead of a generic cards group", () => {
+    const groups = buildEmptyDeckCardGroups();
+    const typeGroups = groups.filter((group) => group.kind === "type");
+    expect(typeGroups.map((group) => group.type)).toEqual([...COLLECTION_TYPE_ORDER]);
+    expect(typeGroups.every((group) => group.cards.length === 0)).toBe(true);
   });
 });

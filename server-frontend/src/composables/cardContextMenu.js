@@ -195,6 +195,12 @@ export function isEffectivelyOwned(card) {
   if (Array.isArray(card?.locations) && card.locations.length > 0) {
     return true;
   }
+  if (Number(card?.copyCount) > 0) {
+    return true;
+  }
+  if (Array.isArray(card?.instanceIds) && card.instanceIds.length > 0) {
+    return true;
+  }
   return card?.purchaseValue != null;
 }
 
@@ -216,6 +222,12 @@ export function effectiveDeckOwnedQty(card) {
   const locationCount = cardLocationsOwnedCount(card);
   if (locationCount != null && locationCount > 0) {
     return locationCount;
+  }
+  if (Number(card.copyCount) > 0) {
+    return Number(card.copyCount);
+  }
+  if (Array.isArray(card.instanceIds) && card.instanceIds.length > 0) {
+    return card.instanceIds.length;
   }
   if (card.purchaseValue != null && isEffectivelyOwned(card)) {
     return 1;

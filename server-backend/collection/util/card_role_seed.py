@@ -76,16 +76,6 @@ def card_roles(name: str) -> list[str]:
     return card_roles_for(name=name)
 
 
-def card_bracket_weight(name: str) -> int:
-    entry = _seed_entry(str(name or "").strip())
-    if not entry:
-        return 0
-    try:
-        return int(entry.get("bracketWeight") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def card_has_role(name: str, role: str) -> bool:
     return role in card_roles(name)
 

@@ -208,6 +208,60 @@ WHERE c.set_code = ?
 ORDER BY CAST(c.collector_number AS INTEGER)
 """
 
+# Same shape as SET_CARDS_QUERY, scoped to an explicit print list via a temp keys table.
+PRINTS_CARDS_QUERY = f"""
+SELECT
+    c.set_code,
+    c.collector_number,
+    c.name,
+    c.art_style,
+    c.image_uri,
+    c.image_uri_back,
+    c.cardmarket_url,
+    c.cardmarket_url_foil,
+    c.colors,
+    c.type_line,
+    c.card_type,
+{_CARD_DETAIL_SELECT}
+    c.market_value,
+    c.market_value_foil,
+    c.market_value_etched,
+    c.has_nonfoil,
+    c.has_foil,
+    c.has_etched,
+    p.finish,
+    p.purchase_value,
+    CASE
+        WHEN p.finish = 2 THEN c.market_value_etched
+        WHEN p.finish = 1 THEN c.market_value_foil
+        ELSE c.market_value
+    END AS current_value,
+    CASE
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 2
+            AND c.market_value_etched IS NOT NULL
+            THEN c.market_value_etched - p.purchase_value
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 1
+            AND c.market_value_foil IS NOT NULL
+            THEN c.market_value_foil - p.purchase_value
+        WHEN p.purchase_value IS NOT NULL
+            AND p.finish = 0
+            AND c.market_value IS NOT NULL
+            THEN c.market_value - p.purchase_value
+        ELSE NULL
+    END AS profit_loss
+FROM cards c
+JOIN _search_print_keys k
+    ON k.set_code = c.set_code
+   AND CAST(k.collector_number AS TEXT) = CAST(c.collector_number AS TEXT)
+LEFT JOIN purchases p
+    ON p.set_code = c.set_code
+    AND p.collector_number = c.collector_number
+WHERE {_EXCLUDE_ALCHEMY}
+ORDER BY c.set_code, CAST(c.collector_number AS INTEGER)
+"""
+
 # Purchases that are not linked to a catalog row yet.
 ORPHAN_PURCHASES_QUERY = f"""
 SELECT

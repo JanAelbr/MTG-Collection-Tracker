@@ -192,6 +192,7 @@ function closeAddModal() {
           :class="{
             'is-commander': isCommanderColumn(group),
             'is-collapsed': group.kind === 'type' && !typeExpanded(group),
+            'is-empty': group.kind === 'type' && !group.cards?.length,
           }"
         >
           <button
@@ -244,6 +245,7 @@ function closeAddModal() {
 
           <div v-show="typeExpanded(group)" class="deck-stacks-column-body">
             <div
+              v-if="visibleCards(group).length"
               class="deck-stacks-pile"
               :class="{ 'is-commander': isCommanderColumn(group) }"
               :style="{ '--card-count': visibleCards(group).length }"
@@ -277,7 +279,7 @@ function closeAddModal() {
                 </div>
               </article>
               <div
-                v-if="!isCommanderColumn(group)"
+                v-if="!isCommanderColumn(group) && visibleCards(group).length"
                 class="deck-stacks-pile-spacer"
                 aria-hidden="true"
               />

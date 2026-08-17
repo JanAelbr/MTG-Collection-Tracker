@@ -4,7 +4,6 @@ import { computed, nextTick, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DeckGallery from "../components/DeckGallery.vue";
 import CreateDeckModal from "../components/CreateDeckModal.vue";
-import DeckPowerPanel from "../components/DeckPowerPanel.vue";
 import DeckCardGrid from "../components/DeckCardGrid.vue";
 import DeckCardStacks from "../components/DeckCardStacks.vue";
 import DeckOverview from "../components/DeckOverview.vue";
@@ -61,6 +60,7 @@ import { formatCardRoles } from "../utils/deckPower";
 import {
   formatEuro,
 } from "../utils/format";
+import { colorIdentityBackgroundStyle } from "../utils/mtgTheme";
 
 defineOptions({ name: "DecksView" });
 
@@ -170,6 +170,10 @@ const commanderCards = computed(() => {
 });
 
 const deckColorIdentity = computed(() => commanderColorIdentity(commanderCards.value));
+
+const activeDeckIdentityStyle = computed(() =>
+  colorIdentityBackgroundStyle(deckColorIdentity.value, { angle: 160 }),
+);
 
 const mainDeckCards = computed(() => {
   const { deckCards } = splitCommanderCards(browseStats.value?.cards || []);
@@ -473,7 +477,6 @@ async function refreshDeckPage(deckKey = deckId.value) {
 }
 
 async function onDeckCardAdded() {
-  closeStoragePickModal();
   await refreshDeckPage();
 }
 
@@ -801,7 +804,10 @@ onActivated(async () => {
         v-if="browseStats && activeBrowseDeck"
         class="deck-detail"
       >
-        <section class="table-panel deck-cards-panel">
+        <section
+          class="table-panel deck-cards-panel"
+          :style="activeDeckIdentityStyle"
+        >
           <div class="deck-cards-sticky">
             <div class="deck-cards-sticky-head">
               <div class="deck-rename-wrap deck-cards-sticky-title-wrap">
@@ -874,14 +880,6 @@ onActivated(async () => {
                 >
                   Table
                 </button>
-                <button
-                  type="button"
-                  class="filter-button"
-                  :class="{ active: deckCardsView === 'power' }"
-                  @click="changeDeckCardsView('power')"
-                >
-                  Power
-                </button>
               </div>
               <button
                 type="button"
@@ -900,7 +898,7 @@ onActivated(async () => {
             </div>
 
             <div
-              v-if="deckCardsView !== 'power' && deckCardsView !== 'overview'"
+              v-if="deckCardsView !== 'overview'"
               class="deck-cards-toolbar-compact"
             >
               <label class="manager-filter deck-cards-search-filter">
@@ -1022,10 +1020,9 @@ onActivated(async () => {
           <div
             class="deck-cards-layout"
             :class="{
-              'has-commander': commanderCards.length && !['stacks', 'overview', 'power'].includes(deckCardsView),
+              'has-commander': commanderCards.length && !['stacks', 'overview'].includes(deckCardsView),
               'is-stacks-view': deckCardsView === 'stacks',
               'is-overview-view': deckCardsView === 'overview',
-              'is-power-view': deckCardsView === 'power',
             }"
           >
               <div v-if="showDeckCardsLoading" class="storage-empty deck-cards-loading">
@@ -1033,7 +1030,7 @@ onActivated(async () => {
               </div>
               <template v-else>
               <DeckCommanderPane
-                v-if="!['stacks', 'overview', 'power'].includes(deckCardsView)"
+                v-if="!['stacks', 'overview'].includes(deckCardsView)"
                 :cards="commanderCards"
                 :default-deck-id="deckId"
                 :show-deck-remove="true"
@@ -1089,13 +1086,6 @@ onActivated(async () => {
                   @deck-changed="onDeckCardChanged"
                 />
 
-                <DeckPowerPanel
-                  v-else-if="deckCardsView === 'power'"
-                  :deck-id="deckId"
-                  :refresh-key="powerRefreshKey"
-                  class="deck-power-panel--tab"
-                />
-
                 <table v-else-if="deckCardsView === 'table'" class="reports-table deck-cards-table">
                   <thead>
                     <tr>
@@ -1135,7 +1125,7 @@ onActivated(async () => {
                           </div>
                         </td>
                       </tr>
-                      <template v-else-if="group.cards?.length">
+                      <template v-else-if="group.kind === 'type' || group.cards?.length">
                         <tr
                           class="deck-cards-group-row"
                           :class="{

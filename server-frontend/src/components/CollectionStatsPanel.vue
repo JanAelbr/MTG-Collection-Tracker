@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import GalleryLoadingOverlay from "./GalleryLoadingOverlay.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
@@ -28,6 +28,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["select-set"]);
+
+/** @type {import("vue").Ref<"value" | "completion">} */
+const primaryMetric = ref("value");
+const showFinances = ref(false);
 
 function setRowLabel(code) {
   const set = props.sets.find((item) => item.setCode === code);
@@ -77,40 +81,20 @@ function aggregateArtStylesBySet(artStyles) {
     prev.profit = sumNullable(prev.profit, row.profit);
     grouped.set(key, prev);
   }
-  return [...grouped.values()].sort((a, b) => a.setCode.localeCompare(b.setCode));
+  return [...grouped.values()];
 }
 
 const isAllSetsView = computed(() => String(props.setCode).toLowerCase() === "all");
 const showSetBreakdown = computed(() => isAllSetsView.value || props.familyScope);
+const isValuePrimary = computed(() => primaryMetric.value === "value");
 
-const setBreakdownRows = computed(() => {
-  if (!showSetBreakdown.value || !props.stats) {
-    return [];
-  }
-  const rows = props.stats.setBreakdown?.length
-    ? props.stats.setBreakdown
-    : aggregateArtStylesBySet(props.stats.artStyles || []);
-  return [...rows].sort((a, b) => (b.current ?? 0) - (a.current ?? 0));
-});
-
-const maxSetValue = computed(() => {
-  let max = 0;
-  for (const row of setBreakdownRows.value) {
-    const value = row.current;
-    if (value != null && !Number.isNaN(value) && value > max) {
-      max = value;
-    }
-  }
-  return max;
-});
-
-function valueBarPercent(row) {
-  const current = row.current;
-  if (current == null || Number.isNaN(current) || maxSetValue.value <= 0) {
-    return 0;
-  }
-  return Math.max(6, (current / maxSetValue.value) * 100);
-}
+watch(
+  showSetBreakdown,
+  (bySet) => {
+    primaryMetric.value = bySet ? "value" : "completion";
+  },
+  { immediate: true },
+);
 
 function rowCatalogCount(row) {
   if (row?.catalogCount != null && !Number.isNaN(Number(row.catalogCount))) {
@@ -160,6 +144,126 @@ function collectedTitle(row) {
   return formatCompletion(rowOwnedCount(row), rowCatalogCount(row));
 }
 
+function collectedCountsLabel(row) {
+  const owned = rowOwnedCount(row);
+  const catalog = rowCatalogCount(row);
+  if (!catalog) {
+    return `${owned} owned`;
+  }
+  return `${owned} / ${catalog}`;
+}
+
+function valueSharePercent(row) {
+  const current = row?.current;
+  const total = props.stats?.current;
+  if (
+    current == null
+    || Number.isNaN(current)
+    || total == null
+    || Number.isNaN(total)
+    || total <= 0
+  ) {
+    return null;
+  }
+  return (current / total) * 100;
+}
+
+function formatValueShare(row) {
+  const share = valueSharePercent(row);
+  if (share == null) {
+    return null;
+  }
+  return `${share.toFixed(share >= 10 || share === 0 ? 0 : 1)}%`;
+}
+
+function formatValuePrimaryLabel(row) {
+  const euro = formatEuro(row.current);
+  const share = formatValueShare(row);
+  return share ? `${euro} · ${share}` : euro;
+}
+
+function sortBreakdownRows(rows) {
+  return [...rows].sort((a, b) => {
+    if (isValuePrimary.value) {
+      return (b.current ?? 0) - (a.current ?? 0);
+    }
+    const completionDiff = (rowCompletionPercent(b) ?? -1) - (rowCompletionPercent(a) ?? -1);
+    if (completionDiff !== 0) {
+      return completionDiff;
+    }
+    return (b.current ?? 0) - (a.current ?? 0);
+  });
+}
+
+const setBreakdownRows = computed(() => {
+  if (!showSetBreakdown.value || !props.stats) {
+    return [];
+  }
+  const rows = props.stats.setBreakdown?.length
+    ? props.stats.setBreakdown
+    : aggregateArtStylesBySet(props.stats.artStyles || []);
+  return sortBreakdownRows(rows);
+});
+
+const artStyleRows = computed(() => {
+  if (showSetBreakdown.value || !props.stats?.artStyles?.length) {
+    return [];
+  }
+  return sortBreakdownRows(props.stats.artStyles);
+});
+
+const maxBreakdownValue = computed(() => {
+  const rows = showSetBreakdown.value ? setBreakdownRows.value : artStyleRows.value;
+  let max = 0;
+  for (const row of rows) {
+    const value = row.current;
+    if (value != null && !Number.isNaN(value) && value > max) {
+      max = value;
+    }
+  }
+  return max;
+});
+
+function valueBarPercent(row) {
+  const current = row.current;
+  if (current == null || Number.isNaN(current) || maxBreakdownValue.value <= 0) {
+    return 0;
+  }
+  return Math.max(6, (current / maxBreakdownValue.value) * 100);
+}
+
+function primaryBarPercent(row) {
+  return isValuePrimary.value ? valueBarPercent(row) : completionBarPercent(row);
+}
+
+function primaryBarClass(row) {
+  return isValuePrimary.value ? "is-value" : completionBarClass(row);
+}
+
+function primaryLabel(row) {
+  return isValuePrimary.value ? formatValuePrimaryLabel(row) : formatCollectedPercent(row);
+}
+
+function primaryTitle(row) {
+  if (isValuePrimary.value) {
+    const share = formatValueShare(row);
+    return share
+      ? `${formatEuro(row.current)} (${share} of portfolio)`
+      : formatEuro(row.current);
+  }
+  return collectedTitle(row);
+}
+
+function secondaryLine(row) {
+  if (isValuePrimary.value) {
+    const percent = formatCollectedPercent(row);
+    return `${collectedCountsLabel(row)} · ${percent}`;
+  }
+  const share = formatValueShare(row);
+  const euro = formatEuro(row.current);
+  return share ? `${euro} · ${share}` : euro;
+}
+
 const unknownCards = computed(() => props.stats?.unknownCards || []);
 const hasUnknownCards = computed(() => (props.stats?.unknownCount ?? 0) > 0);
 
@@ -168,17 +272,18 @@ function hasInvestedValue(value) {
 }
 
 const showInvestedTile = computed(() => hasInvestedValue(props.stats?.invested));
-const showFinanceColumns = computed(() => {
+const hasFinanceData = computed(() => {
   if (showInvestedTile.value) {
     return true;
   }
   if (showSetBreakdown.value) {
     return setBreakdownRows.value.some((row) => hasInvestedValue(row.invested));
   }
-  return (props.stats?.artStyles || []).some((row) => hasInvestedValue(row.invested));
+  return artStyleRows.value.some((row) => hasInvestedValue(row.invested));
 });
+const showFinanceColumns = computed(() => showFinances.value && hasFinanceData.value);
 const showProfitTile = computed(() => {
-  if (!showFinanceColumns.value) {
+  if (!showInvestedTile.value) {
     return false;
   }
   const profit = props.stats?.profit;
@@ -188,7 +293,7 @@ const showRoiTile = computed(() => {
   const profit = props.stats?.profit;
   const invested = props.stats?.invested;
   return (
-    showFinanceColumns.value
+    showInvestedTile.value
     && profit != null
     && invested != null
     && !Number.isNaN(profit)
@@ -200,6 +305,10 @@ const rarityBreakdown = computed(() => (
   !isAllSetsView.value && !props.familyScope ? (props.stats?.rarityBreakdown || []) : []
 ));
 const hasRarityBreakdown = computed(() => rarityBreakdown.value.length > 0);
+const hasBreakdown = computed(() => (
+  (showSetBreakdown.value && setBreakdownRows.value.length > 0)
+  || (!showSetBreakdown.value && artStyleRows.value.length > 0)
+));
 
 const raritySetMeta = computed(() => {
   const code = String(props.setCode || "").trim().toUpperCase();
@@ -248,6 +357,10 @@ function onSelectSet(code) {
     return;
   }
   emit("select-set", code);
+}
+
+function setPrimaryMetric(metric) {
+  primaryMetric.value = metric;
 }
 </script>
 
@@ -391,143 +504,162 @@ function onSelectSet(code) {
         </table>
       </details>
 
-      <section v-if="showSetBreakdown && setBreakdownRows.length" class="table-panel">
-        <h2>By set</h2>
-        <table class="reports-table">
-          <thead>
-            <tr>
-              <th>Set</th>
-              <th>Cards</th>
-              <th>Collected</th>
-              <th>Value</th>
-              <th v-if="showFinanceColumns">Invested</th>
-              <th v-if="showFinanceColumns">Profit / loss</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in setBreakdownRows"
-              :key="row.setCode"
-              class="stats-set-row"
-              :class="{ 'is-clickable': allowSetDrill }"
-              @click="allowSetDrill && onSelectSet(row.setCode)"
+      <section
+        v-if="hasBreakdown"
+        class="table-panel stats-breakdown-panel"
+        :aria-label="showSetBreakdown ? 'By set' : 'By art style'"
+      >
+        <div class="stats-breakdown-header">
+          <h2>{{ showSetBreakdown ? "By set" : "By art style" }}</h2>
+          <div class="stats-breakdown-controls">
+            <div class="button-group stats-metric-toggle" role="group" aria-label="Primary metric">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: isValuePrimary }"
+                :aria-pressed="isValuePrimary"
+                @click="setPrimaryMetric('value')"
+              >
+                Value
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: !isValuePrimary }"
+                :aria-pressed="!isValuePrimary"
+                @click="setPrimaryMetric('completion')"
+              >
+                Collected
+              </button>
+            </div>
+            <button
+              v-if="hasFinanceData"
+              type="button"
+              class="btn btn-secondary btn-small"
+              :aria-pressed="showFinances"
+              @click="showFinances = !showFinances"
             >
-              <td>
-                <div class="stats-set-drill">
-                  <button
-                    v-if="allowSetDrill"
-                    type="button"
-                    class="stats-set-drill-icon"
-                    :aria-label="`Open stats for ${setRowLabel(row.setCode)}`"
-                    @click.stop="onSelectSet(row.setCode)"
-                  >
-                    <img
-                      v-if="setIconForCode(row.setCode)"
-                      :src="setIconForCode(row.setCode)"
-                      alt=""
-                      class="stats-set-icon"
-                    >
-                  </button>
-                  <span v-else class="stats-set-drill-icon" aria-hidden="true">
-                    <img
-                      v-if="setIconForCode(row.setCode)"
-                      :src="setIconForCode(row.setCode)"
-                      alt=""
-                      class="stats-set-icon"
-                    >
-                  </span>
-                  <CollectionSetLink
-                    :set-code="row.setCode"
-                    :label="setRowLabel(row.setCode)"
-                  />
-                </div>
-              </td>
-              <td>{{ row.count }}</td>
-              <td class="stats-completion-cell">
-                <div
-                  class="stats-completion-bar-wrap"
-                  :title="collectedTitle(row)"
-                  :aria-label="collectedTitle(row)"
-                >
-                  <div
-                    class="stats-completion-bar"
-                    :class="completionBarClass(row)"
-                    :style="{ width: `${completionBarPercent(row)}%` }"
-                  />
-                  <span class="stats-completion-label">{{ formatCollectedPercent(row) }}</span>
-                </div>
-              </td>
-              <td class="stats-value-cell">
-                <div class="stats-value-bar-wrap">
-                  <div
-                    class="stats-value-bar"
-                    :style="{ width: `${valueBarPercent(row)}%` }"
-                    :title="`${((row.current ?? 0) / (stats.current || 1) * 100).toFixed(1)}% of portfolio`"
-                  />
-                  <span class="stats-value-label">{{ formatEuro(row.current) }}</span>
-                </div>
-              </td>
-              <td v-if="showFinanceColumns">{{ formatEuro(row.invested) }}</td>
-              <td
-                v-if="showFinanceColumns"
-                :class="profitClass(row.profit)"
-              >
-                {{ formatProfit(row.profit) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+              {{ showFinances ? "Hide finances" : "Show finances" }}
+            </button>
+          </div>
+        </div>
+        <p class="stats-breakdown-intro">
+          <template v-if="isValuePrimary">
+            Sorted by market value. Share is percent of this scope’s total.
+          </template>
+          <template v-else>
+            Sorted by completion. Bar shows owned slots versus the catalog.
+          </template>
+        </p>
 
-      <section v-if="!isAllSetsView && !familyScope && stats.artStyles?.length" class="table-panel">
-        <h2>By art style</h2>
-        <table class="reports-table">
-          <thead>
-            <tr>
-              <th>Art style</th>
-              <th>Cards</th>
-              <th>Collected</th>
-              <th>Value</th>
-              <th v-if="showFinanceColumns">Invested</th>
-              <th v-if="showFinanceColumns">Profit / loss</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in stats.artStyles" :key="`${row.setCode}-${row.artStyle}`">
-              <td>
-                <RouterLink
-                  :to="collectionLinkForArtStyle(row)"
-                  class="stats-art-drill"
-                >
-                  {{ row.artStyle }}
-                </RouterLink>
-              </td>
-              <td>{{ row.count }}</td>
-              <td class="stats-completion-cell">
-                <div
-                  class="stats-completion-bar-wrap"
-                  :title="collectedTitle(row)"
-                  :aria-label="collectedTitle(row)"
-                >
-                  <div
-                    class="stats-completion-bar"
-                    :class="completionBarClass(row)"
-                    :style="{ width: `${completionBarPercent(row)}%` }"
-                  />
-                  <span class="stats-completion-label">{{ formatCollectedPercent(row) }}</span>
-                </div>
-              </td>
-              <td>{{ formatEuro(row.current) }}</td>
-              <td v-if="showFinanceColumns">{{ formatEuro(row.invested) }}</td>
-              <td
-                v-if="showFinanceColumns"
-                :class="profitClass(row.profit)"
+        <ul v-if="showSetBreakdown" class="stats-breakdown-list">
+          <li
+            v-for="row in setBreakdownRows"
+            :key="row.setCode"
+            class="stats-breakdown-row"
+            :class="{ 'is-clickable': allowSetDrill }"
+            @click="allowSetDrill && onSelectSet(row.setCode)"
+          >
+            <div class="stats-breakdown-identity">
+              <button
+                v-if="allowSetDrill"
+                type="button"
+                class="stats-set-drill-icon"
+                :aria-label="`Open stats for ${setRowLabel(row.setCode)}`"
+                @click.stop="onSelectSet(row.setCode)"
               >
-                {{ formatProfit(row.profit) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                <img
+                  v-if="setIconForCode(row.setCode)"
+                  :src="setIconForCode(row.setCode)"
+                  alt=""
+                  class="stats-set-icon"
+                >
+              </button>
+              <span v-else class="stats-set-drill-icon" aria-hidden="true">
+                <img
+                  v-if="setIconForCode(row.setCode)"
+                  :src="setIconForCode(row.setCode)"
+                  alt=""
+                  class="stats-set-icon"
+                >
+              </span>
+              <CollectionSetLink
+                :set-code="row.setCode"
+                :label="setRowLabel(row.setCode)"
+                @click.stop
+              />
+            </div>
+            <div
+              class="stats-completion-bar-wrap stats-breakdown-bar"
+              :title="primaryTitle(row)"
+              :aria-label="primaryTitle(row)"
+            >
+              <div
+                class="stats-completion-bar"
+                :class="primaryBarClass(row)"
+                :style="{ width: `${primaryBarPercent(row)}%` }"
+              />
+              <span class="stats-completion-label">{{ primaryLabel(row) }}</span>
+            </div>
+            <div class="stats-breakdown-meta">
+              <span class="stats-breakdown-secondary">{{ secondaryLine(row) }}</span>
+              <template v-if="showFinanceColumns">
+                <span class="stats-breakdown-finance">
+                  Inv {{ formatEuro(row.invested) }}
+                </span>
+                <span
+                  class="stats-breakdown-finance"
+                  :class="profitClass(row.profit)"
+                >
+                  {{ formatProfit(row.profit) }}
+                </span>
+              </template>
+            </div>
+          </li>
+        </ul>
+
+        <ul v-else class="stats-breakdown-list">
+          <li
+            v-for="row in artStyleRows"
+            :key="`${row.setCode}-${row.artStyle}`"
+            class="stats-breakdown-row"
+          >
+            <div class="stats-breakdown-identity">
+              <RouterLink
+                :to="collectionLinkForArtStyle(row)"
+                class="stats-art-drill"
+              >
+                {{ row.artStyle }}
+              </RouterLink>
+            </div>
+            <div
+              class="stats-completion-bar-wrap stats-breakdown-bar"
+              :title="primaryTitle(row)"
+              :aria-label="primaryTitle(row)"
+            >
+              <div
+                class="stats-completion-bar"
+                :class="primaryBarClass(row)"
+                :style="{ width: `${primaryBarPercent(row)}%` }"
+              />
+              <span class="stats-completion-label">{{ primaryLabel(row) }}</span>
+            </div>
+            <div class="stats-breakdown-meta">
+              <span class="stats-breakdown-secondary">{{ secondaryLine(row) }}</span>
+              <template v-if="showFinanceColumns">
+                <span class="stats-breakdown-finance">
+                  Inv {{ formatEuro(row.invested) }}
+                </span>
+                <span
+                  class="stats-breakdown-finance"
+                  :class="profitClass(row.profit)"
+                >
+                  {{ formatProfit(row.profit) }}
+                </span>
+              </template>
+            </div>
+          </li>
+        </ul>
       </section>
     </GalleryLoadingOverlay>
   </div>

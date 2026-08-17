@@ -6,7 +6,7 @@ import pandas as pd
 from report.deck_queries import deck_scope, load_deck_cards_df
 from report.serialize_helpers import is_missing, str_or_empty
 from util.card_metadata import _nullable_int_flag, card_row_needs_power_metadata, resolve_card_cmc
-from util.card_role_seed import card_bracket_weight, card_roles_for
+from util.card_role_seed import card_roles_for
 from util.commander_rules import validate_commander_deck
 
 COMPONENT_TARGETS = {
@@ -15,29 +15,13 @@ COMPONENT_TARGETS = {
     "interaction": (6, 10),
 }
 
-# Count at or above this value maps to a 100 power-intensity score.
+# Count at or above this value maps to a 100 density score.
 POWER_INTENSITY_SCALES = {
     "tutors": 4,
     "fastMana": 6,
     "gameChangers": 4,
     "comboDensity": 3,
 }
-
-BRACKET_THRESHOLDS = [
-    (0, 1),
-    (6, 2),
-    (14, 3),
-    (26, 4),
-    (42, 5),
-]
-
-POWER_SIGNAL_ROLES = frozenset({
-    "tutor",
-    "fast_mana",
-    "game_changer",
-    "combo_piece",
-    "extra_turn",
-})
 
 
 def _deckbuilding_score(count: int, low: int, high: int) -> int:
@@ -158,52 +142,6 @@ def _curve_health(cards: list[dict]) -> int:
     return max(0, 100 - int(abs(average - 3.15) * 25))
 
 
-def _power_signal(cards: list[dict]) -> float:
-    signal = 0.0
-    for card in cards:
-        qty = int(card.get("qty") or 1)
-        name = str(card.get("card_name") or card.get("name") or card.get("cardName") or "")
-        roles = set(card_roles_for(card))
-        if not roles & POWER_SIGNAL_ROLES:
-            continue
-        weight = card_bracket_weight(name)
-        if weight <= 0:
-            continue
-        signal += weight * qty
-    return signal
-
-
-def _bracket_from_signal(signal: float) -> int:
-    bracket = 1
-    for threshold, value in BRACKET_THRESHOLDS:
-        if signal >= threshold:
-            bracket = value
-    return bracket
-
-
-def _confidence(signal: float, card_count: int) -> str:
-    if card_count < 40:
-        return "low"
-    if signal >= 20 or card_count >= 90:
-        return "high"
-    return "medium"
-
-
-def _highlights(counts: dict[str, int], cards: list[dict]) -> list[str]:
-    highlights = []
-    if counts["gameChangers"]:
-        highlights.append(f"{counts['gameChangers']} game changer(s)")
-    if counts["tutors"]:
-        highlights.append(f"{counts['tutors']} tutor(s)")
-    if counts["fastMana"]:
-        highlights.append(f"{counts['fastMana']} fast mana source(s)")
-    nonlands = _nonland_cmc_values(cards)
-    if nonlands:
-        avg = round(sum(nonlands) / len(nonlands), 1)
-        highlights.append(f"avg cmc {avg}")
-    return highlights
-
-
 def _warnings_from_counts(counts: dict[str, int]) -> list[str]:
     warnings = []
     if counts["interaction"] < 4:
@@ -247,21 +185,15 @@ def assess_deck_power(cards: list[dict], *, commanders: list[dict] | None = None
         "curve": _curve_health(main_cards),
     }
 
-    signal = _power_signal(main_cards)
-    bracket = _bracket_from_signal(signal)
     validation = validate_commander_deck(cards, commanders=commanders or [])
     warnings = _warnings_from_counts(counts)
     warnings.extend(validation.get("warnings") or [])
 
     return {
-        "bracket": bracket,
-        "confidence": _confidence(signal, len(main_cards)),
         "components": components,
         "counts": counts,
         "categoryCards": category_cards,
-        "highlights": _highlights(counts, main_cards),
         "warnings": warnings,
-        "powerSignal": round(signal, 1),
         "validation": validation,
     }
 

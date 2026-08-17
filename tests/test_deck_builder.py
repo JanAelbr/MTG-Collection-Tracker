@@ -84,7 +84,7 @@ class DeckBuilderUnitTests(unittest.TestCase):
         self.assertTrue(card_is_legal_for_deck(card, ["U", "R"]))
         self.assertFalse(card_is_legal_for_deck(card, ["R", "G"]))
 
-    def test_assess_power_returns_bracket_and_components(self):
+    def test_assess_power_returns_components_and_category_cards(self):
         cards = [
             {
                 "name": "Sol Ring",
@@ -131,10 +131,10 @@ class DeckBuilderUnitTests(unittest.TestCase):
             },
         ]
         result = assess_deck_power(cards, commanders=[])
-        self.assertIn("bracket", result)
+        self.assertNotIn("bracket", result)
+        self.assertNotIn("powerSignal", result)
         self.assertIn("components", result)
         self.assertIn("ramp", result["components"])
-        self.assertGreaterEqual(result["bracket"], 1)
         self.assertEqual(result["counts"]["tutors"], 0)
         self.assertEqual(result["components"]["tutors"], 0)
         self.assertEqual(result["counts"]["fastMana"], 1)
@@ -148,18 +148,16 @@ class DeckBuilderUnitTests(unittest.TestCase):
         self.assertIn("Sol Ring", [card["cardName"] for card in result["categoryCards"]["fastMana"]])
         draw_names = [card["cardName"] for card in result["categoryCards"]["draw"]]
         self.assertIn("Rhystic Study", draw_names)
-        self.assertEqual(result["powerSignal"], 9.0)
-        self.assertEqual(result["bracket"], 2)
-        self.assertTrue(any("avg cmc 2.3" in item for item in result["highlights"]))
 
-    def test_casual_deck_without_staples_is_low_bracket(self):
+    def test_casual_deck_without_staples_has_empty_power_categories(self):
         cards = [
             {"name": f"Generic Card {index}", "section": "main", "qty": 1, "cmc": 3, "card_type": "creature"}
             for index in range(60)
         ]
         result = assess_deck_power(cards, commanders=[])
-        self.assertEqual(result["powerSignal"], 0.0)
-        self.assertEqual(result["bracket"], 1)
+        self.assertEqual(result["counts"]["fastMana"], 0)
+        self.assertEqual(result["counts"]["tutors"], 0)
+        self.assertEqual(result["counts"]["gameChangers"], 0)
 
     def test_power_categories_score_zero_without_staples(self):
         cards = [
@@ -171,7 +169,6 @@ class DeckBuilderUnitTests(unittest.TestCase):
         self.assertEqual(result["components"]["fastMana"], 0)
         self.assertEqual(result["components"]["gameChangers"], 0)
         self.assertEqual(result["components"]["comboDensity"], 0)
-        self.assertEqual(result["bracket"], 1)
 
     def test_mana_cost_fallback_for_average_cmc(self):
         from util.card_metadata import cmc_from_mana_cost, resolve_card_cmc
@@ -201,7 +198,12 @@ class DeckBuilderUnitTests(unittest.TestCase):
             },
         ]
         result = assess_deck_power(cards, commanders=[])
-        self.assertTrue(any("avg cmc 1.5" in item for item in result["highlights"]))
+        self.assertEqual(
+            resolve_card_cmc({"mana_cost": "{U}", "card_type": "instant"}),
+            1.0,
+        )
+        self.assertIn("curve", result["components"])
+        self.assertGreater(result["components"]["curve"], 0)
 
     def test_deck_needs_metadata_backfill_when_cmc_missing(self):
         deck_df = pd.DataFrame([
@@ -435,7 +437,7 @@ class DeckBuilderIntegrationTests(unittest.TestCase):
         owned_cards = [card for card in proposal["cards"] if not card.get("suggested")]
         self.assertTrue(any(card["name"] == "Sol Ring" for card in owned_cards))
         self.assertIn("power", proposal)
-        self.assertIn("bracket", proposal["power"])
+        self.assertNotIn("bracket", proposal["power"])
         self.assertIn("components", proposal["power"])
 
     def test_generate_deck_assumes_infinite_basic_lands(self):

@@ -1,0 +1,256 @@
+.print-prices-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.print-prices-field {
+  display: grid;
+  gap: 4px;
+  color: #514633;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.print-prices-field input,
+.print-prices-field select {
+  min-height: 32px;
+  border: 1px solid #cfc4b2;
+  border-radius: 5px;
+  background: #fffdfa;
+  color: #332c20;
+  font: inherit;
+}
+
+.print-prices-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: #3e3424;
+}
+
+.print-prices-art-set {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.print-prices-art-set + .print-prices-art-set {
+  margin-top: 6px;
+  border-top: 1px solid #e6dccb;
+}
+
+.print-prices-art-set-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.print-prices-art-set-name {
+  color: #514633;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.print-prices-panel-muted {
+  margin: 0;
+  color: #6b6256;
+  font-size: 0.82rem;
+}
+
+.print-prices-preview-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.print-prices-preview-arrow {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #ded5c5;
+  border-radius: 999px;
+  background: #fffdfa;
+  color: #3e3424;
+  font: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.print-prices-preview-arrow:hover:not(:disabled) {
+  border-color: #5d4e37;
+  background: #f7f3ea;
+}
+
+.print-prices-preview-arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.print-prices-preview-arrow-set {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.print-prices-layout {
+  align-items: start;
+}
+
+.print-prices-layout .separators-picker {
+  max-height: calc(100dvh - 11rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.print-prices-layout .separators-preview-panel {
+  top: 12px;
+  max-height: calc(100dvh - 24px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.print-prices-layout .print-prices-preview-nav {
+  flex: 0 0 auto;
+}
+
+.print-prices-layout .print-prices-preview-stage,
+.print-prices-layout .separators-preview-stage.print-prices-preview-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100dvh - 24px - 3.75rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 1100px) {
+  .print-prices-layout .separators-picker {
+    max-height: min(45vh, calc(100dvh - 11rem));
+  }
+}
+
+.print-prices-preview {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ded5c5;
+  background: #fffdfa;
+  font-size: calc(11px * var(--print-prices-font-scale, 1));
+}
+
+.print-prices-list-header {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #5d4e37;
+}
+
+.print-prices-list-header h2,
+.print-prices-list-title {
+  margin: 0;
+  font-size: 1.35em;
+}
+
+.print-prices-list-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.print-prices-list-title-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  height: 1.2em;
+  object-fit: contain;
+}
+
+.print-prices-list-header p,
+.print-prices-list-header time {
+  margin: 4px 0 0;
+  color: #6b6256;
+  font-size: 0.95em;
+}
+
+.print-prices-list-rows {
+  column-count: var(--print-prices-columns, 1);
+  column-gap: 1.1em;
+  column-rule: 1px solid #c4b9a6;
+  column-fill: balance;
+}
+
+.print-prices-list-row {
+  display: grid;
+  grid-template-columns: 3.6em minmax(0, 1fr) auto;
+  gap: 0.45em;
+  min-width: 0;
+  padding: 0.25em 0.35em;
+  border-bottom: 1px solid #e7dfd1;
+  font-size: 1em;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-prices-list-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-prices-list-row > :last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.print-prices-finish-icon {
+  margin-right: 2px;
+}
+
+.print-prices-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+  }
+
+  .app-chrome,
+  .toast-stack,
+  .card-image-tooltip,
+  .print-prices-no-print,
+  .separators-no-print {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-main,
+  .print-prices-page,
+  .separators-page {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .print-prices-sheet {
+    display: block !important;
+    font-size: calc(11px * var(--print-prices-font-scale, 1));
+  }
+
+  .print-prices-print-group {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin: 0 0 10mm;
+    font-size: inherit;
+  }
+}

@@ -81,6 +81,55 @@ export const CHART_ACCENT_SOFT = "#7cb342";
 export const CHART_GOLD = "#c9a227";
 export const CHART_SLATE = "#94a3b8";
 
+/** Soft pastel fills for identity backgrounds (readable over white UI). */
+export const MANA_COLOR_SOFT = {
+  W: "#f4edd2",
+  U: "#d6e8f6",
+  B: "#e6e1ec",
+  R: "#f6d9d9",
+  G: "#d4ebe0",
+  C: "#ebe8e4",
+};
+
+const MANA_GRADIENT_ORDER = "WUBRG";
+
+function softManaColor(color) {
+  const key = String(color || "").toUpperCase();
+  return MANA_COLOR_SOFT[key] || MANA_COLOR_SOFT.C;
+}
+
+/**
+ * Smooth CSS linear-gradient for a color identity (WUBRG order).
+ * Empty identity → colorless wash into white.
+ */
+export function colorIdentityGradient(colors, { angle = 145 } = {}) {
+  const ordered = [...new Set(
+    (colors || [])
+      .map((color) => String(color || "").toUpperCase())
+      .filter((color) => MANA_GRADIENT_ORDER.includes(color)),
+  )].sort((left, right) => MANA_GRADIENT_ORDER.indexOf(left) - MANA_GRADIENT_ORDER.indexOf(right));
+
+  const palette = ordered.length ? ordered.map(softManaColor) : [MANA_COLOR_SOFT.C];
+  if (palette.length === 1) {
+    return `linear-gradient(${angle}deg, ${palette[0]} 0%, #ffffff 78%)`;
+  }
+  if (palette.length === 2) {
+    return `linear-gradient(${angle}deg, ${palette[0]} 0%, ${palette[1]} 55%, #ffffff 100%)`;
+  }
+  const stops = palette.map((color, index) => {
+    const at = (index / (palette.length - 1)) * 72;
+    return `${color} ${at.toFixed(1)}%`;
+  });
+  stops.push("#ffffff 100%");
+  return `linear-gradient(${angle}deg, ${stops.join(", ")})`;
+}
+
+export function colorIdentityBackgroundStyle(colors, options) {
+  return {
+    background: colorIdentityGradient(colors, options),
+  };
+}
+
 export function rarityColor(rarity) {
   const key = String(rarity || "unknown").toLowerCase();
   return RARITY_COLORS[key] || RARITY_COLORS.unknown;

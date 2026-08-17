@@ -8,6 +8,7 @@ from api.services.reports_service import (
     FOIL_FILTERS,
     ReportsError,
     _apply_filters,
+    _load_enriched_prints,
     _load_enriched_report_cards,
     _resolve_set_codes,
 )
@@ -16,9 +17,11 @@ from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sq
 from util.card_metadata import (
     DEFAULT_COLLECTION_COLOR_MODE,
     card_matches_collection_cmc_filter,
+    card_matches_collection_color_filter,
     card_matches_collection_price_filter,
     card_matches_collection_rarity_filter,
     card_matches_collection_stat_filter,
+    parse_card_colors,
     parse_collection_color_mode,
 )
 from util.set_catalog import load_sets_catalog
@@ -86,6 +89,497 @@ def _normalize_foil_filter(foil_filter: str) -> str:
     if normalized not in FOIL_FILTERS:
         raise ReportsError("Invalid foil filter")
     return normalized
+
+
+def _has_cards_fts(conn: sqlite3.Connection) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards_fts' LIMIT 1"
+        ).fetchone()
+    )
+
+
+def _fts_match_query(term: str, *, column: str | None = None) -> str:
+    """Build an FTS5 prefix query from a free-text search term."""
+    tokens = re.findall(r"[A-Za-z0-9]+", str(term or ""))
+    if not tokens:
+        return ""
+    if column:
+        return " AND ".join(f"{column}:{token}*" for token in tokens)
+    return " AND ".join(f"{token}*" for token in tokens)
+
+
+def _cheapest_market_value(
+    market_value,
+    market_value_foil,
+    market_value_etched,
+    *,
+    foil_filter: str = "all",
+) -> float | None:
+    values: list[float] = []
+    normalized = (foil_filter or "all").strip().lower()
+
+    def _add(raw):
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return
+        if value > 0:
+            values.append(value)
+
+    if normalized in {"foil", "1"}:
+        _add(market_value_foil)
+    elif normalized in {"etched", "2"}:
+        _add(market_value_etched)
+    elif normalized in {"nonfoil", "0"}:
+        _add(market_value)
+    else:
+        _add(market_value)
+        _add(market_value_foil)
+        _add(market_value_etched)
+    return min(values) if values else None
+
+
+def _print_matches_foil_flags(row: sqlite3.Row, foil_filter: str) -> bool:
+    normalized = (foil_filter or "all").strip().lower()
+    if normalized in {"all", ""}:
+        return True
+    if normalized in {"foil", "1"}:
+        return bool(row["has_foil"])
+    if normalized in {"etched", "2"}:
+        return bool(row["has_etched"])
+    if normalized in {"nonfoil", "0"}:
+        return bool(row["has_nonfoil"]) if row["has_nonfoil"] is not None else True
+    return True
+
+
+def _build_catalog_search_clauses(
+    conn: sqlite3.Connection,
+    *,
+    name_search: str = "",
+    text_search: str = "",
+    creature_type_search: str = "",
+    keyword_search: str = "",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    role_filters: list[str] | None = None,
+    owned_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    foil_filter: str = "all",
+) -> tuple[list[str], list, list[str], str | None]:
+    """Shared WHERE/JOIN builder for catalog-wide print search."""
+    clauses = [
+        exclude_alchemy_sql("c.collector_number"),
+        exclude_alchemy_art_style_sql("c.art_style"),
+    ]
+    params: list = []
+    joins: list[str] = []
+    fts_query: str | None = None
+
+    name_term = name_search.strip()
+    if name_term:
+        fts_query = (
+            _fts_match_query(name_term, column="name") if _has_cards_fts(conn) else ""
+        )
+        if fts_query:
+            clauses.append(
+                "c.rowid IN (SELECT rowid FROM cards_fts WHERE cards_fts MATCH ?)"
+            )
+            params.append(fts_query)
+        else:
+            clauses.append("c.name LIKE ? COLLATE NOCASE")
+            params.append(f"%{name_term}%")
+
+    text_term = text_search.strip()
+    if text_term:
+        text_fts = (
+            _fts_match_query(text_term, column="oracle_text")
+            if _has_cards_fts(conn)
+            else ""
+        )
+        if text_fts:
+            clauses.append(
+                "c.rowid IN (SELECT rowid FROM cards_fts WHERE cards_fts MATCH ?)"
+            )
+            params.append(text_fts)
+        else:
+            clauses.append("c.oracle_text LIKE ? COLLATE NOCASE")
+            params.append(f"%{text_term}%")
+
+    creature_term = creature_type_search.strip()
+    if creature_term:
+        clauses.append("c.type_line LIKE ? COLLATE NOCASE")
+        params.append(f"%{creature_term}%")
+
+    for keyword in parse_keyword_search_terms(keyword_search):
+        clauses.append("c.oracle_text LIKE ? COLLATE NOCASE")
+        params.append(f"%{keyword}%")
+
+    normalized_type = (type_filter or "all").strip().lower()
+    if normalized_type and normalized_type != "all":
+        clauses.append("LOWER(COALESCE(c.card_type, '')) = ?")
+        params.append(normalized_type)
+
+    colors = list(color_filters or [])
+    if colors:
+        use_identity = parse_collection_color_mode(color_mode) == "exact"
+        color_parts: list[str] = []
+        for color in colors:
+            if color == "C":
+                if use_identity:
+                    color_parts.append(
+                        "("
+                        "c.color_identity IS NULL OR TRIM(c.color_identity) = ''"
+                        " OR c.color_identity = '[]'"
+                        " OR ("
+                        "(c.color_identity IS NULL OR TRIM(c.color_identity) = '')"
+                        " AND (c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
+                        ")"
+                        ")"
+                    )
+                else:
+                    color_parts.append(
+                        "(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
+                    )
+            elif use_identity:
+                color_parts.append("(c.color_identity LIKE ? OR c.colors LIKE ?)")
+                params.append(f'%"{color}"%')
+                params.append(f'%"{color}"%')
+            else:
+                color_parts.append("c.colors LIKE ?")
+                params.append(f'%"{color}"%')
+        clauses.append("(" + " OR ".join(color_parts) + ")")
+
+    roles = list(role_filters or [])
+    if roles:
+        joins.append("JOIN card_name_roles r ON r.name = c.name COLLATE NOCASE")
+        role_parts = []
+        for role in roles:
+            role_parts.append("r.roles LIKE ?")
+            params.append(f'%"{role}"%')
+        clauses.append("(" + " OR ".join(role_parts) + ")")
+
+    if (owned_filter or "").strip().lower() == "owned":
+        clauses.append(
+            _owned_print_exists_sql(
+                "c",
+                include_instances=_has_card_instances_table(conn),
+            )
+        )
+
+    storage = [slug for slug in (storage_filters or []) if slug]
+    if storage:
+        placeholders = ", ".join("?" for _ in storage)
+        clauses.append(
+            f"""EXISTS (
+                SELECT 1 FROM card_instances ci
+                WHERE ci.set_code = c.set_code
+                  AND CAST(ci.collector_number AS TEXT) = CAST(c.collector_number AS TEXT)
+                  AND ci.location_slug IN ({placeholders})
+            )"""
+        )
+        params.extend(storage)
+
+    normalized_rarity = (rarity_filter or "all").strip().lower()
+    if normalized_rarity and normalized_rarity != "all":
+        clauses.append("LOWER(COALESCE(c.rarity, '')) = ?")
+        params.append(normalized_rarity)
+
+    if cmc_min is not None:
+        clauses.append("c.cmc IS NOT NULL AND c.cmc >= ?")
+        params.append(float(cmc_min))
+    if cmc_max is not None:
+        clauses.append("c.cmc IS NOT NULL AND c.cmc <= ?")
+        params.append(float(cmc_max))
+
+    if power_min is not None:
+        clauses.append(
+            "c.power IS NOT NULL AND TRIM(c.power) != '' "
+            "AND CAST(c.power AS REAL) >= ?"
+        )
+        params.append(float(power_min))
+    if toughness_min is not None:
+        clauses.append(
+            "c.toughness IS NOT NULL AND TRIM(c.toughness) != '' "
+            "AND CAST(c.toughness AS REAL) >= ?"
+        )
+        params.append(float(toughness_min))
+
+    normalized_foil = (foil_filter or "all").strip().lower()
+    if normalized_foil in {"foil", "1"}:
+        clauses.append("c.has_foil = 1")
+    elif normalized_foil in {"etched", "2"}:
+        clauses.append("c.has_etched = 1")
+    elif normalized_foil in {"nonfoil", "0"}:
+        clauses.append("(c.has_nonfoil IS NULL OR c.has_nonfoil = 1)")
+
+    return clauses, params, joins, fts_query
+
+
+def _query_matching_prints(
+    conn: sqlite3.Connection,
+    *,
+    name_search: str = "",
+    text_search: str = "",
+    creature_type_search: str = "",
+    keyword_search: str = "",
+    type_filter: str = "all",
+    color_filters: list[str] | None = None,
+    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
+    color_identity: list[str] | None = None,
+    rarity_filter: str = "all",
+    cmc_min: float | None = None,
+    cmc_max: float | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    power_min: float | None = None,
+    toughness_min: float | None = None,
+    role_filters: list[str] | None = None,
+    owned_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    foil_filter: str = "all",
+) -> list[dict]:
+    """Return lightweight print rows for catalog-wide search ranking (no set enrichment)."""
+    clauses, params, joins, _fts = _build_catalog_search_clauses(
+        conn,
+        name_search=name_search,
+        text_search=text_search,
+        creature_type_search=creature_type_search,
+        keyword_search=keyword_search,
+        type_filter=type_filter,
+        color_filters=color_filters,
+        color_mode=color_mode,
+        rarity_filter=rarity_filter,
+        cmc_min=cmc_min,
+        cmc_max=cmc_max,
+        power_min=power_min,
+        toughness_min=toughness_min,
+        role_filters=role_filters,
+        owned_filter=owned_filter,
+        storage_filters=storage_filters,
+        foil_filter=foil_filter,
+    )
+    join_sql = " ".join(joins)
+    has_sets = bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sets' LIMIT 1"
+        ).fetchone()
+    )
+    released_select = "s.released_at" if has_sets else "NULL AS released_at"
+    sets_join = "LEFT JOIN sets s ON s.set_code = c.set_code" if has_sets else ""
+    rows = conn.execute(
+        f"""
+        SELECT
+            c.set_code,
+            c.collector_number,
+            c.name,
+            c.art_style,
+            c.cmc,
+            c.power,
+            c.toughness,
+            c.rarity,
+            c.colors,
+            c.color_identity,
+            c.oracle_text,
+            c.type_line,
+            c.card_type,
+            c.market_value,
+            c.market_value_foil,
+            c.market_value_etched,
+            c.has_nonfoil,
+            c.has_foil,
+            c.has_etched,
+            {released_select}
+        FROM cards c
+        {sets_join}
+        {join_sql}
+        WHERE {" AND ".join(clauses)}
+        """,
+        params,
+    ).fetchall()
+
+    keyword_terms = parse_keyword_search_terms(keyword_search)
+    parsed_color_mode = parse_collection_color_mode(color_mode)
+    selected_colors = list(color_filters or [])
+    light_cards: list[dict] = []
+    for row in rows:
+        if not _print_matches_foil_flags(row, foil_filter):
+            continue
+        if keyword_terms:
+            oracle = (row["oracle_text"] or "").lower()
+            if not all(
+                re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", oracle)
+                for term in keyword_terms
+            ):
+                continue
+
+        card = {
+            "setCode": row["set_code"],
+            "collectorNumber": str(row["collector_number"]),
+            "name": row["name"],
+            "artStyle": row["art_style"] or "",
+            "cmc": row["cmc"],
+            "power": row["power"],
+            "toughness": row["toughness"],
+            "rarity": (str(row["rarity"] or "").strip().lower() or None),
+            "colors": parse_card_colors(row["colors"]),
+            "colorIdentity": parse_card_colors(row["color_identity"]),
+            "oracleText": row["oracle_text"] or "",
+            "typeLine": row["type_line"] or "",
+            "cardType": row["card_type"] or "",
+            "marketValue": row["market_value"],
+            "marketValueFoil": row["market_value_foil"],
+            "marketValueEtched": row["market_value_etched"],
+            "hasNonfoil": bool(row["has_nonfoil"]) if row["has_nonfoil"] is not None else True,
+            "hasFoil": bool(row["has_foil"]),
+            "hasEtched": bool(row["has_etched"]),
+            "releasedAt": row["released_at"] or "",
+            "finish": 0,
+            "foil": 0,
+        }
+        if selected_colors and not card_matches_collection_color_filter(
+            card,
+            selected_colors,
+            color_mode=parsed_color_mode,
+        ):
+            continue
+        if color_identity is not None and not _card_matches_allowed_color_identity(
+            card,
+            color_identity,
+        ):
+            continue
+
+        current_value = _cheapest_market_value(
+            row["market_value"],
+            row["market_value_foil"],
+            row["market_value_etched"],
+            foil_filter=foil_filter,
+        )
+        card["currentValue"] = current_value
+        if not card_matches_collection_price_filter(
+            card,
+            price_min=price_min,
+            price_max=price_max,
+        ):
+            continue
+        light_cards.append(card)
+    return light_cards
+
+
+def _pick_enriched_finish_for_print(
+    enriched_rows: list[dict],
+    *,
+    set_code: str,
+    collector_number: str,
+    foil_filter: str = "all",
+) -> dict | None:
+    matches = [
+        card for card in enriched_rows
+        if str(card.get("setCode") or "").upper() == str(set_code).upper()
+        and str(card.get("collectorNumber") or "") == str(collector_number)
+    ]
+    if not matches:
+        return None
+    normalized = (foil_filter or "all").strip().lower()
+    if normalized in {"foil", "1"}:
+        matches = [card for card in matches if int(card.get("finish") or 0) == 1]
+    elif normalized in {"etched", "2"}:
+        matches = [card for card in matches if int(card.get("finish") or 0) == 2]
+    elif normalized in {"nonfoil", "0"}:
+        matches = [card for card in matches if int(card.get("finish") or 0) == 0]
+    if not matches:
+        return None
+    return min(matches, key=_current_value_sort_key)
+
+
+def _search_cards_print_first(
+    conn: sqlite3.Connection,
+    *,
+    name_term: str,
+    text_term: str,
+    creature_type_term: str,
+    keyword_term: str,
+    owned_filter: str,
+    foil_filter: str,
+    sort: str,
+    sort_dir: str,
+    page: int,
+    page_size: int,
+    filter_kwargs: dict,
+) -> dict:
+    light_pool = _query_matching_prints(
+        conn,
+        name_search=name_term,
+        text_search=text_term,
+        creature_type_search=creature_type_term,
+        keyword_search=keyword_term,
+        owned_filter=owned_filter,
+        foil_filter=foil_filter,
+        **filter_kwargs,
+    )
+    release_dates = {
+        str(card.get("setCode") or "").upper(): card.get("releasedAt") or ""
+        for card in light_pool
+    }
+    # Fill any gaps from catalog for ranking consistency.
+    catalog_dates = _load_set_release_dates(conn)
+    for set_code, released_at in catalog_dates.items():
+        release_dates.setdefault(set_code, released_at)
+
+    ranked = _rank_search_pool(
+        light_pool,
+        sort=sort,
+        sort_dir=sort_dir,
+        release_dates=release_dates,
+    )
+    # Rank uses _newest_first_key which reads release_dates; light cards also have releasedAt.
+    unique_ranked = _dedupe_ranked_by_name(ranked)
+    total = len(unique_ranked)
+    safe_page_size = max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE))
+    safe_page = max(1, page)
+    start = (safe_page - 1) * safe_page_size
+    page_slice = unique_ranked[start : start + safe_page_size]
+
+    prints = [
+        (card.get("setCode") or "", str(card.get("collectorNumber") or ""))
+        for card in page_slice
+    ]
+    enriched = _load_enriched_prints(conn, prints)
+    page_cards = []
+    for light in page_slice:
+        picked = _pick_enriched_finish_for_print(
+            enriched,
+            set_code=light.get("setCode") or "",
+            collector_number=str(light.get("collectorNumber") or ""),
+            foil_filter=foil_filter,
+        )
+        page_cards.append(picked or light)
+
+    variant_counts = _catalog_variant_counts_for_names(
+        conn,
+        [card.get("name") or "" for card in page_cards],
+    )
+    page_cards = [
+        {
+            **card,
+            "variantCount": int(variant_counts.get(card.get("name") or "", 1)),
+        }
+        for card in page_cards
+    ]
+    total_pages = max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1
+    return {
+        "page": safe_page,
+        "pageSize": safe_page_size,
+        "totalMatches": total,
+        "totalPages": total_pages,
+        "cards": page_cards,
+    }
 
 
 def _load_set_release_dates(conn: sqlite3.Connection) -> dict[str, str]:
@@ -1241,6 +1735,36 @@ def search_cards(
         "storage_filters": storage_filters or [],
         "role_filters": selected_roles,
     }
+    normalized_set = (set_code or "All").strip()
+    if normalized_set.upper() == "ALL":
+        result = _search_cards_print_first(
+            conn,
+            name_term=name_term,
+            text_term=text_term,
+            creature_type_term=creature_type_term,
+            keyword_term=keyword_term,
+            owned_filter=normalized_owned,
+            foil_filter=normalized_foil,
+            sort=normalized_sort,
+            sort_dir=normalized_sort_dir,
+            page=page,
+            page_size=page_size,
+            filter_kwargs=filter_kwargs,
+        )
+        return {
+            "search": name_term,
+            "textSearch": text_term,
+            "creatureTypeSearch": creature_type_term,
+            "keywordSearch": keyword_term,
+            "roleFilters": selected_roles,
+            "setCode": set_code,
+            "ownedFilter": normalized_owned,
+            "foilFilter": normalized_foil,
+            "sort": normalized_sort,
+            "dir": normalized_sort_dir,
+            **result,
+        }
+
     pool = _filtered_pool(
         conn,
         set_code=set_code,

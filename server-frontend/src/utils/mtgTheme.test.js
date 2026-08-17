@@ -4,9 +4,12 @@ import { POWER_COMPONENTS } from "./deckPower";
 import {
   CARD_TYPE_COLORS,
   MANA_COLOR_HEX,
+  MANA_COLOR_SOFT,
   RARITY_COLORS,
   ROLE_CHART_COLORS,
   TYPE_CHART_COLORS,
+  colorIdentityBackgroundStyle,
+  colorIdentityGradient,
   rarityColor,
   typeChartColorIndex,
 } from "./mtgTheme";
@@ -37,5 +40,15 @@ describe("mtgTheme", () => {
 
   it("keeps role chart colors aligned with power components", () => {
     expect(ROLE_CHART_COLORS).toHaveLength(POWER_COMPONENTS.length);
+  });
+
+  it("builds soft identity gradients for mono, dual, and empty", () => {
+    expect(colorIdentityGradient([])).toContain(MANA_COLOR_SOFT.C);
+    expect(colorIdentityGradient(["U"])).toContain(MANA_COLOR_SOFT.U);
+    expect(colorIdentityGradient(["U"])).toContain("#ffffff");
+    expect(colorIdentityGradient(["G", "W"])).toMatch(/linear-gradient/);
+    expect(colorIdentityGradient(["G", "W"])).toContain(MANA_COLOR_SOFT.W);
+    expect(colorIdentityGradient(["G", "W"])).toContain(MANA_COLOR_SOFT.G);
+    expect(colorIdentityBackgroundStyle(["R"]).background).toContain(MANA_COLOR_SOFT.R);
   });
 });

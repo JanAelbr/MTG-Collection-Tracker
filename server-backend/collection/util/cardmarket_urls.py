@@ -205,6 +205,11 @@ def _should_apply_scryfall_nonfoil_url(
     scryfall: str | None,
     guide: dict[int, dict],
 ) -> bool:
+    """Prefer Scryfall's nonfoil product whenever it differs from the stored URL.
+
+    Scryfall must resolve to a product with nonfoil guide prices so foil-only
+    purchase URIs do not overwrite the nonfoil column.
+    """
     if not scryfall:
         return False
     new_id = _scryfall_nonfoil_product_id(scryfall, guide)
@@ -212,21 +217,7 @@ def _should_apply_scryfall_nonfoil_url(
         return False
     if not existing:
         return True
-    existing_id = parse_id_product(existing)
-    if existing_id == new_id:
-        return False
-    new_trend = _guide_primary_trend(guide.get(new_id))
-    existing_trend = _guide_primary_trend(guide.get(existing_id or -1))
-    if existing_id is not None and _is_plausible_nonfoil_product(existing_id, guide):
-        if new_trend and existing_trend and new_trend > max(
-            PLAUSIBLE_NONFOIL_TREND_CAP,
-            existing_trend * 3,
-        ):
-            return True
-        return False
-    if _is_plausible_nonfoil_product(new_id, guide):
-        return True
-    return False
+    return parse_id_product(existing) != new_id
 
 
 def _should_apply_scryfall_foil_url(
@@ -717,6 +708,13 @@ def _needs_nonfoil_url_repair(
     guide: dict[int, dict],
     neighbor_points: list[tuple[int, int]] | None = None,
 ) -> bool:
+    """Decide whether a nonfoil-only print needs a structural URL repair.
+
+    Price outliers vs neighbors are not a repair trigger: chase cards among
+    bulk correctly look expensive. ``neighbor_points`` is accepted for call-site
+    compatibility; gap-fill interpolation uses them after this returns True.
+    """
+    _ = neighbor_points
     if not has_nonfoil or has_foil:
         return False
     nonfoil_url = coerce_cardmarket_url(cardmarket_url)
@@ -725,12 +723,6 @@ def _needs_nonfoil_url_repair(
         product_id = parse_id_product(nonfoil_url)
         entry = guide.get(product_id) if product_id is not None else None
         if entry and _entry_has_nonfoil_prices(entry):
-            if neighbor_points and _linked_nonfoil_trend_is_outlier(
-                nonfoil_url,
-                neighbor_points,
-                guide,
-            ):
-                return True
             return False
     if not nonfoil_url and not foil_url:
         return True

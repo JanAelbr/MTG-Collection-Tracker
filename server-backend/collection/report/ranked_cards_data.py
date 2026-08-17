@@ -6,6 +6,7 @@ from lib.config import DB_PATH
 from report.report_queries import (
     ALL_CARDS_QUERY,
     ORPHAN_PURCHASES_QUERY,
+    PRINTS_CARDS_QUERY,
     SET_CARDS_QUERY,
     SET_ORPHAN_PURCHASES_QUERY,
 )
@@ -177,6 +178,43 @@ def load_ranked_cards_data_for_set(set_code: str) -> pd.DataFrame:
         orphan_df = pd.read_sql_query(SET_ORPHAN_PURCHASES_QUERY, conn, params=(normalized,))
     if not orphan_df.empty:
         cards_df = pd.concat([cards_df, orphan_df], ignore_index=True)
+    return expand_cards_for_ranking(cards_df)
+
+
+def load_ranked_cards_data_for_prints(
+    conn: sqlite3.Connection,
+    prints: list[tuple[str, str]],
+) -> pd.DataFrame:
+    """Load finish-expanded rows for an explicit list of (set_code, collector_number)."""
+    cleaned: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for set_code, collector_number in prints or []:
+        key = (str(set_code or "").strip().upper(), str(collector_number or "").strip())
+        if not key[0] or not key[1] or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(key)
+    if not cleaned:
+        return pd.DataFrame()
+
+    ensure_card_columns(conn)
+    conn.execute("DROP TABLE IF EXISTS _search_print_keys")
+    conn.execute(
+        """
+        CREATE TEMP TABLE _search_print_keys (
+            set_code TEXT NOT NULL,
+            collector_number TEXT NOT NULL
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO _search_print_keys (set_code, collector_number) VALUES (?, ?)",
+        cleaned,
+    )
+    try:
+        cards_df = pd.read_sql_query(PRINTS_CARDS_QUERY, conn)
+    finally:
+        conn.execute("DROP TABLE IF EXISTS _search_print_keys")
     return expand_cards_for_ranking(cards_df)
 
 

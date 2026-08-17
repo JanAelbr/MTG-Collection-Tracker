@@ -23,6 +23,7 @@ const collectionSubnav = [
 
 const printSubnav = [
   { to: "/print/cards", label: "Cards" },
+  { to: "/print/prices", label: "Prices" },
   { to: "/print/separators", label: "Separators" },
 ];
 

@@ -8,9 +8,11 @@ import { confirmDialog } from "../composables/confirmDialog";
 import {
   buildDeckGalleryItems,
   deckCardImageUri,
+  deckColorIdentityFromPages,
 } from "../utils/deckBrowse";
 import { cardDisplayName } from "../utils/finishes";
 import { formatDeckOwned, formatEuro } from "../utils/format";
+import { colorIdentityBackgroundStyle } from "../utils/mtgTheme";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 
 const props = defineProps({
@@ -84,6 +86,10 @@ function commanderSetCode(deck) {
 
 function deckDisplayName(deck) {
   return String(deck?.name || deck?.label || "").trim() || "Deck";
+}
+
+function deckIdentityStyle(deck) {
+  return colorIdentityBackgroundStyle(deckColorIdentityFromPages(deck, props.pages));
 }
 
 function deckValueLabel(deck) {
@@ -258,16 +264,14 @@ function scrollActiveIntoView(behavior = "smooth") {
     if (!active) {
       return;
     }
-    const sticky = root.querySelector(".deck-gallery-new-wrap");
-    const stickyWidth = sticky ? sticky.getBoundingClientRect().width : 0;
     const pad = 8;
-    const visibleLeft = root.scrollLeft + stickyWidth + pad;
+    const visibleLeft = root.scrollLeft + pad;
     const visibleRight = root.scrollLeft + root.clientWidth - pad;
     const cardLeft = active.offsetLeft;
     const cardRight = cardLeft + active.offsetWidth;
     let nextScroll = root.scrollLeft;
     if (cardLeft < visibleLeft) {
-      nextScroll = Math.max(0, cardLeft - stickyWidth - pad);
+      nextScroll = Math.max(0, cardLeft - pad);
     } else if (cardRight > visibleRight) {
       nextScroll = Math.max(0, cardRight - root.clientWidth + pad);
     } else {
@@ -309,19 +313,17 @@ onUnmounted(() => {
 
 <template>
   <div ref="galleryRef" class="deck-gallery" aria-label="All decks">
-    <div class="deck-gallery-new-wrap">
-      <button
-        type="button"
-        class="deck-gallery-card deck-gallery-card--add"
-        aria-label="New deck"
-        @click="onCreateDeck"
-      >
-        <div class="deck-gallery-card-main">
-          <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
-          <span class="deck-gallery-name">New deck</span>
-        </div>
-      </button>
-    </div>
+    <button
+      type="button"
+      class="deck-gallery-card deck-gallery-card--add"
+      aria-label="New deck"
+      @click="onCreateDeck"
+    >
+      <div class="deck-gallery-card-main">
+        <span class="deck-gallery-add-icon" aria-hidden="true">+</span>
+        <span class="deck-gallery-name">New deck</span>
+      </div>
+    </button>
 
     <template v-for="item in galleryItems" :key="item.key">
       <div
@@ -345,6 +347,7 @@ onUnmounted(() => {
           'deck-gallery-card--renaming': isActiveDeck(item.deck) && renaming,
           'deck-gallery-card--favorite': item.deck.favorite,
         }"
+        :style="deckIdentityStyle(item.deck)"
         role="button"
         tabindex="0"
         :aria-label="`Select ${deckDisplayName(item.deck)}`"

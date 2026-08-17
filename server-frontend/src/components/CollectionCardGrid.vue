@@ -34,6 +34,10 @@ const props = defineProps({
   priceStrategy: { type: String, default: "" },
   /** Hover overlay shows zoom only (no copy/add controls). */
   zoomOnly: { type: Boolean, default: false },
+  /** Caption action text when picking a print (used for aria; shown unless an icon is set). */
+  pickActionLabel: { type: String, default: "" },
+  /** Visible caption glyph instead of the action label (e.g. "+"). */
+  pickActionIcon: { type: String, default: "" },
 });
 
 const emit = defineEmits([
@@ -281,6 +285,7 @@ function onDrop(index, event) {
         class="collection-card-grid-select"
       >
         <button
+          v-if="!(pickPrints && zoomOnly)"
           type="button"
           class="collection-card-grid-select-hit"
           :aria-label="pickPrints ? `Select ${card.name}` : `Browse ${card.name}`"
@@ -306,6 +311,25 @@ function onDrop(index, event) {
             <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
           </div>
         </button>
+        <div v-else class="collection-card-grid-image-wrap">
+          <span
+            v-if="isCardSelected(card)"
+            class="collection-card-grid-browse-selected-badge"
+          >
+            Selected
+          </span>
+          <CardInteractiveImage
+            v-if="card.imageUri"
+            :src="card.imageUri"
+            :alt="card.name"
+            :card="card"
+            :show-details="false"
+            :show-copy-controls="false"
+            img-class="collection-card-grid-image"
+            @ownership-changed="emit('ownership-changed')"
+          />
+          <div v-else class="collection-card-grid-placeholder">{{ card.name }}</div>
+        </div>
         <span
           class="collection-card-grid-meta"
           :class="{ 'collection-card-grid-meta--browse-cycle': canCycleVariants(card) }"
@@ -319,7 +343,43 @@ function onDrop(index, event) {
           >
             ‹
           </button>
-          <span class="collection-card-grid-meta-text">
+          <button
+            v-if="pickPrints"
+            type="button"
+            class="collection-card-grid-pick-action"
+            :aria-label="pickActionLabel ? `${pickActionLabel}: ${card.name}` : `Select ${card.name}`"
+            @click="emit('pick-card', card)"
+          >
+            <span class="collection-card-grid-meta-text">
+              <span class="collection-card-grid-name-row collection-card-grid-browse-name-row">
+                <CardSetSymbol
+                  :set-code="card.setCode"
+                  :family-root="card.familyRoot || ''"
+                  :rarity="card.rarity || ''"
+                />
+                <span class="collection-card-grid-name">
+                  {{ card.name }}
+                </span>
+              </span>
+              <span class="collection-card-grid-value">
+                <PriceStrategyValue :card="card" :price-strategy="priceStrategy" />
+                <span
+                  v-if="listingLabel(card)"
+                  class="collection-card-grid-listing"
+                  title="Asking price (for sale)"
+                >· {{ listingLabel(card) }}</span>
+              </span>
+              <span
+                v-if="pickActionIcon"
+                class="collection-card-grid-pick-icon"
+                aria-hidden="true"
+              >{{ pickActionIcon }}</span>
+              <span v-else-if="pickActionLabel" class="collection-card-grid-pick-hint">
+                {{ pickActionLabel }}
+              </span>
+            </span>
+          </button>
+          <span v-else class="collection-card-grid-meta-text">
             <span class="collection-card-grid-name-row collection-card-grid-browse-name-row">
               <CardSetSymbol
                 :set-code="card.setCode"
@@ -329,7 +389,7 @@ function onDrop(index, event) {
               <button
                 type="button"
                 class="collection-card-grid-name collection-card-grid-name-button"
-                @click="pickPrints ? emit('pick-card', card) : emit('browse-name', card.name)"
+                @click="emit('browse-name', card.name)"
               >
                 {{ card.name }}
               </button>

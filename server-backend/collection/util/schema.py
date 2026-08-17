@@ -13,6 +13,7 @@ from util.db_migrate import (
     ensure_card_columns,
     ensure_card_detail_metadata,
     ensure_card_indexes,
+    ensure_cards_fts,
     ensure_purchase_unique_index,
     ensure_set_code_aliases,
     mark_complete_catalog_sets,
@@ -130,6 +131,7 @@ def ensure_database_schema(conn: sqlite3.Connection) -> None:
         backfill_basic_land_flags(conn)
         mark_complete_catalog_sets(conn)
         ensure_card_indexes(conn)
+        ensure_cards_fts(conn)
         ensure_purchase_unique_index(conn)
         ensure_set_code_aliases(conn)
         ensure_app_tables(conn)
