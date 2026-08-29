@@ -33,6 +33,7 @@ EXPORT_SETTING_KEYS = frozenset({
     "favorite_art_styles",
     "page_size",
     "collection_card_scale",
+    "collection_price_tile_tint",
     "set_sort_mode",
     "default_storage_location",
 })
@@ -277,6 +278,32 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
         ).fetchall()
     ]
 
+    ensure_storage_tables(conn)
+    storage_breakdown_snapshots = []
+    snapshot_table = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'storage_breakdown_snapshots'
+        """
+    ).fetchone()
+    if snapshot_table:
+        storage_breakdown_snapshots = [
+            {
+                "snapshotDate": row["snapshot_date"],
+                "createdAt": row["created_at"],
+                "note": row["note"] or "",
+                "priceStrategy": row["price_strategy"] or "",
+                "payload": json.loads(row["payload_json"]),
+            }
+            for row in conn.execute(
+                """
+                SELECT snapshot_date, created_at, note, price_strategy, payload_json
+                FROM storage_breakdown_snapshots
+                ORDER BY snapshot_date, snapshot_id
+                """
+            ).fetchall()
+        ]
+
     settings = {
         row["key"]: row["value"]
         for row in conn.execute(
@@ -294,6 +321,7 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
         "storageLocations": storage_locations,
         "cardInstances": card_instances,
         "saleListings": sale_listings,
+        "storageBreakdownSnapshots": storage_breakdown_snapshots,
         "settings": settings,
     }
 
@@ -310,6 +338,7 @@ def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
             "cardInstances": len(collection.get("cardInstances") or []),
             "storageLocations": len(collection.get("storageLocations") or []),
             "saleListings": len(collection.get("saleListings") or []),
+            "storageBreakdownSnapshots": len(collection.get("storageBreakdownSnapshots") or []),
             "artStyleSets": len(art_style_sets),
             "setsReferenced": sets_referenced,
         },
@@ -505,6 +534,11 @@ def import_collection(
     _import_purchases(conn, collection.get("purchases") or [], merge=normalized_mode == "merge")
     _import_card_instances(conn, collection.get("cardInstances") or [], merge=normalized_mode == "merge")
     _import_sale_listings(conn, collection.get("saleListings") or [], merge=normalized_mode == "merge")
+    _import_breakdown_snapshots(
+        conn,
+        collection.get("storageBreakdownSnapshots") or [],
+        merge=normalized_mode == "merge",
+    )
     _import_settings(conn, collection.get("settings") or {}, merge=normalized_mode == "merge")
     _import_art_styles(conn, art_styles, merge=normalized_mode == "merge")
     seed_storage_locations(conn)
@@ -533,6 +567,8 @@ def import_collection_zip(conn: sqlite3.Connection, data: bytes, *, mode: str) -
 
 def _clear_collection_data(conn: sqlite3.Connection) -> None:
     ensure_sale_listings_table(conn)
+    ensure_storage_tables(conn)
+    conn.execute("DELETE FROM storage_breakdown_snapshots")
     conn.execute("DELETE FROM sale_listings")
     conn.execute("DELETE FROM card_instances")
     conn.execute("DELETE FROM deck_cards")
@@ -832,6 +868,39 @@ def _import_sale_listings(conn: sqlite3.Connection, rows: list[dict], *, merge: 
                 listed_at,
                 sold_at,
                 int(row.get("sortOrder") or 0),
+            ),
+        )
+
+
+def _import_breakdown_snapshots(conn: sqlite3.Connection, rows: list[dict], *, merge: bool) -> None:
+    ensure_storage_tables(conn)
+    if not merge:
+        conn.execute("DELETE FROM storage_breakdown_snapshots")
+    for row in rows or []:
+        snapshot_date = str(row.get("snapshotDate") or "").strip()
+        payload = row.get("payload")
+        if not snapshot_date or not isinstance(payload, dict):
+            continue
+        created_at = str(row.get("createdAt") or "").strip() or f"{snapshot_date}T00:00:00Z"
+        note = str(row.get("note") or "").strip() or None
+        price_strategy = str(row.get("priceStrategy") or "").strip() or None
+        conn.execute(
+            """
+            INSERT INTO storage_breakdown_snapshots (
+                snapshot_date, created_at, note, price_strategy, payload_json
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(snapshot_date) DO UPDATE SET
+                created_at = excluded.created_at,
+                note = excluded.note,
+                price_strategy = excluded.price_strategy,
+                payload_json = excluded.payload_json
+            """,
+            (
+                snapshot_date,
+                created_at,
+                note,
+                price_strategy,
+                json.dumps(payload),
             ),
         )
 

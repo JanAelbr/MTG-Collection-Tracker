@@ -1,5 +1,11 @@
 import { COLLECTION_RARITY_LABELS, COLLECTION_RARITY_ORDER } from "./collectionRarities";
 import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "./collectionTypes";
+import {
+  catalogValueGroupKeyForCard,
+  UNPRICED_KEY,
+  VALUE_BANDS,
+  VALUE_GROUP_LABELS,
+} from "./catalogGroups";
 import { colorCombinationLabel, DECK_COLOR_ORDER } from "./deckCards";
 import { formatCardRoleLabel } from "./deckPower";
 import { formatEuro } from "./format";
@@ -13,6 +19,7 @@ export const SEARCH_GROUP_BY_OPTIONS = [
   { value: "colorIdentity", label: "Color identity" },
   { value: "rarity", label: "Rarity" },
   { value: "cmc", label: "CMC" },
+  { value: "value", label: "Value" },
   { value: "set", label: "Set" },
 ];
 
@@ -45,6 +52,9 @@ function normalizeGroupByField(value) {
   }
   if (lower === "manavalue" || lower === "mana_value" || lower === "mv") {
     return "cmc";
+  }
+  if (lower === "price" || lower === "valuerange" || lower === "value_range") {
+    return "value";
   }
   if (GROUP_BY_FIELD_SET.has(raw)) {
     return raw;
@@ -249,6 +259,14 @@ function cmcGroupLabel(key) {
   return `CMC ${key}`;
 }
 
+function valueBandRank(key) {
+  if (key === UNPRICED_KEY) {
+    return VALUE_BANDS.length;
+  }
+  const index = VALUE_BANDS.findIndex((band) => band.key === key);
+  return index < 0 ? VALUE_BANDS.length : index;
+}
+
 function groupMeta(groupBy, card, setLabelFor) {
   switch (groupBy) {
     case "type": {
@@ -277,6 +295,10 @@ function groupMeta(groupBy, card, setLabelFor) {
     case "cmc": {
       const key = cmcGroupKey(card);
       return { key, label: cmcGroupLabel(key) };
+    }
+    case "value": {
+      const key = catalogValueGroupKeyForCard(card);
+      return { key, label: VALUE_GROUP_LABELS[key] || key };
     }
     case "set": {
       const key = setGroupKey(card);
@@ -335,6 +357,9 @@ function compareGroupKeys(groupBy, left, right) {
       }
     }
     return Number(left) - Number(right);
+  }
+  if (groupBy === "value") {
+    return valueBandRank(left) - valueBandRank(right);
   }
   if (
     (groupBy === "role" || groupBy === "subtype")

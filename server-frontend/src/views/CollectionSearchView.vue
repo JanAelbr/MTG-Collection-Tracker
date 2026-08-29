@@ -22,6 +22,7 @@ import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collecti
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 import { resolveSetIconUri } from "../utils/scryfall";
+import { attachCatalogGroupPricing } from "../utils/catalogGroups";
 import {
   collectGroupPaths,
   groupSearchCards,
@@ -81,7 +82,7 @@ const routeSyncReady = ref(false);
 const virtualGridRef = ref(null);
 const filterSidebarRef = ref(null);
 const { loading, run } = useAsyncLoad();
-const { collectionCardScale, settings: pricingSettings } = usePricingSettings();
+const { collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
 let searchRequestToken = 0;
 let detailFilterRouteTimer = null;
 
@@ -91,13 +92,23 @@ const totalMatches = computed(() => searchTotalMatches.value);
 const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAGE_SIZE)));
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
 const isGroupedResults = computed(() => searchGroupByLevels.value.length > 0);
+function enrichSearchGroups(groups) {
+  return (groups || []).map((group) => {
+    const priced = attachCatalogGroupPricing(group);
+    return {
+      ...priced,
+      groups: enrichSearchGroups(group.groups),
+    };
+  });
+}
+
 const searchResultGroups = computed(() => {
   if (!isGroupedResults.value) {
     return [];
   }
-  return groupSearchCards(accumulatedCards.value, searchGroupByLevels.value, {
+  return enrichSearchGroups(groupSearchCards(accumulatedCards.value, searchGroupByLevels.value, {
     setLabelFor: setLabel,
-  });
+  }));
 });
 const hasActiveSearch = computed(() => Boolean(
   searchQuery.value.trim()
@@ -983,6 +994,7 @@ watch(
     const prevCreatureType = creatureTypeQuery.value;
     const prevKeyword = keywordQuery.value;
     const prevRoles = roleFilters.value.join(",");
+    const prevOwned = ownedFilter.value;
     syncFiltersFromRoute();
     let cancelled = false;
     onCleanup(() => {
@@ -998,7 +1010,11 @@ watch(
       || creatureTypeQuery.value !== prevCreatureType
       || keywordQuery.value !== prevKeyword
       || roleFilters.value.join(",") !== prevRoles;
-    await loadResults({ autoSelectFirst: searchChanged });
+    const ownedChanged = ownedFilter.value !== prevOwned;
+    if (ownedChanged) {
+      closeArtExplorer();
+    }
+    await loadResults({ autoSelectFirst: searchChanged || ownedChanged });
     if (cancelled) {
       return;
     }
@@ -1294,6 +1310,7 @@ onMounted(async () => {
                         :cards="group.cards"
                         :card-scale="collectionCardScale"
                         :scrollable="isLargeSearchGroup(group)"
+                        :price-tile-tint="collectionPriceTileTint"
                         :show-unowned-badge="false"
                         :show-favorites="false"
                         browse-names
@@ -1312,6 +1329,7 @@ onMounted(async () => {
                   :show-unowned-badge="false"
                   :card-scale="collectionCardScale"
                   :has-more="hasMoreResults"
+                  :price-tile-tint="collectionPriceTileTint"
                   browse-names
                   :selected-name="selectedBrowseName"
                   @browse-name="browseCardName"

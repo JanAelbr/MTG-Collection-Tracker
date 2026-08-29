@@ -97,6 +97,7 @@ describe("storageScope", () => {
       "subtype",
     ]);
     expect(storageFiltersFromRoute({ query: { group: "cmc" } }).groupByLevels).toEqual(["cmc"]);
+    expect(storageFiltersFromRoute({ query: { group: "value" } }).groupByLevels).toEqual(["value"]);
     expect(storageFiltersFromRoute({ query: { group: "role" } }).groupByLevels).toEqual(["role"]);
     expect(storageFiltersFromRoute({ query: { group: "colorIdentity" } }).groupByLevels).toEqual([
       "colorIdentity",

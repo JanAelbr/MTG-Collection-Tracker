@@ -41,11 +41,15 @@ export async function savePricingSettings(patch) {
 export function usePricingSettings() {
   const pageSize = computed(() => settings.value?.pageSize ?? 25);
   const collectionCardScale = computed(() => settings.value?.collectionCardScale ?? 100);
+  const collectionPriceTileTint = computed(
+    () => Boolean(settings.value?.collectionPriceTileTint),
+  );
 
   return {
     settings,
     pageSize,
     collectionCardScale,
+    collectionPriceTileTint,
     fetchPricingSettings,
     savePricingSettings,
   };

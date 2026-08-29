@@ -4,13 +4,19 @@ import CollectionCardGrid from "./CollectionCardGrid.vue";
 import VirtualizedCollectionCardGrid from "./VirtualizedCollectionCardGrid.vue";
 
 const GROUP_VISIBLE_ROWS = 3;
-const BASE_COL_WIDTH = 118;
-const BASE_COL_GAP = 12;
-const BASE_ROW_GAP = 8;
-const GRID_PAD_X = 8;
+const BASE_COL_WIDTH = 207;
+const BASE_COL_GAP = 16;
+const TINT_COL_GAP = 8;
+const BASE_ROW_GAP = 12;
+const TINT_ROW_GAP = 8;
+const BASE_TILE_PAD = 6;
+const TINT_TILE_PAD = 8;
+const GRID_PAD_X = 16;
 const CARD_ASPECT_RATIO = 88 / 63;
-const CAPTION_MARGIN_TOP = 4;
-const CAPTION_HEIGHT_BASE = 40;
+const CAPTION_MARGIN_TOP = 2;
+const CAPTION_MARGIN_TOP_BROWSE = 8;
+const CAPTION_HEIGHT_BASE = 28;
+const CAPTION_HEIGHT_BROWSE = 36;
 
 const props = defineProps({
   cards: { type: Array, default: () => [] },
@@ -26,6 +32,7 @@ const props = defineProps({
   selectedKeys: { type: Object, default: null },
   showFavorites: { type: Boolean, default: true },
   zoomOnly: { type: Boolean, default: false },
+  priceTileTint: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -44,13 +51,22 @@ const scaleFactor = computed(() => Math.max(0.25, Number(props.cardScale) / 100 
 
 const gridMetrics = computed(() => {
   const scale = scaleFactor.value;
+  const tint = Boolean(props.priceTileTint);
   const minCol = BASE_COL_WIDTH * scale;
-  const colGap = BASE_COL_GAP * scale;
+  const colGap = (tint ? TINT_COL_GAP : BASE_COL_GAP) * scale;
+  const rowGap = (tint ? TINT_ROW_GAP : BASE_ROW_GAP) * scale;
+  const pad = (tint ? TINT_TILE_PAD : BASE_TILE_PAD) * scale;
   const usable = Math.max(minCol, containerWidth.value - GRID_PAD_X);
   const columns = Math.max(1, Math.floor((usable + colGap) / (minCol + colGap)));
   const colWidth = (usable - colGap * (columns - 1)) / columns;
-  const rowStride = colWidth * CARD_ASPECT_RATIO
-    + (CAPTION_MARGIN_TOP + CAPTION_HEIGHT_BASE + BASE_ROW_GAP) * scale;
+  const imageWidth = Math.max(1, colWidth - pad * 2);
+  const captionMargin = (props.browseNames ? CAPTION_MARGIN_TOP_BROWSE : CAPTION_MARGIN_TOP) * scale;
+  const captionHeight = (props.browseNames ? CAPTION_HEIGHT_BROWSE : CAPTION_HEIGHT_BASE) * scale;
+  const rowStride = imageWidth * CARD_ASPECT_RATIO
+    + pad * 2
+    + captionMargin
+    + captionHeight
+    + rowGap;
   const cardCount = props.cards?.length || 0;
   const totalRows = cardCount ? Math.ceil(cardCount / columns) : 0;
   const visibleRows = Math.min(GROUP_VISIBLE_ROWS, Math.max(totalRows, 0));
@@ -104,7 +120,7 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [props.cardScale, props.cards?.length, props.scrollable],
+  () => [props.cardScale, props.cards?.length, props.scrollable, props.priceTileTint, props.browseNames],
   () => {
     nextTick(measureWidth);
   },
@@ -131,6 +147,7 @@ watch(
       :selected-keys="selectedKeys"
       :show-favorites="showFavorites"
       :zoom-only="zoomOnly"
+      :price-tile-tint="priceTileTint"
       @toggle-select="emit('toggle-select', $event)"
       @browse-name="emit('browse-name', $event)"
       @cycle-variant="emit('cycle-variant', $event)"
@@ -151,6 +168,7 @@ watch(
       :selected-keys="selectedKeys"
       :show-favorites="showFavorites"
       :zoom-only="zoomOnly"
+      :price-tile-tint="priceTileTint"
       @toggle-select="emit('toggle-select', $event)"
       @browse-name="emit('browse-name', $event)"
       @cycle-variant="emit('cycle-variant', $event)"

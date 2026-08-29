@@ -14,6 +14,7 @@ import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import { confirmDialog } from "../composables/confirmDialog";
+import { useStorageBreakdownHistory } from "../composables/storageBreakdownHistory";
 import VirtualizedStorageTable from "../components/VirtualizedStorageTable.vue";
 import ListForSaleModal from "../components/ListForSaleModal.vue";
 import { savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
@@ -27,7 +28,7 @@ import {
 import { DECK_COLOR_ORDER } from "../utils/deckCards";
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 import { cardDisplayName } from "../utils/finishes";
-import { formatEuro, setShortName } from "../utils/format";
+import { formatEuro, formatProfit, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 import {
   collectGroupPaths,
@@ -45,6 +46,11 @@ import {
   mergeStorageBreakdownPayloads,
   mergeStorageCardPayloads,
 } from "../utils/storageMerge";
+import {
+  diffStorageBreakdown,
+  sliceSnapshotBreakdown,
+  snapshotSetLookup,
+} from "../utils/storageBreakdownDiff";
 import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
 
 const route = useRoute();
@@ -53,6 +59,7 @@ const router = useRouter();
 const {
   settings: pricingSettings,
   collectionCardScale,
+  collectionPriceTileTint,
   fetchPricingSettings: loadPricingSettings,
 } = usePricingSettings();
 
@@ -60,6 +67,18 @@ const locations = ref([]);
 const selectedSlugs = ref([]);
 const cardsPayload = ref(null);
 const breakdownPayload = ref(null);
+const {
+  selectedSnapshot,
+  selectedSnapshotId,
+  snapshotList,
+  compareToCurrent,
+  savingSnapshot,
+  snapshotError,
+  snapshotOptionLabel,
+  loadSnapshots,
+  saveDailySnapshot,
+  applySnapshotSelection,
+} = useStorageBreakdownHistory();
 const setsCatalog = ref([]);
 const defaultStorageSaving = ref(false);
 const { loading: loadingCards, run: runCardsLoad } = useAsyncLoad();
@@ -301,7 +320,7 @@ const breakdownSetLabels = computed(() => {
   for (const [code] of setsByCode.value) {
     labels[code] = setLabelForCode(code);
   }
-  for (const row of breakdownPayload.value?.bySet || []) {
+  for (const row of displayedBreakdown.value?.bySet || []) {
     const code = String(row.setCode || "").trim().toUpperCase();
     if (code && !labels[code]) {
       labels[code] = setLabelForCode(code);
@@ -311,6 +330,43 @@ const breakdownSetLabels = computed(() => {
 });
 
 const isBreakdownView = computed(() => viewMode.value === "breakdown");
+
+const utcTodayDate = computed(() => new Date().toISOString().slice(0, 10));
+
+const todaySnapshot = computed(() => (
+  snapshotList.value.find((item) => item.snapshotDate === utcTodayDate.value) || null
+));
+
+const saveBreakdownTitle = computed(() => {
+  if (savingSnapshot.value) {
+    return "Saving breakdown…";
+  }
+  if (todaySnapshot.value) {
+    return "Today’s breakdown is already saved";
+  }
+  return "Save today’s breakdown";
+});
+
+const frozenBreakdown = computed(() => {
+  if (!selectedSnapshot.value) {
+    return null;
+  }
+  return sliceSnapshotBreakdown(selectedSnapshot.value, selectedSlugs.value);
+});
+
+const displayedBreakdown = computed(() => {
+  if (selectedSnapshot.value && !compareToCurrent.value) {
+    return frozenBreakdown.value;
+  }
+  return breakdownPayload.value;
+});
+
+const breakdownDiff = computed(() => {
+  if (!selectedSnapshot.value || !compareToCurrent.value) {
+    return null;
+  }
+  return diffStorageBreakdown(frozenBreakdown.value, breakdownPayload.value);
+});
 
 const setCodesInLocation = computed(() => {
   const codes = new Set();
@@ -383,6 +439,9 @@ const sortedCards = computed(() =>
 const isGrouped = computed(() => groupByLevels.value.length > 0);
 
 function enrichCardGroups(groups) {
+  const setLookup = selectedSnapshot.value
+    ? snapshotSetLookup(frozenBreakdown.value)
+    : null;
   return (groups || []).map((group) => {
     const childGroups = groupHasChildren(group)
       ? enrichCardGroups(group.groups)
@@ -405,13 +464,25 @@ function enrichCardGroups(groups) {
         hasPriced = true;
       }
     }
+    const liveValue = hasPriced ? Math.round(totalValue * 100) / 100 : null;
+    const savedSet = group.groupBy === "set" && setLookup
+      ? setLookup.get(String(group.key || "").toUpperCase())
+      : null;
+    let snapshotValueDelta = null;
+    if (savedSet) {
+      snapshotValueDelta = Math.round(
+        ((liveValue || 0) - (savedSet.current || 0)) * 100,
+      ) / 100;
+    }
     return {
       ...group,
       cards,
       groups: childGroups,
       printCount: (group.cards || []).length,
       copyCount,
-      totalValue: hasPriced ? totalValue : null,
+      totalValue: liveValue,
+      snapshotCurrent: savedSet?.current ?? null,
+      snapshotValueDelta,
     };
   });
 }
@@ -469,6 +540,37 @@ function groupMetaText(group) {
   }
   return `${printLabel} · ${formatEuro(group.totalValue)}`;
 }
+
+function snapshotDeltaClass(value) {
+  if (value == null || Number(value) === 0) {
+    return "";
+  }
+  return Number(value) > 0 ? "reports-gain" : "reports-loss";
+}
+
+const liveScopeValue = computed(() => {
+  let total = 0;
+  let hasPriced = false;
+  for (const card of filteredCards.value) {
+    const line = lineTotal(card);
+    if (line != null) {
+      total += line;
+      hasPriced = true;
+    }
+  }
+  return hasPriced ? Math.round(total * 100) / 100 : null;
+});
+
+const liveScopeValueDelta = computed(() => {
+  if (!selectedSnapshot.value) {
+    return null;
+  }
+  const saved = frozenBreakdown.value?.totals?.current;
+  if (liveScopeValue.value == null && saved == null) {
+    return null;
+  }
+  return Math.round(((liveScopeValue.value || 0) - (saved || 0)) * 100) / 100;
+});
 
 /**
  * "Expand all groups" can otherwise dump every owned card across every set
@@ -875,6 +977,14 @@ function setViewMode(mode) {
   }
 }
 
+async function onSaveBreakdown() {
+  await saveDailySnapshot();
+}
+
+async function onSnapshotDropdownChange(event) {
+  await applySnapshotSelection(event.target.value);
+}
+
 async function onCardScaleChange(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
@@ -894,6 +1004,7 @@ watch(viewMode, (mode, previous) => {
   }
   if (mode === "breakdown") {
     loadBreakdown();
+    loadSnapshots();
   } else if (previous === "breakdown") {
     loadCards();
   }
@@ -960,6 +1071,7 @@ onMounted(async () => {
     loadLocations(preferredLocations),
     loadPricingSettings(true),
     loadSetsCatalog(),
+    loadSnapshots(),
   ]);
   if (viewMode.value === "breakdown") {
     await loadBreakdown();
@@ -970,6 +1082,47 @@ onMounted(async () => {
 
 <template>
   <div class="storage-page collection-page">
+    <div class="storage-breakdown-controls">
+      <label class="storage-breakdown-select">
+        <span class="visually-hidden">Saved breakdown</span>
+        <select
+          :value="selectedSnapshotId ?? ''"
+          aria-label="Saved breakdown"
+          @change="onSnapshotDropdownChange"
+        >
+          <option value="">Live current</option>
+          <option
+            v-for="snapshot in snapshotList"
+            :key="snapshot.id"
+            :value="snapshot.id"
+          >
+            {{ snapshotOptionLabel(snapshot) }}
+          </option>
+        </select>
+      </label>
+      <span
+        class="storage-breakdown-save-wrap"
+        :title="saveBreakdownTitle"
+      >
+        <button
+          type="button"
+          class="storage-breakdown-save"
+          :class="{ 'is-saved': Boolean(todaySnapshot) }"
+          :disabled="savingSnapshot || Boolean(todaySnapshot)"
+          :aria-label="saveBreakdownTitle"
+          @click="onSaveBreakdown"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"
+            />
+          </svg>
+        </button>
+      </span>
+    </div>
+    <p v-if="snapshotError" class="storage-breakdown-save-error">{{ snapshotError }}</p>
+
     <div class="storage-layout">
       <nav class="storage-location-nav" aria-label="Storage locations">
         <p class="storage-multi-hint">Ctrl/⌘+click to select multiple</p>
@@ -1253,9 +1406,47 @@ onMounted(async () => {
               </button>
             </div>
 
-            <p class="storage-toolbar-summary">{{ matchSummaryText }}</p>
+            <p class="storage-toolbar-summary">
+              {{ matchSummaryText }}
+              <template v-if="selectedSnapshot && liveScopeValueDelta != null">
+                · {{ formatEuro(liveScopeValue) }}
+                <span :class="snapshotDeltaClass(liveScopeValueDelta)">
+                  {{ formatProfit(liveScopeValueDelta) }}
+                </span>
+                vs {{ selectedSnapshot.snapshotDate }}
+              </template>
+            </p>
             </template>
-            <p v-else class="storage-toolbar-summary">Analytics for this location</p>
+            <p v-else class="storage-toolbar-summary">
+              Analytics for this location
+              <template v-if="selectedSnapshot">
+                · {{ compareToCurrent ? "compared to" : "viewing" }}
+                {{ selectedSnapshot.snapshotDate }}
+              </template>
+            </p>
+            <div
+              v-if="isBreakdownView && selectedSnapshot"
+              class="button-group"
+              role="group"
+              aria-label="Snapshot view"
+            >
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: compareToCurrent }"
+                @click="compareToCurrent = true"
+              >
+                Compare
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: !compareToCurrent }"
+                @click="compareToCurrent = false"
+              >
+                Saved
+              </button>
+            </div>
 
             <div class="storage-toolbar-end">
               <div
@@ -1375,7 +1566,8 @@ onMounted(async () => {
 
         <StorageBreakdownPanel
           v-else-if="isBreakdownView"
-          :breakdown="breakdownPayload"
+          :breakdown="displayedBreakdown"
+          :diff="breakdownDiff"
           :set-icons="breakdownSetIcons"
           :set-labels="breakdownSetLabels"
         />
@@ -1416,6 +1608,7 @@ onMounted(async () => {
                   :cards="group.cards"
                   :card-scale="collectionCardScale"
                   :scrollable="isLargeGroup(group)"
+                  :price-tile-tint="collectionPriceTileTint"
                 />
               </template>
             </CollectionGroupTree>
@@ -1426,6 +1619,7 @@ onMounted(async () => {
             :card-scale="collectionCardScale"
             show-set-label
             :set-label-for="setLabelForCode"
+            :price-tile-tint="collectionPriceTileTint"
           />
         </GalleryLoadingOverlay>
 

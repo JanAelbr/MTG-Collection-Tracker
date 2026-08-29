@@ -41,6 +41,16 @@ async function updateSetSortMode(event) {
   }
 }
 
+async function updatePriceTileTint(event) {
+  settingsMessage.value = "";
+  try {
+    await savePricingSettings({ collectionPriceTileTint: event.target.checked });
+    settingsMessage.value = "Display settings saved.";
+  } catch (error) {
+    settingsMessage.value = error.message || "Could not save display settings.";
+  }
+}
+
 onMounted(() => {
   loadPricingSettings();
 });
@@ -83,6 +93,20 @@ onMounted(() => {
               {{ setSortModeLabel(mode) }}
             </option>
           </select>
+        </label>
+        <label
+          class="manager-filter home-subset-toggle"
+          title="Tint collection card tiles from cheapest (cool gray) to most expensive (red)"
+        >
+          <span>Price-colored card tiles</span>
+          <span class="home-subset-toggle-control">
+            <input
+              type="checkbox"
+              :checked="Boolean(pricingSettings.collectionPriceTileTint)"
+              @change="updatePriceTileTint"
+            />
+            <span>Color backgrounds by value</span>
+          </span>
         </label>
         <label
           class="manager-filter home-subset-toggle"

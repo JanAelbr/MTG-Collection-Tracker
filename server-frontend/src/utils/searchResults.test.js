@@ -183,6 +183,25 @@ describe("groupSearchCards", () => {
     ]);
   });
 
+  it("groups by gallery price bands, unpriced last", () => {
+    const priced = [
+      { name: "Cheap", currentValue: 0.1 },
+      { name: "Mid", currentValue: 3 },
+      { name: "High", currentValue: 80 },
+      { name: "None", currentValue: null },
+    ];
+    expect(groupSearchCards(priced, "value").map((group) => ({
+      key: group.key,
+      label: group.label,
+      names: group.cards.map((card) => card.name),
+    }))).toEqual([
+      { key: "0-25c", label: "€0–€0.25", names: ["Cheap"] },
+      { key: "1-5", label: "€1–€5", names: ["Mid"] },
+      { key: "50+", label: "€50+", names: ["High"] },
+      { key: "unpriced", label: "Unpriced", names: ["None"] },
+    ]);
+  });
+
   it("nests multiple group levels", () => {
     const cards = [
       { name: "A", roles: ["ramp"], colorIdentity: ["G"], rarity: "common" },

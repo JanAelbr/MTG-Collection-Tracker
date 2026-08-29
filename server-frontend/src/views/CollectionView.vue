@@ -7,6 +7,7 @@ import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionAllToolbar from "../components/CollectionAllToolbar.vue";
 import CollectionMobileFilterSheet from "../components/CollectionMobileFilterSheet.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
+import { groupCatalogCards } from "../utils/catalogGroups";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
@@ -79,7 +80,7 @@ const mobileFiltersOpen = ref(false);
 const virtualGridRef = ref(null);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
-const { pageSize, collectionCardScale, settings: pricingSettings } = usePricingSettings();
+const { pageSize, collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
@@ -368,6 +369,12 @@ function routeQueriesMatch(nextQuery) {
 // Sorting/pagination already happened server-side (see loadCards()/loadMoreAllCards()),
 // so this is just the currently-accumulated, strategy-priced card list.
 const sortedAllCards = computed(() => (isAllView.value ? strategyCards.value : []));
+const catalogGroups = computed(() => {
+  if (!isAllView.value) {
+    return [];
+  }
+  return groupCatalogCards(sortedAllCards.value, allCardsSort.value, allCardsSortDir.value);
+});
 
 const lastPriceUpdate = computed(
   () => syncStatus.value?.lastPriceUpdate || appMeta.value?.lastPriceUpdate || null,
@@ -1710,11 +1717,13 @@ onUnmounted(stopPolling);
             <VirtualizedCollectionCardGrid
               ref="virtualGridRef"
               :cards="sortedAllCards"
+              :groups="catalogGroups"
               :card-scale="collectionCardScale"
               :selectable="bulkSelectMode"
               :selected-keys="selectedKeys"
               :focused-index="focusedIndex"
               :has-more="allCardsHasMore"
+              :price-tile-tint="collectionPriceTileTint"
               @toggle-select="toggleCardSelection"
               @focus-index="setFocusIndex"
               @keydown="onCollectionGridKeydown"

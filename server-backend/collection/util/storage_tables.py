@@ -71,6 +71,22 @@ def ensure_storage_tables(conn: sqlite3.Connection) -> None:
     )
     _ensure_card_instances_finish_column(conn)
     _ensure_storage_location_columns(conn)
+    _ensure_breakdown_snapshot_table(conn)
+
+
+def _ensure_breakdown_snapshot_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS storage_breakdown_snapshots (
+            snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_date TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            note TEXT,
+            price_strategy TEXT,
+            payload_json TEXT NOT NULL
+        )
+        """
+    )
 
 
 def _ensure_storage_location_columns(conn: sqlite3.Connection) -> None:

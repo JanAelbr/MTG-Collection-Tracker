@@ -134,6 +134,79 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertEqual(len(result["topCards"]), 2)
         self.assertEqual(binder_result["totals"]["copies"], 1)
 
+    def test_daily_breakdown_snapshot_save_list_get_delete(self):
+        from unittest.mock import patch
+
+        from util.db_migrate import ensure_card_columns
+        from util.storage_tables import seed_storage_locations
+
+        seed_storage_locations(self.conn)
+        ensure_card_columns(self.conn)
+        general = storage_service.get_location(self.conn, "storage:general")
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style, image_uri,
+                market_value, market_value_foil, cardmarket_url
+            ) VALUES ('LTR', '1', 'Card A', '', '', 10.0, 20.0, NULL)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTR', '1', 0, ?, 4.0)
+            """,
+            (general["slug"],),
+        )
+        self.conn.commit()
+
+        with patch("api.services.storage_service.price_from_strategy", return_value=10.0):
+            first = storage_service.save_daily_breakdown(
+                self.conn,
+                price_strategy="trend",
+                note="Morning",
+            )
+            second = storage_service.save_daily_breakdown(
+                self.conn,
+                price_strategy="trend",
+                note="Evening",
+            )
+
+        self.assertEqual(first["snapshotDate"], second["snapshotDate"])
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(second["note"], "Evening")
+        listed = storage_service.list_breakdown_snapshots(self.conn)
+        self.assertEqual(len(listed), 1)
+
+        frozen = storage_service.get_breakdown_snapshot(self.conn, second["id"])
+        self.assertGreaterEqual(len(frozen["locations"]), 1)
+        general_row = next(
+            loc for loc in frozen["locations"] if loc["slug"] == general["slug"]
+        )
+        self.assertEqual(general_row["totals"]["copies"], 1)
+        self.assertEqual(general_row["totals"]["current"], 10.0)
+
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTR', '1', 0, ?, 4.0)
+            """,
+            (general["slug"],),
+        )
+        self.conn.commit()
+        reread = storage_service.get_breakdown_snapshot(self.conn, second["id"])
+        general_again = next(
+            loc for loc in reread["locations"] if loc["slug"] == general["slug"]
+        )
+        self.assertEqual(general_again["totals"]["copies"], 1)
+
+        storage_service.delete_breakdown_snapshot(self.conn, second["id"])
+        self.assertEqual(storage_service.list_breakdown_snapshots(self.conn), [])
+        with self.assertRaises(storage_service.StorageError):
+            storage_service.get_breakdown_snapshot(self.conn, second["id"])
+
     def test_create_custom_binder(self):
         created = storage_service.create_location(
             self.conn,

@@ -24,6 +24,8 @@ PAGE_SIZE_OPTIONS = (25, 50, 100)
 COLLECTION_CARD_SCALE_KEY = "collection_card_scale"
 DEFAULT_COLLECTION_CARD_SCALE = 100
 COLLECTION_CARD_SCALE_OPTIONS = (75, 100, 125, 150, 175, 200, 225, 250)
+COLLECTION_PRICE_TILE_TINT_KEY = "collection_price_tile_tint"
+DEFAULT_COLLECTION_PRICE_TILE_TINT = False
 SET_SORT_MODE_KEY = "set_sort_mode"
 DEFAULT_SET_SORT_MODE = "alphabetical"
 SET_SORT_MODE_OPTIONS = ("alphabetical", "owned", "chronological")
@@ -222,6 +224,29 @@ def get_collection_card_scale(conn: sqlite3.Connection) -> int:
     return normalize_collection_card_scale(row["value"])
 
 
+def normalize_bool_setting(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def get_collection_price_tile_tint(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT value FROM user_settings WHERE key = ?",
+        (COLLECTION_PRICE_TILE_TINT_KEY,),
+    ).fetchone()
+    if row is None or row["value"] is None:
+        return DEFAULT_COLLECTION_PRICE_TILE_TINT
+    return normalize_bool_setting(row["value"], DEFAULT_COLLECTION_PRICE_TILE_TINT)
+
+
 def get_set_sort_mode(conn: sqlite3.Connection) -> str:
     row = conn.execute(
         "SELECT value FROM user_settings WHERE key = ?",
@@ -294,6 +319,7 @@ def get_settings(conn: sqlite3.Connection) -> dict:
         "pageSizeOptions": list(PAGE_SIZE_OPTIONS),
         "collectionCardScale": get_collection_card_scale(conn),
         "collectionCardScaleOptions": list(COLLECTION_CARD_SCALE_OPTIONS),
+        "collectionPriceTileTint": get_collection_price_tile_tint(conn),
         "setSortMode": get_set_sort_mode(conn),
         "setSortModeOptions": list(SET_SORT_MODE_OPTIONS),
         "defaultStorageLocation": get_default_storage_location(conn),
@@ -312,6 +338,7 @@ def update_settings(
     favorite_art_styles: list | None = None,
     page_size: int | None = None,
     collection_card_scale: int | None = None,
+    collection_price_tile_tint: bool | None = None,
     set_sort_mode: str | None = None,
     default_storage_location: str | None = None,
 ) -> dict:
@@ -380,6 +407,18 @@ def update_settings(
         )
         bump_cache_epoch()
         changed.append(f"collection_card_scale={parsed_scale}")
+    if collection_price_tile_tint is not None:
+        parsed_tint = normalize_bool_setting(collection_price_tile_tint)
+        conn.execute(
+            """
+            INSERT INTO user_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (COLLECTION_PRICE_TILE_TINT_KEY, "true" if parsed_tint else "false"),
+        )
+        bump_cache_epoch()
+        changed.append(f"collection_price_tile_tint={parsed_tint}")
     if set_sort_mode is not None:
         normalized_sort_mode = normalize_set_sort_mode(set_sort_mode)
         conn.execute(

@@ -561,9 +561,11 @@ def _search_cards_print_first(
         )
         page_cards.append(picked or light)
 
-    variant_counts = _catalog_variant_counts_for_names(
+    variant_counts = _search_variant_counts(
         conn,
-        [card.get("name") or "" for card in page_cards],
+        page_cards,
+        light_pool,
+        owned_filter=owned_filter,
     )
     page_cards = [
         {
@@ -1413,6 +1415,7 @@ def _catalog_variants_for_name(
     pool: list[dict],
     *,
     release_dates: dict[str, str],
+    restrict_to_pool: bool = False,
 ) -> list[dict]:
     rows = conn.execute(
         f"""
@@ -1443,14 +1446,16 @@ def _catalog_variants_for_name(
         return _catalog_variants(pool, name, release_dates=release_dates)
 
     pool_by_print = _pool_variants_by_print(pool, name)
-    variants = [
-        _variant_from_catalog_row(row, pool_by_print.get((
+    variants = []
+    for row in rows:
+        key = (
             row["set_code"],
             str(row["collector_number"]),
             row["art_style"] or "",
-        )))
-        for row in rows
-    ]
+        )
+        if restrict_to_pool and key not in pool_by_print:
+            continue
+        variants.append(_variant_from_catalog_row(row, pool_by_print.get(key)))
     return sorted(
         variants,
         key=lambda item: _newest_first_key(item, release_dates),
@@ -1464,12 +1469,14 @@ def _build_variants(
     pool: list[dict],
     *,
     release_dates: dict[str, str],
+    restrict_to_pool: bool = False,
 ) -> list[dict]:
     variants = _catalog_variants_for_name(
         conn,
         name,
         pool,
         release_dates=release_dates,
+        restrict_to_pool=restrict_to_pool,
     )
     if variants:
         return variants
@@ -1521,6 +1528,20 @@ def _variant_counts_by_name(pool: list[dict]) -> dict[str, int]:
             continue
         prints_by_name.setdefault(name, set()).add(_print_key(card))
     return {name: len(keys) for name, keys in prints_by_name.items()}
+
+
+def _search_variant_counts(
+    conn: sqlite3.Connection,
+    page_cards: list[dict],
+    pool: list[dict],
+    *,
+    owned_filter: str,
+) -> dict[str, int]:
+    names = [card.get("name") or "" for card in page_cards]
+    if (owned_filter or "").strip().lower() == "owned":
+        counts = _variant_counts_by_name(pool)
+        return {name: counts.get(name, 1) for name in names if name}
+    return _catalog_variant_counts_for_names(conn, names)
 
 
 def _catalog_variant_counts_for_names(
@@ -1598,14 +1619,13 @@ def list_name_variants(
         scoped = set(_resolve_set_codes(conn, set_code=set_code))
         name_set_codes = [code for code in name_set_codes if code in scoped]
 
-    # Variant browsing should always include every printing of the name (with
-    # prices), even when the search results list is scoped to owned-only.
-    # Ownership flags still come from enrichment; we simply do not drop
-    # unowned prints from the pool used for finish/price overlay.
+    # Variant browsing follows the search ownership scope: owned search only
+    # lists printings we have. Finish/price overlay still uses the full catalog
+    # so foil/etched guide prices remain on those owned prints.
     pool = _filtered_pool(
         conn,
         set_code=set_code,
-        owned_filter="all",
+        owned_filter=normalized_owned,
         foil_filter=normalized_foil,
         exact_name=trimmed_name,
         set_codes=name_set_codes,
@@ -1617,6 +1637,7 @@ def list_name_variants(
         trimmed_name,
         pool,
         release_dates=release_dates,
+        restrict_to_pool=normalized_owned == "owned",
     )
     if not variants:
         raise ReportsError("No variants found for this card name", status_code=404)
@@ -1789,9 +1810,11 @@ def search_cards(
     safe_page = max(1, page)
     start = (safe_page - 1) * safe_page_size
     page_slice = unique_ranked[start : start + safe_page_size]
-    variant_counts = _catalog_variant_counts_for_names(
+    variant_counts = _search_variant_counts(
         conn,
-        [card.get("name") or "" for card in page_slice],
+        page_slice,
+        pool,
+        owned_filter=normalized_owned,
     )
     page_cards = [
         {

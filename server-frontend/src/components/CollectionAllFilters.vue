@@ -182,7 +182,7 @@ const detailsGroupSummary = computed(() => {
     parts.push(`CMC ${props.cmcMin || "…"}–${props.cmcMax || "…"}`);
   }
   if (props.priceMin || props.priceMax) {
-    parts.push(`€${props.priceMin || "…"}–${props.priceMax || "…"}`);
+    parts.push(`€${props.priceMin || "…"}–€${props.priceMax || "…"}`);
   }
   if (props.powerMin || props.toughnessMin) {
     parts.push(`P/T ≥${props.powerMin || "0"}/≥${props.toughnessMin || "0"}`);

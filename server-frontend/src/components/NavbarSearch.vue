@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ignoreAborted } from "../api";
+import { searchFiltersFromRoute } from "../utils/setScope";
 
 const PREVIEW_LIMIT = 5;
 
@@ -46,6 +47,13 @@ function scheduleSearch() {
   debounceTimer = setTimeout(commitSearch, 300);
 }
 
+function navbarOwnedFilter() {
+  if (route.path === "/collection/search") {
+    return searchFiltersFromRoute(route).ownedFilter;
+  }
+  return "all";
+}
+
 async function commitSearch() {
   query.value = input.value;
   const trimmed = query.value.trim();
@@ -62,7 +70,7 @@ async function commitSearch() {
     const payload = await ignoreAborted(api.searchCards({
       q: trimmed,
       setCode: "All",
-      ownedFilter: "all",
+      ownedFilter: navbarOwnedFilter(),
       foilFilter: "all",
       page: 1,
       pageSize: PREVIEW_LIMIT,
@@ -85,17 +93,27 @@ async function commitSearch() {
   }
 }
 
-function openSearchPage(nextQuery = trimmedQuery.value) {
-  const trimmed = nextQuery.trim();
+function openSearchPage(nextQuery = input.value) {
+  clearTimeout(debounceTimer);
+  const trimmed = String(nextQuery || "").trim();
+  query.value = trimmed;
   isOpen.value = false;
+  const ownedFilter = navbarOwnedFilter();
+  const next = {};
+  if (trimmed) {
+    next.q = trimmed;
+  }
+  if (ownedFilter !== "owned") {
+    next.owned = ownedFilter;
+  }
   router.push({
     path: "/collection/search",
-    query: trimmed ? { q: trimmed } : {},
+    query: next,
   });
 }
 
 function onSubmit() {
-  openSearchPage();
+  openSearchPage(input.value);
 }
 
 function onSelectCard(card) {

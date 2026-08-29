@@ -10,6 +10,7 @@ import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import { formatEuro } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
+import { priceTintForCard } from "../utils/catalogGroups";
 
 const props = defineProps({
   cards: { type: Array, default: () => [] },
@@ -34,6 +35,8 @@ const props = defineProps({
   priceStrategy: { type: String, default: "" },
   /** Hover overlay shows zoom only (no copy/add controls). */
   zoomOnly: { type: Boolean, default: false },
+  /** Wash tile backgrounds by gallery price band. */
+  priceTileTint: { type: Boolean, default: false },
   /** Caption action text when picking a print (used for aria; shown unless an icon is set). */
   pickActionLabel: { type: String, default: "" },
   /** Visible caption glyph instead of the action label (e.g. "+"). */
@@ -163,6 +166,21 @@ function isFocused(index) {
   return props.focusedIndex === index;
 }
 
+function tilePriceTint(card) {
+  if (!props.priceTileTint) {
+    return "";
+  }
+  return priceTintForCard(card);
+}
+
+function tileStyle(card) {
+  const tint = tilePriceTint(card);
+  if (!tint) {
+    return undefined;
+  }
+  return { "--card-price-tint": tint };
+}
+
 function onTileMouseDown(event) {
   if (props.selectable) {
     event.preventDefault();
@@ -239,7 +257,7 @@ function onDrop(index, event) {
 </script>
 
 <template>
-  <div class="collection-card-grid" :class="{ 'is-reorderable': reorderable }" :style="gridStyle">
+  <div class="collection-card-grid" :class="{ 'is-reorderable': reorderable, 'has-price-tile-tint': priceTileTint }" :style="gridStyle">
     <figure
       v-for="(card, index) in cards"
       :key="cardKey(card, index)"
@@ -251,7 +269,9 @@ function onDrop(index, event) {
         'is-selectable': selectable,
         'is-dragging': reorderable && dragFromIndex === index,
         'is-drop-target': reorderable && dragOverIndex === index && dragFromIndex !== index,
+        'has-price-tint': Boolean(tilePriceTint(card)),
       }"
+      :style="tileStyle(card)"
       :draggable="reorderable && !browseNames && !pickPrints"
       :tabindex="!selectable && focusedIndex === startIndex + index ? 0 : -1"
       @mousedown="onTileMouseDown"
@@ -430,13 +450,13 @@ function onDrop(index, event) {
       </div>
       <figcaption class="collection-card-grid-caption">
         <span class="collection-card-grid-meta">
-          <CardSetSymbol
-            :set-code="card.setCode"
-            :family-root="card.familyRoot || ''"
-            :rarity="card.rarity || ''"
-          />
           <span class="collection-card-grid-meta-text">
             <span class="collection-card-grid-name-row">
+              <CardSetSymbol
+                :set-code="card.setCode"
+                :family-root="card.familyRoot || ''"
+                :rarity="card.rarity || ''"
+              />
               <RouterLink
                 :to="cardRoute(card)"
                 class="collection-card-grid-name"

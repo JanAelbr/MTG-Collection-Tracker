@@ -45,6 +45,8 @@ def patch_settings(body: SettingsUpdate, conn: sqlite3.Connection = Depends(get_
         kwargs["page_size"] = updates["pageSize"]
     if "collectionCardScale" in updates:
         kwargs["collection_card_scale"] = updates["collectionCardScale"]
+    if "collectionPriceTileTint" in updates:
+        kwargs["collection_price_tile_tint"] = updates["collectionPriceTileTint"]
     if "setSortMode" in updates:
         kwargs["set_sort_mode"] = updates["setSortMode"]
     if "defaultStorageLocation" in updates:

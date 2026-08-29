@@ -308,6 +308,22 @@ export const api = {
   getStorageBreakdown: (slug) =>
     apiRequest(`/storage/locations/${encodeURIComponent(slug)}/breakdown`),
 
+  saveStorageBreakdownSnapshot: (body = {}) =>
+    apiRequest("/storage/breakdowns", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  listStorageBreakdownSnapshots: () => apiRequest("/storage/breakdowns"),
+
+  getStorageBreakdownSnapshot: (snapshotId) =>
+    apiRequest(`/storage/breakdowns/${encodeURIComponent(snapshotId)}`),
+
+  deleteStorageBreakdownSnapshot: (snapshotId) =>
+    apiRequest(`/storage/breakdowns/${encodeURIComponent(snapshotId)}`, {
+      method: "DELETE",
+    }),
+
   deleteInstance: (instanceId) =>
     apiRequest(`/storage/instances/${instanceId}`, {
 

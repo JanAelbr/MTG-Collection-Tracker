@@ -1,8 +1,14 @@
+import json
 import sqlite3
 import uuid
+from datetime import datetime, timezone
 
 from api.cache import bump_cache_epoch
-from api.services.pricing_service import price_from_strategy
+from api.services.pricing_service import (
+    price_from_strategy,
+    value_from_strategy_map,
+    values_by_strategy_for_finish,
+)
 from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_image_fields, card_metadata_api
@@ -221,6 +227,9 @@ def list_location_cards(
                 or roles_by_name.get(catalog_name.casefold())
                 or []
             )
+            values_by_strategy, current_value = _finish_prices(
+                row, finish, price_strategy
+            )
             card = {
                 "setCode": row["set_code"],
                 "familyRoot": family_roots.get(set_code) or set_code,
@@ -235,18 +244,8 @@ def list_location_cards(
                 **card_image_fields(row),
                 **card_metadata_api(row),
                 "roles": list(roles),
-                "currentValue": price_from_strategy(
-                    row["cardmarket_url"],
-                    finish,
-                    price_strategy,
-                    cardmarket_url_foil=row["cardmarket_url_foil"],
-                    market_value=_float_or_none(row["market_value"]),
-                    market_value_foil=_float_or_none(row["market_value_foil"]),
-                    market_value_etched=_float_or_none(row["market_value_etched"]),
-                    has_nonfoil=row["has_nonfoil"],
-                    has_foil=row["has_foil"],
-                    has_etched=row["has_etched"],
-                ),
+                "valuesByStrategy": values_by_strategy,
+                "currentValue": current_value,
             }
             grouped[key] = card
         card["copyCount"] += 1
@@ -518,6 +517,185 @@ def get_storage_breakdown(
     }
 
 
+SNAPSHOT_LOCATION_TYPES = frozenset({"storage", "binder"})
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _snapshot_locations(conn: sqlite3.Connection) -> list[dict]:
+    return [
+        loc for loc in list_locations(conn)
+        if loc["locationType"] in SNAPSHOT_LOCATION_TYPES
+    ]
+
+
+def _combined_snapshot_totals(locations: list[dict]) -> dict:
+    copies = 0
+    unique_prints = 0
+    current = 0.0
+    invested = 0.0
+    priced = 0
+    invested_copies = 0
+    unpriced = 0
+    has_current = False
+    has_invested = False
+    for loc in locations:
+        totals = loc.get("totals") or {}
+        copies += int(totals.get("copies") or 0)
+        unique_prints += int(totals.get("uniquePrints") or 0)
+        unpriced += int(totals.get("unpricedCopies") or 0)
+        priced += int(totals.get("pricedCopies") or 0)
+        if totals.get("current") is not None:
+            current += float(totals["current"])
+            has_current = True
+        if totals.get("invested") is not None:
+            invested += float(totals["invested"])
+            has_invested = True
+            invested_copies += 1
+    profit = None
+    if has_current and has_invested and priced:
+        profit = round(current - invested, 2)
+    return {
+        "copies": copies,
+        "uniquePrints": unique_prints,
+        "current": round(current, 2) if has_current else None,
+        "invested": round(invested, 2) if has_invested else None,
+        "profit": profit,
+        "pricedCopies": priced,
+        "unpricedCopies": unpriced,
+        "locationCount": len(locations),
+    }
+
+
+def _serialize_snapshot_row(row: sqlite3.Row, *, include_payload: bool = False) -> dict:
+    payload = json.loads(row["payload_json"])
+    locations = payload.get("locations") or []
+    item = {
+        "id": int(row["snapshot_id"]),
+        "snapshotDate": row["snapshot_date"],
+        "createdAt": row["created_at"],
+        "note": row["note"] or "",
+        "priceStrategy": row["price_strategy"] or "",
+        "totals": _combined_snapshot_totals(locations),
+    }
+    if include_payload:
+        item["locations"] = locations
+        item["payload"] = payload
+    return item
+
+
+def save_daily_breakdown(
+    conn: sqlite3.Connection,
+    *,
+    price_strategy: str,
+    note: str = "",
+) -> dict:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    now = _utc_now()
+    snapshot_date = now.date().isoformat()
+    created_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    locations = []
+    for loc in _snapshot_locations(conn):
+        breakdown = get_storage_breakdown(
+            conn,
+            loc["slug"],
+            price_strategy=price_strategy,
+            top_sets=10_000,
+        )
+        locations.append({
+            "slug": loc["slug"],
+            "label": loc["label"],
+            "locationType": loc["locationType"],
+            "totals": breakdown["totals"],
+            "byFinish": breakdown["byFinish"],
+            "bySet": breakdown["bySet"],
+            "topCards": breakdown["topCards"],
+        })
+    payload = {
+        "snapshotDate": snapshot_date,
+        "priceStrategy": price_strategy,
+        "locations": locations,
+    }
+    cleaned_note = (note or "").strip()
+    conn.execute(
+        """
+        INSERT INTO storage_breakdown_snapshots (
+            snapshot_date, created_at, note, price_strategy, payload_json
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(snapshot_date) DO UPDATE SET
+            created_at = excluded.created_at,
+            note = excluded.note,
+            price_strategy = excluded.price_strategy,
+            payload_json = excluded.payload_json
+        """,
+        (
+            snapshot_date,
+            created_at,
+            cleaned_note or None,
+            price_strategy,
+            json.dumps(payload),
+        ),
+    )
+    bump_cache_epoch()
+    row = conn.execute(
+        """
+        SELECT snapshot_id, snapshot_date, created_at, note, price_strategy, payload_json
+        FROM storage_breakdown_snapshots
+        WHERE snapshot_date = ?
+        """,
+        (snapshot_date,),
+    ).fetchone()
+    return _serialize_snapshot_row(row)
+
+
+def list_breakdown_snapshots(conn: sqlite3.Connection) -> list[dict]:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT snapshot_id, snapshot_date, created_at, note, price_strategy, payload_json
+        FROM storage_breakdown_snapshots
+        ORDER BY snapshot_date DESC, snapshot_id DESC
+        """
+    ).fetchall()
+    return [_serialize_snapshot_row(row) for row in rows]
+
+
+def get_breakdown_snapshot(conn: sqlite3.Connection, snapshot_id: int) -> dict:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    row = conn.execute(
+        """
+        SELECT snapshot_id, snapshot_date, created_at, note, price_strategy, payload_json
+        FROM storage_breakdown_snapshots
+        WHERE snapshot_id = ?
+        """,
+        (int(snapshot_id),),
+    ).fetchone()
+    if row is None:
+        raise StorageError("Breakdown snapshot not found", status_code=404)
+    return _serialize_snapshot_row(row, include_payload=True)
+
+
+def delete_breakdown_snapshot(conn: sqlite3.Connection, snapshot_id: int) -> None:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    cursor = conn.execute(
+        "DELETE FROM storage_breakdown_snapshots WHERE snapshot_id = ?",
+        (int(snapshot_id),),
+    )
+    if cursor.rowcount == 0:
+        raise StorageError("Breakdown snapshot not found", status_code=404)
+    bump_cache_epoch()
+
+
 def _next_custom_sort_order(conn: sqlite3.Connection) -> int:
     row = conn.execute(
         """
@@ -562,3 +740,30 @@ def _float_or_none(value) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _guide_fields_from_row(row) -> dict:
+    return {
+        "cardmarket_url": row["cardmarket_url"],
+        "cardmarket_url_foil": row["cardmarket_url_foil"],
+        "market_value": _float_or_none(row["market_value"]),
+        "market_value_foil": _float_or_none(row["market_value_foil"]),
+        "market_value_etched": _float_or_none(row["market_value_etched"]),
+        "has_nonfoil": row["has_nonfoil"],
+        "has_foil": row["has_foil"],
+        "has_etched": row["has_etched"],
+    }
+
+
+def _finish_prices(row, finish: int, price_strategy: str) -> tuple[dict, float | None]:
+    fields = _guide_fields_from_row(row)
+    values = values_by_strategy_for_finish(fields, finish)
+    current = value_from_strategy_map(
+        values,
+        price_strategy,
+        finish=finish,
+        market_value=fields["market_value"],
+        market_value_foil=fields["market_value_foil"],
+        market_value_etched=fields["market_value_etched"],
+    )
+    return values, current

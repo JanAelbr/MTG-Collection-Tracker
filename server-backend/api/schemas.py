@@ -11,6 +11,7 @@ class SettingsUpdate(BaseModel):
     favoriteArtStyles: list[dict] | None = None
     pageSize: int | None = Field(default=None, ge=25, le=100)
     collectionCardScale: int | None = Field(default=None, ge=75, le=250)
+    collectionPriceTileTint: bool | None = None
     setSortMode: str | None = None
     defaultStorageLocation: str | None = None
 
@@ -43,6 +44,10 @@ class StorageLocationCreate(BaseModel):
 class StorageLocationUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
+
+
+class StorageBreakdownSnapshotCreate(BaseModel):
+    note: str = Field(default="", max_length=200)
 
 
 def _resolve_finish_field(values: dict) -> dict:

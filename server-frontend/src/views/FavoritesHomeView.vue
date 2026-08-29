@@ -42,7 +42,7 @@ const dragArtOver = ref(-1);
 const galleryOwnedFilter = ref("owned");
 const gallerySort = ref("number");
 const gallerySortDir = ref(defaultCollectionSortDir("number"));
-const { settings: pricingSettings, collectionCardScale } = usePricingSettings();
+const { settings: pricingSettings, collectionCardScale, collectionPriceTileTint } = usePricingSettings();
 const { toggleArtStyleFavorite, favoriteCards, favoriteArtStyles } = useFavorites();
 
 const sets = computed(() => payload.value?.sets || []);
@@ -417,6 +417,7 @@ onMounted(async () => {
             show-unowned-badge
             :reorderable="cardsReorderable"
             :card-scale="collectionCardScale"
+            :price-tile-tint="collectionPriceTileTint"
             @ownership-changed="onOwnershipChanged"
             @favorite-changed="onCardFavoriteChanged"
             @reorder="onReorderCards"
@@ -476,6 +477,7 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
+              :price-tile-tint="collectionPriceTileTint"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />
@@ -484,6 +486,7 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
+              :price-tile-tint="collectionPriceTileTint"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />

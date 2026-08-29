@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.deps import get_db
 from api.http_cache import serve_cached_json, with_price_strategy
-from api.schemas import StorageLocationCreate, StorageLocationUpdate
+from api.schemas import StorageBreakdownSnapshotCreate, StorageLocationCreate, StorageLocationUpdate
 from api.services import settings_service, storage_service
 from api.services.storage_service import StorageError
 
@@ -46,6 +46,43 @@ def location_breakdown(
         )
     except StorageError as exc:
         raise _handle_storage_error(exc) from exc
+
+
+@router.post("/breakdowns")
+def save_breakdown_snapshot(
+    body: StorageBreakdownSnapshotCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        return storage_service.save_daily_breakdown(
+            conn,
+            price_strategy=settings_service.get_settings(conn)["priceStrategy"],
+            note=body.note,
+        )
+    except StorageError as exc:
+        raise _handle_storage_error(exc) from exc
+
+
+@router.get("/breakdowns")
+def list_breakdown_snapshots(conn: sqlite3.Connection = Depends(get_db)):
+    return {"snapshots": storage_service.list_breakdown_snapshots(conn)}
+
+
+@router.get("/breakdowns/{snapshot_id}")
+def get_breakdown_snapshot(snapshot_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    try:
+        return storage_service.get_breakdown_snapshot(conn, snapshot_id)
+    except StorageError as exc:
+        raise _handle_storage_error(exc) from exc
+
+
+@router.delete("/breakdowns/{snapshot_id}")
+def delete_breakdown_snapshot(snapshot_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    try:
+        storage_service.delete_breakdown_snapshot(conn, snapshot_id)
+    except StorageError as exc:
+        raise _handle_storage_error(exc) from exc
+    return {"ok": True}
 
 
 @router.post("/locations")

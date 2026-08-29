@@ -2,6 +2,7 @@
 import DeckTypeIcon from "./DeckTypeIcon.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import { colorIdentityPipsFromKey, groupHasChildren } from "../utils/searchResults";
+import { formatEuro, formatProfit } from "../utils/format";
 
 defineOptions({ name: "CollectionGroupTree" });
 
@@ -18,6 +19,9 @@ function metaText(group) {
   if (typeof props.metaTextFor === "function") {
     return props.metaTextFor(group);
   }
+  if (group?.metaText) {
+    return group.metaText;
+  }
   const count = group?.cards?.length || 0;
   return `${count} ${count === 1 ? "card" : "cards"}`;
 }
@@ -27,6 +31,13 @@ function setIcon(group) {
     return "";
   }
   return props.setIconFor(group.key) || "";
+}
+
+function snapshotDeltaClass(value) {
+  if (value == null || Number(value) === 0) {
+    return "";
+  }
+  return Number(value) > 0 ? "reports-gain" : "reports-loss";
 }
 </script>
 
@@ -71,7 +82,32 @@ function setIcon(group) {
         aria-hidden="true"
       />
       <h3 class="storage-set-group-title">{{ group.label }}</h3>
-      <span class="storage-set-group-meta">{{ metaText(group) }}</span>
+      <ul
+        v-if="group.valueBands?.length"
+        class="catalog-gallery-group-bands"
+      >
+        <li
+          v-for="band in group.valueBands"
+          :key="band.key"
+          class="catalog-gallery-group-band"
+          :style="{ background: band.tint }"
+          :title="`${band.label}: ${band.count}`"
+        >
+          <span class="catalog-gallery-group-band-label">{{ band.label }}</span>
+          <span class="catalog-gallery-group-band-count">{{ band.count }}</span>
+        </li>
+      </ul>
+      <span class="storage-set-group-meta">
+        {{ metaText(group) }}
+        <span
+          v-if="group.snapshotValueDelta != null"
+          class="storage-set-group-delta"
+          :class="snapshotDeltaClass(group.snapshotValueDelta)"
+          :title="`Saved ${formatEuro(group.snapshotCurrent)}`"
+        >
+          {{ formatProfit(group.snapshotValueDelta) }}
+        </span>
+      </span>
     </button>
 
     <div v-if="isExpanded(group.path)" class="storage-set-group-body">

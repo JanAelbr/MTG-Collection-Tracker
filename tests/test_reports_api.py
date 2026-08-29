@@ -914,8 +914,8 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(set(set_codes), {"LTR", "HOU"})
 
     @patch("api.services.search_service._load_enriched_report_cards")
-    def test_list_name_variants_keeps_unowned_prints_when_owned_filter_set(self, load_enriched):
-        """Owned search still browses every printing, with prices on unowned ones."""
+    def test_list_name_variants_owned_filter_hides_unowned_prints(self, load_enriched):
+        """Owned search only browses printings we actually own."""
         load_enriched.return_value = (
             [
                 {
@@ -953,15 +953,9 @@ class ReportsApiServiceTests(unittest.TestCase):
             owned_filter="owned",
         )
         self.assertEqual(payload["ownedFilter"], "owned")
-        self.assertEqual(payload["totalVariants"], 2)
-        by_set = {variant["setCode"]: variant for variant in payload["variants"]}
-        self.assertTrue(by_set["LTR"].get("owned"))
-        self.assertFalse(by_set["HOU"].get("owned"))
-        self.assertEqual(by_set["HOU"].get("finishValues", {}).get(0), 5.0)
-        self.assertEqual(
-            by_set["HOU"].get("finishValuesByStrategy", {}).get(0, {}).get("trend"),
-            5.0,
-        )
+        self.assertEqual(payload["totalVariants"], 1)
+        self.assertEqual(payload["variants"][0]["setCode"], "LTR")
+        self.assertTrue(payload["variants"][0].get("owned"))
 
     @patch("api.services.search_service._load_enriched_report_cards")
     @patch("api.services.search_service._load_enriched_prints")

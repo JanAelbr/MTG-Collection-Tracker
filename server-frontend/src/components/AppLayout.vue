@@ -8,6 +8,11 @@ import ConfirmDialogHost from "./ConfirmDialogHost.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
+import {
+  ensureStartupPriceSync,
+  startupPriceSyncMessage,
+  startupPriceSyncStatus,
+} from "../composables/startupPriceSync";
 import { collectionNavQuery, setScopeQueryFromRoute } from "../utils/setScope";
 import { APP_TITLE } from "../constants/app";
 
@@ -32,6 +37,7 @@ const settingsSubnav = [
   { to: "/settings/sets", label: "Sets" },
   { to: "/settings/stats", label: "Stats" },
   { to: "/settings/sync", label: "Sync" },
+  { to: "/settings/breakdowns", label: "Breakdowns" },
   { to: "/settings/backup", label: "Backup" },
 ];
 
@@ -86,6 +92,11 @@ const showSetGalleryFilter = computed(() =>
 const showDeckGalleryFilter = computed(() => route.path.startsWith("/collection/decks"));
 
 const showNavbarSearch = computed(() => route.path !== "/collection/search");
+
+const showStartupPriceSync = computed(() => (
+  startupPriceSyncStatus.value === "running"
+  || Boolean(startupPriceSyncMessage.value)
+));
 
 const isAdvancedSearchActive = computed(() => route.path === "/collection/search");
 
@@ -151,6 +162,7 @@ function subnavLinkTo(subItem) {
 
 onMounted(() => {
   fetchPricingSettings();
+  ensureStartupPriceSync();
 });
 </script>
 
@@ -179,6 +191,13 @@ onMounted(() => {
 
         <div class="app-topbar-search-cluster">
           <NavbarSearch v-if="showNavbarSearch" class="app-topbar-search" />
+          <span
+            v-if="showStartupPriceSync"
+            class="app-topbar-sync-status"
+            :class="{ 'is-error': startupPriceSyncStatus === 'failed' }"
+          >
+            {{ startupPriceSyncMessage || "Updating prices…" }}
+          </span>
           <RouterLink
             :to="advancedSearchLink"
             class="app-topbar-advanced-search"
