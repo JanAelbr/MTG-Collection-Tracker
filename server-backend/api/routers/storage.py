@@ -68,6 +68,11 @@ def list_breakdown_snapshots(conn: sqlite3.Connection = Depends(get_db)):
     return {"snapshots": storage_service.list_breakdown_snapshots(conn)}
 
 
+@router.get("/breakdowns/history")
+def list_breakdown_history(conn: sqlite3.Connection = Depends(get_db)):
+    return storage_service.list_breakdown_history(conn)
+
+
 @router.get("/breakdowns/{snapshot_id}")
 def get_breakdown_snapshot(snapshot_id: int, conn: sqlite3.Connection = Depends(get_db)):
     try:

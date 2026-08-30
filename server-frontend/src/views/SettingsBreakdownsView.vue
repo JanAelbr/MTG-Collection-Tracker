@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { api } from "../api";
+import ConfigurableBreakdownCharts from "../components/ConfigurableBreakdownCharts.vue";
 import { formatEuro } from "../utils/format";
 import {
   loadSnapshots,
@@ -12,6 +14,15 @@ import {
 
 const router = useRouter();
 const hasSnapshots = computed(() => snapshotList.value.length > 0);
+const history = ref({ points: [], hasArtStyles: false });
+
+async function loadHistory() {
+  try {
+    history.value = await api.listStorageBreakdownHistory();
+  } catch {
+    history.value = { points: [], hasArtStyles: false };
+  }
+}
 
 async function openSnapshot(snapshot) {
   await applySnapshotSelection(snapshot.id);
@@ -21,8 +32,15 @@ async function openSnapshot(snapshot) {
   });
 }
 
+async function removeSnapshot(snapshot) {
+  if (await deleteSnapshot(snapshot)) {
+    await loadHistory();
+  }
+}
+
 onMounted(() => {
   loadSnapshots();
+  loadHistory();
 });
 </script>
 
@@ -32,8 +50,10 @@ onMounted(() => {
       <h2>Breakdown snapshots</h2>
       <p class="home-intro">
         Daily storage breakdowns are saved from Storage. There is one snapshot per UTC day;
-        saving again that day replaces it. Delete days you no longer need.
+        saving again that day replaces it. Graphs track market value across those days.
       </p>
+
+      <ConfigurableBreakdownCharts :history="history" />
 
       <p v-if="!hasSnapshots" class="home-meta">No saved breakdowns yet.</p>
 
@@ -60,7 +80,7 @@ onMounted(() => {
             <button
               type="button"
               class="btn btn-danger btn-small"
-              @click="deleteSnapshot(snapshot)"
+              @click="removeSnapshot(snapshot)"
             >
               Delete
             </button>

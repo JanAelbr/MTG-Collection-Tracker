@@ -575,7 +575,8 @@ def _nonfoil_product_points(
     return sorted(points)
 
 
-MAX_INTERPOLATION_STEP = 50
+MAX_INTERPOLATION_STEP = 2
+MAX_INTERPOLATION_COLLECTOR_GAP = 3
 
 
 def _is_viable_anchor_pair(lower: tuple[int, int], upper: tuple[int, int]) -> bool:
@@ -583,7 +584,10 @@ def _is_viable_anchor_pair(lower: tuple[int, int], upper: tuple[int, int]) -> bo
     cn_hi, pid_hi = upper
     if cn_hi == cn_lo:
         return False
-    step = abs(pid_hi - pid_lo) / (cn_hi - cn_lo)
+    gap = cn_hi - cn_lo
+    if gap > MAX_INTERPOLATION_COLLECTOR_GAP:
+        return False
+    step = abs(pid_hi - pid_lo) / gap
     return step <= MAX_INTERPOLATION_STEP
 
 
@@ -601,6 +605,8 @@ def _infer_product_from_neighbors(
     upper = after[0]
     lower = None
     for candidate in reversed(before):
+        if upper[0] - candidate[0] > MAX_INTERPOLATION_COLLECTOR_GAP:
+            break
         if _is_viable_anchor_pair(candidate, upper):
             lower = candidate
             break
@@ -668,17 +674,47 @@ def _linked_nonfoil_trend_is_outlier(
     return trend > cap
 
 
+def _owned_product_ids(set_rows: list[tuple], exclude_collector: str) -> set[int]:
+    owned: set[int] = set()
+    for collector_number, cardmarket_url, cardmarket_url_foil, *_rest in set_rows:
+        if str(collector_number) == str(exclude_collector):
+            continue
+        for url in (cardmarket_url, cardmarket_url_foil):
+            product_id = parse_id_product(url)
+            if product_id is not None:
+                owned.add(product_id)
+    return owned
+
+
+def _usable_nonfoil_product_id(
+    product_id: int | None,
+    guide: dict[int, dict],
+    owned_product_ids: set[int],
+) -> int | None:
+    if product_id is None or product_id in owned_product_ids:
+        return None
+    entry = guide.get(product_id)
+    if entry and _entry_has_nonfoil_prices(entry):
+        return product_id
+    return None
+
+
 def _resolve_repair_nonfoil_product_id(
     collector_number: str,
     neighbor_points: list[tuple[int, int]],
     guide: dict[int, dict],
+    *,
+    owned_product_ids: set[int] | None = None,
 ) -> int | None:
+    owned = owned_product_ids or set()
     filtered = _filter_price_outlier_anchor_points(neighbor_points, guide)
-    inferred = _infer_product_from_neighbors(collector_number, filtered)
+    inferred = _usable_nonfoil_product_id(
+        _infer_product_from_neighbors(collector_number, filtered),
+        guide,
+        owned,
+    )
     if inferred is not None:
-        entry = guide.get(inferred)
-        if entry and _entry_has_nonfoil_prices(entry):
-            return inferred
+        return inferred
 
     collector_key = _collector_number_sort_key(collector_number)
     if collector_key is None or not filtered:
@@ -693,9 +729,9 @@ def _resolve_repair_nonfoil_product_id(
         ),
     )
     for _, product_id in close[:4]:
-        entry = guide.get(product_id)
-        if entry and _entry_has_nonfoil_prices(entry):
-            return product_id
+        usable = _usable_nonfoil_product_id(product_id, guide, owned)
+        if usable is not None:
+            return usable
     return None
 
 
@@ -853,6 +889,7 @@ def repair_mislinked_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, 
                 collector_number,
                 neighbor_points,
                 guide,
+                owned_product_ids=_owned_product_ids(set_rows, collector_number),
             )
             if inferred is None:
                 continue
@@ -1182,7 +1219,235 @@ def repair_finish_flag_url_mismatches(
     return updated
 
 
-def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -> int:
+def _scryfall_merge_card(
+    has_nonfoil: int | None,
+    has_foil: int | None,
+    has_etched: int | None,
+    scryfall_url: str,
+) -> dict:
+    finishes: list[str] = []
+    if has_nonfoil:
+        finishes.append("nonfoil")
+    if has_foil:
+        finishes.append("foil")
+    if has_etched:
+        finishes.append("etched")
+    return {
+        "finishes": finishes or ["nonfoil"],
+        "purchase_uris": {"cardmarket": scryfall_url},
+    }
+
+
+def _write_restored_cardmarket_urls(
+    conn: sqlite3.Connection,
+    set_code: str,
+    collector_number: str,
+    nonfoil_url: str | None,
+    foil_url: str | None,
+    scryfall_url: str | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE cards
+        SET cardmarket_url = ?, cardmarket_url_foil = ?, scryfall_cardmarket_url = ?
+        WHERE set_code = ? AND collector_number = ?
+        """,
+        (nonfoil_url, foil_url, scryfall_url, set_code, collector_number),
+    )
+
+
+def _restore_row_from_scryfall_url(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+    *,
+    set_code: str,
+    collector_number: str,
+    cardmarket_url: str | None,
+    cardmarket_url_foil: str | None,
+    scryfall_url: str | None,
+    stored_scryfall_url: str | None,
+    has_nonfoil: int | None,
+    has_foil: int | None,
+    has_etched: int | None,
+) -> bool:
+    scryfall_url = coerce_cardmarket_url(scryfall_url)
+    if not scryfall_url:
+        return False
+    merged = merge_cardmarket_urls(
+        cardmarket_url,
+        cardmarket_url_foil,
+        _scryfall_merge_card(has_nonfoil, has_foil, has_etched, scryfall_url),
+        guide=guide,
+    )
+    current = (
+        coerce_cardmarket_url(cardmarket_url),
+        coerce_cardmarket_url(cardmarket_url_foil),
+        coerce_cardmarket_url(stored_scryfall_url),
+    )
+    repaired = (*merged, scryfall_url)
+    if current == repaired:
+        return False
+    _write_restored_cardmarket_urls(
+        conn, set_code, collector_number, merged[0], merged[1], scryfall_url,
+    )
+    return True
+
+
+def _restore_card_select_sql() -> str:
+    return """
+        SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+               scryfall_cardmarket_url,
+               COALESCE(has_nonfoil, 1), COALESCE(has_foil, 0), COALESCE(has_etched, 0)
+        FROM cards
+    """
+
+
+def _restore_from_stored_scryfall_urls(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+) -> int:
+    columns = _audit_card_columns(conn)
+    if "has_nonfoil" not in columns:
+        return 0
+    rows = conn.execute(
+        _restore_card_select_sql()
+        + """
+        WHERE scryfall_cardmarket_url IS NOT NULL AND TRIM(scryfall_cardmarket_url) != ''
+        """
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        if _restore_row_from_scryfall_url(
+            conn,
+            guide,
+            set_code=row[0],
+            collector_number=row[1],
+            cardmarket_url=row[2],
+            cardmarket_url_foil=row[3],
+            scryfall_url=row[4],
+            stored_scryfall_url=row[4],
+            has_nonfoil=row[5],
+            has_foil=row[6],
+            has_etched=row[7],
+        ):
+            updated += 1
+    return updated
+
+
+def _restore_set_from_scryfall_cards(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+    set_code: str,
+    scryfall_cards: list[dict],
+) -> int:
+    by_collector = {
+        str(card.get("collector_number") or ""): card
+        for card in scryfall_cards
+        if card.get("collector_number") is not None
+    }
+    if "has_nonfoil" not in _audit_card_columns(conn):
+        return 0
+    rows = conn.execute(
+        _restore_card_select_sql() + " WHERE set_code = ?",
+        (set_code,),
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        card = by_collector.get(str(row[1]))
+        if not card:
+            continue
+        if _restore_row_from_scryfall_url(
+            conn,
+            guide,
+            set_code=row[0],
+            collector_number=row[1],
+            cardmarket_url=row[2],
+            cardmarket_url_foil=row[3],
+            scryfall_url=scryfall_cardmarket_url(card),
+            stored_scryfall_url=row[4],
+            has_nonfoil=row[5],
+            has_foil=row[6],
+            has_etched=row[7],
+        ):
+            updated += 1
+    return updated
+
+
+def _is_scryfall_sourced_url(url: str | None) -> bool:
+    text = coerce_cardmarket_url(url)
+    if not text:
+        return False
+    lowered = text.lower()
+    return "referrer=scryfall" in lowered or "utm_source=scryfall" in lowered
+
+
+def _collision_sets_needing_fetch(conn: sqlite3.Connection) -> list[str]:
+    """Sets where a shared product ID still needs a Scryfall purchase URI.
+
+    Skip collisions that already look Scryfall-sourced so price sync does not
+    download entire catalogs (PLST, 2X2, …) on every run.
+    """
+    columns = _audit_card_columns(conn)
+    has_stored = "scryfall_cardmarket_url" in columns
+    stored_select = "scryfall_cardmarket_url" if has_stored else "NULL"
+    owners: dict[tuple[str, int], list[tuple[str, str | None, str | None]]] = {}
+    for set_code, collector_number, cardmarket_url, cardmarket_url_foil, stored in conn.execute(
+        f"""
+        SELECT set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+               {stored_select}
+        FROM cards
+        """
+    ):
+        for url in (cardmarket_url, cardmarket_url_foil):
+            product_id = parse_id_product(url)
+            if product_id is None:
+                continue
+            owners.setdefault((str(set_code).upper(), product_id), []).append(
+                (str(collector_number), url, stored)
+            )
+    needed: set[str] = set()
+    for (set_code, _product_id), rows in owners.items():
+        collectors = {collector for collector, _url, _stored in rows}
+        if len(collectors) < 2:
+            continue
+        rewritten = any(not _is_scryfall_sourced_url(url) for _cn, url, _stored in rows)
+        missing_stored = any(not coerce_cardmarket_url(stored) for _cn, _url, stored in rows)
+        if rewritten and missing_stored:
+            needed.add(set_code)
+    return sorted(needed)
+
+
+def restore_scryfall_cardmarket_urls(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+    *,
+    fetch_set_cards=None,
+) -> int:
+    """Re-apply Scryfall purchase URIs when stored IDs collide or drift."""
+    if "scryfall_cardmarket_url" not in _audit_card_columns(conn):
+        return 0
+    updated = _restore_from_stored_scryfall_urls(conn, guide)
+    collision_sets = _collision_sets_needing_fetch(conn)
+    if not collision_sets:
+        return updated
+    if fetch_set_cards is None:
+        from util.price_sync import iter_scryfall_set_cards
+
+        fetch_set_cards = iter_scryfall_set_cards
+    for set_code in collision_sets:
+        cards = list(fetch_set_cards(set_code) or [])
+        if not cards:
+            continue
+        updated += _restore_set_from_scryfall_cards(conn, guide, set_code, cards)
+    return updated
+
+
+def backfill_cardmarket_urls(
+    conn: sqlite3.Connection,
+    guide: dict[int, dict],
+    *,
+    fetch_set_cards=None,
+) -> int:
     columns = _audit_card_columns(conn)
     has_finish_flags = "has_nonfoil" in columns
     if has_finish_flags:
@@ -1240,6 +1505,9 @@ def backfill_cardmarket_urls(conn: sqlite3.Connection, guide: dict[int, dict]) -
             (normalized[0], normalized[1], set_code, collector_number),
         )
         updated += 1
+    updated += restore_scryfall_cardmarket_urls(
+        conn, guide, fetch_set_cards=fetch_set_cards,
+    )
     updated += _repair_known_ltc_ring_urls(conn, guide)
     updated += repair_mislinked_cardmarket_urls(conn, guide)
     if has_finish_flags:

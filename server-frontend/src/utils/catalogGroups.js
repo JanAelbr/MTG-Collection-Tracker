@@ -112,6 +112,22 @@ export function priceTintForCard(card) {
   return PRICE_TINT_BY_KEY[key] || "";
 }
 
+/** Price washes are redundant when cards are already ordered or sectioned by value. */
+export function shouldApplyPriceTileTint({
+  enabled = false,
+  sort = "",
+  groupBy = [],
+} = {}) {
+  if (!enabled) {
+    return false;
+  }
+  if (sort === "value") {
+    return false;
+  }
+  const levels = Array.isArray(groupBy) ? groupBy : [groupBy];
+  return !levels.some((level) => level === "value");
+}
+
 function colorGroupMeta(key) {
   return {
     key,

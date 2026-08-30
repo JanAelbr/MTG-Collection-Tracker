@@ -25,6 +25,7 @@ import {
   defaultCollectionSortDir,
   sortCollectionCards,
 } from "../utils/collectionSort";
+import { shouldApplyPriceTileTint } from "../utils/catalogGroups";
 
 const GALLERY_SORT_OPTIONS = [
   { id: "value", label: "Value" },
@@ -43,6 +44,10 @@ const galleryOwnedFilter = ref("owned");
 const gallerySort = ref("number");
 const gallerySortDir = ref(defaultCollectionSortDir("number"));
 const { settings: pricingSettings, collectionCardScale, collectionPriceTileTint } = usePricingSettings();
+const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
+  enabled: collectionPriceTileTint.value,
+  sort: gallerySort.value,
+}));
 const { toggleArtStyleFavorite, favoriteCards, favoriteArtStyles } = useFavorites();
 
 const sets = computed(() => payload.value?.sets || []);
@@ -417,7 +422,7 @@ onMounted(async () => {
             show-unowned-badge
             :reorderable="cardsReorderable"
             :card-scale="collectionCardScale"
-            :price-tile-tint="collectionPriceTileTint"
+            :price-tile-tint="showPriceTileTint"
             @ownership-changed="onOwnershipChanged"
             @favorite-changed="onCardFavoriteChanged"
             @reorder="onReorderCards"
@@ -477,7 +482,7 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
-              :price-tile-tint="collectionPriceTileTint"
+              :price-tile-tint="showPriceTileTint"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />
@@ -486,7 +491,7 @@ onMounted(async () => {
               :cards="style.cards"
               show-unowned-badge
               :card-scale="collectionCardScale"
-              :price-tile-tint="collectionPriceTileTint"
+              :price-tile-tint="showPriceTileTint"
               @ownership-changed="onOwnershipChanged"
               @favorite-changed="onCardFavoriteChanged"
             />

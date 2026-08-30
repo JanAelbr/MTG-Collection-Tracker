@@ -11,6 +11,7 @@ from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL  # noq
 from util.cardmarket_urls import (  # noqa: E402
     _infer_product_from_neighbors,
     _nonfoil_product_points,
+    _resolve_repair_nonfoil_product_id,
     audit_cardmarket_urls,
     backfill_cardmarket_urls,
     cardmarket_url_for_finish,
@@ -739,6 +740,190 @@ class CardmarketUrlTests(unittest.TestCase):
         self.assertIsNone(row[0])
         self.assertIn("752694", row[1] or "")
         self.assertEqual(report["counts"]["foil_only_has_nonfoil_url"], 0)
+
+    def test_infer_does_not_jump_across_scrambled_set_ids(self):
+        points = [
+            (117, 675233),
+            (123, 674731),
+            (125, 675239),
+        ]
+        self.assertIsNone(_infer_product_from_neighbors("124", points))
+
+    def test_resolve_repair_rejects_product_owned_by_another_card(self):
+        guide = {
+            675233: {"trend": 0.2},
+            675238: {"trend": 4.86},
+            675239: {"trend": 0.27},
+        }
+        points = [(117, 675233), (125, 675239)]
+        inferred = _resolve_repair_nonfoil_product_id(
+            "124",
+            points,
+            guide,
+            owned_product_ids={675233, 675238, 675239},
+        )
+        self.assertIsNone(inferred)
+
+    def test_backfill_restores_scryfall_url_on_duplicate_product(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                scryfall_cardmarket_url TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        rows = [
+            ("40K", "35", "https://www.cardmarket.com/en/Magic/Products?idProduct=675238",
+             None, "https://www.cardmarket.com/en/Magic/Products?idProduct=675238", 1, 0, 0),
+            ("40K", "124", "https://www.cardmarket.com/en/Magic/Products?idProduct=675238",
+             None, "https://www.cardmarket.com/en/Magic/Products?idProduct=674727", 1, 0, 0),
+            ("40K", "125", "https://www.cardmarket.com/en/Magic/Products?idProduct=675239",
+             None, "https://www.cardmarket.com/en/Magic/Products?idProduct=675239", 1, 0, 0),
+        ]
+        conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                scryfall_cardmarket_url, has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        guide = {
+            674727: {"trend": 28.19, "trend-foil": 40.94},
+            675238: {"trend": 4.86, "trend-foil": 8.59},
+            675239: {"trend": 0.27, "trend-foil": 0.58},
+        }
+        backfill_cardmarket_urls(conn, guide, fetch_set_cards=lambda _set: [])
+        row = conn.execute(
+            "SELECT cardmarket_url FROM cards WHERE collector_number = '124'"
+        ).fetchone()
+        other = conn.execute(
+            "SELECT cardmarket_url FROM cards WHERE collector_number = '35'"
+        ).fetchone()
+        conn.close()
+        self.assertIn("674727", row[0] or "")
+        self.assertIn("675238", other[0] or "")
+
+    def test_backfill_fetches_scryfall_for_collision_set(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                scryfall_cardmarket_url TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                scryfall_cardmarket_url, has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("40K", "35", "https://www.cardmarket.com/en/Magic/Products?idProduct=675238",
+                 None, None, 1, 0, 0),
+                ("40K", "124", "https://www.cardmarket.com/en/Magic/Products?idProduct=675238",
+                 None, None, 1, 0, 0),
+            ],
+        )
+        guide = {
+            674727: {"trend": 28.19},
+            675238: {"trend": 4.86},
+        }
+
+        def fetch_set_cards(set_code):
+            self.assertEqual(set_code, "40K")
+            return [
+                {
+                    "collector_number": "35",
+                    "finishes": ["nonfoil"],
+                    "purchase_uris": {
+                        "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=675238",
+                    },
+                },
+                {
+                    "collector_number": "124",
+                    "finishes": ["nonfoil"],
+                    "purchase_uris": {
+                        "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=674727",
+                    },
+                },
+            ]
+
+        backfill_cardmarket_urls(conn, guide, fetch_set_cards=fetch_set_cards)
+        row = conn.execute(
+            """
+            SELECT cardmarket_url, scryfall_cardmarket_url
+            FROM cards WHERE collector_number = '124'
+            """
+        ).fetchone()
+        conn.close()
+        self.assertIn("674727", row[0] or "")
+        self.assertIn("674727", row[1] or "")
+
+    def test_backfill_skips_scryfall_sourced_collisions(self):
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            """
+            CREATE TABLE cards (
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                cardmarket_url TEXT,
+                cardmarket_url_foil TEXT,
+                scryfall_cardmarket_url TEXT,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            )
+            """
+        )
+        scryfall_url = (
+            "https://www.cardmarket.com/en/Magic/Products?idProduct=100"
+            "&referrer=scryfall&utm_source=scryfall"
+        )
+        conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, cardmarket_url, cardmarket_url_foil,
+                scryfall_cardmarket_url, has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("2X2", "1", scryfall_url, None, None, 1, 0, 0),
+                ("2X2", "2", scryfall_url, None, None, 1, 0, 0),
+            ],
+        )
+        fetched = []
+        backfill_cardmarket_urls(
+            conn,
+            {100: {"trend": 1.0}},
+            fetch_set_cards=lambda set_code: fetched.append(set_code) or [],
+        )
+        conn.close()
+        self.assertEqual(fetched, [])
 
 
 if __name__ == "__main__":

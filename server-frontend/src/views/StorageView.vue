@@ -52,6 +52,7 @@ import {
   snapshotSetLookup,
 } from "../utils/storageBreakdownDiff";
 import { STORAGE_LOCATION_SECTIONS } from "../utils/storageLocationGroups";
+import { shouldApplyPriceTileTint } from "../utils/catalogGroups";
 
 const route = useRoute();
 const router = useRouter();
@@ -92,6 +93,11 @@ const cardsSort = ref("value");
 const cardsSortDir = ref(defaultCollectionSortDir("value"));
 const viewMode = ref("gallery");
 const groupByLevels = ref(["set"]);
+const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
+  enabled: collectionPriceTileTint.value,
+  sort: cardsSort.value,
+  groupBy: groupByLevels.value,
+}));
 /** Group paths currently expanded; empty = all collapsed (default). */
 const expandedGroupKeys = ref(new Set());
 const syncingRoute = ref(false);
@@ -1608,7 +1614,7 @@ onMounted(async () => {
                   :cards="group.cards"
                   :card-scale="collectionCardScale"
                   :scrollable="isLargeGroup(group)"
-                  :price-tile-tint="collectionPriceTileTint"
+                  :price-tile-tint="showPriceTileTint"
                 />
               </template>
             </CollectionGroupTree>
@@ -1619,7 +1625,7 @@ onMounted(async () => {
             :card-scale="collectionCardScale"
             show-set-label
             :set-label-for="setLabelForCode"
-            :price-tile-tint="collectionPriceTileTint"
+            :price-tile-tint="showPriceTileTint"
           />
         </GalleryLoadingOverlay>
 

@@ -13,6 +13,7 @@ from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_image_fields, card_metadata_api
 from util.db_migrate import ensure_card_columns
+from util.set_catalog import load_set_display_names
 
 LOCATIONS_QUERY = """
 SELECT
@@ -359,6 +360,7 @@ def get_storage_breakdown(
 
     by_finish: dict[int, dict] = {}
     by_set: dict[str, dict] = {}
+    by_art_style: dict[str, dict] = {}
     by_print: dict[tuple, dict] = {}
 
     total_copies = 0
@@ -421,6 +423,20 @@ def get_storage_breakdown(
             if unit_current is not None:
                 set_bucket["current"] += unit_current
 
+        art_style = str_or_empty(row["art_style"])
+        if art_style:
+            art_bucket = by_art_style.setdefault(
+                art_style,
+                {
+                    "artStyle": art_style,
+                    "copies": 0,
+                    "current": 0.0,
+                },
+            )
+            art_bucket["copies"] += 1
+            if unit_current is not None:
+                art_bucket["current"] += unit_current
+
         print_key = (set_code, collector, finish)
         print_bucket = by_print.setdefault(
             print_key,
@@ -479,6 +495,22 @@ def get_storage_breakdown(
     set_rows.sort(key=lambda row: (-row["current"], -row["copies"], row["setCode"]))
     set_rows = set_rows[:top_sets]
 
+    art_style_rows = []
+    for bucket in by_art_style.values():
+        if not bucket["copies"]:
+            continue
+        art_style_rows.append({
+            "id": bucket["artStyle"],
+            "artStyle": bucket["artStyle"],
+            "label": bucket["artStyle"],
+            "count": bucket["copies"],
+            "copies": bucket["copies"],
+            "current": round(bucket["current"], 2) if bucket["current"] else 0.0,
+            "share": (bucket["copies"] / total_copies) if total_copies else 0.0,
+            "valueShare": (bucket["current"] / total_current) if total_current else 0.0,
+        })
+    art_style_rows.sort(key=lambda row: (-row["current"], -row["copies"], row["artStyle"]))
+
     top_card_rows = []
     for bucket in by_print.values():
         top_card_rows.append({
@@ -513,6 +545,7 @@ def get_storage_breakdown(
         },
         "byFinish": finish_rows,
         "bySet": set_rows,
+        "byArtStyle": art_style_rows,
         "topCards": top_card_rows,
     }
 
@@ -613,6 +646,7 @@ def save_daily_breakdown(
             "totals": breakdown["totals"],
             "byFinish": breakdown["byFinish"],
             "bySet": breakdown["bySet"],
+            "byArtStyle": breakdown["byArtStyle"],
             "topCards": breakdown["topCards"],
         })
     payload = {
@@ -650,6 +684,123 @@ def save_daily_breakdown(
         (snapshot_date,),
     ).fetchone()
     return _serialize_snapshot_row(row)
+
+
+def _history_mix_rows(rows: list | None, id_field: str) -> list[dict]:
+    compact: list[dict] = []
+    for row in rows or []:
+        ident = str(row.get(id_field) or row.get("id") or "").strip()
+        if not ident:
+            continue
+        compact.append({
+            "id": ident,
+            "label": str(row.get("label") or ident),
+            "copies": int(row.get("copies") or row.get("count") or 0),
+            "current": float(row.get("current") or 0),
+        })
+    return compact
+
+
+def _merge_history_mix(target: dict[str, dict], rows: list[dict]) -> None:
+    for row in rows:
+        bucket = target.get(row["id"])
+        if bucket is None:
+            target[row["id"]] = {
+                "id": row["id"],
+                "label": row["label"],
+                "copies": row["copies"],
+                "current": row["current"],
+            }
+            continue
+        bucket["copies"] += row["copies"]
+        bucket["current"] += row["current"]
+        if row["label"]:
+            bucket["label"] = row["label"]
+
+
+def _rounded_mix(values: dict[str, dict]) -> list[dict]:
+    rows = []
+    for bucket in values.values():
+        rows.append({
+            "id": bucket["id"],
+            "label": bucket["label"],
+            "copies": int(bucket["copies"] or 0),
+            "current": round(float(bucket["current"] or 0), 2),
+        })
+    rows.sort(key=lambda row: (-row["current"], -row["copies"], row["label"]))
+    return rows
+
+
+def _set_display_label(set_code: str, set_names: dict[str, str] | None) -> str:
+    code = str(set_code or "").strip().upper()
+    if not code:
+        return ""
+    name = (set_names or {}).get(code)
+    return name or code
+
+
+def compact_breakdown_history(
+    snapshots: list[dict],
+    set_names: dict[str, str] | None = None,
+) -> dict:
+    ordered = sorted(
+        snapshots,
+        key=lambda item: (str(item.get("snapshotDate") or ""), int(item.get("id") or 0)),
+    )
+    points = []
+    has_art_styles = False
+    for item in ordered:
+        locations = item.get("locations") or []
+        location_rows = []
+        sets: dict[str, dict] = {}
+        art_styles: dict[str, dict] = {}
+        for loc in locations:
+            totals = loc.get("totals") or {}
+            slug = str(loc.get("slug") or "").strip()
+            if slug:
+                location_rows.append({
+                    "id": slug,
+                    "label": str(loc.get("label") or slug),
+                    "copies": int(totals.get("copies") or 0),
+                    "current": float(totals.get("current") or 0),
+                })
+            _merge_history_mix(sets, _history_mix_rows(loc.get("bySet"), "setCode"))
+            art_rows = _history_mix_rows(loc.get("byArtStyle"), "artStyle")
+            if art_rows:
+                has_art_styles = True
+            _merge_history_mix(art_styles, art_rows)
+        combined = _combined_snapshot_totals(locations)
+        points.append({
+            "id": int(item.get("id") or 0),
+            "date": item.get("snapshotDate") or "",
+            "copies": int(combined.get("copies") or 0),
+            "current": combined.get("current"),
+            "locations": location_rows,
+            "sets": [
+                {**row, "label": _set_display_label(row["id"], set_names)}
+                for row in _rounded_mix(sets)
+            ],
+            "artStyles": _rounded_mix(art_styles),
+        })
+    return {
+        "points": points,
+        "hasArtStyles": has_art_styles,
+    }
+
+
+def list_breakdown_history(conn: sqlite3.Connection) -> dict:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT snapshot_id, snapshot_date, created_at, note, price_strategy, payload_json
+        FROM storage_breakdown_snapshots
+        ORDER BY snapshot_date ASC, snapshot_id ASC
+        """
+    ).fetchall()
+    snapshots = [_serialize_snapshot_row(row, include_payload=True) for row in rows]
+    return compact_breakdown_history(snapshots, set_names=load_set_display_names(conn))
 
 
 def list_breakdown_snapshots(conn: sqlite3.Connection) -> list[dict]:

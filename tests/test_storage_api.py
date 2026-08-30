@@ -88,7 +88,7 @@ class StorageApiServiceTests(unittest.TestCase):
                 set_code, collector_number, name, art_style, image_uri,
                 market_value, market_value_foil, cardmarket_url
             ) VALUES
-                ('LTR', '1', 'Card A', '', '', 10.0, 20.0, NULL),
+                ('LTR', '1', 'Card A', 'Showcase', '', 10.0, 20.0, NULL),
                 ('LTR', '2', 'Card B', '', '', 5.0, NULL, NULL)
             """
         )
@@ -131,6 +131,8 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertNotIn("byLocation", result)
         self.assertTrue(result["byFinish"])
         self.assertEqual(result["bySet"][0]["setCode"], "LTR")
+        self.assertEqual(result["byArtStyle"][0]["artStyle"], "Showcase")
+        self.assertEqual(result["byArtStyle"][0]["copies"], 1)
         self.assertEqual(len(result["topCards"]), 2)
         self.assertEqual(binder_result["totals"]["copies"], 1)
 
@@ -206,6 +208,59 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertEqual(storage_service.list_breakdown_snapshots(self.conn), [])
         with self.assertRaises(storage_service.StorageError):
             storage_service.get_breakdown_snapshot(self.conn, second["id"])
+
+    def test_breakdown_history_tracks_set_storage_and_art_style(self):
+        history = storage_service.compact_breakdown_history(
+            [
+            {
+                "id": 1,
+                "snapshotDate": "2026-08-01",
+                "locations": [
+                    {
+                        "slug": "storage:general",
+                        "label": "General",
+                        "totals": {"copies": 2, "current": 20.0},
+                        "bySet": [{"setCode": "LTR", "copies": 2, "current": 20.0}],
+                    },
+                    {
+                        "slug": "binder:ltr",
+                        "label": "LTR binder",
+                        "totals": {"copies": 1, "current": 15.0},
+                        "bySet": [{"setCode": "LTR", "copies": 1, "current": 15.0}],
+                        "byArtStyle": [{"artStyle": "Showcase", "copies": 1, "current": 15.0}],
+                    },
+                ],
+            },
+            {
+                "id": 2,
+                "snapshotDate": "2026-08-15",
+                "locations": [
+                    {
+                        "slug": "storage:general",
+                        "label": "General",
+                        "totals": {"copies": 3, "current": 24.0},
+                        "bySet": [{"setCode": "LTR", "copies": 3, "current": 24.0}],
+                    },
+                    {
+                        "slug": "binder:ltr",
+                        "label": "LTR binder",
+                        "totals": {"copies": 2, "current": 40.0},
+                        "bySet": [{"setCode": "LTR", "copies": 1, "current": 20.0}],
+                        "byArtStyle": [{"artStyle": "Showcase", "copies": 2, "current": 40.0}],
+                    },
+                ],
+            },
+        ],
+            set_names={"LTR": "The Lord of the Rings"},
+        )
+        self.assertTrue(history["hasArtStyles"])
+        self.assertEqual([point["date"] for point in history["points"]], ["2026-08-01", "2026-08-15"])
+        self.assertEqual(history["points"][0]["copies"], 3)
+        self.assertEqual(history["points"][1]["current"], 64.0)
+        self.assertEqual(history["points"][1]["sets"][0]["copies"], 4)
+        self.assertEqual(history["points"][1]["sets"][0]["label"], "The Lord of the Rings")
+        self.assertEqual(history["points"][1]["artStyles"][0]["id"], "Showcase")
+        self.assertEqual(history["points"][1]["artStyles"][0]["current"], 40.0)
 
     def test_create_custom_binder(self):
         created = storage_service.create_location(

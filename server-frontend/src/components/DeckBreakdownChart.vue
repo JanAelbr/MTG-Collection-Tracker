@@ -24,6 +24,8 @@ const props = defineProps({
   interactive: { type: Boolean, default: false },
   /** Show Scryfall mana pips beside legend labels when row ids are WUBRG/C. */
   manaLegend: { type: Boolean, default: false },
+  /** Format donut center and legend counts (e.g. euro). */
+  formatCount: { type: Function, default: null },
 });
 
 const manaIdSet = new Set(MANA_COLORS);
@@ -63,6 +65,13 @@ function colorFor(index) {
 
 function formatShare(share) {
   return `${Math.round((Number(share) || 0) * 100)}%`;
+}
+
+function displayCount(value) {
+  if (typeof props.formatCount === "function") {
+    return props.formatCount(value);
+  }
+  return value;
 }
 
 function toggleRow(row) {
@@ -145,7 +154,7 @@ watch(
             </circle>
           </svg>
           <div class="deck-breakdown-donut-center">
-            <span class="deck-breakdown-donut-center-value">{{ total }}</span>
+            <span class="deck-breakdown-donut-center-value">{{ displayCount(total) }}</span>
             <span v-if="unitLabel" class="deck-breakdown-donut-center-label">{{ unitLabel }}</span>
           </div>
         </div>
@@ -179,7 +188,7 @@ watch(
               />
             </span>
             <span class="deck-breakdown-legend-label">{{ row.label }}</span>
-            <span class="deck-breakdown-legend-count">{{ row.count }}</span>
+            <span class="deck-breakdown-legend-count">{{ displayCount(row.count) }}</span>
             <span class="deck-breakdown-legend-share">{{ formatShare(row.share) }}</span>
           </li>
         </ul>

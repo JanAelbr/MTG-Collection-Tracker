@@ -8,6 +8,7 @@ import {
   catalogValueGroupKeyForCard,
   formatCatalogGroupMeta,
   groupCatalogCards,
+  shouldApplyPriceTileTint,
   UNPRICED_KEY,
 } from "./catalogGroups.js";
 
@@ -56,6 +57,30 @@ describe("catalogValueGroupKey", () => {
       currentValue: 0.1,
       valuesByStrategy: { low: 0.2, trend: 12 },
     })).toBe("10+");
+  });
+});
+
+describe("shouldApplyPriceTileTint", () => {
+  it("is off when the setting is off", () => {
+    expect(shouldApplyPriceTileTint({ enabled: false, sort: "color" })).toBe(false);
+  });
+
+  it("is off when sorted or grouped by price", () => {
+    expect(shouldApplyPriceTileTint({ enabled: true, sort: "value" })).toBe(false);
+    expect(shouldApplyPriceTileTint({
+      enabled: true,
+      sort: "name",
+      groupBy: ["set", "value"],
+    })).toBe(false);
+  });
+
+  it("is on for other sorts and groups", () => {
+    expect(shouldApplyPriceTileTint({ enabled: true, sort: "color" })).toBe(true);
+    expect(shouldApplyPriceTileTint({
+      enabled: true,
+      sort: "name",
+      groupBy: ["set", "color"],
+    })).toBe(true);
   });
 });
 

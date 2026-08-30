@@ -316,6 +316,8 @@ export const api = {
 
   listStorageBreakdownSnapshots: () => apiRequest("/storage/breakdowns"),
 
+  listStorageBreakdownHistory: () => apiRequest("/storage/breakdowns/history"),
+
   getStorageBreakdownSnapshot: (snapshotId) =>
     apiRequest(`/storage/breakdowns/${encodeURIComponent(snapshotId)}`),
 

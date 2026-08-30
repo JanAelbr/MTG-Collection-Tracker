@@ -22,7 +22,7 @@ import { COLLECTION_TYPE_LABELS, COLLECTION_TYPE_ORDER } from "../utils/collecti
 import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defaultSearchSortDirForField, normalizeSearchSort } from "../utils/setScope";
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 import { resolveSetIconUri } from "../utils/scryfall";
-import { attachCatalogGroupPricing } from "../utils/catalogGroups";
+import { attachCatalogGroupPricing, shouldApplyPriceTileTint } from "../utils/catalogGroups";
 import {
   collectGroupPaths,
   groupSearchCards,
@@ -83,6 +83,11 @@ const virtualGridRef = ref(null);
 const filterSidebarRef = ref(null);
 const { loading, run } = useAsyncLoad();
 const { collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
+const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
+  enabled: collectionPriceTileTint.value,
+  sort: searchSort.value,
+  groupBy: searchGroupByLevels.value,
+}));
 let searchRequestToken = 0;
 let detailFilterRouteTimer = null;
 
@@ -1310,7 +1315,7 @@ onMounted(async () => {
                         :cards="group.cards"
                         :card-scale="collectionCardScale"
                         :scrollable="isLargeSearchGroup(group)"
-                        :price-tile-tint="collectionPriceTileTint"
+                        :price-tile-tint="showPriceTileTint"
                         :show-unowned-badge="false"
                         :show-favorites="false"
                         browse-names
@@ -1329,7 +1334,7 @@ onMounted(async () => {
                   :show-unowned-badge="false"
                   :card-scale="collectionCardScale"
                   :has-more="hasMoreResults"
-                  :price-tile-tint="collectionPriceTileTint"
+                  :price-tile-tint="showPriceTileTint"
                   browse-names
                   :selected-name="selectedBrowseName"
                   @browse-name="browseCardName"

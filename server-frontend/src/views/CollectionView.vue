@@ -7,7 +7,7 @@ import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionAllToolbar from "../components/CollectionAllToolbar.vue";
 import CollectionMobileFilterSheet from "../components/CollectionMobileFilterSheet.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
-import { groupCatalogCards } from "../utils/catalogGroups";
+import { groupCatalogCards, shouldApplyPriceTileTint } from "../utils/catalogGroups";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
@@ -81,6 +81,10 @@ const virtualGridRef = ref(null);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
 const { pageSize, collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
+const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
+  enabled: collectionPriceTileTint.value,
+  sort: allCardsSort.value,
+}));
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
@@ -1723,7 +1727,7 @@ onUnmounted(stopPolling);
               :selected-keys="selectedKeys"
               :focused-index="focusedIndex"
               :has-more="allCardsHasMore"
-              :price-tile-tint="collectionPriceTileTint"
+              :price-tile-tint="showPriceTileTint"
               @toggle-select="toggleCardSelection"
               @focus-index="setFocusIndex"
               @keydown="onCollectionGridKeydown"

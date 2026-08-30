@@ -12,6 +12,7 @@ CARD_COLUMNS = {
     "image_uri_back": "TEXT",
     "cardmarket_url": "TEXT",
     "cardmarket_url_foil": "TEXT",
+    "scryfall_cardmarket_url": "TEXT",
     "has_nonfoil": "INTEGER",
     "has_foil": "INTEGER",
     "has_etched": "INTEGER",

@@ -32,6 +32,7 @@ from util.scryfall_card import (
     card_scryfall_id,
     card_toughness,
     card_type_line,
+    cardmarket_url as scryfall_cardmarket_url,
 )
 from util.alchemy_cards import is_alchemy_scryfall_card
 from util.card_name_roles import refresh_card_name_roles_for_card
@@ -44,10 +45,11 @@ INSERT_CARD_SQL = """
 INSERT OR REPLACE INTO cards (
     id, set_code, collector_number, name, art_style,
     market_value, market_value_foil, market_value_etched, has_nonfoil, has_foil, has_etched,
-    image_uri, image_uri_back, cardmarket_url, cardmarket_url_foil, colors, type_line, card_type,
+    image_uri, image_uri_back, cardmarket_url, cardmarket_url_foil, scryfall_cardmarket_url,
+    colors, type_line, card_type,
     color_identity, oracle_text, mana_cost, cmc, legalities, is_basic_land, scryfall_id,
     power, toughness, rarity
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 log = get_logger(__name__)
@@ -119,6 +121,18 @@ def scryfall_search_url(set_code: str) -> str:
         f"https://api.scryfall.com/cards/search"
         f"?q=set:{set_code}&unique=prints&order=set"
     )
+
+
+def iter_scryfall_set_cards(set_code: str, *, force: bool = False) -> list[dict]:
+    cards: list[dict] = []
+    url = scryfall_search_url(str(set_code).lower())
+    while url:
+        payload = fetch_scryfall_page(url, force=force)
+        if not payload:
+            break
+        cards.extend(payload.get("data") or [])
+        url = payload.get("next_page") if payload.get("has_more") else None
+    return cards
 
 
 def fetch_scryfall_page(url: str, *, force: bool = False) -> dict | None:
@@ -197,6 +211,7 @@ def upsert_card(
             image_uri_back,
             nonfoil_url,
             foil_url,
+            scryfall_cardmarket_url(card),
             colors,
             type_line,
             card_type,
