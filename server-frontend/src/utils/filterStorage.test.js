@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  CATALOG_GALLERY_ROLLUP_KEY,
   FILTER_SECTION_PREFS_KEY,
   defaultFilterSectionPrefs,
   getFilterSectionPrefs,
+  getStoredCatalogGalleryRollup,
   setFilterSectionExpanded,
+  storeCatalogGalleryRollup,
   storeFilterSectionPrefs,
 } from "./filterStorage.js";
 
@@ -31,6 +34,21 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.removeItem(FILTER_SECTION_PREFS_KEY);
+  localStorage.removeItem(CATALOG_GALLERY_ROLLUP_KEY);
+});
+
+describe("catalog gallery rollup pref", () => {
+  it("defaults to on", () => {
+    expect(getStoredCatalogGalleryRollup()).toBe(true);
+  });
+
+  it("persists off and on", () => {
+    storeCatalogGalleryRollup(false);
+    expect(getStoredCatalogGalleryRollup()).toBe(false);
+    expect(localStorage.getItem(CATALOG_GALLERY_ROLLUP_KEY)).toBe("0");
+    storeCatalogGalleryRollup(true);
+    expect(getStoredCatalogGalleryRollup()).toBe(true);
+  });
 });
 
 describe("filter section prefs", () => {

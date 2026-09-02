@@ -35,6 +35,9 @@ import {
   findStorageLocation,
   groupStorageLocations,
 } from "../utils/storageLocationGroups";
+import { scryfallCardUri } from "../utils/scryfall";
+import CardmarketIcon from "./CardmarketIcon.vue";
+import ScryfallIcon from "./ScryfallIcon.vue";
 
 const MAX_COPIES = 99;
 const STORAGE_INCLUDE_TYPES = ["storage", "binder"];
@@ -92,6 +95,26 @@ let listenersBound = false;
 const target = computed(() => normalizeCardMenuTarget(props.card));
 const isInteractive = computed(() => Boolean(target.value));
 const inPrintList = computed(() => printList.has(props.card));
+
+const cardmarketLinkUrl = computed(() => {
+  const card = props.card;
+  if (!card) {
+    return "";
+  }
+  const foilUrl = String(card.cardmarketUrlFoil || "").trim();
+  if (cardFinish(card) === FINISH_FOIL && foilUrl) {
+    return foilUrl;
+  }
+  const url = String(card.cardmarketUrl || "").trim();
+  return url;
+});
+
+const scryfallCardLinkUrl = computed(() => {
+  if (!target.value) {
+    return "";
+  }
+  return scryfallCardUri(target.value.setCode, target.value.collectorNumber);
+});
 
 const storageLocationSections = computed(() => {
   const allowed = new Set(STORAGE_INCLUDE_TYPES);
@@ -688,6 +711,31 @@ async function onSaleModalSaved(result) {
       >
         {{ inPrintList ? "Remove from print list" : "Add to print list" }}
       </button>
+
+      <a
+        v-if="cardmarketLinkUrl"
+        class="card-context-menu-item"
+        role="menuitem"
+        :href="cardmarketLinkUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="close"
+      >
+        <CardmarketIcon class="card-context-menu-item-icon" :size="14" />
+        <span>Cardmarket</span>
+      </a>
+      <a
+        v-if="scryfallCardLinkUrl"
+        class="card-context-menu-item"
+        role="menuitem"
+        :href="scryfallCardLinkUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="close"
+      >
+        <ScryfallIcon class="card-context-menu-item-icon" :size="14" />
+        <span>Scryfall</span>
+      </a>
 
       <template v-if="showDeckActions">
         <div class="card-context-menu-divider" />

@@ -58,6 +58,21 @@ export function storeAllCardsSort(sort, dir) {
   );
 }
 
+export const CATALOG_GALLERY_ROLLUP_KEY = "collectionCatalogGalleryRollup";
+
+/** Color/price section headers in catalog gallery. Default on. */
+export function getStoredCatalogGalleryRollup() {
+  const stored = localStorage.getItem(CATALOG_GALLERY_ROLLUP_KEY);
+  if (stored === "0" || stored === "false") {
+    return false;
+  }
+  return true;
+}
+
+export function storeCatalogGalleryRollup(enabled) {
+  localStorage.setItem(CATALOG_GALLERY_ROLLUP_KEY, enabled ? "1" : "0");
+}
+
 export const FILTER_SIDEBAR_PREFS_KEY = "filterSidebarPrefs";
 
 const FILTER_SIDEBAR_WIDTHS = {

@@ -28,6 +28,11 @@ const props = defineProps({
   sortMode: { type: String, default: "collection" },
   allCardsSort: { type: String, default: "value" },
   allCardsSortDir: { type: String, default: "desc" },
+  /** Color/price section headers in catalog gallery. */
+  rollup: { type: Boolean, default: true },
+  showRollup: { type: Boolean, default: false },
+  /** Wash tile backgrounds by price band. */
+  priceTileTint: { type: Boolean, default: false },
   /** When set, replaces the default collection match summary text. */
   summaryText: { type: String, default: "" },
   showSummaryInTable: { type: Boolean, default: false },
@@ -45,6 +50,8 @@ const emit = defineEmits([
   "update:cardScale",
   "update-sort",
   "toggle-sort-dir",
+  "update:rollup",
+  "update:priceTileTint",
 ]);
 
 const isTableView = computed(() => props.viewMode === "table");
@@ -157,15 +164,30 @@ function setViewMode(mode) {
       >
         Filters
       </button>
-      <button
-        v-if="showBulk && !hideGalleryChrome"
-        type="button"
-        class="btn btn-secondary btn-small"
-        :class="{ 'is-active': bulkSelectMode }"
-        @click="emit('toggle-bulk-mode')"
-      >
-        {{ bulkSelectMode ? "Done" : "Select" }}
-      </button>
+      <div v-if="showRollup && !hideGalleryChrome" class="collection-all-toolbar-checks">
+        <label
+          class="collection-all-toolbar-check"
+          title="Group gallery by color or price"
+        >
+          <input
+            type="checkbox"
+            :checked="rollup"
+            @change="emit('update:rollup', $event.target.checked)"
+          >
+          <span>Roll-up</span>
+        </label>
+        <label
+          class="collection-all-toolbar-check"
+          title="Tint card tiles by price"
+        >
+          <input
+            type="checkbox"
+            :checked="priceTileTint"
+            @change="emit('update:priceTileTint', $event.target.checked)"
+          >
+          <span>Price colors</span>
+        </label>
+      </div>
       <CollectionGalleryScaleControl
         v-if="!hideGalleryChrome"
         class="collection-gallery-toolbar-scale"

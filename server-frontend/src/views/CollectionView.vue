@@ -7,7 +7,7 @@ import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionAllToolbar from "../components/CollectionAllToolbar.vue";
 import CollectionMobileFilterSheet from "../components/CollectionMobileFilterSheet.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
-import { groupCatalogCards, shouldApplyPriceTileTint } from "../utils/catalogGroups";
+import { groupCatalogCards } from "../utils/catalogGroups";
 import GalleryLoadingOverlay from "../components/GalleryLoadingOverlay.vue";
 import SetPicker from "../components/SetPicker.vue";
 import FilterSidebar from "../components/FilterSidebar.vue";
@@ -22,7 +22,7 @@ import { fetchCardCopyState } from "../composables/cardContextMenu";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
-import { defaultAllCardsSortDir, getStoredAllCardsSort, getStoredColorFilterMode, storeAllCardsSort, storeColorFilterMode, storeFoilFilter } from "../utils/filterStorage";
+import { defaultAllCardsSortDir, getStoredAllCardsSort, getStoredCatalogGalleryRollup, getStoredColorFilterMode, storeAllCardsSort, storeCatalogGalleryRollup, storeColorFilterMode, storeFoilFilter } from "../utils/filterStorage";
 import ArtStylePicker from "../components/ArtStylePicker.vue";
 import { hasSelectableArtStyles } from "../utils/format";
 import { cardDisplayName, cardFinish, cardRouteQuery } from "../utils/finishes";
@@ -80,11 +80,8 @@ const mobileFiltersOpen = ref(false);
 const virtualGridRef = ref(null);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
+const catalogGalleryRollup = ref(getStoredCatalogGalleryRollup());
 const { pageSize, collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
-const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
-  enabled: collectionPriceTileTint.value,
-  sort: allCardsSort.value,
-}));
 const syncStatus = ref(null);
 const syncMessage = ref("");
 const syncRunning = ref(false);
@@ -374,7 +371,7 @@ function routeQueriesMatch(nextQuery) {
 // so this is just the currently-accumulated, strategy-priced card list.
 const sortedAllCards = computed(() => (isAllView.value ? strategyCards.value : []));
 const catalogGroups = computed(() => {
-  if (!isAllView.value) {
+  if (!isAllView.value || !catalogGalleryRollup.value) {
     return [];
   }
   return groupCatalogCards(sortedAllCards.value, allCardsSort.value, allCardsSortDir.value);
@@ -862,6 +859,10 @@ async function setCollectionCardScale(scale) {
   await savePricingSettings({ collectionCardScale: Number(scale) });
 }
 
+async function setCollectionPriceTileTint(enabled) {
+  await savePricingSettings({ collectionPriceTileTint: Boolean(enabled) });
+}
+
 function updateAllCardsSort(event) {
   allCardsSort.value = event.target.value;
   allCardsSortDir.value = defaultAllCardsSortDir(allCardsSort.value);
@@ -879,6 +880,11 @@ function toggleAllCardsSortDir() {
   if (!isTableView.value) {
     loadCards();
   }
+}
+
+function setCatalogGalleryRollup(enabled) {
+  catalogGalleryRollup.value = Boolean(enabled);
+  storeCatalogGalleryRollup(catalogGalleryRollup.value);
 }
 
 function onTableSort(field) {
@@ -1657,12 +1663,15 @@ onUnmounted(stopPolling);
             :stats-mode-available="statsModeAvailable"
             :all-cards-sort="allCardsSort"
             :all-cards-sort-dir="allCardsSortDir"
+            :show-bulk="false"
+            :show-rollup="true"
+            :rollup="catalogGalleryRollup"
+            :price-tile-tint="collectionPriceTileTint"
             @update:search-query="updateSearchQuery"
             @update:view-mode="setCollectionViewMode"
             @select-lens="applyCollectionLens"
-            @toggle-bulk-mode="toggleBulkMode"
-            @bulk-mark-owned="bulkMarkSelectedOwned"
-            @bulk-clear-selection="clearSelection"
+            @update:rollup="setCatalogGalleryRollup"
+            @update:price-tile-tint="setCollectionPriceTileTint"
             @open-mobile-filters="mobileFiltersOpen = true"
             @update:card-scale="setCollectionCardScale"
             @update-sort="updateAllCardsSort"
@@ -1727,7 +1736,7 @@ onUnmounted(stopPolling);
               :selected-keys="selectedKeys"
               :focused-index="focusedIndex"
               :has-more="allCardsHasMore"
-              :price-tile-tint="showPriceTileTint"
+              :price-tile-tint="collectionPriceTileTint"
               @toggle-select="toggleCardSelection"
               @focus-index="setFocusIndex"
               @keydown="onCollectionGridKeydown"
