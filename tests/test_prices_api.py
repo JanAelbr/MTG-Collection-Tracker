@@ -47,15 +47,21 @@ class PriceSyncServiceTests(unittest.TestCase):
                 "message": None,
                 "error": None,
             })
+        self.snapshot_patcher = patch(
+            "api.services.storage_service.record_daily_collection_snapshot",
+            return_value={"id": 1},
+        )
+        self.snapshot_patcher.start()
 
     def tearDown(self):
+        self.snapshot_patcher.stop()
         self.conn.close()
         self.temp_dir.cleanup()
 
     @patch("util.price_sync.update_cardmarket_prices_only")
     def test_start_and_complete_price_sync(self, mock_update_prices):
         mock_update_prices.return_value = None
-        started = price_sync_service.start_price_sync()
+        started = price_sync_service.start_price_sync(self.conn)
         self.assertTrue(started["started"])
 
         deadline = time.time() + 2
@@ -68,10 +74,13 @@ class PriceSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "completed")
         mock_update_prices.assert_called_once()
+        kwargs = mock_update_prices.call_args.kwargs
+        self.assertEqual(kwargs.get("set_codes"), set())
+        self.assertEqual(kwargs.get("extra_qualifying_sets"), set())
 
     @patch("util.price_sync.update_cardmarket_prices_only", side_effect=RuntimeError("boom"))
     def test_failed_price_sync_records_error(self, _mock_update_prices):
-        price_sync_service.start_price_sync()
+        price_sync_service.start_price_sync(self.conn)
 
         deadline = time.time() + 2
         status = None
@@ -88,15 +97,94 @@ class PriceSyncServiceTests(unittest.TestCase):
     def test_second_start_while_running_raises(self, mock_update_prices):
         started = threading.Event()
 
-        def slow_update():
+        def slow_update(**_kwargs):
             started.set()
             time.sleep(0.3)
 
         mock_update_prices.side_effect = slow_update
-        price_sync_service.start_price_sync()
+        price_sync_service.start_price_sync(self.conn)
         started.wait(timeout=1)
         with self.assertRaises(price_sync_service.PriceSyncError):
-            price_sync_service.start_price_sync()
+            price_sync_service.start_price_sync(self.conn)
+
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_default_sync_uses_favourite_sets(self, mock_update_prices):
+        mock_update_prices.return_value = None
+        self.conn.execute(
+            "INSERT INTO user_settings (key, value) VALUES (?, ?)",
+            ("favorite_sets", '["ltr"]'),
+        )
+        self.conn.commit()
+        self.conn.row_factory = sqlite3.Row
+        price_sync_service.start_price_sync(self.conn)
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        mock_update_prices.assert_called_once()
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("set_codes"), {"LTR"})
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"LTR"})
+
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_default_sync_includes_owned_sets(self, mock_update_prices):
+        mock_update_prices.return_value = None
+        self.conn.execute(
+            "INSERT INTO user_settings (key, value) VALUES (?, ?)",
+            ("favorite_sets", '["ltr"]'),
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                purchase_value REAL NOT NULL DEFAULT 0,
+                finish INTEGER NOT NULL CHECK (finish IN (0, 1, 2)),
+                UNIQUE (set_code, collector_number, finish)
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, purchase_value, finish) VALUES (?, ?, ?, ?)",
+            ("MH3", "12", 0, 0),
+        )
+        self.conn.commit()
+        self.conn.row_factory = sqlite3.Row
+        price_sync_service.start_price_sync(self.conn)
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        mock_update_prices.assert_called_once()
+        self.assertEqual(
+            mock_update_prices.call_args.kwargs.get("set_codes"),
+            {"LTR", "MH3"},
+        )
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"LTR"})
+
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_explicit_set_code_syncs_that_set(self, mock_update_prices):
+        mock_update_prices.return_value = None
+        price_sync_service.start_price_sync(self.conn, set_code="mh3")
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        mock_update_prices.assert_called_once()
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("set_codes"), {"MH3"})
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"MH3"})
 
 
 if __name__ == "__main__":

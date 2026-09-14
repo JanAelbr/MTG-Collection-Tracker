@@ -9,7 +9,16 @@ export const selectedSnapshotId = ref(null);
 export const selectedSnapshot = ref(null);
 export const compareToCurrent = ref(true);
 export const savingSnapshot = ref(false);
+export const pruningSnapshots = ref(false);
 export const snapshotError = ref("");
+
+export function utcTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function hasSnapshotForDate(snapshots = [], date = utcTodayDate()) {
+  return (snapshots || []).some((item) => item?.snapshotDate === date);
+}
 
 export function snapshotOptionLabel(snapshot) {
   const date = snapshot?.snapshotDate || "Unknown date";
@@ -101,6 +110,38 @@ export async function deleteSnapshot(snapshot) {
   return true;
 }
 
+export async function pruneSnapshots() {
+  if (pruningSnapshots.value || snapshotList.value.length < 2) {
+    return null;
+  }
+  const ok = await confirmDialog({
+    title: "Prune history",
+    message: "Keep every snapshot from the last 14 days, one per week for the last 6 months, and one per month after that. Snapshots with notes are kept. This cannot be undone.",
+    confirmLabel: "Prune",
+    danger: true,
+  });
+  if (!ok) {
+    return null;
+  }
+  pruningSnapshots.value = true;
+  snapshotError.value = "";
+  try {
+    const result = await api.pruneStorageBreakdownSnapshots();
+    await loadSnapshots();
+    if (selectedSnapshotId.value
+      && !snapshotList.value.some((item) => item.id === selectedSnapshotId.value)) {
+      selectedSnapshotId.value = null;
+      selectedSnapshot.value = null;
+    }
+    return result;
+  } catch (error) {
+    snapshotError.value = error.message || "Could not prune snapshots.";
+    return null;
+  } finally {
+    pruningSnapshots.value = false;
+  }
+}
+
 export async function deleteSelectedSnapshot() {
   const snapshot = selectedSnapshot.value
     || snapshotList.value.find((item) => item.id === selectedSnapshotId.value);
@@ -116,12 +157,14 @@ export function useStorageBreakdownHistory() {
     selectedSnapshot,
     compareToCurrent,
     savingSnapshot,
+    pruningSnapshots,
     snapshotError,
     hasSelection,
     snapshotOptionLabel,
     loadSnapshots,
     applySnapshotSelection,
     saveDailySnapshot,
+    pruneSnapshots,
     deleteSnapshot,
     deleteSelectedSnapshot,
   };

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../api";
@@ -23,6 +23,7 @@ import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { filterCollectionCards } from "../utils/collectionFilters";
 import {
   defaultCollectionSortDir,
+  sortCollectionCardGroups,
   sortCollectionCards,
 } from "../utils/collectionSort";
 import { DECK_COLOR_ORDER } from "../utils/deckCards";
@@ -73,11 +74,9 @@ const {
   selectedSnapshotId,
   snapshotList,
   compareToCurrent,
-  savingSnapshot,
   snapshotError,
   snapshotOptionLabel,
   loadSnapshots,
-  saveDailySnapshot,
   applySnapshotSelection,
 } = useStorageBreakdownHistory();
 const setsCatalog = ref([]);
@@ -117,6 +116,7 @@ const inlineSaving = ref(false);
 const inlineError = ref("");
 const inlineLabelRef = ref(null);
 const inlineDescRef = ref(null);
+const searchInputRef = ref(null);
 
 const SORT_OPTIONS = [
   { id: "value", label: "Value" },
@@ -211,6 +211,22 @@ const groupedVisibleLocations = computed(() =>
     ),
   })).filter((section) => section.locations.length > 0 || section.canCreate),
 );
+
+const collectionLocationSlugs = computed(() =>
+  visibleLocations.value
+    .filter((location) => (location.cardCount || 0) > 0)
+    .map((location) => location.slug)
+    .filter(Boolean),
+);
+
+const isWholeCollectionSelected = computed(() => {
+  const slugs = collectionLocationSlugs.value;
+  if (!slugs.length) {
+    return false;
+  }
+  const selected = new Set(selectedSlugs.value);
+  return slugs.length === selected.size && slugs.every((slug) => selected.has(slug));
+});
 
 function createLocationLabel(sectionType) {
   return sectionType === "binder" ? "New binder" : "New storage";
@@ -337,22 +353,6 @@ const breakdownSetLabels = computed(() => {
 
 const isBreakdownView = computed(() => viewMode.value === "breakdown");
 
-const utcTodayDate = computed(() => new Date().toISOString().slice(0, 10));
-
-const todaySnapshot = computed(() => (
-  snapshotList.value.find((item) => item.snapshotDate === utcTodayDate.value) || null
-));
-
-const saveBreakdownTitle = computed(() => {
-  if (savingSnapshot.value) {
-    return "Saving breakdown…";
-  }
-  if (todaySnapshot.value) {
-    return "Today’s breakdown is already saved";
-  }
-  return "Save today’s breakdown";
-});
-
 const frozenBreakdown = computed(() => {
   if (!selectedSnapshot.value) {
     return null;
@@ -448,7 +448,7 @@ function enrichCardGroups(groups) {
   const setLookup = selectedSnapshot.value
     ? snapshotSetLookup(frozenBreakdown.value)
     : null;
-  return (groups || []).map((group) => {
+  const enriched = (groups || []).map((group) => {
     const childGroups = groupHasChildren(group)
       ? enrichCardGroups(group.groups)
       : [];
@@ -490,6 +490,11 @@ function enrichCardGroups(groups) {
       snapshotCurrent: savedSet?.current ?? null,
       snapshotValueDelta,
     };
+  });
+  return sortCollectionCardGroups(enriched, {
+    sort: cardsSort.value,
+    dir: cardsSortDir.value,
+    allowSet: true,
   });
 }
 
@@ -913,6 +918,35 @@ function isSectionFullySelected(section) {
   return slugs.every((slug) => selected.has(slug));
 }
 
+function selectWholeCollection() {
+  const slugs = collectionLocationSlugs.value;
+  if (!slugs.length) {
+    return;
+  }
+  if (isWholeCollectionSelected.value) {
+    const fallback =
+      locations.value.find(
+        (location) => location.slug === (pricingSettings.value?.defaultStorageLocation || ""),
+      )?.slug
+      || locations.value[0]?.slug
+      || "";
+    selectedSlugs.value = fallback ? [fallback] : [];
+    return;
+  }
+  if ("deck" in sectionExpanded) {
+    sectionExpanded.deck = true;
+  }
+  groupByLevels.value = [];
+  if (viewMode.value === "breakdown") {
+    viewMode.value = "gallery";
+  }
+  selectedSlugs.value = [...slugs];
+  nextTick(() => {
+    searchInputRef.value?.focus();
+    searchInputRef.value?.select?.();
+  });
+}
+
 function selectAllInSection(section, event = null) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
@@ -981,10 +1015,6 @@ function setViewMode(mode) {
   if (viewMode.value !== mode) {
     viewMode.value = mode;
   }
-}
-
-async function onSaveBreakdown() {
-  await saveDailySnapshot();
 }
 
 async function onSnapshotDropdownChange(event) {
@@ -1106,31 +1136,22 @@ onMounted(async () => {
           </option>
         </select>
       </label>
-      <span
-        class="storage-breakdown-save-wrap"
-        :title="saveBreakdownTitle"
-      >
-        <button
-          type="button"
-          class="storage-breakdown-save"
-          :class="{ 'is-saved': Boolean(todaySnapshot) }"
-          :disabled="savingSnapshot || Boolean(todaySnapshot)"
-          :aria-label="saveBreakdownTitle"
-          @click="onSaveBreakdown"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"
-            />
-          </svg>
-        </button>
-      </span>
     </div>
     <p v-if="snapshotError" class="storage-breakdown-save-error">{{ snapshotError }}</p>
 
     <div class="storage-layout">
       <nav class="storage-location-nav" aria-label="Storage locations">
+        <button
+          type="button"
+          class="storage-whole-collection"
+          :class="{ active: isWholeCollectionSelected }"
+          :disabled="!collectionLocationSlugs.length"
+          :aria-pressed="isWholeCollectionSelected ? 'true' : 'false'"
+          title="Show every owned print in one searchable gallery"
+          @click="selectWholeCollection"
+        >
+          Whole collection
+        </button>
         <p class="storage-multi-hint">Ctrl/⌘+click to select multiple</p>
         <section
           v-for="section in groupedVisibleLocations"
@@ -1237,7 +1258,20 @@ onMounted(async () => {
       </nav>
 
       <div class="storage-detail">
-        <div v-if="isMultiLocation" class="storage-detail-header">
+        <div v-if="isWholeCollectionSelected" class="storage-detail-header">
+          <div class="storage-detail-title-row">
+            <div class="storage-detail-title-main">
+              <h2>Whole collection</h2>
+            </div>
+          </div>
+          <p class="storage-location-description">All storage, binders, and decks</p>
+          <p class="storage-location-stats">
+            {{ cardsPayload?.totalCopies ?? selectedLocations.reduce((sum, location) => sum + (location.cardCount || 0), 0) }} copies ·
+            {{ cardsPayload?.uniquePrints ?? "—" }} unique prints
+          </p>
+        </div>
+
+        <div v-else-if="isMultiLocation" class="storage-detail-header">
           <div class="storage-detail-title-row">
             <div class="storage-detail-title-main">
               <h2>{{ selectedLocations.length }} locations</h2>
@@ -1335,6 +1369,7 @@ onMounted(async () => {
             <label class="storage-toolbar-search">
               <span class="visually-hidden">Search cards</span>
               <input
+                ref="searchInputRef"
                 v-model="searchQuery"
                 type="search"
                 placeholder="Words AND · punctuation flexible…"
@@ -1586,7 +1621,7 @@ onMounted(async () => {
           v-else-if="!scopePrintCount"
           class="storage-empty"
         >
-          No cards in this location.
+          No cards in {{ isWholeCollectionSelected ? "the collection" : "this location" }}.
         </div>
 
         <div

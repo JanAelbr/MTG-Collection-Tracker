@@ -1,7 +1,9 @@
 import { historySourceOptions, HISTORY_TOP_SERIES } from "./breakdownHistory.js";
 
 export const DEDICATED_BREAKDOWN_CHARTS = [
+  { id: "all-value", source: "all" },
   { id: "set-value", source: "set" },
+  { id: "art-style-value", source: "artStyle" },
   { id: "storage-value", source: "storage" },
 ];
 

@@ -154,6 +154,20 @@ def resolve_set_codes_for_scope(
     return members or [code]
 
 
+def expand_set_codes_with_families(
+    conn: sqlite3.Connection,
+    set_codes: list[str] | set[str] | None,
+) -> set[str]:
+    """Expand each code to its known family members (parent plus children)."""
+    expanded: set[str] = set()
+    for raw in set_codes or []:
+        code = normalize_set_code(raw)
+        if not code:
+            continue
+        expanded.update(resolve_set_codes_for_scope(conn, set_code=code, family=True))
+    return expanded
+
+
 def _known_set_codes_from_db(conn: sqlite3.Connection) -> list[str]:
     from util.deck_tables import list_deck_sync_set_codes
     from util.tracked_sets import list_tracked_set_codes

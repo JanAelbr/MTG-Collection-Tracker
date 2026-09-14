@@ -43,7 +43,9 @@ describe("catalogValueGroupKey", () => {
     expect(catalogValueGroupKey(1)).toBe("1-5");
     expect(catalogValueGroupKey(5)).toBe("5-10");
     expect(catalogValueGroupKey(10)).toBe("10+");
-    expect(catalogValueGroupKey(49.99)).toBe("10+");
+    expect(catalogValueGroupKey(24.99)).toBe("10+");
+    expect(catalogValueGroupKey(25)).toBe("25+");
+    expect(catalogValueGroupKey(49.99)).toBe("25+");
     expect(catalogValueGroupKey(50)).toBe("50+");
     expect(catalogValueGroupKey(100)).toBe("100+");
     expect(catalogValueGroupKey(250)).toBe("250+");

@@ -326,15 +326,19 @@ def sync_set_catalog(
     return count
 
 
-def update_cardmarket_prices_only(*, force_cardmarket: bool = False) -> None:
-    set_codes = get_set_codes()
+def update_cardmarket_prices_only(
+    *,
+    force_cardmarket: bool = False,
+    set_codes: set[str] | None = None,
+    extra_qualifying_sets: set[str] | None = None,
+) -> None:
     if not set_codes:
-        log.warning("No set codes found from tracked sets/decks; nothing to price")
+        log.warning("No favourite or owned sets to price; skipping Cardmarket update")
         return
 
     log.info(
         "Applying Cardmarket prices for set(s): %s",
-        ", ".join(code.upper() for code in set_codes),
+        ", ".join(code.upper() for code in sorted(set_codes)),
     )
     timer = BuildTimer(log)
     today = date.today().isoformat()
@@ -342,11 +346,20 @@ def update_cardmarket_prices_only(*, force_cardmarket: bool = False) -> None:
     ensure_card_prices_table(conn)
     conn.close()
 
-    tracked_set_codes = {normalize_set_code(code) for code in set_codes}
+    tracked_set_codes = {normalize_set_code(code) for code in set_codes if normalize_set_code(code)}
+    if not tracked_set_codes:
+        log.warning("No valid set codes to price; skipping Cardmarket update")
+        return
+    full_sets = {
+        normalize_set_code(code)
+        for code in (extra_qualifying_sets or set())
+        if normalize_set_code(code)
+    }
     with timer.step("Cardmarket price guide"):
         sync_prices_from_guide(
             today,
             set_codes=tracked_set_codes,
+            extra_qualifying_sets=full_sets or None,
             force_download=force_cardmarket,
             log=log,
         )

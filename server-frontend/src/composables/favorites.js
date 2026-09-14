@@ -22,6 +22,17 @@ function syncFromSettings(settings) {
   loaded = true;
 }
 
+export function syncFavoritesFromPayload(payload) {
+  if (!payload) {
+    return;
+  }
+  favoriteCards.value = Array.isArray(payload.favoriteCards) ? payload.favoriteCards : [];
+  favoriteArtStyles.value = Array.isArray(payload.favoriteArtStyles)
+    ? payload.favoriteArtStyles
+    : [];
+  loaded = true;
+}
+
 export async function fetchFavorites(force = false) {
   if (!force && loaded) {
     return {

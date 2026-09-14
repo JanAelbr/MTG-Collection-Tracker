@@ -1,6 +1,6 @@
 import sqlite3
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db
 from api.services import price_sync_service
@@ -10,9 +10,12 @@ router = APIRouter(prefix="/prices", tags=["prices"])
 
 
 @router.post("/sync")
-def trigger_price_sync():
+def trigger_price_sync(
+    conn: sqlite3.Connection = Depends(get_db),
+    setCode: str | None = Query(default=None),
+):
     try:
-        return price_sync_service.start_price_sync()
+        return price_sync_service.start_price_sync(conn, set_code=setCode)
     except PriceSyncError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

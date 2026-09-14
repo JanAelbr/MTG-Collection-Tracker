@@ -144,7 +144,7 @@
 .favorites-home-art-gallery .collection-card-grid {
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: calc(var(--collection-card-col-gap, 16px) * var(--collection-card-scale, 1));
   width: max-content;
   min-width: 100%;
   padding: 4px;
@@ -153,7 +153,7 @@
 
 .favorites-home-art-gallery .collection-card-grid-item {
   flex: 0 0 auto;
-  width: calc(118px * var(--collection-card-scale, 1));
+  width: calc(var(--collection-card-col-min, 207px) * var(--collection-card-scale, 1));
 }
 
 /* Large art-style galleries (see isLargeArtGallery) switch from the default
@@ -174,7 +174,6 @@
   flex-wrap: wrap;
   width: auto;
   min-width: 0;
-  grid-template-columns: repeat(auto-fill, minmax(calc(118px * var(--collection-card-scale, 1)), 1fr));
 }
 
 .favorites-home-art-gallery.is-scrollable-group .collection-card-grid-item {

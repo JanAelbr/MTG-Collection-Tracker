@@ -73,6 +73,22 @@ export function storeCatalogGalleryRollup(enabled) {
   localStorage.setItem(CATALOG_GALLERY_ROLLUP_KEY, enabled ? "1" : "0");
 }
 
+export const CATALOG_CHROME_EXPANDED_KEY = "collectionCatalogChromeExpanded";
+
+/** Hide navbar, set browser, and filters on the catalog gallery. Default off. */
+export function getStoredCatalogChromeExpanded() {
+  try {
+    const stored = localStorage.getItem(CATALOG_CHROME_EXPANDED_KEY);
+    return stored === "1" || stored === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function storeCatalogChromeExpanded(enabled) {
+  localStorage.setItem(CATALOG_CHROME_EXPANDED_KEY, enabled ? "1" : "0");
+}
+
 export const FILTER_SIDEBAR_PREFS_KEY = "filterSidebarPrefs";
 
 const FILTER_SIDEBAR_WIDTHS = {

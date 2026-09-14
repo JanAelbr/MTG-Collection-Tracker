@@ -6,6 +6,7 @@ import {
   HISTORY_TOP_SERIES,
   buildHistoryChartView,
   historySourceOptions,
+  seriesPickerOptions,
 } from "./breakdownHistory.js";
 
 const points = [
@@ -22,7 +23,8 @@ const points = [
       { id: "LTC", label: "LTC", copies: 2, current: 20 },
     ],
     artStyles: [
-      { id: "Showcase", label: "Showcase", copies: 3, current: 50 },
+      { id: "LTR|Showcase", label: "Showcase", copies: 3, current: 50 },
+      { id: "MH3|Showcase", label: "Showcase", copies: 1, current: 12 },
     ],
   },
   {
@@ -38,7 +40,8 @@ const points = [
       { id: "LTC", label: "LTC", copies: 3, current: 30 },
     ],
     artStyles: [
-      { id: "Showcase", label: "Showcase", copies: 4, current: 70 },
+      { id: "LTR|Showcase", label: "Showcase", copies: 4, current: 70 },
+      { id: "MH3|Showcase", label: "Showcase", copies: 1, current: 18 },
     ],
   },
 ];
@@ -46,11 +49,13 @@ const points = [
 describe("normalizeBreakdownCharts", () => {
   const sources = historySourceOptions({ hasArtStyles: true });
 
-  it("always keeps dedicated set and storage charts", () => {
+  it("always keeps dedicated all, set, art style, and storage charts", () => {
     const charts = normalizeBreakdownCharts(null, { sources });
-    expect(charts.map((item) => item.source)).toEqual(["set", "storage"]);
-    expect(charts[0]).toMatchObject({ id: "set-value", series: HISTORY_TOP_SERIES });
-    expect(charts[1]).toMatchObject({ id: "storage-value", series: HISTORY_TOP_SERIES });
+    expect(charts.map((item) => item.source)).toEqual(["all", "set", "artStyle", "storage"]);
+    expect(charts[0]).toMatchObject({ id: "all-value", series: HISTORY_TOP_SERIES });
+    expect(charts[1]).toMatchObject({ id: "set-value", series: HISTORY_TOP_SERIES });
+    expect(charts[2]).toMatchObject({ id: "art-style-value", series: HISTORY_TOP_SERIES });
+    expect(charts[3]).toMatchObject({ id: "storage-value", series: HISTORY_TOP_SERIES });
   });
 
   it("ignores extras and preserves dedicated series", () => {
@@ -58,13 +63,13 @@ describe("normalizeBreakdownCharts", () => {
       [
         { id: "all-value", source: "all" },
         { id: "storage-value", source: "storage", series: "binder:ltr" },
-        { id: "extra-art", source: "artStyle", series: "Showcase" },
+        { id: "extra-type", source: "type", series: "creature" },
       ],
       { sources },
     );
-    expect(charts).toHaveLength(2);
-    expect(charts[0]).toMatchObject({ source: "set" });
-    expect(charts[1]).toMatchObject({ source: "storage", series: "binder:ltr" });
+    expect(charts).toHaveLength(4);
+    expect(charts[0]).toMatchObject({ source: "all" });
+    expect(charts[3]).toMatchObject({ source: "storage", series: "binder:ltr" });
   });
 });
 
@@ -74,6 +79,22 @@ describe("buildHistoryChartView", () => {
     expect(view.dates).toEqual(["2026-08-01", "2026-08-15"]);
     expect(view.series).toHaveLength(1);
     expect(view.series[0].values).toEqual([100, 140]);
+    expect(view.series[0].rawValues).toEqual([100, 140]);
+  });
+
+  it("rebases relative prices to the first non-zero value", () => {
+    const view = buildHistoryChartView(points, { source: "all", scale: "relative" });
+    expect(view.series[0].values).toEqual([100, 140]);
+  });
+
+  it("indexes each series to its first non-zero price", () => {
+    const view = buildHistoryChartView(points, {
+      source: "set",
+      series: "LTR",
+      scale: "relative",
+    });
+    expect(view.series[0].values[0]).toBe(100);
+    expect(view.series[0].values[1]).toBeCloseTo(137.5);
   });
 
   it("keeps the top storage locations by latest value", () => {
@@ -90,13 +111,30 @@ describe("buildHistoryChartView", () => {
     expect(view.series).toHaveLength(1);
     expect(view.series[0].values).toEqual([20, 30]);
   });
+
+  it("prefixes art styles with set codes and orders picker options by value", () => {
+    const view = buildHistoryChartView(points, { source: "artStyle" });
+    expect(view.series.map((item) => item.label)).toEqual([
+      "LTR Showcase",
+      "MH3 Showcase",
+    ]);
+    expect(seriesPickerOptions(points, "set").map((item) => item.id)).toEqual([
+      HISTORY_TOP_SERIES,
+      "LTR",
+      "LTC",
+    ]);
+    expect(seriesPickerOptions(points, "artStyle")[1]).toMatchObject({
+      id: "LTR|Showcase",
+      label: "LTR Showcase",
+    });
+  });
 });
 
 describe("historySourceOptions", () => {
-  it("adds art style only when snapshots include it", () => {
+  it("always includes all, set, art style, and storage", () => {
     expect(historySourceOptions({ hasArtStyles: false }).map((item) => item.id))
-      .toEqual(["all", "storage", "set"]);
-    expect(historySourceOptions({ hasArtStyles: true }).some((item) => item.id === "artStyle"))
-      .toBe(true);
+      .toEqual(["all", "set", "artStyle", "storage"]);
+    expect(historySourceOptions({ hasArtStyles: true }).map((item) => item.id))
+      .toEqual(["all", "set", "artStyle", "storage"]);
   });
 });

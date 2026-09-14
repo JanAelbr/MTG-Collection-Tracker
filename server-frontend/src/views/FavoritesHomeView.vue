@@ -5,7 +5,7 @@ import { api, clearClientCache, ignoreAborted } from "../api";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
-import { fetchFavorites, useFavorites } from "../composables/favorites";
+import { syncFavoritesFromPayload, useFavorites } from "../composables/favorites";
 import {
   fetchPricingSettings,
   usePricingSettings,
@@ -171,11 +171,11 @@ async function loadFavorites({ silent = false } = {}) {
     loadError.value = "";
   }
   try {
-    await fetchFavorites(true);
     const next = await ignoreAborted(api.getFavorites());
     if (!next) {
       return;
     }
+    syncFavoritesFromPayload(next);
     payload.value = next;
   } catch (error) {
     if (!silent) {
@@ -335,8 +335,7 @@ async function onArtDrop(index, event) {
 }
 
 onMounted(async () => {
-  await fetchPricingSettings();
-  await loadFavorites();
+  await Promise.all([fetchPricingSettings(), loadFavorites()]);
 });
 </script>
 

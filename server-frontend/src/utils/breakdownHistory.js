@@ -1,8 +1,138 @@
-export const HISTORY_TOP_N = 8;
+import { formatEuro, formatProfit } from "./format.js";
+
+export const HISTORY_TOP_N = 3;
 export const HISTORY_TOP_SERIES = "top";
+export const HISTORY_METRIC_VALUE = "value";
+export const HISTORY_METRIC_CHANGE = "change";
+export const HISTORY_SCALE_ABSOLUTE = "absolute";
+export const HISTORY_SCALE_RELATIVE = "relative";
+
+export function normalizeHistoryView(raw) {
+  return {
+    metric: raw?.metric === HISTORY_METRIC_CHANGE
+      ? HISTORY_METRIC_CHANGE
+      : HISTORY_METRIC_VALUE,
+    scale: raw?.scale === HISTORY_SCALE_RELATIVE
+      ? HISTORY_SCALE_RELATIVE
+      : HISTORY_SCALE_ABSOLUTE,
+  };
+}
+
+export function loadHistoryView(storageKey) {
+  if (!storageKey || typeof localStorage === "undefined") {
+    return normalizeHistoryView(null);
+  }
+  try {
+    return normalizeHistoryView(JSON.parse(localStorage.getItem(`${storageKey}:view`) || "null"));
+  } catch {
+    return normalizeHistoryView(null);
+  }
+}
+
+export function saveHistoryView(storageKey, view) {
+  if (!storageKey || typeof localStorage === "undefined") {
+    return;
+  }
+  localStorage.setItem(`${storageKey}:view`, JSON.stringify(normalizeHistoryView(view)));
+}
+
+export function rebaseSeriesValues(values, { metric, scale } = normalizeHistoryView(null)) {
+  const nums = (values || []).map((value) => Number(value) || 0);
+  const { metric: kind, scale: unit } = normalizeHistoryView({ metric, scale });
+  if (kind === HISTORY_METRIC_VALUE && unit === HISTORY_SCALE_ABSOLUTE) {
+    return nums;
+  }
+  if (kind === HISTORY_METRIC_VALUE) {
+    const base = nums.find((value) => value !== 0);
+    if (base == null) {
+      return nums.map(() => 0);
+    }
+    return nums.map((value) => (value / base) * 100);
+  }
+  if (unit === HISTORY_SCALE_ABSOLUTE) {
+    return nums.map((value, index) => (index === 0 ? 0 : value - nums[index - 1]));
+  }
+  return nums.map((value, index) => {
+    if (index === 0) {
+      return 0;
+    }
+    const previous = nums[index - 1];
+    if (previous === 0) {
+      return 0;
+    }
+    return ((value - previous) / previous) * 100;
+  });
+}
+
+export function formatHistoryPlotValue(value, view) {
+  const { metric, scale } = normalizeHistoryView(view);
+  if (value == null || Number.isNaN(Number(value))) {
+    return "Unknown";
+  }
+  const amount = Number(value);
+  if (scale === HISTORY_SCALE_RELATIVE) {
+    const formatted = `${Math.abs(amount).toFixed(1)}%`;
+    if (metric === HISTORY_METRIC_CHANGE) {
+      if (amount > 0) {
+        return `+${formatted}`;
+      }
+      if (amount < 0) {
+        return `−${formatted}`;
+      }
+    }
+    return amount < 0 ? `−${formatted}` : formatted;
+  }
+  if (metric === HISTORY_METRIC_CHANGE) {
+    return amount === 0 ? formatEuro(0) : formatProfit(amount);
+  }
+  return formatEuro(amount);
+}
+
+export function formatHistoryAxisValue(value, view) {
+  const { metric, scale } = normalizeHistoryView(view);
+  if (value == null || Number.isNaN(Number(value))) {
+    return "";
+  }
+  const amount = Number(value);
+  if (scale === HISTORY_SCALE_RELATIVE) {
+    const abs = Math.abs(amount);
+    const formatted = `${abs >= 100 ? abs.toFixed(0) : abs.toFixed(1)}%`;
+    if (metric === HISTORY_METRIC_CHANGE && amount < 0) {
+      return `−${formatted}`;
+    }
+    if (metric === HISTORY_METRIC_CHANGE && amount > 0) {
+      return `+${formatted}`;
+    }
+    return amount < 0 ? `−${formatted}` : formatted;
+  }
+  if (metric === HISTORY_METRIC_CHANGE) {
+    return amount === 0 ? formatEuro(0) : formatProfit(amount);
+  }
+  return formatEuro(amount);
+}
+
+export function historyPlotFromZero(view) {
+  const { metric, scale } = normalizeHistoryView(view);
+  return metric === HISTORY_METRIC_VALUE && scale === HISTORY_SCALE_ABSOLUTE;
+}
 
 export function seriesValue(row) {
   return Number(row?.current) || 0;
+}
+
+export function formatArtStyleSeriesLabel(id, label = "") {
+  const text = String(label || "").trim();
+  const rawId = String(id || "");
+  const separator = rawId.indexOf("|");
+  if (separator <= 0) {
+    return text || rawId;
+  }
+  const setCode = rawId.slice(0, separator);
+  const style = rawId.slice(separator + 1);
+  if (text.startsWith(`${setCode} `) || text.startsWith(`${setCode}|`)) {
+    return text;
+  }
+  return `${setCode} ${text || style}`.trim();
 }
 
 export function pointMix(point, source) {
@@ -18,16 +148,13 @@ export function pointMix(point, source) {
   return [];
 }
 
-export function historySourceOptions(history) {
-  const sources = [
+export function historySourceOptions(_history) {
+  return [
     { id: "all", label: "All" },
-    { id: "storage", label: "Storage" },
     { id: "set", label: "Set" },
+    { id: "artStyle", label: "Art style" },
+    { id: "storage", label: "Storage" },
   ];
-  if (history?.hasArtStyles) {
-    sources.push({ id: "artStyle", label: "Art style" });
-  }
-  return sources;
 }
 
 export function collectSeriesMeta(points = [], source) {
@@ -39,7 +166,9 @@ export function collectSeriesMeta(points = [], source) {
         continue;
       }
       const previous = map.get(id) || { id, label: row.label || id };
-      previous.label = row.label || previous.label;
+      previous.label = source === "artStyle"
+        ? formatArtStyleSeriesLabel(id, row.label || previous.label)
+        : (row.label || previous.label);
       map.set(id, previous);
     }
   }
@@ -47,14 +176,19 @@ export function collectSeriesMeta(points = [], source) {
 }
 
 export function seriesPickerOptions(points, source) {
-  const items = [{ id: HISTORY_TOP_SERIES, label: `Top ${HISTORY_TOP_N}` }];
   const named = collectSeriesMeta(points, source)
-    .slice()
-    .sort((left, right) => left.label.localeCompare(right.label));
-  for (const item of named) {
-    items.push({ id: item.id, label: item.label });
-  }
-  return items;
+    .map((item) => ({
+      ...item,
+      value: lastAmount(points, source, item.id),
+    }))
+    .sort((left, right) => {
+      const delta = right.value - left.value;
+      return delta || left.label.localeCompare(right.label);
+    });
+  return [
+    { id: HISTORY_TOP_SERIES, label: `Top ${HISTORY_TOP_N}`, value: null },
+    ...named,
+  ];
 }
 
 function lastAmount(points, source, seriesId) {
@@ -65,19 +199,40 @@ function lastAmount(points, source, seriesId) {
   return seriesValue(row);
 }
 
+function withPlotValues(series, view) {
+  const plot = normalizeHistoryView(view);
+  return series.map((item) => {
+    const rawValues = item.values || [];
+    return {
+      ...item,
+      rawValues,
+      values: rebaseSeriesValues(rawValues, plot),
+    };
+  });
+}
+
 export function buildHistoryChartView(
   points = [],
-  { source = "all", series = HISTORY_TOP_SERIES, topN = HISTORY_TOP_N } = {},
+  {
+    source = "all",
+    series = HISTORY_TOP_SERIES,
+    topN = HISTORY_TOP_N,
+    metric = HISTORY_METRIC_VALUE,
+    scale = HISTORY_SCALE_ABSOLUTE,
+  } = {},
 ) {
+  const view = normalizeHistoryView({ metric, scale });
   const dates = points.map((point) => point.date);
   if (source === "all") {
     return {
       dates,
-      series: [{
+      ...view,
+      series: withPlotValues([{
         id: "all",
         label: "All",
         values: points.map((point) => seriesValue(point)),
-      }],
+        copies: points.map((point) => Number(point?.copies) || 0),
+      }], view),
     };
   }
 
@@ -98,13 +253,20 @@ export function buildHistoryChartView(
 
   return {
     dates,
-    series: selected.map((meta) => ({
+    ...view,
+    series: withPlotValues(selected.map((meta) => ({
       id: meta.id,
-      label: meta.label,
+      label: source === "artStyle"
+        ? formatArtStyleSeriesLabel(meta.id, meta.label)
+        : meta.label,
       values: points.map((point) => {
         const row = pointMix(point, source).find((item) => item.id === meta.id);
         return seriesValue(row);
       }),
-    })),
+      copies: points.map((point) => {
+        const row = pointMix(point, source).find((item) => item.id === meta.id);
+        return Number(row?.copies) || 0;
+      }),
+    })), view),
   };
 }

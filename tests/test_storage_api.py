@@ -1,6 +1,8 @@
+import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 import runpy
@@ -183,6 +185,7 @@ class StorageApiServiceTests(unittest.TestCase):
 
         frozen = storage_service.get_breakdown_snapshot(self.conn, second["id"])
         self.assertGreaterEqual(len(frozen["locations"]), 1)
+        self.assertIn("stats", frozen)
         general_row = next(
             loc for loc in frozen["locations"] if loc["slug"] == general["slug"]
         )
@@ -261,6 +264,50 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertEqual(history["points"][1]["sets"][0]["label"], "The Lord of the Rings")
         self.assertEqual(history["points"][1]["artStyles"][0]["id"], "Showcase")
         self.assertEqual(history["points"][1]["artStyles"][0]["current"], 40.0)
+
+    def test_breakdown_history_prefers_saved_collection_stats(self):
+        history = storage_service.compact_breakdown_history(
+            [
+                {
+                    "id": 1,
+                    "snapshotDate": "2026-09-01",
+                    "locations": [
+                        {
+                            "slug": "storage:general",
+                            "label": "General",
+                            "totals": {"copies": 1, "current": 5.0},
+                            "bySet": [{"setCode": "LTR", "copies": 1, "current": 5.0}],
+                        },
+                    ],
+                    "stats": {
+                        "ownedCount": 9,
+                        "current": 88.0,
+                        "setBreakdown": [
+                            {"setCode": "LTR", "count": 4, "current": 40.0},
+                            {"setCode": "MH3", "count": 5, "current": 48.0},
+                        ],
+                        "artStyles": [
+                            {"setCode": "LTR", "artStyle": "Showcase", "count": 2, "current": 30.0},
+                            {"setCode": "LTR", "artStyle": "Borderless", "count": 1, "current": 20.0},
+                            {"setCode": "MH3", "artStyle": "Showcase", "count": 1, "current": 10.0},
+                        ],
+                    },
+                },
+            ],
+            set_names={"LTR": "The Lord of the Rings", "MH3": "Modern Horizons 3"},
+        )
+        point = history["points"][0]
+        self.assertEqual(point["copies"], 9)
+        self.assertEqual(point["current"], 88.0)
+        self.assertEqual([row["id"] for row in point["sets"]], ["MH3", "LTR"])
+        self.assertEqual(point["sets"][0]["label"], "Modern Horizons 3")
+        showcase = next(row for row in point["artStyles"] if row["id"] == "LTR|Showcase")
+        self.assertEqual(showcase["label"], "LTR Showcase")
+        self.assertEqual(showcase["copies"], 2)
+        self.assertEqual(showcase["current"], 30.0)
+        mh3_showcase = next(row for row in point["artStyles"] if row["id"] == "MH3|Showcase")
+        self.assertEqual(mh3_showcase["current"], 10.0)
+        self.assertTrue(history["hasArtStyles"])
 
     def test_create_custom_binder(self):
         created = storage_service.create_location(
@@ -384,6 +431,83 @@ class StorageApiServiceTests(unittest.TestCase):
         ).fetchone()[0]
         with self.assertRaises(storage_service.StorageError):
             storage_service.delete_instance(self.conn, instance_id)
+
+    def _insert_snapshot(self, snapshot_date, *, note=""):
+        payload = json.dumps({
+            "snapshotDate": snapshot_date,
+            "locations": [],
+            "stats": {"ownedCount": 1, "current": 1.0, "invested": 1.0, "profit": 0.0},
+        })
+        self.conn.execute(
+            """
+            INSERT INTO storage_breakdown_snapshots (
+                snapshot_date, created_at, note, price_strategy, payload_json
+            ) VALUES (?, ?, ?, 'trend', ?)
+            """,
+            (snapshot_date, f"{snapshot_date}T00:00:00Z", note or None, payload),
+        )
+        self.conn.commit()
+
+    def test_select_keep_ids_keeps_daily_window_weekly_tail_and_oldest(self):
+        as_of = date(2026, 9, 14)
+        rows = []
+        for offset in range(19, -1, -1):
+            day = as_of - timedelta(days=offset)
+            rows.append({"id": 20 - offset, "snapshotDate": day.isoformat(), "note": ""})
+        keep = storage_service.select_breakdown_snapshot_ids_to_keep(rows, as_of=as_of)
+        daily = {
+            item["id"]
+            for item in rows
+            if (as_of - date.fromisoformat(item["snapshotDate"])).days < 14
+        }
+        self.assertTrue(daily.issubset(keep))
+        self.assertIn(rows[0]["id"], keep)
+        self.assertIn(rows[-1]["id"], keep)
+        self.assertLess(len(keep), len(rows))
+        dropped = [item["snapshotDate"] for item in rows if item["id"] not in keep]
+        self.assertTrue(dropped)
+        self.assertTrue(all(
+            (as_of - date.fromisoformat(day)).days >= 14
+            for day in dropped
+        ))
+
+    def test_select_keep_ids_uses_monthly_close_for_old_tail(self):
+        as_of = date(2026, 9, 14)
+        rows = [
+            {"id": 1, "snapshotDate": "2025-12-01", "note": ""},
+            {"id": 2, "snapshotDate": "2025-12-15", "note": ""},
+            {"id": 3, "snapshotDate": "2026-01-02", "note": ""},
+            {"id": 4, "snapshotDate": "2026-01-20", "note": ""},
+            {"id": 5, "snapshotDate": "2026-09-14", "note": ""},
+        ]
+        keep = storage_service.select_breakdown_snapshot_ids_to_keep(rows, as_of=as_of)
+        self.assertEqual(keep, {1, 2, 4, 5})
+
+    def test_select_keep_ids_keeps_noted_and_endpoints(self):
+        as_of = date(2026, 9, 14)
+        rows = [
+            {"id": 1, "snapshotDate": "2025-06-01", "note": ""},
+            {"id": 2, "snapshotDate": "2025-06-10", "note": "spike"},
+            {"id": 3, "snapshotDate": "2025-06-30", "note": ""},
+            {"id": 4, "snapshotDate": "2026-09-14", "note": ""},
+        ]
+        keep = storage_service.select_breakdown_snapshot_ids_to_keep(rows, as_of=as_of)
+        self.assertEqual(keep, {1, 2, 3, 4})
+
+    def test_prune_breakdown_snapshots_deletes_intermediary_rows(self):
+        as_of = date(2026, 9, 14)
+        for offset in range(19, -1, -1):
+            self._insert_snapshot((as_of - timedelta(days=offset)).isoformat())
+        before = storage_service.list_breakdown_snapshots(self.conn)
+        self.assertEqual(len(before), 20)
+        result = storage_service.prune_breakdown_snapshots(self.conn, as_of=as_of)
+        after = storage_service.list_breakdown_snapshots(self.conn)
+        self.assertEqual(result["kept"] + result["deleted"], 20)
+        self.assertEqual(len(after), result["kept"])
+        self.assertGreater(result["deleted"], 0)
+        dates = sorted(item["snapshotDate"] for item in after)
+        self.assertEqual(dates[-1], "2026-09-14")
+        self.assertEqual(dates[0], (as_of - timedelta(days=19)).isoformat())
 
 
 if __name__ == "__main__":

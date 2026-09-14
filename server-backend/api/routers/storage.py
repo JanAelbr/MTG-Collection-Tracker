@@ -73,6 +73,21 @@ def list_breakdown_history(conn: sqlite3.Connection = Depends(get_db)):
     return storage_service.list_breakdown_history(conn)
 
 
+@router.post("/breakdowns/prune")
+def prune_breakdown_snapshots(conn: sqlite3.Connection = Depends(get_db)):
+    try:
+        result = storage_service.prune_breakdown_snapshots(conn)
+    except StorageError as exc:
+        raise _handle_storage_error(exc) from exc
+    return {"ok": True, **result}
+
+
+@router.get("/breakdowns/prune", include_in_schema=False)
+@router.head("/breakdowns/prune", include_in_schema=False)
+def prune_breakdown_snapshots_wrong_method():
+    raise HTTPException(status_code=405, detail="Use POST to prune snapshots")
+
+
 @router.get("/breakdowns/{snapshot_id}")
 def get_breakdown_snapshot(snapshot_id: int, conn: sqlite3.Connection = Depends(get_db)):
     try:

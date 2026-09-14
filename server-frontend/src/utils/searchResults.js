@@ -312,7 +312,7 @@ function groupMeta(groupBy, card, setLabelFor) {
   }
 }
 
-function compareGroupKeys(groupBy, left, right) {
+export function compareGroupKeys(groupBy, left, right) {
   if (groupBy === "type") {
     const leftIndex = COLLECTION_TYPE_ORDER.indexOf(left);
     const rightIndex = COLLECTION_TYPE_ORDER.indexOf(right);

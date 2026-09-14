@@ -318,6 +318,11 @@ export const api = {
 
   listStorageBreakdownHistory: () => apiRequest("/storage/breakdowns/history"),
 
+  pruneStorageBreakdownSnapshots: () =>
+    apiRequest("/storage/breakdowns/prune", {
+      method: "POST",
+    }),
+
   getStorageBreakdownSnapshot: (snapshotId) =>
     apiRequest(`/storage/breakdowns/${encodeURIComponent(snapshotId)}`),
 
@@ -926,13 +931,16 @@ export const api = {
   getDeckPower: (deckId) =>
     apiRequest(`/decks/${encodeURIComponent(deckId)}/power`),
 
-  triggerPriceSync: () =>
-
-    apiRequest("/prices/sync", {
-
+  triggerPriceSync: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.setCode) {
+      params.set("setCode", options.setCode);
+    }
+    const query = params.toString();
+    return apiRequest(`/prices/sync${query ? `?${query}` : ""}`, {
       method: "POST",
-
-    }),
+    });
+  },
 
   getPriceSyncStatus: () => apiRequest("/prices/sync/status"),
 

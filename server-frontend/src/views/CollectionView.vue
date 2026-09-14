@@ -20,6 +20,7 @@ import { useCollectionBulkSelect } from "../composables/useCollectionBulkSelect"
 import { useManagerSetTable } from "../composables/useManagerSetTable";
 import { fetchCardCopyState } from "../composables/cardContextMenu";
 import { fetchPricingSettings, savePricingSettings, usePricingSettings } from "../composables/pricingSettings";
+import { useCatalogChrome } from "../composables/useCatalogChrome";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { defaultAllCardsSortDir, getStoredAllCardsSort, getStoredCatalogGalleryRollup, getStoredColorFilterMode, storeAllCardsSort, storeCatalogGalleryRollup, storeColorFilterMode, storeFoilFilter } from "../utils/filterStorage";
@@ -81,6 +82,7 @@ const virtualGridRef = ref(null);
 const allCardsSort = ref("value");
 const allCardsSortDir = ref("desc");
 const catalogGalleryRollup = ref(getStoredCatalogGalleryRollup());
+const { catalogChromeExpanded } = useCatalogChrome();
 const { pageSize, collectionCardScale, collectionPriceTileTint, settings: pricingSettings } = usePricingSettings();
 const syncStatus = ref(null);
 const syncMessage = ref("");
@@ -245,6 +247,13 @@ const strategyCards = computed(() => {
 });
 const isAllView = computed(() => viewType.value === "all");
 const isAllSetsView = computed(() => isAllSetsCode(setCode.value));
+const selectedSet = computed(() => {
+  const code = String(setCode.value || "").toUpperCase();
+  return sets.value.find((set) => String(set.setCode || "").toUpperCase() === code) || null;
+});
+const showSetPriceSync = computed(
+  () => isAllView.value && !isAllSetsView.value && Boolean(selectedSet.value) && !selectedSet.value.favorite,
+);
 
 function isAllSetsCode(code) {
   return !code || String(code).toLowerCase() === "all";
@@ -749,10 +758,10 @@ function startPolling() {
   }, 2000);
 }
 
-async function triggerPriceSync() {
+async function triggerPriceSync(setCodeToSync = "") {
   syncMessage.value = "Starting price sync…";
   try {
-    await api.triggerPriceSync();
+    await api.triggerPriceSync(setCodeToSync ? { setCode: setCodeToSync } : {});
     syncRunning.value = true;
     await refreshSyncStatus();
     startPolling();
@@ -760,6 +769,13 @@ async function triggerPriceSync() {
     syncMessage.value = error.message || "Could not start price sync.";
     syncRunning.value = false;
   }
+}
+
+function triggerSelectedSetPriceSync() {
+  if (!setCode.value || isAllSetsCode(setCode.value)) {
+    return;
+  }
+  return triggerPriceSync(setCode.value);
 }
 
 function allCardsArtStyleLink(card) {
@@ -1421,6 +1437,12 @@ watch(artStyleRulesOpen, (open, wasOpen) => {
   pushCollectionRoute();
 });
 
+watch(catalogChromeExpanded, (expanded) => {
+  if (expanded) {
+    artStyleRulesOpen.value = false;
+  }
+});
+
 watch([isTableView, artStyle, pageSize], () => {
   if (!collectionHydrated.value || !routeSyncReady.value) {
     return;
@@ -1454,7 +1476,10 @@ onUnmounted(stopPolling);
 </script>
 
 <template>
-  <div class="reports-page collection-page">
+  <div
+    class="reports-page collection-page"
+    :class="{ 'collection-page--chrome-expanded': catalogChromeExpanded }"
+  >
     <div class="collection-page-scroll">
     <div v-if="showSyncTile" class="collection-status">
       <p v-if="lastPriceUpdate" class="collection-status-meta">
@@ -1481,6 +1506,7 @@ onUnmounted(stopPolling);
     </div>
 
     <SetPicker
+      v-if="!catalogChromeExpanded"
       v-model="setCode"
       v-model:family="familyScope"
       layout="banner"
@@ -1490,7 +1516,7 @@ onUnmounted(stopPolling);
     />
 
     <div class="page-with-sidebar">
-      <FilterSidebar class="collection-desktop-filters">
+      <FilterSidebar v-if="!catalogChromeExpanded" class="collection-desktop-filters">
         <CollectionAllFilters
           v-if="isAllView"
           :is-all-view="isAllView"
@@ -1570,7 +1596,7 @@ onUnmounted(stopPolling);
       </FilterSidebar>
 
       <aside
-        v-if="artStyleRulesOpen && tableModeAvailable && !isAllSetsView && !familyScope"
+        v-if="!catalogChromeExpanded && artStyleRulesOpen && tableModeAvailable && !isAllSetsView && !familyScope"
         class="filter-sidebar art-style-rules-sidebar"
         aria-label="Art style rules"
       >
@@ -1665,6 +1691,9 @@ onUnmounted(stopPolling);
             :all-cards-sort-dir="allCardsSortDir"
             :show-bulk="false"
             :show-rollup="true"
+            :show-chrome-toggle="true"
+            :show-set-price-sync="showSetPriceSync"
+            :set-price-sync-busy="syncRunning"
             :rollup="catalogGalleryRollup"
             :price-tile-tint="collectionPriceTileTint"
             @update:search-query="updateSearchQuery"
@@ -1676,6 +1705,7 @@ onUnmounted(stopPolling);
             @update:card-scale="setCollectionCardScale"
             @update-sort="updateAllCardsSort"
             @toggle-sort-dir="toggleAllCardsSortDir"
+            @trigger-set-price-sync="triggerSelectedSetPriceSync"
           />
           <p v-if="showSyncHint && !isTableView && !isStatsView" class="collection-sync-hint">
             Prices may be outdated.

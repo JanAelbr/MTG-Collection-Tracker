@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
 import GalleryLoadingOverlay from "./GalleryLoadingOverlay.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
@@ -195,6 +195,8 @@ function sortBreakdownRows(rows) {
   });
 }
 
+const SET_BREAKDOWN_PREVIEW_COUNT = 5;
+
 const setBreakdownRows = computed(() => {
   if (!showSetBreakdown.value || !props.stats) {
     return [];
@@ -204,6 +206,26 @@ const setBreakdownRows = computed(() => {
     : aggregateArtStylesBySet(props.stats.artStyles || []);
   return sortBreakdownRows(rows);
 });
+
+const setBreakdownExpanded = ref(false);
+
+watch(
+  () => props.setCode,
+  () => {
+    setBreakdownExpanded.value = false;
+  },
+);
+
+const visibleSetBreakdownRows = computed(() => {
+  if (setBreakdownExpanded.value) {
+    return setBreakdownRows.value;
+  }
+  return setBreakdownRows.value.slice(0, SET_BREAKDOWN_PREVIEW_COUNT);
+});
+
+const hiddenSetBreakdownCount = computed(() => (
+  Math.max(0, setBreakdownRows.value.length - SET_BREAKDOWN_PREVIEW_COUNT)
+));
 
 const artStyleRows = computed(() => {
   if (showSetBreakdown.value || !props.stats?.artStyles?.length) {
@@ -266,6 +288,33 @@ function secondaryLine(row) {
 
 const unknownCards = computed(() => props.stats?.unknownCards || []);
 const hasUnknownCards = computed(() => (props.stats?.unknownCount ?? 0) > 0);
+const unknownModalOpen = ref(false);
+
+function openUnknownModal() {
+  unknownModalOpen.value = true;
+}
+
+function closeUnknownModal() {
+  unknownModalOpen.value = false;
+}
+
+function onUnknownEscape(event) {
+  if (event.key === "Escape") {
+    closeUnknownModal();
+  }
+}
+
+watch(unknownModalOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onUnknownEscape);
+  } else {
+    window.removeEventListener("keydown", onUnknownEscape);
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onUnknownEscape);
+});
 
 function hasInvestedValue(value) {
   return value != null && !Number.isNaN(Number(value)) && Number(value) !== 0;
@@ -369,6 +418,7 @@ function setPrimaryMetric(metric) {
     <div v-if="loading && !stats" class="storage-empty">
       <LoadingIndicator label="Loading stats…" />
     </div>
+    <p v-else-if="!stats" class="storage-empty">Could not load collection stats.</p>
 
     <GalleryLoadingOverlay
       v-else-if="stats"
@@ -388,13 +438,19 @@ function setPrimaryMetric(metric) {
             <span class="stats-health-check" aria-hidden="true">✓</span>
           </strong>
         </div>
-        <div v-else class="stats-card stats-card-unknown">
+        <button
+          v-else
+          type="button"
+          class="stats-card stats-card-unknown stats-card-action"
+          title="Show cards with no current market price"
+          @click="openUnknownModal"
+        >
           <span>Unknown value</span>
           <strong>{{ formatEuro(stats.unknownInvested) }}</strong>
           <span class="stats-card-subtext">
             {{ stats.unknownCount }} {{ stats.unknownCount === 1 ? "card" : "cards" }}
           </span>
-        </div>
+        </button>
         <div class="stats-card">
           <span>Current value</span>
           <strong>{{ formatEuro(stats.current) }}</strong>
@@ -413,7 +469,7 @@ function setPrimaryMetric(metric) {
         </div>
         <div class="stats-card">
           <span>Owned</span>
-          <strong>{{ formatCompletion(stats.ownedCount, stats.catalogCount) }}</strong>
+          <strong>{{ stats.ownedCount ?? 0 }}</strong>
         </div>
       </div>
 
@@ -434,75 +490,96 @@ function setPrimaryMetric(metric) {
         />
       </section>
 
-      <details
-        v-if="hasUnknownCards"
-        class="table-panel stats-unknown-panel"
-        aria-label="Unknown value"
-      >
-        <summary class="stats-unknown-summary">
-          <h2>Unknown value ({{ stats.unknownCount }})</h2>
-        </summary>
-        <p class="stats-unknown-intro">
-          These owned cards have no current market price.
-          Total invested: {{ formatEuro(stats.unknownInvested) }}.
-        </p>
-        <table class="reports-table">
-          <thead>
-            <tr>
-              <th>Set</th>
-              <th>#</th>
-              <th>Name</th>
-              <th>Art style</th>
-              <th>Finish</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(card, index) in unknownCards"
-              :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
-            >
-              <td>
-                <div class="stats-set-drill">
-                  <button
-                    v-if="allowSetDrill"
-                    type="button"
-                    class="stats-set-drill-icon"
-                    :aria-label="`Filter stats to ${setRowLabel(unknownCardSetCode(card))}`"
-                    @click="onSelectSet(unknownCardSetCode(card))"
+      <Teleport to="body">
+        <div
+          v-if="unknownModalOpen"
+          class="modal-backdrop stats-unknown-modal-backdrop"
+          role="presentation"
+          @click.self="closeUnknownModal"
+        >
+          <div
+            class="modal-card stats-unknown-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stats-unknown-modal-title"
+          >
+            <div class="stats-unknown-modal-head">
+              <div>
+                <h3 id="stats-unknown-modal-title">Unknown value</h3>
+                <p class="stats-unknown-intro">
+                  These owned cards have no current market price.
+                  Total invested: {{ formatEuro(stats.unknownInvested) }}.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                @click="closeUnknownModal"
+              >
+                Close
+              </button>
+            </div>
+            <div class="stats-unknown-modal-body">
+              <table class="reports-table">
+                <thead>
+                  <tr>
+                    <th>Set</th>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Art style</th>
+                    <th>Finish</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(card, index) in unknownCards"
+                    :key="`${unknownCardSetCode(card)}-${unknownCardNumber(card)}-${unknownCardFinish(card)}-${index}`"
                   >
-                    <img
-                      v-if="setIconForCode(unknownCardSetCode(card))"
-                      :src="setIconForCode(unknownCardSetCode(card))"
-                      alt=""
-                      class="stats-set-icon"
-                    >
-                  </button>
-                  <span v-else class="stats-set-drill-icon" aria-hidden="true">
-                    <img
-                      v-if="setIconForCode(unknownCardSetCode(card))"
-                      :src="setIconForCode(unknownCardSetCode(card))"
-                      alt=""
-                      class="stats-set-icon"
-                    >
-                  </span>
-                  <CollectionSetLink
-                    :set-code="unknownCardSetCode(card)"
-                    :label="setRowLabel(unknownCardSetCode(card))"
-                  />
-                </div>
-              </td>
-              <td>{{ unknownCardNumber(card) }}</td>
-              <td>
-                <RouterLink :to="cardDetailLink(card)" class="stats-art-drill">
-                  {{ card.name || "Unknown" }}
-                </RouterLink>
-              </td>
-              <td>{{ card.artStyle || card.art_style || "—" }}</td>
-              <td>{{ finishLabel(unknownCardFinish(card)) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </details>
+                    <td>
+                      <div class="stats-set-drill">
+                        <button
+                          v-if="allowSetDrill"
+                          type="button"
+                          class="stats-set-drill-icon"
+                          :aria-label="`Filter stats to ${setRowLabel(unknownCardSetCode(card))}`"
+                          @click="onSelectSet(unknownCardSetCode(card)); closeUnknownModal()"
+                        >
+                          <img
+                            v-if="setIconForCode(unknownCardSetCode(card))"
+                            :src="setIconForCode(unknownCardSetCode(card))"
+                            alt=""
+                            class="stats-set-icon"
+                          >
+                        </button>
+                        <span v-else class="stats-set-drill-icon" aria-hidden="true">
+                          <img
+                            v-if="setIconForCode(unknownCardSetCode(card))"
+                            :src="setIconForCode(unknownCardSetCode(card))"
+                            alt=""
+                            class="stats-set-icon"
+                          >
+                        </span>
+                        <CollectionSetLink
+                          :set-code="unknownCardSetCode(card)"
+                          :label="setRowLabel(unknownCardSetCode(card))"
+                        />
+                      </div>
+                    </td>
+                    <td>{{ unknownCardNumber(card) }}</td>
+                    <td>
+                      <RouterLink :to="cardDetailLink(card)" class="stats-art-drill">
+                        {{ card.name || "Unknown" }}
+                      </RouterLink>
+                    </td>
+                    <td>{{ card.artStyle || card.art_style || "—" }}</td>
+                    <td>{{ finishLabel(unknownCardFinish(card)) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <section
         v-if="hasBreakdown"
@@ -552,9 +629,13 @@ function setPrimaryMetric(metric) {
           </template>
         </p>
 
-        <ul v-if="showSetBreakdown" class="stats-breakdown-list">
+        <template v-if="showSetBreakdown">
+        <ul
+          class="stats-breakdown-list"
+          :class="{ 'is-scrollable': setBreakdownExpanded }"
+        >
           <li
-            v-for="row in setBreakdownRows"
+            v-for="row in visibleSetBreakdownRows"
             :key="row.setCode"
             class="stats-breakdown-row"
             :class="{ 'is-clickable': allowSetDrill }"
@@ -617,6 +698,18 @@ function setPrimaryMetric(metric) {
             </div>
           </li>
         </ul>
+        <button
+          v-if="hiddenSetBreakdownCount"
+          type="button"
+          class="btn btn-secondary btn-small stats-breakdown-more"
+          :aria-expanded="setBreakdownExpanded"
+          @click="setBreakdownExpanded = !setBreakdownExpanded"
+        >
+          {{ setBreakdownExpanded
+            ? "Show top 5"
+            : `Show all ${setBreakdownRows.length} sets` }}
+        </button>
+        </template>
 
         <ul v-else class="stats-breakdown-list">
           <li

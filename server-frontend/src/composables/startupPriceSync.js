@@ -1,6 +1,7 @@
 import { ref } from "vue";
 
 import { api, clearClientCache } from "../api";
+import { hasSnapshotForDate, utcTodayDate } from "./storageBreakdownHistory";
 
 export const startupPriceSyncStatus = ref("idle");
 export const startupPriceSyncMessage = ref("");
@@ -58,6 +59,7 @@ function startPolling() {
       stopPolling();
       if (status.status === "completed") {
         clearClientCache();
+        await saveDailySnapshotAfterPriceSync();
       }
     } catch {
       stopPolling();
@@ -67,9 +69,30 @@ function startPolling() {
   }, 2000);
 }
 
+async function saveDailySnapshotAfterPriceSync() {
+  try {
+    await api.saveStorageBreakdownSnapshot();
+  } catch {
+    // Price sync already succeeded; snapshot retry is available on Stats.
+  }
+}
+
+async function ensureTodaySnapshotIfMissing() {
+  try {
+    const payload = await api.listStorageBreakdownSnapshots();
+    if (hasSnapshotForDate(payload?.snapshots || [], utcTodayDate())) {
+      return;
+    }
+    await api.saveStorageBreakdownSnapshot();
+  } catch {
+    // Stats page can save manually if this misses.
+  }
+}
+
 /**
  * Kick off a Cardmarket price sync once per app load when today's prices
- * are missing. Does not write a storage breakdown snapshot.
+ * are missing. After that sync (or when prices are already current), save
+ * today's collection snapshot if it does not exist.
  */
 export async function ensureStartupPriceSync() {
   if (started) {
@@ -82,6 +105,7 @@ export async function ensureStartupPriceSync() {
     if (action === "skip") {
       startupPriceSyncStatus.value = "skipped";
       startupPriceSyncMessage.value = "";
+      await ensureTodaySnapshotIfMissing();
       return;
     }
     if (action === "start") {

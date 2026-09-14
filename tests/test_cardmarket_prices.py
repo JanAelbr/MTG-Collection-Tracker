@@ -146,6 +146,22 @@ class PriceSyncContextTests(unittest.TestCase):
         context = load_price_sync_context(self.conn, {"LTR"})
         self.assertIn("LTR", context.qualifying_sets)
 
+    def test_load_price_sync_context_honours_extra_qualifying_sets(self):
+        self.conn.executemany(
+            "INSERT INTO cards (set_code, collector_number) VALUES (?, ?)",
+            [("LTR", str(number)) for number in range(1, 41)],
+        )
+        self.conn.commit()
+        without_extra = load_price_sync_context(self.conn, {"LTR"})
+        self.assertNotIn("LTR", without_extra.qualifying_sets)
+        with_extra = load_price_sync_context(
+            self.conn,
+            {"LTR"},
+            extra_qualifying_sets={"ltr"},
+        )
+        self.assertIn("LTR", with_extra.qualifying_sets)
+        self.assertTrue(should_sync_finish("LTR", "40", 0, with_extra))
+
     def test_load_price_sync_context_includes_deck_owned_finishes(self):
         self.conn.executescript(
             """

@@ -12,6 +12,7 @@ from util.set_catalog import SETS_TABLE_SQL, ensure_sets_columns, upsert_set_row
 from util.set_families import (  # noqa: E402
     build_family_index,
     effective_family_root,
+    expand_set_codes_with_families,
     family_members_for_root,
     resolve_set_codes_for_scope,
 )
@@ -112,6 +113,10 @@ class SetFamiliesTests(unittest.TestCase):
         self.assertEqual(
             resolve_set_codes_for_scope(self.conn, set_code="LTC", family=True),
             ["LTR", "LTC", "TLTR"],
+        )
+        self.assertEqual(
+            expand_set_codes_with_families(self.conn, ["LTR"]),
+            {"LTR", "LTC", "TLTR"},
         )
 
     def test_scryfall_family_members_uses_parent_links(self):

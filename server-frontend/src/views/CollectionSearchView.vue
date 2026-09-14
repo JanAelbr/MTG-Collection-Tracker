@@ -23,6 +23,7 @@ import { searchFiltersFromRoute, searchRouteQuery, searchViewModeFromRoute, defa
 import { getStoredColorFilterMode, storeColorFilterMode } from "../utils/filterStorage";
 import { resolveSetIconUri } from "../utils/scryfall";
 import { attachCatalogGroupPricing, shouldApplyPriceTileTint } from "../utils/catalogGroups";
+import { sortCollectionCardGroups } from "../utils/collectionSort";
 import {
   collectGroupPaths,
   groupSearchCards,
@@ -98,12 +99,17 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalMatches.value / PAG
 const hasMoreResults = computed(() => loadedPages.value < totalPages.value);
 const isGroupedResults = computed(() => searchGroupByLevels.value.length > 0);
 function enrichSearchGroups(groups) {
-  return (groups || []).map((group) => {
+  const decorated = (groups || []).map((group) => {
     const priced = attachCatalogGroupPricing(group);
     return {
       ...priced,
       groups: enrichSearchGroups(group.groups),
     };
+  });
+  return sortCollectionCardGroups(decorated, {
+    sort: searchSort.value,
+    dir: searchSortDir.value,
+    allowSet: true,
   });
 }
 

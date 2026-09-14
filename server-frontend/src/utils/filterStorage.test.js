@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  CATALOG_CHROME_EXPANDED_KEY,
   CATALOG_GALLERY_ROLLUP_KEY,
   FILTER_SECTION_PREFS_KEY,
   defaultFilterSectionPrefs,
   getFilterSectionPrefs,
+  getStoredCatalogChromeExpanded,
   getStoredCatalogGalleryRollup,
   setFilterSectionExpanded,
+  storeCatalogChromeExpanded,
   storeCatalogGalleryRollup,
   storeFilterSectionPrefs,
 } from "./filterStorage.js";
@@ -35,6 +38,7 @@ beforeEach(() => {
 afterEach(() => {
   localStorage.removeItem(FILTER_SECTION_PREFS_KEY);
   localStorage.removeItem(CATALOG_GALLERY_ROLLUP_KEY);
+  localStorage.removeItem(CATALOG_CHROME_EXPANDED_KEY);
 });
 
 describe("catalog gallery rollup pref", () => {
@@ -48,6 +52,20 @@ describe("catalog gallery rollup pref", () => {
     expect(localStorage.getItem(CATALOG_GALLERY_ROLLUP_KEY)).toBe("0");
     storeCatalogGalleryRollup(true);
     expect(getStoredCatalogGalleryRollup()).toBe(true);
+  });
+});
+
+describe("catalog chrome expanded pref", () => {
+  it("defaults to off", () => {
+    expect(getStoredCatalogChromeExpanded()).toBe(false);
+  });
+
+  it("persists on and off", () => {
+    storeCatalogChromeExpanded(true);
+    expect(getStoredCatalogChromeExpanded()).toBe(true);
+    expect(localStorage.getItem(CATALOG_CHROME_EXPANDED_KEY)).toBe("1");
+    storeCatalogChromeExpanded(false);
+    expect(getStoredCatalogChromeExpanded()).toBe(false);
   });
 });
 

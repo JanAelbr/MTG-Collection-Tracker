@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import CollectionGalleryScaleControl from "./CollectionGalleryScaleControl.vue";
+import { useCatalogChrome } from "../composables/useCatalogChrome";
 import { COLLECTION_LENSES } from "../utils/collectionLenses";
 import { formatDeckValueRange } from "../utils/format";
 
@@ -31,6 +32,11 @@ const props = defineProps({
   /** Color/price section headers in catalog gallery. */
   rollup: { type: Boolean, default: true },
   showRollup: { type: Boolean, default: false },
+  /** Toggle that hides navbar, set browser, filters, and lens chips. */
+  showChromeToggle: { type: Boolean, default: false },
+  /** Update prices for the selected non-favourite set. */
+  showSetPriceSync: { type: Boolean, default: false },
+  setPriceSyncBusy: { type: Boolean, default: false },
   /** Wash tile backgrounds by price band. */
   priceTileTint: { type: Boolean, default: false },
   /** When set, replaces the default collection match summary text. */
@@ -52,11 +58,23 @@ const emit = defineEmits([
   "toggle-sort-dir",
   "update:rollup",
   "update:priceTileTint",
+  "trigger-set-price-sync",
 ]);
+
+const { catalogChromeExpanded, toggleCatalogChromeExpanded } = useCatalogChrome();
 
 const isTableView = computed(() => props.viewMode === "table");
 const isStatsView = computed(() => props.viewMode === "stats");
 const hideGalleryChrome = computed(() => isTableView.value || isStatsView.value);
+const hideFilterTags = computed(
+  () => hideGalleryChrome.value || catalogChromeExpanded.value,
+);
+const chromeToggleLabel = computed(() =>
+  catalogChromeExpanded.value
+    ? "Restore navigation and filters"
+    : "Expand catalog",
+);
+const setPriceSyncLabel = "Update prices for this set. Favourite sets and owned cards update automatically on price sync; other sets only when you ask.";
 
 const resolvedPlaceholder = computed(() => {
   if (props.searchPlaceholder) {
@@ -111,8 +129,71 @@ function setViewMode(mode) {
 </script>
 
 <template>
-  <div class="collection-all-toolbar">
+  <div
+    class="collection-all-toolbar"
+    :class="{ 'collection-all-toolbar--chrome-expanded': catalogChromeExpanded }"
+  >
     <div class="collection-all-toolbar-row collection-all-toolbar-row--primary">
+      <button
+        v-if="showChromeToggle"
+        type="button"
+        class="btn btn-secondary collection-chrome-toggle"
+        :aria-pressed="catalogChromeExpanded ? 'true' : 'false'"
+        :aria-label="chromeToggleLabel"
+        :title="chromeToggleLabel"
+        @click="toggleCatalogChromeExpanded"
+      >
+        <svg
+          class="collection-chrome-toggle-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            v-if="catalogChromeExpanded"
+            d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            v-else
+            d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        v-if="showSetPriceSync"
+        type="button"
+        class="btn btn-secondary collection-chrome-toggle"
+        :disabled="setPriceSyncBusy"
+        :aria-label="setPriceSyncLabel"
+        :title="setPriceSyncLabel"
+        @click="emit('trigger-set-price-sync')"
+      >
+        <svg
+          class="collection-chrome-toggle-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M4 12a8 8 0 0 1 13.66-5.66M20 4v6h-6M20 12a8 8 0 0 1-13.66 5.66M4 20v-6h6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
       <label class="collection-all-search">
         <span class="visually-hidden">Search cards</span>
         <input
@@ -232,7 +313,7 @@ function setViewMode(mode) {
       </div>
     </div>
 
-    <div v-if="showLenses && !hideGalleryChrome" class="collection-all-toolbar-row collection-all-lenses">
+    <div v-if="showLenses && !hideFilterTags" class="collection-all-toolbar-row collection-all-lenses">
       <button
         v-for="lens in COLLECTION_LENSES"
         :key="lens.id"

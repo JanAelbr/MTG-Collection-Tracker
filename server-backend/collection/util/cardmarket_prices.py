@@ -123,6 +123,20 @@ def _load_set_owned_counts(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
+def load_owned_price_set_codes(conn: sqlite3.Connection) -> set[str]:
+    """Set codes with at least one owned print (purchases or deck copies)."""
+    has_purchases = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purchases'"
+    ).fetchone()
+    if not has_purchases:
+        return set()
+    return {
+        code
+        for code, owned_count in _load_set_owned_counts(conn).items()
+        if owned_count > 0
+    }
+
+
 def _owned_finish_exists_clause(finish: int, *, include_deck: bool) -> str:
     purchase_clause = f"""
         EXISTS (
@@ -183,6 +197,7 @@ def unowned_price_threshold(set_size: int) -> int:
 def load_price_sync_context(
     conn: sqlite3.Connection,
     set_codes: set[str] | None = None,
+    extra_qualifying_sets: set[str] | None = None,
 ) -> PriceSyncContext:
     owned_finishes = _load_owned_finishes(conn)
 
@@ -207,6 +222,10 @@ def load_price_sync_context(
         catalog_size = set_catalog_sizes.get(code, 0)
         owned_count = set_owned_counts.get(code, 0)
         if owned_count >= unowned_price_threshold(catalog_size):
+            qualifying_sets.add(code)
+    for set_code in extra_qualifying_sets or ():
+        code = str(set_code or "").strip().upper()
+        if code:
             qualifying_sets.add(code)
 
     return PriceSyncContext(
@@ -681,6 +700,7 @@ def sync_prices_from_guide(
     today: str,
     *,
     set_codes: set[str] | None = None,
+    extra_qualifying_sets: set[str] | None = None,
     force_download: bool = False,
     missing_only: bool = False,
     log=None,
@@ -696,7 +716,11 @@ def sync_prices_from_guide(
         backfilled_urls = backfill_cardmarket_urls(conn, guide)
         if backfilled_urls:
             out.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
-        context = load_price_sync_context(conn, set_codes)
+        context = load_price_sync_context(
+            conn,
+            set_codes,
+            extra_qualifying_sets=extra_qualifying_sets,
+        )
         cleared_unowned = clear_unowned_prices_for_non_qualifying_sets(
             conn, context, set_codes,
         )

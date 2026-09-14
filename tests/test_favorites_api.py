@@ -191,6 +191,8 @@ class FavoritesApiTests(unittest.TestCase):
         self.assertEqual(len(styles), 1)
         self.assertEqual(styles[0]["artStyle"], "Main")
         self.assertEqual(styles[0]["setCode"], "LTR")
+        self.assertGreaterEqual(len(styles[0]["cards"]), 1)
+        self.assertEqual(styles[0]["cards"][0]["name"], "Test Card")
 
         settings = self.client.get("/api/settings")
         self.assertEqual(settings.status_code, 200)
@@ -198,6 +200,25 @@ class FavoritesApiTests(unittest.TestCase):
             settings.json()["favoriteArtStyles"],
             [{"setCode": "LTR", "artStyle": "Main"}],
         )
+
+    def test_list_favorites_skips_full_catalog_reports(self):
+        self.client.post(
+            "/api/favorites/cards",
+            json={"setCode": "LTR", "collectorNumber": "1", "finish": 1},
+        )
+        self.client.post(
+            "/api/favorites/art-styles",
+            json={"setCode": "LTR", "artStyle": "Main"},
+        )
+        with patch(
+            "api.services.reports_service.list_report_cards",
+            side_effect=AssertionError("full catalog report should not hydrate favourites"),
+        ):
+            listed = self.client.get("/api/favorites")
+        self.assertEqual(listed.status_code, 200)
+        payload = listed.json()
+        self.assertEqual(payload["cards"][0]["name"], "Test Card")
+        self.assertEqual(payload["artStyles"][0]["cards"][0]["name"], "Test Card")
 
 
 if __name__ == "__main__":

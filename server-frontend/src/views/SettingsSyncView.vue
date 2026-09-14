@@ -131,7 +131,7 @@ onUnmounted(stopPolling);
       <div class="home-sync-panel">
         <div class="home-sync-copy">
           <strong>Price sync</strong>
-          <p>Fetch Cardmarket prices and refresh the Scryfall catalog for your tracked sets.</p>
+          <p>Fetch Cardmarket prices for favourite sets (including unowned prints) and every owned card. Use the catalog price button on a set that is not in that list to update it on demand.</p>
           <p v-if="syncMessage" class="home-sync-message" :class="{ error: syncStatus?.status === 'failed' }">
             {{ syncMessage }}
           </p>

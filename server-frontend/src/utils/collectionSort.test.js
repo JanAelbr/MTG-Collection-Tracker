@@ -3,6 +3,7 @@ import {
   defaultCollectionSortDir,
   groupCollectionCardsBySet,
   normalizeCollectionSort,
+  sortCollectionCardGroups,
   sortCollectionCards,
 } from "./collectionSort";
 
@@ -114,5 +115,64 @@ describe("collectionSort", () => {
   it("orders set groups by set sort direction", () => {
     const groups = groupCollectionCardsBySet(cards, { sort: "set", dir: "desc", allowSet: true });
     expect(groups.map((group) => group.setCode)).toEqual(["M21", "LTR"]);
+  });
+
+  it("orders set groups by total value", () => {
+    const mixed = [
+      { name: "Cheap", setCode: "AAA", collectorNumber: "1", finish: 0, currentValue: 1, copyCount: 1 },
+      { name: "Pricey", setCode: "ZZZ", collectorNumber: "1", finish: 0, currentValue: 40, copyCount: 1 },
+    ];
+    const groups = groupCollectionCardsBySet(mixed, { sort: "value", dir: "desc", allowSet: true });
+    expect(groups.map((group) => group.setCode)).toEqual(["ZZZ", "AAA"]);
+  });
+
+  it("sorts nested groups by the active field", () => {
+    const groups = sortCollectionCardGroups([
+      {
+        key: "aaa",
+        label: "Alpha set",
+        groupBy: "set",
+        totalValue: 5,
+        copyCount: 2,
+        cards: [{ name: "A", currentValue: 5, power: "1" }],
+        groups: [
+          {
+            key: "common",
+            label: "Common",
+            groupBy: "rarity",
+            cards: [{ name: "A", rarity: "common", currentValue: 1 }],
+            groups: [],
+          },
+          {
+            key: "rare",
+            label: "Rare",
+            groupBy: "rarity",
+            cards: [{ name: "B", rarity: "rare", currentValue: 9 }],
+            groups: [],
+          },
+        ],
+      },
+      {
+        key: "zzz",
+        label: "Zed set",
+        groupBy: "set",
+        totalValue: 20,
+        copyCount: 1,
+        cards: [{ name: "Z", currentValue: 20, power: "5" }],
+        groups: [],
+      },
+    ], { sort: "value", dir: "desc", allowSet: true });
+
+    expect(groups.map((group) => group.key)).toEqual(["zzz", "aaa"]);
+    expect(groups[1].groups.map((group) => group.key)).toEqual(["rare", "common"]);
+  });
+
+  it("reverses canonical group order when sorting by that field", () => {
+    const groups = sortCollectionCardGroups([
+      { key: "1", label: "CMC 1", groupBy: "cmc", cards: [{ cmc: 1 }], groups: [] },
+      { key: "3", label: "CMC 3", groupBy: "cmc", cards: [{ cmc: 3 }], groups: [] },
+      { key: "__none__", label: "Unknown CMC", groupBy: "cmc", cards: [{}], groups: [] },
+    ], { sort: "cmc", dir: "desc" });
+    expect(groups.map((group) => group.key)).toEqual(["3", "1", "__none__"]);
   });
 });

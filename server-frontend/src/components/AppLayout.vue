@@ -6,6 +6,7 @@ import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
 import ConfirmDialogHost from "./ConfirmDialogHost.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
+import { useCatalogChrome } from "../composables/useCatalogChrome";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import {
@@ -19,6 +20,7 @@ import { APP_TITLE } from "../constants/app";
 const route = useRoute();
 const { setGalleryFilter } = useSetGalleryFilter();
 const { deckGalleryFilter } = useDeckGalleryFilter();
+const { catalogChromeExpanded } = useCatalogChrome();
 
 const collectionSubnav = [
   { to: "/collection/all", label: "Catalog" },
@@ -35,20 +37,14 @@ const printSubnav = [
 const settingsSubnav = [
   { to: "/settings/display", label: "Display" },
   { to: "/settings/sets", label: "Sets" },
-  { to: "/settings/stats", label: "Stats" },
   { to: "/settings/sync", label: "Sync" },
-  { to: "/settings/breakdowns", label: "Breakdowns" },
   { to: "/settings/backup", label: "Backup" },
 ];
 
 const navItems = [
   { to: "/", label: "Favourites", matchPrefix: false },
-  {
-    to: "/collection/all",
-    label: "Collection",
-    matchPrefix: "/collection",
-    subnav: collectionSubnav,
-  },
+  { to: "/collection/all", label: "Collection", matchPrefix: "/collection", subnav: collectionSubnav },
+  { to: "/stats", label: "Stats", matchPrefix: "/stats" },
   {
     to: "/print/cards",
     label: "Print",
@@ -93,6 +89,10 @@ const showDeckGalleryFilter = computed(() => route.path.startsWith("/collection/
 
 const showNavbarSearch = computed(() => route.path !== "/collection/search");
 
+const hideAppChrome = computed(
+  () => route.path === "/collection/all" && catalogChromeExpanded.value,
+);
+
 const showStartupPriceSync = computed(() => (
   startupPriceSyncStatus.value === "running"
   || Boolean(startupPriceSyncMessage.value)
@@ -118,6 +118,9 @@ function isNavActive(item) {
       route.path.startsWith(item.matchPrefix)
       || route.path === "/storage"
     );
+  }
+  if (item.matchPrefix === "/stats") {
+    return route.path === "/stats" || route.path.startsWith("/stats/");
   }
   if (item.matchPrefix) {
     return route.path.startsWith(item.matchPrefix);
@@ -167,8 +170,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <div class="app-chrome">
+  <div class="app-shell" :class="{ 'app-shell--catalog-expanded': hideAppChrome }">
+    <div v-if="!hideAppChrome" class="app-chrome">
       <header class="app-topbar">
         <div class="app-topbar-main">
           <RouterLink :to="brandLink" class="app-brand" aria-label="Home">

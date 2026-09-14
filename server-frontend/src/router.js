@@ -15,7 +15,6 @@ const SettingsDisplayView = () => import("./views/SettingsDisplayView.vue");
 const SettingsStatsView = () => import("./views/SettingsStatsView.vue");
 const SettingsSyncView = () => import("./views/SettingsSyncView.vue");
 const SettingsBackupView = () => import("./views/SettingsBackupView.vue");
-const SettingsBreakdownsView = () => import("./views/SettingsBreakdownsView.vue");
 const SetsView = () => import("./views/SetsView.vue");
 const PrintCardsView = () => import("./views/PrintCardsView.vue");
 const PrintPricesView = () => import("./views/PrintPricesView.vue");
@@ -72,23 +71,13 @@ const router = createRouter({
       meta: { title: "Sets" },
     },
     {
-      path: "/settings/stats",
-      name: "settings-stats",
-      component: SettingsStatsView,
-      meta: { title: "Stats" },
-    },
-    {
       path: "/settings/sync",
       name: "settings-sync",
       component: SettingsSyncView,
       meta: { title: "Settings" },
     },
-    {
-      path: "/settings/breakdowns",
-      name: "settings-breakdowns",
-      component: SettingsBreakdownsView,
-      meta: { title: "Settings" },
-    },
+    { path: "/settings/stats", redirect: "/stats" },
+    { path: "/settings/breakdowns", redirect: "/stats" },
     {
       path: "/settings/backup",
       name: "settings-backup",
@@ -143,7 +132,10 @@ const router = createRouter({
     },
     {
       path: "/stats",
-      redirect: (to) => {
+      name: "stats",
+      component: SettingsStatsView,
+      meta: { title: "Stats" },
+      beforeEnter: (to) => {
         const set = typeof to.query.set === "string" ? to.query.set : "";
         if (set && set.toLowerCase() !== "all") {
           return {
@@ -155,7 +147,7 @@ const router = createRouter({
             },
           };
         }
-        return "/settings/stats";
+        return true;
       },
     },
     { path: "/decks/browse", redirect: "/collection/decks" },

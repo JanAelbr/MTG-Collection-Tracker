@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from api.cache import bump_cache_epoch
 from api.services.pricing_service import (
@@ -9,11 +9,17 @@ from api.services.pricing_service import (
     value_from_strategy_map,
     values_by_strategy_for_finish,
 )
+from lib.run_log import get_logger
 from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_image_fields, card_metadata_api
 from util.db_migrate import ensure_card_columns
 from util.set_catalog import load_set_display_names
+
+log = get_logger(__name__)
+
+BREAKDOWN_PRUNE_DAILY_DAYS = 14
+BREAKDOWN_PRUNE_WEEKLY_DAYS = 180
 
 LOCATIONS_QUERY = """
 SELECT
@@ -602,21 +608,59 @@ def _combined_snapshot_totals(locations: list[dict]) -> dict:
     }
 
 
+def _snapshot_stats_totals(stats: dict | None) -> dict | None:
+    if not stats or not isinstance(stats, dict):
+        return None
+    current = stats.get("current")
+    owned = stats.get("ownedCount")
+    if current is None and owned is None:
+        return None
+    return {
+        "copies": int(owned or 0),
+        "uniquePrints": int(owned or 0),
+        "current": current,
+        "invested": stats.get("invested"),
+        "profit": stats.get("profit"),
+        "pricedCopies": int(owned or 0),
+        "unpricedCopies": 0,
+        "locationCount": 0,
+    }
+
+
 def _serialize_snapshot_row(row: sqlite3.Row, *, include_payload: bool = False) -> dict:
     payload = json.loads(row["payload_json"])
     locations = payload.get("locations") or []
+    stats = payload.get("stats")
     item = {
         "id": int(row["snapshot_id"]),
         "snapshotDate": row["snapshot_date"],
         "createdAt": row["created_at"],
         "note": row["note"] or "",
         "priceStrategy": row["price_strategy"] or "",
-        "totals": _combined_snapshot_totals(locations),
+        "totals": _snapshot_stats_totals(stats) or _combined_snapshot_totals(locations),
     }
     if include_payload:
         item["locations"] = locations
         item["payload"] = payload
+        item["stats"] = stats
     return item
+
+
+def _capture_collection_stats(conn: sqlite3.Connection) -> dict | None:
+    try:
+        from api.services import stats_service
+
+        payload = stats_service.load_collection_stats(
+            conn,
+            set_code="All",
+            finish_filter="all",
+            family=False,
+        )
+        stats = payload.get("stats") if isinstance(payload, dict) else None
+        return stats if isinstance(stats, dict) else None
+    except Exception as exc:
+        log.warning("Could not attach collection stats to daily snapshot: %s", exc)
+        return None
 
 
 def save_daily_breakdown(
@@ -653,6 +697,7 @@ def save_daily_breakdown(
         "snapshotDate": snapshot_date,
         "priceStrategy": price_strategy,
         "locations": locations,
+        "stats": _capture_collection_stats(conn),
     }
     cleaned_note = (note or "").strip()
     conn.execute(
@@ -684,6 +729,49 @@ def save_daily_breakdown(
         (snapshot_date,),
     ).fetchone()
     return _serialize_snapshot_row(row)
+
+
+def record_daily_collection_snapshot(conn: sqlite3.Connection, *, note: str = "") -> dict:
+    from api.services import settings_service
+
+    return save_daily_breakdown(
+        conn,
+        price_strategy=settings_service.get_settings(conn)["priceStrategy"],
+        note=note,
+    )
+
+
+def _history_rows_from_stats_sets(stats: dict) -> list[dict]:
+    rows = []
+    for row in stats.get("setBreakdown") or []:
+        ident = str(row.get("setCode") or row.get("set_code") or "").strip().upper()
+        if not ident:
+            continue
+        rows.append({
+            "id": ident,
+            "label": ident,
+            "copies": int(row.get("count") or 0),
+            "current": float(row.get("current") or 0),
+        })
+    return rows
+
+
+def _history_rows_from_stats_art_styles(stats: dict) -> list[dict]:
+    rows = []
+    for row in stats.get("artStyles") or []:
+        style = str(row.get("artStyle") or row.get("art_style") or "").strip()
+        if not style:
+            continue
+        set_code = str(row.get("setCode") or row.get("set_code") or "").strip().upper()
+        ident = f"{set_code}|{style}" if set_code else style
+        label = f"{set_code} {style}".strip() if set_code else style
+        rows.append({
+            "id": ident,
+            "label": label,
+            "copies": int(row.get("count") or 0),
+            "current": float(row.get("current") or 0),
+        })
+    return rows
 
 
 def _history_mix_rows(rows: list | None, id_field: str) -> list[dict]:
@@ -750,7 +838,8 @@ def compact_breakdown_history(
     points = []
     has_art_styles = False
     for item in ordered:
-        locations = item.get("locations") or []
+        locations = item.get("locations") or (item.get("payload") or {}).get("locations") or []
+        stats = item.get("stats") or (item.get("payload") or {}).get("stats")
         location_rows = []
         sets: dict[str, dict] = {}
         art_styles: dict[str, dict] = {}
@@ -769,7 +858,17 @@ def compact_breakdown_history(
             if art_rows:
                 has_art_styles = True
             _merge_history_mix(art_styles, art_rows)
-        combined = _combined_snapshot_totals(locations)
+        if stats:
+            stats_sets = _history_rows_from_stats_sets(stats)
+            if stats_sets:
+                sets = {}
+                _merge_history_mix(sets, stats_sets)
+            stats_art = _history_rows_from_stats_art_styles(stats)
+            if stats_art:
+                has_art_styles = True
+                art_styles = {}
+                _merge_history_mix(art_styles, stats_art)
+        combined = _snapshot_stats_totals(stats) or _combined_snapshot_totals(locations)
         points.append({
             "id": int(item.get("id") or 0),
             "date": item.get("snapshotDate") or "",
@@ -845,6 +944,101 @@ def delete_breakdown_snapshot(conn: sqlite3.Connection, snapshot_id: int) -> Non
     if cursor.rowcount == 0:
         raise StorageError("Breakdown snapshot not found", status_code=404)
     bump_cache_epoch()
+
+
+def _parse_snapshot_date(value) -> date | None:
+    text = str(value or "").strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def select_breakdown_snapshot_ids_to_keep(
+    rows: list[dict],
+    *,
+    as_of: date | None = None,
+) -> set[int]:
+    today = as_of or datetime.now(timezone.utc).date()
+    parsed = []
+    for row in rows:
+        snap_date = _parse_snapshot_date(row.get("snapshotDate") or row.get("snapshot_date"))
+        ident = int(row.get("id") or row.get("snapshot_id") or 0)
+        if ident <= 0 or snap_date is None:
+            continue
+        parsed.append({
+            "id": ident,
+            "date": snap_date,
+            "note": str(row.get("note") or "").strip(),
+        })
+    parsed.sort(key=lambda item: (item["date"], item["id"]))
+    if not parsed:
+        return set()
+
+    keep = {parsed[0]["id"], parsed[-1]["id"]}
+    week_close: dict[tuple, dict] = {}
+    month_close: dict[tuple, dict] = {}
+    for item in parsed:
+        if item["note"]:
+            keep.add(item["id"])
+        age = (today - item["date"]).days
+        if 0 <= age < BREAKDOWN_PRUNE_DAILY_DAYS:
+            keep.add(item["id"])
+        week_close[item["date"].isocalendar()[:2]] = item
+        month_close[(item["date"].year, item["date"].month)] = item
+
+    for item in parsed:
+        age = (today - item["date"]).days
+        if age < BREAKDOWN_PRUNE_DAILY_DAYS:
+            continue
+        if age <= BREAKDOWN_PRUNE_WEEKLY_DAYS:
+            week_key = item["date"].isocalendar()[:2]
+            if week_close[week_key]["id"] == item["id"]:
+                keep.add(item["id"])
+        else:
+            month_key = (item["date"].year, item["date"].month)
+            if month_close[month_key]["id"] == item["id"]:
+                keep.add(item["id"])
+    return keep
+
+
+def prune_breakdown_snapshots(
+    conn: sqlite3.Connection,
+    *,
+    as_of: date | None = None,
+) -> dict:
+    from util.storage_tables import ensure_storage_tables
+
+    ensure_storage_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT snapshot_id, snapshot_date, note
+        FROM storage_breakdown_snapshots
+        ORDER BY snapshot_date ASC, snapshot_id ASC
+        """
+    ).fetchall()
+    items = [
+        {
+            "id": int(row["snapshot_id"]),
+            "snapshotDate": row["snapshot_date"],
+            "note": row["note"] or "",
+        }
+        for row in rows
+    ]
+    keep_ids = select_breakdown_snapshot_ids_to_keep(items, as_of=as_of)
+    if not keep_ids:
+        return {"kept": len(items), "deleted": 0}
+    drop_ids = [item["id"] for item in items if item["id"] not in keep_ids]
+    if not drop_ids:
+        return {"kept": len(items), "deleted": 0}
+    placeholders = ", ".join("?" for _ in drop_ids)
+    cursor = conn.execute(
+        f"DELETE FROM storage_breakdown_snapshots WHERE snapshot_id IN ({placeholders})",
+        drop_ids,
+    )
+    bump_cache_epoch()
+    deleted = int(cursor.rowcount or 0)
+    return {"kept": len(items) - deleted, "deleted": deleted}
 
 
 def _next_custom_sort_order(conn: sqlite3.Connection) -> int:
