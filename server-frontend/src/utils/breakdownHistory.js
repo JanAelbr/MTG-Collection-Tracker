@@ -270,3 +270,119 @@ export function buildHistoryChartView(
     })), view),
   };
 }
+
+export function parseArtStyleSeriesId(id, label = "") {
+  const rawId = String(id || "");
+  const separator = rawId.indexOf("|");
+  if (separator <= 0) {
+    const artStyle = String(label || rawId).trim();
+    return { id: rawId, setCode: "", artStyle };
+  }
+  return {
+    id: rawId,
+    setCode: rawId.slice(0, separator),
+    artStyle: rawId.slice(separator + 1),
+  };
+}
+
+export const MOVER_SCALE_PERCENT = "percent";
+export const MOVER_SCALE_ABSOLUTE = "absolute";
+const MOVER_SCALE_STORAGE_KEY = "favorites-home:mover-scale";
+
+export function normalizeMoverScale(raw) {
+  return raw === MOVER_SCALE_ABSOLUTE ? MOVER_SCALE_ABSOLUTE : MOVER_SCALE_PERCENT;
+}
+
+export function loadMoverScale() {
+  if (typeof localStorage === "undefined") {
+    return MOVER_SCALE_PERCENT;
+  }
+  try {
+    return normalizeMoverScale(localStorage.getItem(MOVER_SCALE_STORAGE_KEY));
+  } catch {
+    return MOVER_SCALE_PERCENT;
+  }
+}
+
+export function saveMoverScale(scale) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  localStorage.setItem(MOVER_SCALE_STORAGE_KEY, normalizeMoverScale(scale));
+}
+
+export function topArtStyleMoversFromHistory(
+  points = [],
+  { limit = 3, favoriteIds, favoriteSetCodes, direction = "up", scale } = {},
+) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return [];
+  }
+  const falling = direction === "down";
+  const byEuro = normalizeMoverScale(scale) === MOVER_SCALE_ABSOLUTE;
+  const allowed = favoriteIds == null
+    ? null
+    : new Set(
+      [...favoriteIds].map((id) => String(id || "").trim()).filter(Boolean),
+    );
+  const allowedSets = favoriteSetCodes == null
+    ? null
+    : new Set(
+      [...favoriteSetCodes]
+        .map((code) => String(code || "").trim().toUpperCase())
+        .filter(Boolean),
+    );
+  if ((allowed && allowed.size === 0) || (allowedSets && allowedSets.size === 0)) {
+    return [];
+  }
+  const currentRows = points[points.length - 1]?.artStyles || [];
+  const previousRows = points[points.length - 2]?.artStyles || [];
+  const previousById = new Map(
+    previousRows.map((row) => [String(row.id || ""), seriesValue(row)]),
+  );
+  const movers = [];
+  for (const row of currentRows) {
+    const id = String(row.id || "");
+    if (!id || (allowed && !allowed.has(id))) {
+      continue;
+    }
+    const current = seriesValue(row);
+    const previous = previousById.get(id);
+    if (!(previous > 0)) {
+      continue;
+    }
+    if (falling ? !(current < previous) : !(current > previous)) {
+      continue;
+    }
+    const parsed = parseArtStyleSeriesId(id, row.label);
+    if (allowedSets && !allowedSets.has(String(parsed.setCode || "").toUpperCase())) {
+      continue;
+    }
+    movers.push({
+      id,
+      setCode: parsed.setCode,
+      artStyle: parsed.artStyle,
+      label: formatArtStyleSeriesLabel(id, row.label),
+      current,
+      previous,
+      delta: current - previous,
+      percent: ((current - previous) / previous) * 100,
+    });
+  }
+  movers.sort((left, right) => {
+    if (byEuro) {
+      return falling
+        ? left.delta - right.delta || left.current - right.current
+        : right.delta - left.delta || right.current - left.current;
+    }
+    if (falling) {
+      return left.percent - right.percent || left.current - right.current;
+    }
+    return right.percent - left.percent || right.current - left.current;
+  });
+  return movers.slice(0, Math.max(0, limit));
+}
+
+export function topArtStyleRisersFromHistory(points = [], options = {}) {
+  return topArtStyleMoversFromHistory(points, { ...options, direction: "up" });
+}

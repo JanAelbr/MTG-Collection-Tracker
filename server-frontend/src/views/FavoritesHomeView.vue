@@ -1,7 +1,7 @@
 <script setup>
 import "../styles/favorites-home.css";
-import { computed, onMounted, ref } from "vue";
-import { api, clearClientCache, ignoreAborted } from "../api";
+import { computed, onMounted, ref, watch } from "vue";
+import { api, clearClientCache, ignoreAborted, isApiAbortError } from "../api";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
@@ -11,7 +11,7 @@ import {
   usePricingSettings,
 } from "../composables/pricingSettings";
 import { collectionRouteForSet } from "../utils/setScope";
-import { formatSetCountLabel, setDisplayName } from "../utils/format";
+import { formatSetCountLabel, formatProfit, setDisplayName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 import { cardFinish } from "../utils/finishes";
 import {
@@ -26,6 +26,14 @@ import {
   sortCollectionCards,
 } from "../utils/collectionSort";
 import { shouldApplyPriceTileTint } from "../utils/catalogGroups";
+import {
+  MOVER_SCALE_ABSOLUTE,
+  MOVER_SCALE_PERCENT,
+  loadMoverScale,
+  saveMoverScale,
+  topArtStyleMoversFromHistory,
+  topArtStyleRisersFromHistory,
+} from "../utils/breakdownHistory";
 
 const GALLERY_SORT_OPTIONS = [
   { id: "value", label: "Value" },
@@ -38,6 +46,9 @@ const GALLERY_SORT_OPTIONS = [
 const payload = ref(null);
 const loading = ref(true);
 const loadError = ref("");
+const historyPoints = ref([]);
+const favoriteCardsScroller = ref(null);
+const moverScale = ref(loadMoverScale());
 const dragArtFrom = ref(-1);
 const dragArtOver = ref(-1);
 const galleryOwnedFilter = ref("owned");
@@ -53,6 +64,37 @@ const { toggleArtStyleFavorite, favoriteCards, favoriteArtStyles } = useFavorite
 const sets = computed(() => payload.value?.sets || []);
 const artStyles = computed(() => payload.value?.artStyles || []);
 const cards = computed(() => payload.value?.cards || []);
+const artStyleMoverOptions = computed(() => ({
+  limit: 10,
+  favoriteSetCodes: sets.value.map((set) => set.setCode),
+  scale: moverScale.value,
+}));
+const artStyleRisers = computed(() =>
+  topArtStyleRisersFromHistory(historyPoints.value, artStyleMoverOptions.value),
+);
+const artStyleFallers = computed(() =>
+  topArtStyleMoversFromHistory(historyPoints.value, {
+    ...artStyleMoverOptions.value,
+    direction: "down",
+  }),
+);
+const artStyleMoverColumns = computed(() => [
+  { id: "up", title: "Top risers", rows: artStyleRisers.value },
+  { id: "down", title: "Top fallers", rows: artStyleFallers.value },
+].filter((column) => column.rows.length));
+const moverCompareDate = computed(() => {
+  const points = historyPoints.value;
+  if (!Array.isArray(points) || points.length < 2) {
+    return "";
+  }
+  return String(points[points.length - 2]?.date || "").trim();
+});
+const moverCompareCaption = computed(() => {
+  const date = formatSnapshotDay(moverCompareDate.value);
+  return date
+    ? `Art styles in favourite sets vs ${date}`
+    : "Art styles in favourite sets vs previous snapshot";
+});
 
 const displayCards = computed(() => {
   const filtered = filterCollectionCards(cards.value, {
@@ -186,6 +228,108 @@ async function loadFavorites({ silent = false } = {}) {
       loading.value = false;
     }
   }
+}
+
+async function loadArtStyleRisers() {
+  try {
+    const next = await ignoreAborted(api.listStorageBreakdownHistory());
+    if (!next) {
+      return;
+    }
+    historyPoints.value = next.points || [];
+  } catch (error) {
+    if (!isApiAbortError(error)) {
+      historyPoints.value = [];
+    }
+  }
+}
+
+function scrollFavoriteCards(direction) {
+  const scroller = favoriteCardsScroller.value;
+  if (!scroller) {
+    return;
+  }
+  const item = scroller.querySelector(".collection-card-grid-item");
+  const gap = item
+    ? Number.parseFloat(getComputedStyle(item.parentElement).columnGap || "16") || 16
+    : 16;
+  const step = item
+    ? item.getBoundingClientRect().width + gap
+    : scroller.clientWidth * 0.8;
+  scroller.scrollBy({ left: direction * step, behavior: "smooth" });
+}
+
+function formatMoverValue(row) {
+  if (moverScale.value === MOVER_SCALE_ABSOLUTE) {
+    return formatProfit((Number(row?.current) || 0) - (Number(row?.previous) || 0));
+  }
+  const percent = Number(row?.percent);
+  if (!Number.isFinite(percent)) {
+    return "";
+  }
+  const formatted = `${Math.abs(percent).toFixed(1)}%`;
+  if (percent > 0) {
+    return `+${formatted}`;
+  }
+  if (percent < 0) {
+    return `−${formatted}`;
+  }
+  return `0.0%`;
+}
+
+function formatSnapshotDay(raw) {
+  const text = String(raw || "").trim();
+  if (!text) {
+    return "";
+  }
+  const date = new Date(`${text.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return text;
+  }
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+watch(moverScale, (next) => {
+  saveMoverScale(next);
+});
+
+function setMoverScale(next) {
+  moverScale.value = next === MOVER_SCALE_ABSOLUTE
+    ? MOVER_SCALE_ABSOLUTE
+    : MOVER_SCALE_PERCENT;
+}
+
+function moverSet(row) {
+  const code = String(row?.setCode || "").trim().toUpperCase();
+  if (!code) {
+    return null;
+  }
+  return sets.value.find(
+    (set) => String(set.setCode || "").trim().toUpperCase() === code,
+  ) || { setCode: code };
+}
+
+function moverSetIcon(row) {
+  const set = moverSet(row);
+  return set ? setIcon(set) : "";
+}
+
+function onMoverCardEnter(event) {
+  const card = event.currentTarget;
+  const label = card.querySelector(".favorites-home-mover-label");
+  if (!label) {
+    return;
+  }
+  card.classList.toggle("is-label-clipped", label.scrollWidth > label.clientWidth + 0.5);
+}
+
+function onMoverCardLeave(event) {
+  event.currentTarget.classList.remove("is-label-clipped");
 }
 
 function syncCardsFromFavoriteList(nextFavorites) {
@@ -335,7 +479,7 @@ async function onArtDrop(index, event) {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchPricingSettings(), loadFavorites()]);
+  await Promise.all([fetchPricingSettings(), loadFavorites(), loadArtStyleRisers()]);
 });
 </script>
 
@@ -407,30 +551,113 @@ onMounted(async () => {
         <p class="favorites-home-gallery-summary">{{ gallerySummary }}</p>
       </div>
 
-      <section v-if="cards.length" class="favorites-home-section home-panel">
-        <div class="favorites-home-section-header">
-          <h2>Cards</h2>
-        </div>
-        <div
-          v-if="displayCards.length"
-          class="favorites-home-cards collection-gallery-panel"
+      <div
+        v-if="cards.length || artStyleMoverColumns.length"
+        class="favorites-home-highlights"
+      >
+        <section v-if="cards.length" class="favorites-home-section home-panel favorites-home-cards-pane">
+          <div class="favorites-home-section-header">
+            <h2>Cards</h2>
+            <div
+              v-if="displayCards.length > 1"
+              class="favorites-home-carousel-nav"
+            >
+              <button
+                type="button"
+                class="btn btn-secondary"
+                aria-label="Previous favourite cards"
+                @click="scrollFavoriteCards(-1)"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                aria-label="Next favourite cards"
+                @click="scrollFavoriteCards(1)"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="displayCards.length"
+            ref="favoriteCardsScroller"
+            class="favorites-home-cards favorites-home-art-gallery favorites-home-card-carousel collection-gallery-panel"
+          >
+            <CollectionCardGrid
+              :cards="displayCards"
+              show-set-label
+              show-unowned-badge
+              :reorderable="cardsReorderable"
+              :card-scale="collectionCardScale"
+              :price-tile-tint="showPriceTileTint"
+              @ownership-changed="onOwnershipChanged"
+              @favorite-changed="onCardFavoriteChanged"
+              @reorder="onReorderCards"
+            />
+          </div>
+          <p v-else class="favorites-home-muted">
+            {{ galleryOwnedFilter === "owned" ? "No owned favourite cards." : "No favourite cards." }}
+          </p>
+        </section>
+        <section
+          v-for="column in artStyleMoverColumns"
+          :key="column.id"
+          class="favorites-home-section home-panel favorites-home-movers"
         >
-          <CollectionCardGrid
-            :cards="displayCards"
-            show-set-label
-            show-unowned-badge
-            :reorderable="cardsReorderable"
-            :card-scale="collectionCardScale"
-            :price-tile-tint="showPriceTileTint"
-            @ownership-changed="onOwnershipChanged"
-            @favorite-changed="onCardFavoriteChanged"
-            @reorder="onReorderCards"
-          />
-        </div>
-        <p v-else class="favorites-home-muted">
-          {{ galleryOwnedFilter === "owned" ? "No owned favourite cards." : "No favourite cards." }}
-        </p>
-      </section>
+          <div class="favorites-home-section-header">
+            <h2>{{ column.title }}</h2>
+            <div class="button-group" role="group" aria-label="Change scale">
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: moverScale === MOVER_SCALE_PERCENT }"
+                :aria-pressed="moverScale === MOVER_SCALE_PERCENT"
+                @click="setMoverScale(MOVER_SCALE_PERCENT)"
+              >
+                %
+              </button>
+              <button
+                type="button"
+                class="filter-button"
+                :class="{ active: moverScale === MOVER_SCALE_ABSOLUTE }"
+                :aria-pressed="moverScale === MOVER_SCALE_ABSOLUTE"
+                @click="setMoverScale(MOVER_SCALE_ABSOLUTE)"
+              >
+                €
+              </button>
+            </div>
+          </div>
+          <p class="favorites-home-riser-caption">
+            {{ moverCompareCaption }}
+          </p>
+          <ol>
+            <li v-for="row in column.rows" :key="row.id">
+              <RouterLink
+                class="favorites-home-set-card favorites-home-mover-card"
+                :class="{ 'is-down': column.id === 'down' }"
+                :title="row.artStyle || row.label"
+                :to="artStyleRoute(row)"
+                @mouseenter="onMoverCardEnter"
+                @mouseleave="onMoverCardLeave"
+              >
+                <img
+                  v-if="moverSetIcon(row)"
+                  :src="moverSetIcon(row)"
+                  alt=""
+                  class="favorites-home-set-icon"
+                  loading="lazy"
+                >
+                <span class="favorites-home-mover-label">{{ row.artStyle || row.label }}</span>
+                <strong
+                  :class="row.percent < 0 ? 'reports-loss' : 'reports-gain'"
+                >{{ formatMoverValue(row) }}</strong>
+              </RouterLink>
+            </li>
+          </ol>
+        </section>
+      </div>
 
       <section v-if="artStyles.length" class="favorites-home-section home-panel">
         <div class="favorites-home-section-header">

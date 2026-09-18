@@ -7,6 +7,8 @@ import {
   buildHistoryChartView,
   historySourceOptions,
   seriesPickerOptions,
+  topArtStyleMoversFromHistory,
+  topArtStyleRisersFromHistory,
 } from "./breakdownHistory.js";
 
 const points = [
@@ -127,6 +129,83 @@ describe("buildHistoryChartView", () => {
       id: "LTR|Showcase",
       label: "LTR Showcase",
     });
+  });
+});
+
+describe("topArtStyleRisersFromHistory", () => {
+  it("returns the top percent gainers versus the previous snapshot", () => {
+    const ranked = topArtStyleRisersFromHistory(points, { limit: 3 });
+    expect(ranked.map((item) => item.id)).toEqual(["MH3|Showcase", "LTR|Showcase"]);
+    expect(ranked[0].percent).toBeCloseTo(50);
+    expect(ranked[1].percent).toBeCloseTo(40);
+  });
+
+  it("needs two snapshots", () => {
+    expect(topArtStyleRisersFromHistory(points.slice(0, 1))).toEqual([]);
+  });
+
+  it("can restrict risers to favourite art styles", () => {
+    const ranked = topArtStyleRisersFromHistory(points, {
+      limit: 3,
+      favoriteIds: ["LTR|Showcase"],
+    });
+    expect(ranked.map((item) => item.id)).toEqual(["LTR|Showcase"]);
+    expect(topArtStyleRisersFromHistory(points, { favoriteIds: [] })).toEqual([]);
+  });
+
+  it("can restrict risers to art styles from favourite sets", () => {
+    const ranked = topArtStyleRisersFromHistory(points, {
+      limit: 3,
+      favoriteSetCodes: ["LTR"],
+    });
+    expect(ranked.map((item) => item.id)).toEqual(["LTR|Showcase"]);
+    expect(topArtStyleRisersFromHistory(points, { favoriteSetCodes: [] })).toEqual([]);
+  });
+
+  it("returns the top percent losers versus the previous snapshot", () => {
+    const fallingPoints = [
+      {
+        date: "2026-08-01",
+        artStyles: [
+          { id: "LTR|Showcase", label: "Showcase", current: 50 },
+          { id: "MH3|Showcase", label: "Showcase", current: 20 },
+        ],
+      },
+      {
+        date: "2026-08-15",
+        artStyles: [
+          { id: "LTR|Showcase", label: "Showcase", current: 40 },
+          { id: "MH3|Showcase", label: "Showcase", current: 10 },
+        ],
+      },
+    ];
+    const ranked = topArtStyleMoversFromHistory(fallingPoints, { direction: "down" });
+    expect(ranked.map((item) => item.id)).toEqual(["MH3|Showcase", "LTR|Showcase"]);
+    expect(ranked[0].percent).toBeCloseTo(-50);
+    expect(ranked[1].percent).toBeCloseTo(-20);
+  });
+
+  it("can rank by euro change instead of percent", () => {
+    const mixed = [
+      {
+        date: "2026-08-01",
+        artStyles: [
+          { id: "LTR|A", label: "A", current: 10 },
+          { id: "LTR|B", label: "B", current: 100 },
+        ],
+      },
+      {
+        date: "2026-08-15",
+        artStyles: [
+          { id: "LTR|A", label: "A", current: 20 },
+          { id: "LTR|B", label: "B", current: 130 },
+        ],
+      },
+    ];
+    expect(topArtStyleRisersFromHistory(mixed).map((item) => item.id))
+      .toEqual(["LTR|A", "LTR|B"]);
+    expect(topArtStyleRisersFromHistory(mixed, { scale: "absolute" }).map((item) => item.id))
+      .toEqual(["LTR|B", "LTR|A"]);
   });
 });
 
