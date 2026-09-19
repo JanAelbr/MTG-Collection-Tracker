@@ -47,6 +47,9 @@ class PriceSyncServiceTests(unittest.TestCase):
                 "message": None,
                 "error": None,
                 "prices_unchanged": False,
+                "progress": None,
+                "processed": 0,
+                "total": 0,
                 "movers": {"absolute": {"risers": [], "fallers": []}, "relative": {"risers": [], "fallers": []}},
                 "cards": [],
             })
@@ -54,7 +57,7 @@ class PriceSyncServiceTests(unittest.TestCase):
             "api.services.storage_service.record_daily_collection_snapshot",
             return_value={"id": 1},
         )
-        self.snapshot_patcher.start()
+        self.snapshot_mock = self.snapshot_patcher.start()
         self.checked_patcher = patch("util.price_history.mark_price_sync_checked")
         self.checked_patcher.start()
         self.sync_cache = Path(self.temp_dir.name) / "last_price_sync.json"
@@ -87,10 +90,13 @@ class PriceSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "completed")
         self.assertTrue(status["pricesUnchanged"])
+        self.assertEqual(status["progress"], 100)
         mock_update_prices.assert_called_once()
         kwargs = mock_update_prices.call_args.kwargs
         self.assertEqual(kwargs.get("set_codes"), set())
         self.assertEqual(kwargs.get("extra_qualifying_sets"), set())
+        self.assertFalse(kwargs.get("force_cardmarket"))
+        self.snapshot_mock.assert_not_called()
 
     @patch("util.price_sync.update_cardmarket_prices_only", side_effect=RuntimeError("boom"))
     def test_failed_price_sync_records_error(self, _mock_update_prices):
@@ -228,6 +234,169 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.assertEqual(status["movers"]["absolute"]["fallers"][0]["label"], "Down")
         self.assertTrue(self.sync_cache.is_file())
         self.assertEqual(status["lastSync"]["movers"]["absolute"]["risers"][0]["label"], "Up")
+        self.snapshot_mock.assert_called()
+        self.assertTrue(self.snapshot_mock.call_args.kwargs.get("skip_if_unchanged", True))
+
+    @patch("api.cache.bump_cache_epoch")
+    @patch("api.services.pricing_service.refresh_guide_cache")
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_force_sync_overwrites_snapshot_and_redownloads(self, mock_update_prices, _refresh, _bump):
+        started = threading.Event()
+
+        def slow_update(*, on_progress=None, force_cardmarket=False, **_kwargs):
+            self.assertTrue(force_cardmarket)
+            if on_progress:
+                on_progress(42, "Comparing Cardmarket prices", processed=42, total=100)
+            started.set()
+            time.sleep(0.2)
+            return {"applied": False, "updated_fields": 0, "movers": {}}
+
+        mock_update_prices.side_effect = slow_update
+        price_sync_service.start_price_sync(self.conn, force=True)
+        started.wait(timeout=1)
+        running = price_sync_service.get_price_sync_status(self.conn)
+        self.assertEqual(running["status"], "running")
+        self.assertEqual(running["progress"], 42)
+        self.assertEqual(running["processed"], 42)
+        self.assertEqual(running["total"], 100)
+        self.assertIn("Comparing", running["message"])
+
+        deadline = time.time() + 2
+        status = None
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(status["progress"], 100)
+        self.assertIn("matched", status["message"])
+        self.snapshot_mock.assert_called()
+        self.assertFalse(self.snapshot_mock.call_args.kwargs.get("skip_if_unchanged", True))
+
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_unchanged_sync_keeps_previous_card_diffs(self, mock_update_prices):
+        from util.last_price_sync import save_last_price_sync
+
+        save_last_price_sync(
+            {
+                "applied": True,
+                "pricesUnchanged": False,
+                "message": "Price sync completed",
+                "movers": {
+                    "absolute": {"risers": [{"id": "LTR|1|0", "delta": 4}], "fallers": []},
+                    "relative": {"risers": [{"id": "LTR|1|0", "percent": 10}], "fallers": []},
+                },
+                "cards": [{
+                    "id": "LTR|1|0",
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "artStyle": "Showcase",
+                    "delta": 4,
+                }],
+            },
+            path=self.sync_cache,
+        )
+        mock_update_prices.return_value = {"applied": False, "updated_fields": 0, "movers": {}, "cards": []}
+        price_sync_service.start_price_sync(self.conn)
+
+        deadline = time.time() + 2
+        status = None
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertTrue(status["pricesUnchanged"])
+        self.assertEqual(status["cards"][0]["id"], "LTR|1|0")
+        self.assertEqual(status["movers"]["absolute"]["risers"][0]["id"], "LTR|1|0")
+
+    def test_status_hydrates_missing_card_images(self):
+        from util.last_price_sync import save_last_price_sync
+
+        self.conn.executescript(
+            """
+            CREATE TABLE cards (
+                set_code TEXT,
+                collector_number TEXT,
+                name TEXT,
+                image_uri TEXT
+            );
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO cards VALUES (?, ?, ?, ?)",
+            ("LTR", "1", "Gandalf", "https://example.com/gandalf.jpg"),
+        )
+        self.conn.commit()
+        save_last_price_sync(
+            {
+                "applied": True,
+                "cards": [{
+                    "id": "LTR|1|0",
+                    "setCode": "LTR",
+                    "collectorNumber": "1",
+                    "artStyle": "Showcase",
+                    "delta": 4,
+                }],
+            },
+            path=self.sync_cache,
+        )
+        status = price_sync_service.get_price_sync_status(self.conn)
+        self.assertEqual(status["cards"][0]["name"], "Gandalf")
+        self.assertEqual(status["cards"][0]["imageUri"], "https://example.com/gandalf.jpg")
+
+    def test_list_art_style_card_movers_uses_previous_prices(self):
+        self.conn.executescript(
+            """
+            CREATE TABLE cards (
+                id TEXT PRIMARY KEY,
+                set_code TEXT,
+                collector_number TEXT,
+                name TEXT,
+                art_style TEXT,
+                market_value REAL,
+                market_value_foil REAL,
+                market_value_etched REAL,
+                has_nonfoil INTEGER,
+                has_foil INTEGER,
+                has_etched INTEGER
+            );
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                id, set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("LTR-1", "LTR", "1", "Gandalf", "Showcase", 12.0, None, None, 1, 0, 0),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO card_prices (
+                set_code, collector_number, finish, price, source, price_date
+            ) VALUES
+                ('LTR', '1', 0, 10.0, 'cardmarket', '2026-09-18'),
+                ('LTR', '1', 0, 12.0, 'cardmarket', '2026-09-19')
+            """
+        )
+        self.conn.commit()
+        cards = price_sync_service.list_art_style_card_movers(
+            self.conn,
+            set_code="ltr",
+            art_style="Showcase",
+        )
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["label"], "Gandalf (Non-foil)")
+        self.assertEqual(cards[0]["collectorNumber"], "1")
+        self.assertEqual(cards[0]["previous"], 10.0)
+        self.assertEqual(cards[0]["current"], 12.0)
 
 
 if __name__ == "__main__":

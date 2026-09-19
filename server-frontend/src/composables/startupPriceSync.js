@@ -93,6 +93,29 @@ export function showStoredPriceSyncMovers(status, filter = null) {
   );
 }
 
+export function formatPriceSyncRunningMessage(status, fallback = "Updating prices…") {
+  const percent = Number.isFinite(Number(status?.progress))
+    ? Math.max(0, Math.min(100, Math.round(Number(status.progress))))
+    : null;
+  const processed = Number(status?.processed) || 0;
+  const total = Number(status?.total) || 0;
+  let suffix = "";
+  if (percent != null) {
+    suffix = ` (${percent}%`;
+    if (total > 0) {
+      suffix += ` · ${processed}/${total}`;
+    }
+    suffix += ")";
+  }
+  const detail = String(status?.message || "").trim();
+  const base = detail && !/^price sync (started|completed)$/i.test(detail)
+    ? detail
+    : fallback;
+  return `${base}${suffix}`;
+}
+
+export const PRICE_SYNC_POLL_MS = 1000;
+
 export function dismissPriceSyncMoversModal() {
   priceSyncMoversModalOpen.value = false;
 }
@@ -118,7 +141,7 @@ async function refreshStatus() {
   const status = await api.getPriceSyncStatus();
   if (status.status === "running") {
     startupPriceSyncStatus.value = "running";
-    startupPriceSyncMessage.value = "Updating prices…";
+    startupPriceSyncMessage.value = formatPriceSyncRunningMessage(status);
     return status;
   }
   if (status.status === "failed") {
@@ -154,7 +177,7 @@ function startPolling() {
       startupPriceSyncStatus.value = "failed";
       startupPriceSyncMessage.value = "Could not check price sync.";
     }
-  }, 2000);
+  }, PRICE_SYNC_POLL_MS);
 }
 
 async function ensureTodaySnapshotIfMissing() {

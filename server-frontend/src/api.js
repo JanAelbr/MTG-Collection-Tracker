@@ -936,6 +936,9 @@ export const api = {
     if (options.setCode) {
       params.set("setCode", options.setCode);
     }
+    if (options.force) {
+      params.set("force", "true");
+    }
     const query = params.toString();
     return apiRequest(`/prices/sync${query ? `?${query}` : ""}`, {
       method: "POST",
@@ -943,6 +946,18 @@ export const api = {
   },
 
   getPriceSyncStatus: () => apiRequest("/prices/sync/status"),
+
+  getPriceSyncArtStyleCards: ({ setCode = "", artStyle = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (setCode) {
+      params.set("setCode", setCode);
+    }
+    if (artStyle) {
+      params.set("artStyle", artStyle);
+    }
+    const query = params.toString();
+    return apiRequest(`/prices/sync/cards${query ? `?${query}` : ""}`);
+  },
 
   exportCollectionBackup: async () => {
     const response = await fetch("/api/backup/export");

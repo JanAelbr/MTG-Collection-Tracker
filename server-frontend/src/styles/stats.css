@@ -173,6 +173,44 @@ button.stats-card-action:focus-visible {
   margin-top: 12px;
 }
 
+.collection-tiles-modal-backdrop {
+  z-index: 1450;
+  align-items: center;
+  padding: 24px;
+}
+
+.modal-card.collection-tiles-modal {
+  width: min(1440px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+.collection-tiles-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collection-tiles-modal-head h3 {
+  margin: 0 0 4px;
+}
+
+.collection-tiles-modal-intro,
+.collection-tiles-modal-empty {
+  margin: 0;
+  color: #546e7a;
+  font-size: 13px;
+}
+
+.collection-tiles-modal-body {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+
 .stats-rarity-panel {
   margin-bottom: 16px;
 }
@@ -480,7 +518,6 @@ button.stats-card-action:focus-visible {
   flex-direction: column;
   gap: 8px;
   border-color: #c5d0d6;
-  min-height: 280px;
 }
 
 .breakdown-chart-panel .deck-breakdown-chart-title {
@@ -488,15 +525,19 @@ button.stats-card-action:focus-visible {
 }
 
 .breakdown-chart-body {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(280px, 32vh);
   gap: 10px;
   min-height: 0;
-  align-items: stretch;
+}
+
+.breakdown-chart-panel.has-series-list .breakdown-chart-body {
+  grid-template-columns: 176px minmax(0, 1fr);
 }
 
 .breakdown-chart-series-list {
-  flex: 0 0 176px;
-  max-height: 280px;
+  min-height: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -549,8 +590,9 @@ button.stats-card-action:focus-visible {
 }
 
 .breakdown-chart-body .breakdown-history-chart {
-  flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .breakdown-chart-controls {
@@ -605,10 +647,13 @@ button.stats-card-action:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .breakdown-history-plot {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   border: 1px solid #c5d0d6;
   border-radius: 8px;
   background: #f3f5f7;
@@ -616,7 +661,7 @@ button.stats-card-action:focus-visible {
 
 .breakdown-history-svg {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
 }
 
@@ -687,6 +732,7 @@ button.stats-card-action:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
+  flex: 0 0 auto;
 }
 
 .breakdown-history-legend li {
@@ -696,6 +742,23 @@ button.stats-card-action:focus-visible {
   font-size: 13px;
   font-weight: 600;
   color: #102027;
+}
+
+.breakdown-history-legend-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.breakdown-history-legend-link:hover,
+.breakdown-history-legend-link:focus-visible {
+  color: #0d47a1;
 }
 
 .breakdown-history-legend strong {

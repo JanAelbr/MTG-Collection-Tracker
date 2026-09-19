@@ -6,6 +6,7 @@ import {
   priceSyncMoversModalOpen,
   recordCompletedPriceSync,
   shouldStartStartupPriceSync,
+  formatPriceSyncRunningMessage,
 } from "./startupPriceSync";
 
 describe("shouldStartStartupPriceSync", () => {
@@ -57,5 +58,21 @@ describe("recordCompletedPriceSync", () => {
     });
     expect(movers.absolute.risers[0].id).toBe("a");
     expect(movers.relative.fallers[0].id).toBe("b");
+  });
+});
+
+describe("formatPriceSyncRunningMessage", () => {
+  it("includes percent and card counts", () => {
+    expect(formatPriceSyncRunningMessage({
+      progress: 42.4,
+      processed: 420,
+      total: 1000,
+      message: "Comparing Cardmarket prices",
+    })).toBe("Comparing Cardmarket prices (42% · 420/1000)");
+  });
+
+  it("falls back when the backend message is generic", () => {
+    expect(formatPriceSyncRunningMessage({ progress: 8, message: "Price sync started" }))
+      .toBe("Updating prices… (8%)");
   });
 });

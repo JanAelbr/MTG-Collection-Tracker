@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import { fetchPricingSettings } from "../composables/pricingSettings";
+import { formatPriceSyncRunningMessage, PRICE_SYNC_POLL_MS } from "../composables/startupPriceSync";
 
 const meta = ref(null);
 const syncStatus = ref(null);
@@ -38,7 +39,10 @@ async function refreshSyncStatus() {
   } else if (syncStatus.value.status === "failed") {
     syncMessage.value = syncStatus.value.error || syncStatus.value.message || "Price sync failed.";
   } else if (syncStatus.value.status === "running") {
-    syncMessage.value = "Updating Cardmarket prices and catalog data…";
+    syncMessage.value = formatPriceSyncRunningMessage(
+      syncStatus.value,
+      "Updating Cardmarket prices…",
+    );
   } else {
     syncMessage.value = "";
   }
@@ -62,7 +66,7 @@ function startPolling() {
       }
       await refreshMeta();
     }
-  }, 2000);
+  }, PRICE_SYNC_POLL_MS);
 }
 
 async function triggerPriceSync() {

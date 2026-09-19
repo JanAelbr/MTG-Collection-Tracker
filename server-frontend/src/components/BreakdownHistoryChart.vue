@@ -1,10 +1,11 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { formatPercentChange } from "../utils/format";
 import {
   formatHistoryAxisValue,
   formatHistoryPlotValue,
   historyPlotFromZero,
+  historySeriesCardScope,
   normalizeHistoryView,
 } from "../utils/breakdownHistory";
 import { TYPE_CHART_COLORS } from "../utils/mtgTheme";
@@ -14,13 +15,18 @@ const props = defineProps({
   showTitle: { type: Boolean, default: true },
   dates: { type: Array, default: () => [] },
   series: { type: Array, default: () => [] },
+  source: { type: String, default: "" },
   metric: { type: String, default: "value" },
   scale: { type: String, default: "absolute" },
   emptyLabel: { type: String, default: "No snapshots yet." },
 });
 
-const width = 640;
-const height = 220;
+const emit = defineEmits(["open-series"]);
+
+const DEFAULT_WIDTH = 640;
+const DEFAULT_HEIGHT = 220;
+const width = ref(DEFAULT_WIDTH);
+const height = ref(DEFAULT_HEIGHT);
 const view = computed(() => normalizeHistoryView({ metric: props.metric, scale: props.scale }));
 const padding = computed(() => ({
   top: 16,
@@ -28,11 +34,46 @@ const padding = computed(() => ({
   bottom: 36,
   left: view.value.metric === "change" && view.value.scale === "absolute" ? 76 : 64,
 }));
-const plotWidth = computed(() => width - padding.value.left - padding.value.right);
-const plotHeight = computed(() => height - padding.value.top - padding.value.bottom);
+const plotWidth = computed(() => Math.max(1, width.value - padding.value.left - padding.value.right));
+const plotHeight = computed(() => Math.max(1, height.value - padding.value.top - padding.value.bottom));
 const hovered = ref(null);
+const plotRef = ref(null);
 const svgRef = ref(null);
 const baselineIndex = ref(0);
+let plotObserver = null;
+
+function syncPlotSize() {
+  const el = plotRef.value;
+  if (!el) {
+    return;
+  }
+  const nextWidth = Math.max(1, Math.round(el.clientWidth));
+  const nextHeight = Math.max(1, Math.round(el.clientHeight));
+  if (nextWidth !== width.value) {
+    width.value = nextWidth;
+  }
+  if (nextHeight !== height.value) {
+    height.value = nextHeight;
+  }
+}
+
+watch(plotRef, (el) => {
+  plotObserver?.disconnect();
+  plotObserver = null;
+  if (!el) {
+    return;
+  }
+  syncPlotSize();
+  if (typeof ResizeObserver === "undefined") {
+    return;
+  }
+  plotObserver = new ResizeObserver(() => syncPlotSize());
+  plotObserver.observe(el);
+});
+
+onBeforeUnmount(() => {
+  plotObserver?.disconnect();
+});
 
 watch(
   () => props.dates.join("|"),
@@ -166,6 +207,17 @@ function seriesColor(index) {
   return TYPE_CHART_COLORS[index % TYPE_CHART_COLORS.length];
 }
 
+function seriesScope(item) {
+  return historySeriesCardScope(props.source, item);
+}
+
+function openSeries(item) {
+  const scope = seriesScope(item);
+  if (scope) {
+    emit("open-series", scope);
+  }
+}
+
 function seriesChange(item) {
   const values = item?.rawValues || item?.values || [];
   if (!values.length) {
@@ -221,8 +273,8 @@ function tooltipPlacement(dot) {
     return null;
   }
   const rect = svg.getBoundingClientRect();
-  const x = rect.left + (dot.x / width) * rect.width;
-  const y = rect.top + (dot.y / height) * rect.height;
+  const x = rect.left + (dot.x / width.value) * rect.width;
+  const y = rect.top + (dot.y / height.value) * rect.height;
   const margin = 12;
   const estimatedWidth = 200;
   const estimatedHeight = 92;
@@ -254,11 +306,12 @@ const tooltipStyle = computed(() => {
     <h3 v-if="showTitle" class="deck-breakdown-chart-title">{{ title }}</h3>
     <p v-if="!hasPoints" class="deck-breakdown-chart-empty">{{ emptyLabel }}</p>
     <template v-else>
-      <div class="breakdown-history-plot" @mouseleave="hovered = null">
+      <div ref="plotRef" class="breakdown-history-plot" @mouseleave="hovered = null">
         <svg
           ref="svgRef"
           class="breakdown-history-svg"
           :viewBox="`0 0 ${width} ${height}`"
+          preserveAspectRatio="xMinYMin meet"
           role="img"
           :aria-label="title"
         >
@@ -362,7 +415,15 @@ const tooltipStyle = computed(() => {
       <ul class="breakdown-history-legend">
         <li v-for="(item, index) in series" :key="item.id">
           <span class="breakdown-history-swatch" :style="{ background: seriesColor(index) }" />
-          <span>{{ item.label }}</span>
+          <button
+            v-if="seriesScope(item)"
+            type="button"
+            class="breakdown-history-legend-link"
+            @click="openSeries(item)"
+          >
+            {{ item.label }}
+          </button>
+          <span v-else>{{ item.label }}</span>
           <strong>
             {{ formatPlot(item.values.at(-1)) }}
             <span v-if="seriesChange(item)" class="breakdown-history-change">{{ seriesChange(item) }}</span>

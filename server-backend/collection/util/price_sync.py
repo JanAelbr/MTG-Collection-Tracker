@@ -332,14 +332,16 @@ def update_cardmarket_prices_only(
     force_cardmarket: bool = False,
     set_codes: set[str] | None = None,
     extra_qualifying_sets: set[str] | None = None,
+    on_progress=None,
 ) -> dict:
     if not set_codes:
         log.warning("No favourite or owned sets to price; skipping Cardmarket update")
         return {"updated_fields": 0, "applied": False, "movers": empty_price_sync_movers()}
 
     log.info(
-        "Applying Cardmarket prices for set(s): %s",
+        "Applying Cardmarket prices for set(s): %s%s",
         ", ".join(code.upper() for code in sorted(set_codes)),
+        " (forced download)" if force_cardmarket else "",
     )
     timer = BuildTimer(log)
     today = date.today().isoformat()
@@ -363,6 +365,7 @@ def update_cardmarket_prices_only(
             extra_qualifying_sets=full_sets or None,
             force_download=force_cardmarket,
             log=log,
+            on_progress=on_progress,
         )
 
     timer.log_summary("Cardmarket price update timing")

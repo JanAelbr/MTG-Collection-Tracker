@@ -321,6 +321,35 @@ export function parseArtStyleSeriesId(id, label = "") {
   };
 }
 
+export function historySeriesCardScope(source, item) {
+  if (source === "set") {
+    const setCode = String(item?.id || "").trim().toUpperCase();
+    if (!setCode || setCode === "ALL") {
+      return null;
+    }
+    return {
+      source,
+      setCode,
+      artStyle: "",
+      label: item?.label || setCode,
+    };
+  }
+  if (source === "artStyle") {
+    const parsed = parseArtStyleSeriesId(item?.id, item?.label);
+    const artStyle = String(parsed.artStyle || "").trim();
+    if (!artStyle) {
+      return null;
+    }
+    return {
+      source,
+      setCode: String(parsed.setCode || "").trim().toUpperCase(),
+      artStyle,
+      label: item?.label || artStyle,
+    };
+  }
+  return null;
+}
+
 export const MOVER_SCALE_PERCENT = "percent";
 export const MOVER_SCALE_ABSOLUTE = "absolute";
 const MOVER_SCALE_STORAGE_KEY = "favorites-home:mover-scale";

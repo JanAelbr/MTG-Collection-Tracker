@@ -753,14 +753,19 @@ def save_daily_breakdown(
     return {**_serialize_snapshot_row(row), "unchanged": False}
 
 
-def record_daily_collection_snapshot(conn: sqlite3.Connection, *, note: str = "") -> dict:
+def record_daily_collection_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    note: str = "",
+    skip_if_unchanged: bool = True,
+) -> dict:
     from api.services import settings_service
 
     return save_daily_breakdown(
         conn,
         price_strategy=settings_service.get_settings(conn)["priceStrategy"],
         note=note,
-        skip_if_unchanged=True,
+        skip_if_unchanged=skip_if_unchanged,
     )
 
 

@@ -2,6 +2,7 @@
 import "../styles/stats.css";
 import { computed, ref, watch } from "vue";
 import BreakdownHistoryChart from "./BreakdownHistoryChart.vue";
+import CollectionTilesModal from "./CollectionTilesModal.vue";
 import {
   DEDICATED_BREAKDOWN_CHARTS,
   loadBreakdownCharts,
@@ -41,6 +42,7 @@ const options = computed(() => ({
 
 const { historyView, setHistoryView } = useHistoryView(props.storageKey);
 const charts = ref(loadBreakdownCharts(props.storageKey, options.value));
+const tilesModal = ref(null);
 
 watch(
   () => [props.storageKey, sources.value.map((source) => source.id).join("|")],
@@ -85,6 +87,14 @@ function updateChart(index, patch) {
   );
   charts.value = next;
   persist();
+}
+
+function openSeriesTiles(scope) {
+  tilesModal.value = scope;
+}
+
+function closeSeriesTiles() {
+  tilesModal.value = null;
 }
 </script>
 
@@ -170,12 +180,21 @@ function updateChart(index, patch) {
             :show-title="false"
             :dates="chartView(chart).dates"
             :series="chartView(chart).series"
+            :source="chart.source"
             :metric="historyView.metric"
             :scale="historyView.scale"
             empty-label="Daily snapshots appear here after the first price sync of the day."
+            @open-series="openSeriesTiles"
           />
         </div>
       </section>
     </div>
+    <CollectionTilesModal
+      :open="Boolean(tilesModal)"
+      :title="tilesModal?.label || ''"
+      :set-code="tilesModal?.setCode || ''"
+      :art-style="tilesModal?.artStyle || ''"
+      @close="closeSeriesTiles"
+    />
   </div>
 </template>

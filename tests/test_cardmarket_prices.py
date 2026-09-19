@@ -436,6 +436,8 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         row = {
             "set_code": "LTR",
             "collector_number": "1",
+            "name": "Ring",
+            "image_uri": "https://example.com/ring.jpg",
             "market_value": 1.0,
             "market_value_foil": None,
             "market_value_etched": None,
@@ -489,6 +491,8 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         self.assertTrue(stats["applied"])
         self.assertEqual(len(stats["movers"]["absolute"]["risers"]), 1)
         self.assertEqual(stats["movers"]["absolute"]["risers"][0]["current"], 3.5)
+        self.assertEqual(stats["movers"]["absolute"]["risers"][0]["imageUri"], "https://example.com/ring.jpg")
+        self.assertEqual(stats["movers"]["absolute"]["risers"][0]["name"], "Ring")
         self.assertEqual(stats["movers"]["absolute"]["fallers"], [])
         self.assertEqual(len(stats["movers"]["relative"]["risers"]), 1)
         self.assertEqual(market_value, 3.5)

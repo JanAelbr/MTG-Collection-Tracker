@@ -6,39 +6,32 @@ export function artStyleMoverKey(row) {
   return `${setCode}|${artStyle}`;
 }
 
+export function isCardMoverRow(row) {
+  return Boolean(String(row?.collectorNumber || "").trim());
+}
+
 export function collectPriceSyncCards(payload) {
-  if (Array.isArray(payload?.cards) && payload.cards.length) {
-    return payload.cards;
+  const fromPayload = Array.isArray(payload?.cards) ? payload.cards : [];
+  const cards = fromPayload.filter(isCardMoverRow);
+  if (cards.length) {
+    return cards;
   }
-  const movers = payload?.movers || {};
-  const lists = [
-    movers.absolute?.risers,
-    movers.absolute?.fallers,
-    movers.relative?.risers,
-    movers.relative?.fallers,
-    movers.risers,
-    movers.fallers,
-  ];
-  const byId = new Map();
-  for (const list of lists) {
-    for (const row of list || []) {
-      const id = row.id || artStyleMoverKey(row);
-      if (id && !byId.has(id)) {
-        byId.set(id, row);
-      }
-    }
-  }
-  return [...byId.values()];
+  return [];
+}
+
+export function collectPriceSyncStyleRows(payload) {
+  return aggregateArtStyleMovers(collectPriceSyncCards(payload));
 }
 
 export function cardsForArtStyle(cards, filter) {
   if (!filter) {
-    return cards || [];
+    return (cards || []).filter(isCardMoverRow);
   }
   const setCode = String(filter.setCode || "").trim().toUpperCase();
   const artStyle = String(filter.artStyle || "").trim();
   return (cards || []).filter((row) => (
-    String(row.setCode || "").trim().toUpperCase() === setCode
+    isCardMoverRow(row)
+    && String(row.setCode || "").trim().toUpperCase() === setCode
     && String(row.artStyle || "").trim() === artStyle
   ));
 }
@@ -69,6 +62,21 @@ export function aggregateArtStyleMovers(cards) {
       percent: row.previous > 0 ? (delta / row.previous) * 100 : 0,
     };
   }).filter((row) => Math.abs(row.delta) >= MIN_ABS_DELTA);
+}
+
+export function moverRowToTileCard(row) {
+  const finishLabelText = String(row?.finish || "").trim();
+  const rawName = String(row?.name || "").trim();
+  const label = String(row?.label || "").trim();
+  const name = rawName || label.replace(/\s+\((Foil|Etched)\)$/i, "").trim();
+  return {
+    name,
+    cardName: name,
+    setCode: String(row?.setCode || "").trim().toUpperCase(),
+    collectorNumber: String(row?.collectorNumber || "").trim(),
+    imageUri: String(row?.imageUri || row?.image_uri || "").trim(),
+    finish: finishLabelText || row?.finish,
+  };
 }
 
 export function rankMoverRows(rows, { scale = "absolute", limit = 25 } = {}) {

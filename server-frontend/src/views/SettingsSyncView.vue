@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import { confirmDialog } from "../composables/confirmDialog";
 import {
+  formatPriceSyncRunningMessage,
+  PRICE_SYNC_POLL_MS,
   priceSyncHasMovers,
   recordCompletedPriceSync,
   showStoredPriceSyncMovers,
@@ -49,7 +51,10 @@ async function refreshSyncStatus() {
   } else if (syncStatus.value.status === "failed") {
     syncMessage.value = syncStatus.value.error || syncStatus.value.message || "Price sync failed.";
   } else if (syncStatus.value.status === "running") {
-    syncMessage.value = "Updating Cardmarket prices and catalog data…";
+    syncMessage.value = formatPriceSyncRunningMessage(
+      syncStatus.value,
+      "Updating Cardmarket prices…",
+    );
   } else {
     syncMessage.value = "";
   }
@@ -73,13 +78,13 @@ function startPolling() {
       }
       await refreshMeta();
     }
-  }, 2000);
+  }, PRICE_SYNC_POLL_MS);
 }
 
-async function triggerPriceSync() {
-  syncMessage.value = "Starting price sync…";
+async function triggerPriceSync(force = false) {
+  syncMessage.value = force ? "Starting forced price sync…" : "Starting price sync…";
   try {
-    await api.triggerPriceSync();
+    await api.triggerPriceSync(force ? { force: true } : {});
     syncRunning.value = true;
     await refreshSyncStatus();
     startPolling();
@@ -143,7 +148,7 @@ onUnmounted(stopPolling);
       <div class="home-sync-panel">
         <div class="home-sync-copy">
           <strong>Price sync</strong>
-          <p>Fetch Cardmarket prices for favourite sets (including unowned prints) and every owned card. Use the catalog price button on a set that is not in that list to update it on demand.</p>
+          <p>Fetch Cardmarket prices for favourite sets (including unowned prints) and every owned card. Use the catalog price button on a set that is not in that list to update it on demand. Force sync re-downloads the Cardmarket guide and overwrites today's snapshot even if a sync already ran.</p>
           <p v-if="syncMessage" class="home-sync-message" :class="{ error: syncStatus?.status === 'failed' }">
             {{ syncMessage }}
           </p>
@@ -153,9 +158,17 @@ onUnmounted(stopPolling);
             type="button"
             class="btn btn-primary"
             :disabled="syncRunning"
-            @click="triggerPriceSync"
+            @click="triggerPriceSync(false)"
           >
             {{ syncRunning ? "Syncing prices…" : "Sync prices now" }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="syncRunning"
+            @click="triggerPriceSync(true)"
+          >
+            Force sync
           </button>
           <button
             v-if="hasLastMovers"

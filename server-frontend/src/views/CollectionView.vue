@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache, ignoreAborted } from "../api";
-import { recordCompletedPriceSync } from "../composables/startupPriceSync";
+import { formatPriceSyncRunningMessage, PRICE_SYNC_POLL_MS, recordCompletedPriceSync } from "../composables/startupPriceSync";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionAllToolbar from "../components/CollectionAllToolbar.vue";
@@ -734,7 +734,10 @@ async function refreshSyncStatus() {
   } else if (syncStatus.value.status === "failed") {
     syncMessage.value = syncStatus.value.error || syncStatus.value.message || "Price sync failed.";
   } else if (syncStatus.value.status === "running") {
-    syncMessage.value = "Updating Cardmarket prices…";
+    syncMessage.value = formatPriceSyncRunningMessage(
+      syncStatus.value,
+      "Updating Cardmarket prices…",
+    );
   } else {
     syncMessage.value = "";
   }
@@ -760,7 +763,7 @@ function startPolling() {
         await loadCards();
       }
     }
-  }, 2000);
+  }, PRICE_SYNC_POLL_MS);
 }
 
 async function triggerPriceSync(setCodeToSync = "") {

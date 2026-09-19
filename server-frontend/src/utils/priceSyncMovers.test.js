@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateArtStyleMovers,
   cardsForArtStyle,
+  collectPriceSyncCards,
+  collectPriceSyncStyleRows,
+  moverRowToTileCard,
   rankMoverRows,
 } from "./priceSyncMovers";
 
@@ -37,14 +40,74 @@ describe("aggregateArtStyleMovers", () => {
 });
 
 describe("cardsForArtStyle", () => {
-  it("filters cards for one art style", () => {
+  it("filters card rows for one art style", () => {
     const cards = [
-      { setCode: "LTR", artStyle: "Showcase", label: "A" },
-      { setCode: "LTR", artStyle: "Regular", label: "B" },
+      { setCode: "LTR", artStyle: "Showcase", collectorNumber: "1", label: "A" },
+      { setCode: "LTR", artStyle: "Regular", collectorNumber: "2", label: "B" },
+      { setCode: "LTR", artStyle: "Showcase", label: "style total" },
     ];
     expect(cardsForArtStyle(cards, { setCode: "ltr", artStyle: "Showcase" })).toEqual([
       cards[0],
     ]);
+  });
+});
+
+describe("collectPriceSyncCards", () => {
+  it("ignores art-style totals when collecting cards", () => {
+    expect(collectPriceSyncCards({
+      cards: [
+        { setCode: "LTR", artStyle: "Showcase", collectorNumber: "1", label: "A" },
+        { setCode: "LTR", artStyle: "Showcase", label: "style total" },
+      ],
+    })).toEqual([
+      { setCode: "LTR", artStyle: "Showcase", collectorNumber: "1", label: "A" },
+    ]);
+  });
+});
+
+describe("collectPriceSyncStyleRows", () => {
+  it("builds art styles from stored card diffs only", () => {
+    const rows = collectPriceSyncStyleRows({
+      cards: [
+        {
+          setCode: "LTR",
+          artStyle: "Showcase",
+          collectorNumber: "1",
+          previous: 10,
+          current: 16,
+        },
+      ],
+      movers: {
+        absolute: {
+          risers: [{ id: "LTR|Poster", setCode: "LTR", artStyle: "Poster", delta: 37 }],
+          fallers: [],
+        },
+      },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].artStyle).toBe("Showcase");
+    expect(rows[0].delta).toBe(6);
+  });
+});
+
+describe("moverRowToTileCard", () => {
+  it("maps a stored card diff onto a collection tile card", () => {
+    const card = moverRowToTileCard({
+      name: "Gandalf",
+      label: "Gandalf (Foil)",
+      setCode: "ltr",
+      collectorNumber: "1",
+      finish: "Foil",
+      imageUri: "https://example.com/gandalf.jpg",
+    });
+    expect(card).toEqual({
+      name: "Gandalf",
+      cardName: "Gandalf",
+      setCode: "LTR",
+      collectorNumber: "1",
+      imageUri: "https://example.com/gandalf.jpg",
+      finish: "Foil",
+    });
   });
 });
 

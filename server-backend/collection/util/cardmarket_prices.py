@@ -397,6 +397,10 @@ def ensure_price_guide(force: bool = False, logger: logging.Logger | None = None
                 _PRICE_GUIDE_CACHE_LOGGED = True
             return PRICE_GUIDE_CACHE
 
+    if force:
+        request_log.info("Forcing Cardmarket price guide download")
+    else:
+        request_log.info("Downloading Cardmarket price guide")
     response = http_get(
         PRICE_GUIDE_URL,
         headers=REQUEST_HEADERS,
@@ -522,6 +526,7 @@ def list_cards_for_price_sync(
             collector_number,
             name,
             art_style,
+            image_uri,
             market_value,
             market_value_foil,
             market_value_etched,
@@ -715,6 +720,7 @@ def _record_price_move(moves: list[dict], row, finish_id: int, previous, current
     set_code = str(_row_field(row, "set_code", "") or "").strip().upper()
     number = str(_row_field(row, "collector_number", "") or "").strip()
     art_style = str(_row_field(row, "art_style", "") or "").strip()
+    image_uri = str(_row_field(row, "image_uri", "") or "").strip()
     finish = finish_label(finish_id)
     label = name or f"{set_code} #{number}".strip()
     if finish:
@@ -722,10 +728,12 @@ def _record_price_move(moves: list[dict], row, finish_id: int, previous, current
     moves.append({
         "id": f"{set_code}|{number}|{finish_id}",
         "label": label,
+        "name": name,
         "setCode": set_code,
         "collectorNumber": number,
         "artStyle": art_style,
         "finish": finish,
+        "imageUri": image_uri,
         "previous": prev,
         "current": curr,
         "delta": delta,
@@ -783,18 +791,31 @@ def sync_prices_from_guide(
     force_download: bool = False,
     missing_only: bool = False,
     log=None,
+    on_progress=None,
 ) -> dict:
     out = log if log is not None else get_logger(__name__)
+
+    def report(percent: float, message: str, processed: int | None = None, total: int | None = None) -> None:
+        if on_progress:
+            on_progress(percent, message, processed, total)
+
+    report(
+        5,
+        "Downloading Cardmarket price guide" if force_download else "Loading Cardmarket price guide",
+    )
     guide = load_price_guide_index(force_download=force_download, logger=out)
+    report(12, f"Loaded {len(guide)} Cardmarket products")
     from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.row_factory = sqlite3.Row
         ensure_card_columns(conn)
+        report(13, "Backfilling Cardmarket URLs")
         backfilled_urls = backfill_cardmarket_urls(conn, guide)
         if backfilled_urls:
             out.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
+        report(14, "Loading cards to price")
         context = load_price_sync_context(
             conn,
             set_codes,
@@ -818,6 +839,7 @@ def sync_prices_from_guide(
         if not rows:
             conn.commit()
             out.info("No cards with a Cardmarket URL to price.")
+            report(100, "No cards with a Cardmarket URL to price", processed=0, total=0)
             return {
                 "queried_cards": 0,
                 "updated_fields": 0,
@@ -838,6 +860,7 @@ def sync_prices_from_guide(
             mode,
             len(context.qualifying_sets),
         )
+        report(15, f"Comparing {len(rows)} cards", processed=0, total=len(rows))
         totals = {
             "queried_cards": len(rows),
             "updated_fields": 0,
@@ -862,8 +885,10 @@ def sync_prices_from_guide(
             FINISH_ETCHED: [],
         }
         price_moves: list[dict] = []
+        last_log_bucket = -1
+        card_total = len(rows)
 
-        for row in rows:
+        for index, row in enumerate(rows, start=1):
             finish_rows = (
                 (FINISH_NONFOIL, row["market_value"]),
                 (FINISH_FOIL, row["market_value_foil"]),
@@ -934,14 +959,45 @@ def sync_prices_from_guide(
                 totals["updated_fields"] += 1
                 _record_price_move(price_moves, row, finish_id, current_value, price)
 
+            percent = 15 + (75 * index / card_total)
+            bucket = int(percent) // 10
+            if bucket != last_log_bucket:
+                last_log_bucket = bucket
+                out.info(
+                    "Price compare %s%% (%s/%s cards)",
+                    int(round(percent)),
+                    index,
+                    card_total,
+                )
+            step = max(1, card_total // 100)
+            if index == 1 or index == card_total or index % step == 0:
+                report(
+                    percent,
+                    "Comparing Cardmarket prices",
+                    processed=index,
+                    total=card_total,
+                )
+
         has_changes = any(updates_by_finish.values()) or any(clears_by_finish.values())
         if has_changes:
+            report(90, "Writing price updates", processed=card_total, total=card_total)
+            out.info(
+                "Applying Cardmarket price changes (%s updated field(s), %s cleared)",
+                totals["updated_fields"],
+                totals["cleared_fields"],
+            )
             _apply_price_sync_batches(
                 conn,
                 today,
                 updates_by_finish=updates_by_finish,
                 clears_by_finish=clears_by_finish,
             )
+        else:
+            report(90, "No price changes to apply", processed=card_total, total=card_total)
+            out.info("Cardmarket values already match stored prices; skipping apply")
+            if force_download:
+                snapshot_owned_cardmarket_prices(conn, today)
+                out.info("Force sync: refreshed owned Cardmarket price snapshot")
         totals["applied"] = has_changes or cleared_unowned > 0
         totals["movers"] = _rank_price_movers(price_moves, limit=PRICE_SYNC_MOVER_LIMIT)
         totals["cards"] = list(price_moves)
