@@ -130,6 +130,26 @@ describe("buildHistoryChartView", () => {
       label: "LTR Showcase",
     });
   });
+
+  it("orders picker options by relative price instead of euro value", () => {
+    expect(seriesPickerOptions(points, "set", {
+      metric: "value",
+      scale: "relative",
+    }).map((item) => item.id)).toEqual([
+      HISTORY_TOP_SERIES,
+      "LTC",
+      "LTR",
+    ]);
+  });
+
+  it("ranks top series by period change when that view is selected", () => {
+    const view = buildHistoryChartView(points, {
+      source: "set",
+      metric: "change",
+      scale: "relative",
+    });
+    expect(view.series.map((item) => item.id)).toEqual(["LTC", "LTR"]);
+  });
 });
 
 describe("topArtStyleRisersFromHistory", () => {

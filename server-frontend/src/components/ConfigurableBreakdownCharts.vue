@@ -8,7 +8,7 @@ import {
   normalizeBreakdownChart,
   saveBreakdownCharts,
 } from "../utils/breakdownCharts";
-import { formatEuro } from "../utils/format";
+import { STATS_HISTORY_VIEW_KEY, useHistoryView } from "../composables/historyView";
 import {
   HISTORY_METRIC_CHANGE,
   HISTORY_METRIC_VALUE,
@@ -16,16 +16,14 @@ import {
   HISTORY_SCALE_RELATIVE,
   HISTORY_TOP_SERIES,
   buildHistoryChartView,
+  formatHistoryPlotValue,
   historySourceOptions,
-  loadHistoryView,
-  normalizeHistoryView,
-  saveHistoryView,
   seriesPickerOptions,
 } from "../utils/breakdownHistory";
 
 const props = defineProps({
   history: { type: Object, default: () => ({ points: [], hasArtStyles: false }) },
-  storageKey: { type: String, default: "settingsBreakdownHistoryCharts" },
+  storageKey: { type: String, default: STATS_HISTORY_VIEW_KEY },
 });
 
 const HISTORY_CHART_DEFAULTS = DEDICATED_BREAKDOWN_CHARTS.map((item) => ({
@@ -41,14 +39,13 @@ const options = computed(() => ({
   defaults: HISTORY_CHART_DEFAULTS,
 }));
 
+const { historyView, setHistoryView } = useHistoryView(props.storageKey);
 const charts = ref(loadBreakdownCharts(props.storageKey, options.value));
-const historyView = ref(loadHistoryView(props.storageKey));
 
 watch(
   () => [props.storageKey, sources.value.map((source) => source.id).join("|")],
   () => {
     charts.value = loadBreakdownCharts(props.storageKey, options.value);
-    historyView.value = loadHistoryView(props.storageKey);
   },
 );
 
@@ -60,17 +57,23 @@ function chartView(chart) {
   return buildHistoryChartView(points.value, { ...chart, ...historyView.value });
 }
 
-function setHistoryView(patch) {
-  historyView.value = normalizeHistoryView({ ...historyView.value, ...patch });
-  saveHistoryView(props.storageKey, historyView.value);
-}
-
 function chartTitle(chart) {
   return sources.value.find((item) => item.id === chart.source)?.label || chart.source;
 }
 
 function seriesChoices(chart) {
-  return seriesPickerOptions(points.value, chart.source);
+  return seriesPickerOptions(points.value, chart.source, historyView.value);
+}
+
+function seriesValueClass(value) {
+  if (historyView.value.metric !== HISTORY_METRIC_CHANGE) {
+    return "";
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return "";
+  }
+  return amount > 0 ? "reports-gain" : "reports-loss";
 }
 
 function updateChart(index, patch) {
@@ -152,8 +155,12 @@ function updateChart(index, patch) {
               @click="updateChart(index, { series: item.id })"
             >
               <span class="breakdown-chart-series-label">{{ item.label }}</span>
-              <span v-if="item.value != null" class="breakdown-chart-series-value">
-                {{ formatEuro(item.value) }}
+              <span
+                v-if="item.value != null"
+                class="breakdown-chart-series-value"
+                :class="seriesValueClass(item.value)"
+              >
+                {{ formatHistoryPlotValue(item.value, historyView) }}
               </span>
             </button>
           </nav>

@@ -16,6 +16,13 @@ import {
 import { finishLabel } from "../utils/finishes";
 import { resolveSetIconUri } from "../utils/scryfall";
 import { collectionScopeToQuery } from "../utils/setScope";
+import { STATS_HISTORY_VIEW_KEY, useHistoryView } from "../composables/historyView";
+import {
+  appendLiveHistoryPoint,
+  formatHistoryPlotValue,
+  HISTORY_METRIC_CHANGE,
+  seriesPlotAmount,
+} from "../utils/breakdownHistory";
 
 const props = defineProps({
   stats: { type: Object, default: null },
@@ -25,9 +32,15 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   /** When true, set rows / unknown-card set icons emit select-set. */
   allowSetDrill: { type: Boolean, default: true },
+  historyStorageKey: { type: String, default: "" },
+  historyPoints: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["select-set"]);
+const { historyView: sharedHistoryView } = useHistoryView(STATS_HISTORY_VIEW_KEY);
+const historyView = computed(() => (
+  props.historyStorageKey ? sharedHistoryView.value : null
+));
 
 /** @type {import("vue").Ref<"value" | "completion">} */
 const primaryMetric = ref("value");
@@ -176,7 +189,38 @@ function formatValueShare(row) {
   return `${share.toFixed(share >= 10 || share === 0 ? 0 : 1)}%`;
 }
 
+function rowSeriesId(row) {
+  if (showSetBreakdown.value) {
+    return String(row?.setCode || "");
+  }
+  const setCode = String(row?.setCode || "").trim();
+  const artStyle = String(row?.artStyle || "").trim();
+  return setCode && artStyle ? `${setCode}|${artStyle}` : artStyle;
+}
+
+const plotPoints = computed(() => {
+  if (!historyView.value) {
+    return [];
+  }
+  return appendLiveHistoryPoint(props.historyPoints, props.stats);
+});
+
+const usesHistoryView = computed(() => (
+  Boolean(historyView.value) && plotPoints.value.length >= 2 && isValuePrimary.value
+));
+
+function rowPlotAmount(row) {
+  if (!usesHistoryView.value) {
+    return Number(row?.current) || 0;
+  }
+  const source = showSetBreakdown.value ? "set" : "artStyle";
+  return seriesPlotAmount(plotPoints.value, source, rowSeriesId(row), historyView.value);
+}
+
 function formatValuePrimaryLabel(row) {
+  if (usesHistoryView.value) {
+    return formatHistoryPlotValue(rowPlotAmount(row), historyView.value);
+  }
   const euro = formatEuro(row.current);
   const share = formatValueShare(row);
   return share ? `${euro} · ${share}` : euro;
@@ -185,7 +229,7 @@ function formatValuePrimaryLabel(row) {
 function sortBreakdownRows(rows) {
   return [...rows].sort((a, b) => {
     if (isValuePrimary.value) {
-      return (b.current ?? 0) - (a.current ?? 0);
+      return rowPlotAmount(b) - rowPlotAmount(a);
     }
     const completionDiff = (rowCompletionPercent(b) ?? -1) - (rowCompletionPercent(a) ?? -1);
     if (completionDiff !== 0) {
@@ -238,8 +282,8 @@ const maxBreakdownValue = computed(() => {
   const rows = showSetBreakdown.value ? setBreakdownRows.value : artStyleRows.value;
   let max = 0;
   for (const row of rows) {
-    const value = row.current;
-    if (value != null && !Number.isNaN(value) && value > max) {
+    const value = Math.abs(rowPlotAmount(row));
+    if (value > max) {
       max = value;
     }
   }
@@ -247,8 +291,8 @@ const maxBreakdownValue = computed(() => {
 });
 
 function valueBarPercent(row) {
-  const current = row.current;
-  if (current == null || Number.isNaN(current) || maxBreakdownValue.value <= 0) {
+  const current = Math.abs(rowPlotAmount(row));
+  if (!current || maxBreakdownValue.value <= 0) {
     return 0;
   }
   return Math.max(6, (current / maxBreakdownValue.value) * 100);
@@ -259,7 +303,19 @@ function primaryBarPercent(row) {
 }
 
 function primaryBarClass(row) {
-  return isValuePrimary.value ? "is-value" : completionBarClass(row);
+  if (!isValuePrimary.value) {
+    return completionBarClass(row);
+  }
+  if (usesHistoryView.value && historyView.value?.metric === HISTORY_METRIC_CHANGE) {
+    const amount = rowPlotAmount(row);
+    if (amount < 0) {
+      return "is-value is-loss";
+    }
+    if (amount > 0) {
+      return "is-value is-gain";
+    }
+  }
+  return "is-value";
 }
 
 function primaryLabel(row) {
@@ -268,6 +324,9 @@ function primaryLabel(row) {
 
 function primaryTitle(row) {
   if (isValuePrimary.value) {
+    if (usesHistoryView.value) {
+      return formatHistoryPlotValue(rowPlotAmount(row), historyView.value);
+    }
     const share = formatValueShare(row);
     return share
       ? `${formatEuro(row.current)} (${share} of portfolio)`
@@ -280,6 +339,9 @@ function secondaryLine(row) {
   if (isValuePrimary.value) {
     const percent = formatCollectedPercent(row);
     return `${collectedCountsLabel(row)} · ${percent}`;
+  }
+  if (usesHistoryView.value) {
+    return formatHistoryPlotValue(rowPlotAmount(row), historyView.value);
   }
   const share = formatValueShare(row);
   const euro = formatEuro(row.current);
@@ -621,7 +683,10 @@ function setPrimaryMetric(metric) {
           </div>
         </div>
         <p class="stats-breakdown-intro">
-          <template v-if="isValuePrimary">
+          <template v-if="isValuePrimary && usesHistoryView">
+            Sorted by the selected Price/Change view versus snapshot history.
+          </template>
+          <template v-else-if="isValuePrimary">
             Sorted by market value. Share is percent of this scope’s total.
           </template>
           <template v-else>

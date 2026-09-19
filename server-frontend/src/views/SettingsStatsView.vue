@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
 import { api, isApiAbortError } from "../api";
 import CollectionStatsPanel from "../components/CollectionStatsPanel.vue";
 import ConfigurableBreakdownCharts from "../components/ConfigurableBreakdownCharts.vue";
+import { STATS_HISTORY_VIEW_KEY } from "../composables/historyView";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { formatEuro } from "../utils/format";
@@ -127,6 +128,8 @@ onMounted(() => {
         :sets="payload?.sets || []"
         set-code="All"
         :loading="loading"
+        :history-storage-key="STATS_HISTORY_VIEW_KEY"
+        :history-points="history.points || []"
         @select-set="openSetStats"
       />
     </section>

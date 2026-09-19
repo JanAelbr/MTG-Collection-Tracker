@@ -361,6 +361,14 @@ button.stats-card-action:focus-visible {
   background: linear-gradient(90deg, #66bb6a 0%, #2e7d32 100%);
 }
 
+.stats-completion-bar.is-value.is-gain {
+  background: linear-gradient(90deg, #66bb6a 0%, #2e7d32 100%);
+}
+
+.stats-completion-bar.is-value.is-loss {
+  background: linear-gradient(90deg, #ef9a9a 0%, #c62828 100%);
+}
+
 .stats-completion-bar.is-uncommon {
   background: linear-gradient(90deg, #cfd8dc 0%, #90a4ae 100%);
 }
@@ -472,6 +480,7 @@ button.stats-card-action:focus-visible {
   flex-direction: column;
   gap: 8px;
   border-color: #c5d0d6;
+  min-height: 280px;
 }
 
 .breakdown-chart-panel .deck-breakdown-chart-title {

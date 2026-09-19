@@ -175,11 +175,26 @@ export function collectSeriesMeta(points = [], source) {
   return [...map.values()];
 }
 
-export function seriesPickerOptions(points, source) {
+export function seriesRawValues(points = [], source, seriesId) {
+  return (points || []).map((point) => {
+    const row = pointMix(point, source).find((item) => item.id === seriesId);
+    return seriesValue(row);
+  });
+}
+
+export function seriesPlotAmount(points, source, seriesId, view) {
+  const values = rebaseSeriesValues(seriesRawValues(points, source, seriesId), view);
+  if (!values.length) {
+    return 0;
+  }
+  return values[values.length - 1];
+}
+
+export function seriesPickerOptions(points, source, view) {
   const named = collectSeriesMeta(points, source)
     .map((item) => ({
       ...item,
-      value: lastAmount(points, source, item.id),
+      value: seriesPlotAmount(points, source, item.id, view),
     }))
     .sort((left, right) => {
       const delta = right.value - left.value;
@@ -191,12 +206,33 @@ export function seriesPickerOptions(points, source) {
   ];
 }
 
-function lastAmount(points, source, seriesId) {
-  if (!points.length) {
-    return 0;
+export function appendLiveHistoryPoint(points = [], stats) {
+  if (!stats) {
+    return [...(points || [])];
   }
-  const row = pointMix(points[points.length - 1], source).find((item) => item.id === seriesId);
-  return seriesValue(row);
+  return [...(points || []), {
+    date: "live",
+    copies: Number(stats.ownedCount || stats.copies || 0),
+    current: seriesValue(stats),
+    sets: (stats.setBreakdown || []).map((row) => ({
+      id: String(row.setCode || ""),
+      label: row.setCode || row.label || "",
+      copies: Number(row.count) || 0,
+      current: seriesValue(row),
+    })).filter((row) => row.id),
+    artStyles: (stats.artStyles || []).map((row) => {
+      const setCode = String(row.setCode || "").trim();
+      const artStyle = String(row.artStyle || "").trim();
+      const id = setCode && artStyle ? `${setCode}|${artStyle}` : artStyle;
+      return {
+        id,
+        label: artStyle || row.label || id,
+        copies: Number(row.count) || 0,
+        current: seriesValue(row),
+      };
+    }).filter((row) => row.id),
+    locations: [],
+  }];
 }
 
 function withPlotValues(series, view) {
@@ -244,8 +280,8 @@ export function buildHistoryChartView(
     selected = metas
       .slice()
       .sort((left, right) => {
-        const delta = lastAmount(points, source, right.id)
-          - lastAmount(points, source, left.id);
+        const delta = seriesPlotAmount(points, source, right.id, view)
+          - seriesPlotAmount(points, source, left.id, view);
         return delta || left.label.localeCompare(right.label);
       })
       .slice(0, topN);
