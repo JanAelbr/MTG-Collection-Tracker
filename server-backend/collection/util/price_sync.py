@@ -11,6 +11,7 @@ from lib.config import (
 )
 from lib.run_log import BuildTimer, get_logger
 from util.cardmarket_prices import sync_prices_from_guide
+from util.last_price_sync import empty_price_sync_movers
 from util.card_finishes import card_finish_flags
 from util.card_prices import load_existing_card_prices
 from util.cardmarket_urls import load_existing_cardmarket_urls, merge_cardmarket_urls
@@ -331,10 +332,10 @@ def update_cardmarket_prices_only(
     force_cardmarket: bool = False,
     set_codes: set[str] | None = None,
     extra_qualifying_sets: set[str] | None = None,
-) -> None:
+) -> dict:
     if not set_codes:
         log.warning("No favourite or owned sets to price; skipping Cardmarket update")
-        return
+        return {"updated_fields": 0, "applied": False, "movers": empty_price_sync_movers()}
 
     log.info(
         "Applying Cardmarket prices for set(s): %s",
@@ -349,14 +350,14 @@ def update_cardmarket_prices_only(
     tracked_set_codes = {normalize_set_code(code) for code in set_codes if normalize_set_code(code)}
     if not tracked_set_codes:
         log.warning("No valid set codes to price; skipping Cardmarket update")
-        return
+        return {"updated_fields": 0, "applied": False, "movers": empty_price_sync_movers()}
     full_sets = {
         normalize_set_code(code)
         for code in (extra_qualifying_sets or set())
         if normalize_set_code(code)
     }
     with timer.step("Cardmarket price guide"):
-        sync_prices_from_guide(
+        result = sync_prices_from_guide(
             today,
             set_codes=tracked_set_codes,
             extra_qualifying_sets=full_sets or None,
@@ -366,3 +367,4 @@ def update_cardmarket_prices_only(
 
     timer.log_summary("Cardmarket price update timing")
     log.info("Cardmarket price update complete")
+    return result

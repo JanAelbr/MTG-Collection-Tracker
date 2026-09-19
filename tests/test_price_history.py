@@ -16,6 +16,7 @@ from util.price_history import (  # noqa: E402
     compute_portfolio_history,
     default_compare_date,
     get_compare_dates,
+    mark_price_sync_checked,
     prices_are_outdated,
 )
 
@@ -46,6 +47,10 @@ class PriceHistoryTests(unittest.TestCase):
                 price REAL,
                 source TEXT,
                 price_date TEXT
+            );
+            CREATE TABLE user_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
             );
             """
         )
@@ -120,6 +125,11 @@ class PriceHistoryTests(unittest.TestCase):
         )
         self.assertTrue(prices_are_outdated(empty, today=date(2026, 6, 12)))
         empty.close()
+
+    def test_checked_today_is_not_outdated(self):
+        mark_price_sync_checked(self.conn, today=date(2026, 6, 13))
+        self.assertFalse(prices_are_outdated(self.conn, today=date(2026, 6, 13)))
+        self.assertTrue(prices_are_outdated(self.conn, today=date(2026, 6, 14)))
 
 
 if __name__ == "__main__":

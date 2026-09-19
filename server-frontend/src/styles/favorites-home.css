@@ -6,9 +6,22 @@
   width: 100%;
 }
 
+.favorites-home-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
 .favorites-home-header h1 {
   margin: 0 0 6px;
   font-size: 1.6rem;
+}
+
+.favorites-home-header-row h1 {
+  margin-bottom: 0;
 }
 
 .favorites-home-intro,
@@ -160,6 +173,12 @@
   gap: 8px;
   min-width: 0;
   padding: 8px 10px;
+}
+
+button.favorites-home-mover-card {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
 }
 
 .favorites-home-mover-card .favorites-home-set-icon {

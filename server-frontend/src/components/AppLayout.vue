@@ -5,12 +5,16 @@ import { useRoute } from "vue-router";
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
 import ConfirmDialogHost from "./ConfirmDialogHost.vue";
+import PriceSyncMoversModal from "./PriceSyncMoversModal.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useCatalogChrome } from "../composables/useCatalogChrome";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import {
+  dismissPriceSyncMoversModal,
   ensureStartupPriceSync,
+  lastPriceSyncOutcome,
+  priceSyncMoversModalOpen,
   startupPriceSyncMessage,
   startupPriceSyncStatus,
 } from "../composables/startupPriceSync";
@@ -97,6 +101,8 @@ const showStartupPriceSync = computed(() => (
   startupPriceSyncStatus.value === "running"
   || Boolean(startupPriceSyncMessage.value)
 ));
+
+const showPriceSyncMoversModal = computed(() => Boolean(priceSyncMoversModalOpen.value));
 
 const isAdvancedSearchActive = computed(() => route.path === "/collection/search");
 
@@ -197,7 +203,10 @@ onMounted(() => {
           <span
             v-if="showStartupPriceSync"
             class="app-topbar-sync-status"
-            :class="{ 'is-error': startupPriceSyncStatus === 'failed' }"
+            :class="{
+              'is-error': startupPriceSyncStatus === 'failed',
+              'is-unchanged': lastPriceSyncOutcome?.pricesUnchanged,
+            }"
           >
             {{ startupPriceSyncMessage || "Updating prices…" }}
           </span>
@@ -258,5 +267,12 @@ onMounted(() => {
       <slot />
     </main>
     <ConfirmDialogHost />
+    <PriceSyncMoversModal
+      :open="showPriceSyncMoversModal"
+      :movers="lastPriceSyncOutcome?.movers"
+      :cards="lastPriceSyncOutcome?.cards"
+      :filter="lastPriceSyncOutcome?.filter"
+      @close="dismissPriceSyncMoversModal"
+    />
   </div>
 </template>

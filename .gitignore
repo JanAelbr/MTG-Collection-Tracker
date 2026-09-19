@@ -30,6 +30,7 @@ data/*.db
 reports/
 data/cardmarket_price_guide.json
 data/cardmarket_price_guide.pkl
+data/last_price_sync.json
 data/scryfall_cache/
 data/lan_tls/
 

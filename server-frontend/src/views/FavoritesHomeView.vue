@@ -27,6 +27,11 @@ import {
 } from "../utils/collectionSort";
 import { shouldApplyPriceTileTint } from "../utils/catalogGroups";
 import {
+  lastPriceSyncOutcome,
+  priceSyncHasMovers,
+  showStoredPriceSyncMovers,
+} from "../composables/startupPriceSync";
+import {
   MOVER_SCALE_ABSOLUTE,
   MOVER_SCALE_PERCENT,
   loadMoverScale,
@@ -51,6 +56,7 @@ const favoriteCardsScroller = ref(null);
 const moverScale = ref(loadMoverScale());
 const dragArtFrom = ref(-1);
 const dragArtOver = ref(-1);
+const lastPriceSyncStatus = ref(null);
 const galleryOwnedFilter = ref("owned");
 const gallerySort = ref("number");
 const gallerySortDir = ref(defaultCollectionSortDir("number"));
@@ -95,6 +101,30 @@ const moverCompareCaption = computed(() => {
     ? `Art styles in favourite sets vs ${date}`
     : "Art styles in favourite sets vs previous snapshot";
 });
+
+const hasLastPriceMovers = computed(() => (
+  priceSyncHasMovers(lastPriceSyncOutcome.value)
+  || priceSyncHasMovers(lastPriceSyncStatus.value?.lastSync || lastPriceSyncStatus.value)
+));
+
+async function loadLastPriceSync() {
+  const status = await ignoreAborted(api.getPriceSyncStatus());
+  if (status) {
+    lastPriceSyncStatus.value = status;
+  }
+}
+
+function openStylePriceMovers(row) {
+  showStoredPriceSyncMovers(lastPriceSyncStatus.value || lastPriceSyncOutcome.value, {
+    setCode: row.setCode,
+    artStyle: row.artStyle,
+    label: row.artStyle || row.label,
+  });
+}
+
+function openLastPriceMovers() {
+  showStoredPriceSyncMovers(lastPriceSyncStatus.value || lastPriceSyncOutcome.value);
+}
 
 const displayCards = computed(() => {
   const filtered = filterCollectionCards(cards.value, {
@@ -479,14 +509,29 @@ async function onArtDrop(index, event) {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchPricingSettings(), loadFavorites(), loadArtStyleRisers()]);
+  await Promise.all([
+    fetchPricingSettings(),
+    loadFavorites(),
+    loadArtStyleRisers(),
+    loadLastPriceSync(),
+  ]);
 });
 </script>
 
 <template>
   <div class="favorites-home-page collection-page">
     <header class="favorites-home-header">
-      <h1>Favourites</h1>
+      <div class="favorites-home-header-row">
+        <h1>Favourites</h1>
+        <button
+          v-if="hasLastPriceMovers"
+          type="button"
+          class="btn btn-secondary"
+          @click="openLastPriceMovers"
+        >
+          Last price movers
+        </button>
+      </div>
       <p class="favorites-home-intro">
         Cards, art styles, and sets you have starred. Drag cards and art-style rows to reorder.
       </p>
@@ -634,11 +679,12 @@ onMounted(async () => {
           </p>
           <ol>
             <li v-for="row in column.rows" :key="row.id">
-              <RouterLink
+              <button
+                type="button"
                 class="favorites-home-set-card favorites-home-mover-card"
                 :class="{ 'is-down': column.id === 'down' }"
                 :title="row.artStyle || row.label"
-                :to="artStyleRoute(row)"
+                @click="openStylePriceMovers(row)"
                 @mouseenter="onMoverCardEnter"
                 @mouseleave="onMoverCardLeave"
               >
@@ -653,7 +699,7 @@ onMounted(async () => {
                 <strong
                   :class="row.percent < 0 ? 'reports-loss' : 'reports-gain'"
                 >{{ formatMoverValue(row) }}</strong>
-              </RouterLink>
+              </button>
             </li>
           </ol>
         </section>

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, clearClientCache, ignoreAborted } from "../api";
+import { recordCompletedPriceSync } from "../composables/startupPriceSync";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import CollectionAllFilters from "../components/CollectionAllFilters.vue";
 import CollectionAllToolbar from "../components/CollectionAllToolbar.vue";
@@ -716,6 +717,7 @@ async function refreshSyncStatus() {
   if (!status) {
     return;
   }
+  const wasRunning = syncRunning.value;
   syncStatus.value = status;
   syncRunning.value = syncStatus.value.status === "running";
   if (syncStatus.value.lastPriceUpdate) {
@@ -725,6 +727,9 @@ async function refreshSyncStatus() {
     };
   }
   if (syncStatus.value.status === "completed") {
+    if (wasRunning || pollTimer) {
+      recordCompletedPriceSync(syncStatus.value);
+    }
     syncMessage.value = syncStatus.value.message || "Price sync completed.";
   } else if (syncStatus.value.status === "failed") {
     syncMessage.value = syncStatus.value.error || syncStatus.value.message || "Price sync failed.";

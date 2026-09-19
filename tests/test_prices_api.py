@@ -19,7 +19,7 @@ from util.storage_tables import ensure_storage_tables  # noqa: E402
 
 class PriceSyncServiceTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db_path = Path(self.temp_dir.name) / "test.db"
         self.conn = sqlite3.connect(self.db_path)
         ensure_storage_tables(self.conn)
@@ -46,14 +46,27 @@ class PriceSyncServiceTests(unittest.TestCase):
                 "finished_at": None,
                 "message": None,
                 "error": None,
+                "prices_unchanged": False,
+                "movers": {"absolute": {"risers": [], "fallers": []}, "relative": {"risers": [], "fallers": []}},
+                "cards": [],
             })
         self.snapshot_patcher = patch(
             "api.services.storage_service.record_daily_collection_snapshot",
             return_value={"id": 1},
         )
         self.snapshot_patcher.start()
+        self.checked_patcher = patch("util.price_history.mark_price_sync_checked")
+        self.checked_patcher.start()
+        self.sync_cache = Path(self.temp_dir.name) / "last_price_sync.json"
+        self.cache_patcher = patch(
+            "util.last_price_sync.LAST_PRICE_SYNC_CACHE",
+            self.sync_cache,
+        )
+        self.cache_patcher.start()
 
     def tearDown(self):
+        self.cache_patcher.stop()
+        self.checked_patcher.stop()
         self.snapshot_patcher.stop()
         self.conn.close()
         self.temp_dir.cleanup()
@@ -73,6 +86,7 @@ class PriceSyncServiceTests(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertEqual(status["status"], "completed")
+        self.assertTrue(status["pricesUnchanged"])
         mock_update_prices.assert_called_once()
         kwargs = mock_update_prices.call_args.kwargs
         self.assertEqual(kwargs.get("set_codes"), set())
@@ -185,6 +199,35 @@ class PriceSyncServiceTests(unittest.TestCase):
         mock_update_prices.assert_called_once()
         self.assertEqual(mock_update_prices.call_args.kwargs.get("set_codes"), {"MH3"})
         self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"MH3"})
+
+    @patch("api.cache.bump_cache_epoch")
+    @patch("api.services.pricing_service.refresh_guide_cache")
+    @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_applied_sync_returns_movers(self, mock_update_prices, _refresh, _bump):
+        mock_update_prices.return_value = {
+            "applied": True,
+            "updated_fields": 2,
+            "movers": {
+                "risers": [{"id": "up", "label": "Up", "percent": 20, "delta": 2}],
+                "fallers": [{"id": "down", "label": "Down", "percent": -10, "delta": -1}],
+            },
+        }
+        price_sync_service.start_price_sync(self.conn)
+
+        deadline = time.time() + 2
+        status = None
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertFalse(status["pricesUnchanged"])
+        self.assertEqual(status["movers"]["absolute"]["risers"][0]["label"], "Up")
+        self.assertEqual(status["movers"]["absolute"]["fallers"][0]["label"], "Down")
+        self.assertTrue(self.sync_cache.is_file())
+        self.assertEqual(status["lastSync"]["movers"]["absolute"]["risers"][0]["label"], "Up")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,20 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import { confirmDialog } from "../composables/confirmDialog";
+import {
+  priceSyncHasMovers,
+  recordCompletedPriceSync,
+  showStoredPriceSyncMovers,
+} from "../composables/startupPriceSync";
 
 const meta = ref(null);
 const catalogMessage = ref("");
 const catalogPruning = ref(false);
 const syncStatus = ref(null);
+const hasLastMovers = computed(() => (
+  priceSyncHasMovers(syncStatus.value?.lastSync || { movers: syncStatus.value?.movers })
+));
 const syncMessage = ref("");
 const syncRunning = ref(false);
 let pollTimer = null;
@@ -24,6 +32,7 @@ async function refreshSyncStatus() {
   if (!status) {
     return;
   }
+  const wasRunning = syncRunning.value;
   syncStatus.value = status;
   syncRunning.value = syncStatus.value.status === "running";
   if (syncStatus.value.lastPriceUpdate) {
@@ -33,6 +42,9 @@ async function refreshSyncStatus() {
     };
   }
   if (syncStatus.value.status === "completed") {
+    if (wasRunning || pollTimer) {
+      recordCompletedPriceSync(syncStatus.value);
+    }
     syncMessage.value = syncStatus.value.message || "Price sync completed.";
   } else if (syncStatus.value.status === "failed") {
     syncMessage.value = syncStatus.value.error || syncStatus.value.message || "Price sync failed.";
@@ -136,14 +148,25 @@ onUnmounted(stopPolling);
             {{ syncMessage }}
           </p>
         </div>
-        <button
-          type="button"
-          class="btn btn-primary"
-          :disabled="syncRunning"
-          @click="triggerPriceSync"
-        >
-          {{ syncRunning ? "Syncing prices…" : "Sync prices now" }}
-        </button>
+        <div class="home-sync-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="syncRunning"
+            @click="triggerPriceSync"
+          >
+            {{ syncRunning ? "Syncing prices…" : "Sync prices now" }}
+          </button>
+          <button
+            v-if="hasLastMovers"
+            type="button"
+            class="btn btn-secondary"
+            :disabled="syncRunning"
+            @click="showStoredPriceSyncMovers(syncStatus)"
+          >
+            View last movers
+          </button>
+        </div>
       </div>
     </section>
 

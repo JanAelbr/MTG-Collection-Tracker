@@ -668,6 +668,7 @@ def save_daily_breakdown(
     *,
     price_strategy: str,
     note: str = "",
+    skip_if_unchanged: bool = False,
 ) -> dict:
     from util.storage_tables import ensure_storage_tables
 
@@ -700,6 +701,27 @@ def save_daily_breakdown(
         "stats": _capture_collection_stats(conn),
     }
     cleaned_note = (note or "").strip()
+    pending = {
+        "id": 0,
+        "snapshotDate": snapshot_date,
+        "createdAt": created_at,
+        "note": cleaned_note or None,
+        "priceStrategy": price_strategy,
+        "locations": locations,
+        "payload": payload,
+        "stats": payload.get("stats"),
+        "totals": _snapshot_stats_totals(payload.get("stats")) or _combined_snapshot_totals(locations),
+    }
+    existing = list_breakdown_history(conn).get("points") or []
+    pending_points = compact_breakdown_history(
+        [pending],
+        set_names=load_set_display_names(conn),
+    ).get("points") or []
+    if skip_if_unchanged and existing and pending_points:
+        if _history_point_fingerprint(existing[-1]) == _history_point_fingerprint(pending_points[0]):
+            latest = list_breakdown_snapshots(conn)
+            return {**(latest[0] if latest else pending), "unchanged": True}
+
     conn.execute(
         """
         INSERT INTO storage_breakdown_snapshots (
@@ -728,7 +750,7 @@ def save_daily_breakdown(
         """,
         (snapshot_date,),
     ).fetchone()
-    return _serialize_snapshot_row(row)
+    return {**_serialize_snapshot_row(row), "unchanged": False}
 
 
 def record_daily_collection_snapshot(conn: sqlite3.Connection, *, note: str = "") -> dict:
@@ -738,6 +760,7 @@ def record_daily_collection_snapshot(conn: sqlite3.Connection, *, note: str = ""
         conn,
         price_strategy=settings_service.get_settings(conn)["priceStrategy"],
         note=note,
+        skip_if_unchanged=True,
     )
 
 
@@ -900,6 +923,68 @@ def list_breakdown_history(conn: sqlite3.Connection) -> dict:
     ).fetchall()
     snapshots = [_serialize_snapshot_row(row, include_payload=True) for row in rows]
     return compact_breakdown_history(snapshots, set_names=load_set_display_names(conn))
+
+
+def _history_point_fingerprint(point: dict) -> tuple:
+    total = round(float(point.get("current") or 0), 2)
+    sets = tuple(sorted(
+        (str(row.get("id") or ""), round(float(row.get("current") or 0), 2))
+        for row in (point.get("sets") or [])
+    ))
+    art_styles = tuple(sorted(
+        (str(row.get("id") or ""), round(float(row.get("current") or 0), 2))
+        for row in (point.get("artStyles") or [])
+    ))
+    return (total, sets, art_styles)
+
+
+def _mix_movers(previous_rows: list, current_rows: list, *, falling: bool, limit: int = 10) -> list[dict]:
+    previous_by_id = {
+        str(row.get("id") or ""): float(row.get("current") or 0)
+        for row in (previous_rows or [])
+        if str(row.get("id") or "")
+    }
+    movers = []
+    for row in current_rows or []:
+        ident = str(row.get("id") or "")
+        if not ident:
+            continue
+        previous = previous_by_id.get(ident)
+        current = float(row.get("current") or 0)
+        if not (previous and previous > 0):
+            continue
+        if falling:
+            if not (current < previous):
+                continue
+        elif not (current > previous):
+            continue
+        movers.append({
+            "id": ident,
+            "label": str(row.get("label") or ident),
+            "setCode": ident.split("|", 1)[0] if "|" in ident else ident,
+            "artStyle": ident.split("|", 1)[1] if "|" in ident else "",
+            "previous": previous,
+            "current": current,
+            "delta": current - previous,
+            "percent": ((current - previous) / previous) * 100,
+        })
+    movers.sort(
+        key=lambda item: (abs(item["delta"]), abs(item["percent"])),
+        reverse=True,
+    )
+    return movers[: max(0, limit)]
+
+
+def art_style_movers_from_history(conn: sqlite3.Connection, *, limit: int = 25) -> dict:
+    points = list_breakdown_history(conn).get("points") or []
+    if len(points) < 2:
+        return {"risers": [], "fallers": []}
+    previous_rows = points[-2].get("artStyles") or []
+    current_rows = points[-1].get("artStyles") or []
+    return {
+        "risers": _mix_movers(previous_rows, current_rows, falling=False, limit=limit),
+        "fallers": _mix_movers(previous_rows, current_rows, falling=True, limit=limit),
+    }
 
 
 def list_breakdown_snapshots(conn: sqlite3.Connection) -> list[dict]:

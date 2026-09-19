@@ -20,11 +20,13 @@ from util.card_finishes import (
     FINISH_FOIL,
     FINISH_NONFOIL,
     MARKET_VALUE_COLUMNS,
+    finish_label,
     guide_uses_foil_keys,
     normalize_finish,
 )
 from util.db_migrate import ensure_card_columns
 from util.http_client import http_get
+from util.last_price_sync import empty_price_sync_movers
 
 log = get_logger(__name__)
 
@@ -53,6 +55,8 @@ FOIL_PRICE_KEYS = PRIMARY_FOIL_KEYS + ("low-foil",)
 
 UNOWNED_PRICE_MIN_CARDS = 25
 UNOWNED_PRICE_SET_FRACTION = 0.25
+PRICE_SYNC_MOVER_LIMIT = 25
+PRICE_SYNC_MIN_ABS_DELTA = 1.0
 
 OWNED_FINISH_SUBQUERY = """
     SELECT set_code, collector_number, finish FROM purchases
@@ -516,6 +520,8 @@ def list_cards_for_price_sync(
         SELECT
             set_code,
             collector_number,
+            name,
+            art_style,
             market_value,
             market_value_foil,
             market_value_etched,
@@ -678,6 +684,79 @@ def _bulk_clear_market_values(
     )
 
 
+def _row_field(row, key, default=None):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        keys = row.keys()
+    except Exception:
+        keys = ()
+    if key in keys:
+        value = row[key]
+        return default if value is None else value
+    return default
+
+
+def _record_price_move(moves: list[dict], row, finish_id: int, previous, current) -> None:
+    try:
+        prev = float(previous) if previous is not None else 0.0
+    except (TypeError, ValueError):
+        prev = 0.0
+    try:
+        curr = float(current) if current is not None else 0.0
+    except (TypeError, ValueError):
+        curr = 0.0
+    if prev <= 0 or curr == prev:
+        return
+    delta = curr - prev
+    if abs(delta) < PRICE_SYNC_MIN_ABS_DELTA:
+        return
+    name = str(_row_field(row, "name", "") or "").strip()
+    set_code = str(_row_field(row, "set_code", "") or "").strip().upper()
+    number = str(_row_field(row, "collector_number", "") or "").strip()
+    art_style = str(_row_field(row, "art_style", "") or "").strip()
+    finish = finish_label(finish_id)
+    label = name or f"{set_code} #{number}".strip()
+    if finish:
+        label = f"{label} ({finish})"
+    moves.append({
+        "id": f"{set_code}|{number}|{finish_id}",
+        "label": label,
+        "setCode": set_code,
+        "collectorNumber": number,
+        "artStyle": art_style,
+        "finish": finish,
+        "previous": prev,
+        "current": curr,
+        "delta": delta,
+        "percent": (delta / prev) * 100,
+    })
+
+
+def _rank_price_movers(moves: list[dict], *, limit: int = PRICE_SYNC_MOVER_LIMIT) -> dict:
+    material = [
+        item for item in moves
+        if abs(float(item.get("delta") or 0)) >= PRICE_SYNC_MIN_ABS_DELTA
+    ]
+    risers = [item for item in material if item["delta"] > 0]
+    fallers = [item for item in material if item["delta"] < 0]
+
+    def ranked(key) -> dict:
+        up = list(risers)
+        down = list(fallers)
+        up.sort(key=key, reverse=True)
+        down.sort(key=key, reverse=True)
+        return {
+            "risers": up[: max(0, limit)],
+            "fallers": down[: max(0, limit)],
+        }
+
+    return {
+        "absolute": ranked(lambda item: (abs(item["delta"]), abs(item["percent"]))),
+        "relative": ranked(lambda item: (abs(item["percent"]), abs(item["delta"]))),
+    }
+
+
 # Apply batched card and history updates collected during one sync pass.
 def _apply_price_sync_batches(
     conn: sqlite3.Connection,
@@ -747,6 +826,9 @@ def sync_prices_from_guide(
                 "cleared_fields": cleared_unowned,
                 "cleared_unowned_fields": cleared_unowned,
                 "qualifying_sets": len(context.qualifying_sets),
+                "applied": cleared_unowned > 0,
+                "movers": empty_price_sync_movers(),
+                "cards": [],
             }
 
         mode = "missing values" if missing_only else "owned plus qualifying unowned cards"
@@ -764,6 +846,9 @@ def sync_prices_from_guide(
             "still_missing_fields": 0,
             "unchanged_fields": 0,
             "qualifying_sets": len(context.qualifying_sets),
+            "applied": False,
+            "movers": empty_price_sync_movers(),
+            "cards": [],
         }
         set_stats: dict[str, dict[str, int]] = {}
         updates_by_finish: dict[int, list[tuple[float, str, str]]] = {
@@ -776,6 +861,7 @@ def sync_prices_from_guide(
             FINISH_FOIL: [],
             FINISH_ETCHED: [],
         }
+        price_moves: list[dict] = []
 
         for row in rows:
             finish_rows = (
@@ -813,6 +899,7 @@ def sync_prices_from_guide(
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
+                        _record_price_move(price_moves, row, finish_id, current_value, 0)
                         continue
                     stats["still_missing"] += 1
                     totals["still_missing_fields"] += 1
@@ -830,6 +917,7 @@ def sync_prices_from_guide(
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
+                        _record_price_move(price_moves, row, finish_id, current_value, 0)
                         continue
 
                     stats["still_missing"] += 1
@@ -844,13 +932,19 @@ def sync_prices_from_guide(
                 updates_by_finish[finish_id].append((price, card_set, collector_number))
                 stats["updated"] += 1
                 totals["updated_fields"] += 1
+                _record_price_move(price_moves, row, finish_id, current_value, price)
 
-        _apply_price_sync_batches(
-            conn,
-            today,
-            updates_by_finish=updates_by_finish,
-            clears_by_finish=clears_by_finish,
-        )
+        has_changes = any(updates_by_finish.values()) or any(clears_by_finish.values())
+        if has_changes:
+            _apply_price_sync_batches(
+                conn,
+                today,
+                updates_by_finish=updates_by_finish,
+                clears_by_finish=clears_by_finish,
+            )
+        totals["applied"] = has_changes or cleared_unowned > 0
+        totals["movers"] = _rank_price_movers(price_moves, limit=PRICE_SYNC_MOVER_LIMIT)
+        totals["cards"] = list(price_moves)
         conn.commit()
 
     for card_set in sorted(set_stats):

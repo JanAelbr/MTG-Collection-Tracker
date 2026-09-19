@@ -5,9 +5,97 @@ import { hasSnapshotForDate, utcTodayDate } from "./storageBreakdownHistory";
 
 export const startupPriceSyncStatus = ref("idle");
 export const startupPriceSyncMessage = ref("");
+export const lastPriceSyncOutcome = ref(null);
+export const priceSyncMoversModalOpen = ref(false);
 
 let started = false;
 let pollTimer = null;
+
+export function emptyPriceSyncMovers() {
+  return {
+    absolute: { risers: [], fallers: [] },
+    relative: { risers: [], fallers: [] },
+  };
+}
+
+export function normalizePriceSyncMovers(raw) {
+  if (!raw || typeof raw !== "object") {
+    return emptyPriceSyncMovers();
+  }
+  if (raw.absolute || raw.relative) {
+    return {
+      absolute: {
+        risers: raw.absolute?.risers || [],
+        fallers: raw.absolute?.fallers || [],
+      },
+      relative: {
+        risers: raw.relative?.risers || [],
+        fallers: raw.relative?.fallers || [],
+      },
+    };
+  }
+  const pair = { risers: raw.risers || [], fallers: raw.fallers || [] };
+  return { absolute: pair, relative: pair };
+}
+
+export function priceSyncHasMovers(status) {
+  if ((status?.cards || []).length) {
+    return true;
+  }
+  const movers = normalizePriceSyncMovers(status?.movers);
+  return Boolean(
+    movers.absolute.risers.length
+    || movers.absolute.fallers.length
+    || movers.relative.risers.length
+    || movers.relative.fallers.length
+  );
+}
+
+export function recordCompletedPriceSync(status) {
+  if (!status || status.status !== "completed") {
+    return;
+  }
+  const movers = normalizePriceSyncMovers(status.movers || status.lastSync?.movers);
+  const cards = status.cards || status.lastSync?.cards || [];
+  lastPriceSyncOutcome.value = {
+    pricesUnchanged: Boolean(status.pricesUnchanged),
+    message: status.message || (
+      status.pricesUnchanged
+        ? "Prices unchanged since last sync."
+        : "Price sync completed."
+    ),
+    movers,
+    cards,
+    filter: null,
+    syncedAt: status.finishedAt || status.lastSync?.syncedAt || "",
+  };
+  if (!lastPriceSyncOutcome.value.pricesUnchanged && priceSyncHasMovers(lastPriceSyncOutcome.value)) {
+    priceSyncMoversModalOpen.value = true;
+  }
+}
+
+export function showStoredPriceSyncMovers(status, filter = null) {
+  const stored = status?.lastSync || status;
+  if (!stored) {
+    return;
+  }
+  lastPriceSyncOutcome.value = {
+    pricesUnchanged: false,
+    message: stored.message || "Last price sync",
+    movers: normalizePriceSyncMovers(stored.movers),
+    cards: stored.cards || status?.cards || [],
+    filter: filter || null,
+    syncedAt: stored.syncedAt || "",
+  };
+  priceSyncMoversModalOpen.value = (
+    priceSyncHasMovers(lastPriceSyncOutcome.value)
+    || Boolean(filter)
+  );
+}
+
+export function dismissPriceSyncMoversModal() {
+  priceSyncMoversModalOpen.value = false;
+}
 
 function stopPolling() {
   if (pollTimer) {
@@ -40,7 +128,8 @@ async function refreshStatus() {
   }
   if (status.status === "completed") {
     startupPriceSyncStatus.value = "completed";
-    startupPriceSyncMessage.value = "";
+    recordCompletedPriceSync(status);
+    startupPriceSyncMessage.value = lastPriceSyncOutcome.value?.message || status.message || "";
     return status;
   }
   startupPriceSyncStatus.value = status.status || "idle";
@@ -59,7 +148,6 @@ function startPolling() {
       stopPolling();
       if (status.status === "completed") {
         clearClientCache();
-        await saveDailySnapshotAfterPriceSync();
       }
     } catch {
       stopPolling();
@@ -67,14 +155,6 @@ function startPolling() {
       startupPriceSyncMessage.value = "Could not check price sync.";
     }
   }, 2000);
-}
-
-async function saveDailySnapshotAfterPriceSync() {
-  try {
-    await api.saveStorageBreakdownSnapshot();
-  } catch {
-    // Price sync already succeeded; snapshot retry is available on Stats.
-  }
 }
 
 async function ensureTodaySnapshotIfMissing() {

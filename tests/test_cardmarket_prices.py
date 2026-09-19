@@ -14,6 +14,7 @@ from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
 from util.cardmarket_prices import (  # noqa: E402
     PriceSyncContext,
     _nonfoil_low_is_reliable,
+    _rank_price_movers,
     clear_unowned_prices_for_non_qualifying_sets,
     load_price_sync_context,
     parse_id_product,
@@ -485,6 +486,11 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         ).fetchall()
         verify_conn.close()
         self.assertEqual(stats["updated_fields"], 2)
+        self.assertTrue(stats["applied"])
+        self.assertEqual(len(stats["movers"]["absolute"]["risers"]), 1)
+        self.assertEqual(stats["movers"]["absolute"]["risers"][0]["current"], 3.5)
+        self.assertEqual(stats["movers"]["absolute"]["fallers"], [])
+        self.assertEqual(len(stats["movers"]["relative"]["risers"]), 1)
         self.assertEqual(market_value, 3.5)
         self.assertEqual(market_value_foil, 7.0)
         self.assertEqual(history_rows, [(0, 3.5), (1, 7.0)])
@@ -533,7 +539,43 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         self.assertEqual(stats["unchanged_fields"], 2)
         self.assertEqual(stats["updated_fields"], 0)
         self.assertEqual(history_count, 0)
-        snapshot_mock.assert_called_once()
+        snapshot_mock.assert_not_called()
+        self.assertFalse(stats["applied"])
+        self.assertEqual(stats["movers"], {
+            "absolute": {"risers": [], "fallers": []},
+            "relative": {"risers": [], "fallers": []},
+        })
+
+
+class PriceMoverRankTests(unittest.TestCase):
+    def test_ranks_absolute_and_relative_and_ignores_sub_euro_moves(self):
+        ranked = _rank_price_movers(
+            [
+                {"delta": 1.0, "percent": 100.0},
+                {"delta": 10.0, "percent": 5.0},
+                {"delta": 0.4, "percent": 80.0},
+                {"delta": -0.5, "percent": -50.0},
+                {"delta": -8.0, "percent": -4.0},
+                {"delta": -2.0, "percent": -40.0},
+            ],
+            limit=25,
+        )
+        self.assertEqual(
+            [item["delta"] for item in ranked["absolute"]["risers"]],
+            [10.0, 1.0],
+        )
+        self.assertEqual(
+            [item["delta"] for item in ranked["absolute"]["fallers"]],
+            [-8.0, -2.0],
+        )
+        self.assertEqual(
+            [item["delta"] for item in ranked["relative"]["risers"]],
+            [1.0, 10.0],
+        )
+        self.assertEqual(
+            [item["delta"] for item in ranked["relative"]["fallers"]],
+            [-2.0, -8.0],
+        )
 
 
 class SyncPairedCardmarketUrlTests(unittest.TestCase):

@@ -278,6 +278,57 @@ def load_last_updated_display(conn: sqlite3.Connection | None = None) -> str:
 
 
 
+PRICE_SYNC_CHECKED_KEY = "price_sync_checked_date"
+
+
+def _price_sync_checked_on(conn: sqlite3.Connection | None) -> str:
+    def read(db: sqlite3.Connection) -> str:
+        try:
+            row = db.execute(
+                "SELECT value FROM user_settings WHERE key = ?",
+                (PRICE_SYNC_CHECKED_KEY,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return ""
+        if not row:
+            return ""
+        value = row["value"] if isinstance(row, sqlite3.Row) else row[0]
+        return str(value or "").strip()
+
+    if conn is None:
+        with sqlite3.connect(DB_PATH) as own_conn:
+            return read(own_conn)
+    return read(conn)
+
+
+def mark_price_sync_checked(
+    conn: sqlite3.Connection | None = None,
+    *,
+    today: date | None = None,
+) -> None:
+    day = (today or date.today()).isoformat()
+
+    def write(db: sqlite3.Connection) -> None:
+        try:
+            db.execute(
+                """
+                INSERT INTO user_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (PRICE_SYNC_CHECKED_KEY, day),
+            )
+        except sqlite3.OperationalError:
+            return
+
+    if conn is None:
+        with sqlite3.connect(DB_PATH) as own_conn:
+            write(own_conn)
+            own_conn.commit()
+        return
+    write(conn)
+
+
 # True when the newest snapshot is missing or older than today.
 
 def prices_are_outdated(
@@ -290,6 +341,9 @@ def prices_are_outdated(
 
 ) -> bool:
 
+    current = today or date.today()
+    if _price_sync_checked_on(conn) == current.isoformat():
+        return False
     last = load_last_updated_display(conn)
 
     if not last or last == "Unknown":

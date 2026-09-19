@@ -176,10 +176,18 @@ class StorageApiServiceTests(unittest.TestCase):
                 price_strategy="trend",
                 note="Evening",
             )
+            skipped = storage_service.save_daily_breakdown(
+                self.conn,
+                price_strategy="trend",
+                note="Night",
+                skip_if_unchanged=True,
+            )
 
         self.assertEqual(first["snapshotDate"], second["snapshotDate"])
         self.assertEqual(first["id"], second["id"])
         self.assertEqual(second["note"], "Evening")
+        self.assertTrue(skipped.get("unchanged"))
+        self.assertEqual(skipped["note"], "Evening")
         listed = storage_service.list_breakdown_snapshots(self.conn)
         self.assertEqual(len(listed), 1)
 
@@ -358,6 +366,20 @@ class StorageApiServiceTests(unittest.TestCase):
         self.assertGreater(len(settings["priceStrategies"]), 0)
         self.assertEqual(settings["pageSize"], 25)
         self.assertEqual(settings["pageSizeOptions"], [25, 50, 100])
+
+    def test_get_settings_without_row_factory(self):
+        self.conn.execute(
+            "INSERT INTO user_settings (key, value) VALUES (?, ?)",
+            ("favorite_sets", '["ltr"]'),
+        )
+        self.conn.commit()
+        plain = sqlite3.connect(self.db_path)
+        try:
+            settings = settings_service.get_settings(plain)
+            self.assertEqual(settings["priceStrategy"], "trend")
+            self.assertEqual(settings["favoriteSets"], ["LTR"])
+        finally:
+            plain.close()
 
     def test_favorites_price_strategy_overrides(self):
         updated = settings_service.update_settings(

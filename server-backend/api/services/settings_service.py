@@ -68,14 +68,21 @@ def _purge_obsolete_settings(conn: sqlite3.Connection) -> None:
         _purged_obsolete_settings = True
 
 
+def _setting_value(row):
+    if row is None:
+        return None
+    try:
+        return row["value"]
+    except (TypeError, KeyError, IndexError):
+        return row[0]
+
+
 def get_price_strategy(conn: sqlite3.Connection) -> str:
     row = conn.execute(
         "SELECT value FROM user_settings WHERE key = ?",
         (PRICE_STRATEGY_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return normalize_strategy(None)
-    return normalize_strategy(row["value"])
+    return normalize_strategy(_setting_value(row))
 
 
 def _optional_price_strategy(values: dict, key: str) -> str | None:
@@ -103,10 +110,11 @@ def get_favorite_sets(conn: sqlite3.Connection) -> list[str]:
         "SELECT value FROM user_settings WHERE key = ?",
         (FAVORITE_SETS_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
+    value = _setting_value(row)
+    if value is None:
         return []
     try:
-        parsed = json.loads(row["value"])
+        parsed = json.loads(value)
     except json.JSONDecodeError:
         return []
     if not isinstance(parsed, list):
@@ -133,10 +141,11 @@ def get_favorite_cards(conn: sqlite3.Connection) -> list[dict]:
         "SELECT value FROM user_settings WHERE key = ?",
         (FAVORITE_CARDS_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
+    value = _setting_value(row)
+    if value is None:
         return []
     try:
-        parsed = json.loads(row["value"])
+        parsed = json.loads(value)
     except json.JSONDecodeError:
         return []
     return normalize_favorite_cards(parsed)
@@ -161,10 +170,11 @@ def get_favorite_art_styles(conn: sqlite3.Connection) -> list[dict]:
         "SELECT value FROM user_settings WHERE key = ?",
         (FAVORITE_ART_STYLES_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
+    value = _setting_value(row)
+    if value is None:
         return []
     try:
-        parsed = json.loads(row["value"])
+        parsed = json.loads(value)
     except json.JSONDecodeError:
         return []
     return normalize_favorite_art_styles(parsed)
@@ -199,9 +209,7 @@ def get_page_size(conn: sqlite3.Connection) -> int:
         "SELECT value FROM user_settings WHERE key = ?",
         (PAGE_SIZE_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_PAGE_SIZE
-    return normalize_page_size(row["value"])
+    return normalize_page_size(_setting_value(row))
 
 
 def normalize_collection_card_scale(value) -> int:
@@ -219,9 +227,7 @@ def get_collection_card_scale(conn: sqlite3.Connection) -> int:
         "SELECT value FROM user_settings WHERE key = ?",
         (COLLECTION_CARD_SCALE_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_COLLECTION_CARD_SCALE
-    return normalize_collection_card_scale(row["value"])
+    return normalize_collection_card_scale(_setting_value(row))
 
 
 def normalize_bool_setting(value, default: bool = False) -> bool:
@@ -242,9 +248,10 @@ def get_collection_price_tile_tint(conn: sqlite3.Connection) -> bool:
         "SELECT value FROM user_settings WHERE key = ?",
         (COLLECTION_PRICE_TILE_TINT_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_COLLECTION_PRICE_TILE_TINT
-    return normalize_bool_setting(row["value"], DEFAULT_COLLECTION_PRICE_TILE_TINT)
+    return normalize_bool_setting(
+        _setting_value(row),
+        DEFAULT_COLLECTION_PRICE_TILE_TINT,
+    )
 
 
 def get_set_sort_mode(conn: sqlite3.Connection) -> str:
@@ -252,9 +259,7 @@ def get_set_sort_mode(conn: sqlite3.Connection) -> str:
         "SELECT value FROM user_settings WHERE key = ?",
         (SET_SORT_MODE_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_SET_SORT_MODE
-    return normalize_set_sort_mode(row["value"])
+    return normalize_set_sort_mode(_setting_value(row) or DEFAULT_SET_SORT_MODE)
 
 
 def get_default_storage_location(conn: sqlite3.Connection) -> str:
@@ -262,9 +267,7 @@ def get_default_storage_location(conn: sqlite3.Connection) -> str:
         "SELECT value FROM user_settings WHERE key = ?",
         (DEFAULT_STORAGE_LOCATION_KEY,),
     ).fetchone()
-    if row is None or row["value"] is None:
-        return DEFAULT_STORAGE_LOCATION
-    value = str(row["value"]).strip()
+    value = str(_setting_value(row) or "").strip()
     return value or DEFAULT_STORAGE_LOCATION
 
 
@@ -297,10 +300,18 @@ def resolve_compare_date(conn: sqlite3.Connection, override: str | None = None) 
     return default_compare_date(dates)
 
 
+def _settings_row_pair(row) -> tuple[str, object]:
+    if isinstance(row, sqlite3.Row):
+        return str(row["key"]), row["value"]
+    if isinstance(row, dict):
+        return str(row.get("key")), row.get("value")
+    return str(row[0]), row[1]
+
+
 def get_settings(conn: sqlite3.Connection) -> dict:
     _purge_obsolete_settings(conn)
     rows = conn.execute("SELECT key, value FROM user_settings").fetchall()
-    values = {row["key"]: row["value"] for row in rows}
+    values = {key: value for key, value in (_settings_row_pair(row) for row in rows)}
     return {
         "priceStrategy": normalize_strategy(values.get("price_strategy")),
         "favoritesCardsPriceStrategy": _optional_price_strategy(
