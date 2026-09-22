@@ -5,16 +5,13 @@ import { useRoute } from "vue-router";
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
 import ConfirmDialogHost from "./ConfirmDialogHost.vue";
-import PriceSyncMoversModal from "./PriceSyncMoversModal.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useCatalogChrome } from "../composables/useCatalogChrome";
 import { useDeckGalleryFilter } from "../composables/deckGalleryFilter";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import {
-  dismissPriceSyncMoversModal,
   ensureStartupPriceSync,
   lastPriceSyncOutcome,
-  priceSyncMoversModalOpen,
   startupPriceSyncMessage,
   startupPriceSyncStatus,
 } from "../composables/startupPriceSync";
@@ -46,7 +43,7 @@ const settingsSubnav = [
 ];
 
 const navItems = [
-  { to: "/", label: "Favourites", matchPrefix: false },
+  { to: "/", label: "Home", matchPrefix: false },
   { to: "/collection/all", label: "Collection", matchPrefix: "/collection", subnav: collectionSubnav },
   { to: "/stats", label: "Stats", matchPrefix: "/stats" },
   {
@@ -102,8 +99,6 @@ const showStartupPriceSync = computed(() => (
   || Boolean(startupPriceSyncMessage.value)
 ));
 
-const showPriceSyncMoversModal = computed(() => Boolean(priceSyncMoversModalOpen.value));
-
 const isAdvancedSearchActive = computed(() => route.path === "/collection/search");
 
 const advancedSearchLink = computed(() => ({
@@ -117,7 +112,7 @@ const brandLink = computed(() => ({
 
 function isNavActive(item) {
   if (item.to === "/") {
-    return route.path === "/";
+    return route.path === "/" || route.path === "/changes";
   }
   if (item.matchPrefix === "/collection") {
     return (
@@ -267,12 +262,5 @@ onMounted(() => {
       <slot />
     </main>
     <ConfirmDialogHost />
-    <PriceSyncMoversModal
-      :open="showPriceSyncMoversModal"
-      :movers="lastPriceSyncOutcome?.movers"
-      :cards="lastPriceSyncOutcome?.cards"
-      :filter="lastPriceSyncOutcome?.filter"
-      @close="dismissPriceSyncMoversModal"
-    />
   </div>
 </template>

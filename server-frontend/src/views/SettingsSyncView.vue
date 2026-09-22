@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { api, clearClientCache, ignoreAborted } from "../api";
 import { confirmDialog } from "../composables/confirmDialog";
 import {
@@ -10,6 +11,7 @@ import {
   showStoredPriceSyncMovers,
 } from "../composables/startupPriceSync";
 
+const router = useRouter();
 const meta = ref(null);
 const catalogMessage = ref("");
 const catalogPruning = ref(false);
@@ -79,6 +81,11 @@ function startPolling() {
       await refreshMeta();
     }
   }, PRICE_SYNC_POLL_MS);
+}
+
+function openLastMovers() {
+  showStoredPriceSyncMovers(syncStatus.value);
+  router.push({ name: "home-changes" });
 }
 
 async function triggerPriceSync(force = false) {
@@ -175,7 +182,7 @@ onUnmounted(stopPolling);
             type="button"
             class="btn btn-secondary"
             :disabled="syncRunning"
-            @click="showStoredPriceSyncMovers(syncStatus)"
+            @click="openLastMovers"
           >
             View last movers
           </button>

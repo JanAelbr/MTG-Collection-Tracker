@@ -56,7 +56,6 @@ FOIL_PRICE_KEYS = PRIMARY_FOIL_KEYS + ("low-foil",)
 UNOWNED_PRICE_MIN_CARDS = 25
 UNOWNED_PRICE_SET_FRACTION = 0.25
 PRICE_SYNC_MOVER_LIMIT = 25
-PRICE_SYNC_MIN_ABS_DELTA = 1.0
 
 OWNED_FINISH_SUBQUERY = """
     SELECT set_code, collector_number, finish FROM purchases
@@ -702,7 +701,17 @@ def _row_field(row, key, default=None):
     return default
 
 
-def _record_price_move(moves: list[dict], row, finish_id: int, previous, current) -> None:
+def _record_price_move(
+    moves: list[dict],
+    row,
+    finish_id: int,
+    previous,
+    current,
+    *,
+    owned: bool = True,
+) -> None:
+    if not owned:
+        return
     try:
         prev = float(previous) if previous is not None else 0.0
     except (TypeError, ValueError):
@@ -714,8 +723,6 @@ def _record_price_move(moves: list[dict], row, finish_id: int, previous, current
     if prev <= 0 or curr == prev:
         return
     delta = curr - prev
-    if abs(delta) < PRICE_SYNC_MIN_ABS_DELTA:
-        return
     name = str(_row_field(row, "name", "") or "").strip()
     set_code = str(_row_field(row, "set_code", "") or "").strip().upper()
     number = str(_row_field(row, "collector_number", "") or "").strip()
@@ -733,6 +740,8 @@ def _record_price_move(moves: list[dict], row, finish_id: int, previous, current
         "collectorNumber": number,
         "artStyle": art_style,
         "finish": finish,
+        "finishId": finish_id,
+        "owned": True,
         "imageUri": image_uri,
         "previous": prev,
         "current": curr,
@@ -742,12 +751,8 @@ def _record_price_move(moves: list[dict], row, finish_id: int, previous, current
 
 
 def _rank_price_movers(moves: list[dict], *, limit: int = PRICE_SYNC_MOVER_LIMIT) -> dict:
-    material = [
-        item for item in moves
-        if abs(float(item.get("delta") or 0)) >= PRICE_SYNC_MIN_ABS_DELTA
-    ]
-    risers = [item for item in material if item["delta"] > 0]
-    fallers = [item for item in material if item["delta"] < 0]
+    risers = [item for item in moves if item["delta"] > 0]
+    fallers = [item for item in moves if item["delta"] < 0]
 
     def ranked(key) -> dict:
         up = list(risers)
@@ -916,6 +921,11 @@ def sync_prices_from_guide(
                     continue
                 if missing_only and current_value is not None:
                     continue
+                owned_finish = (
+                    str(card_set).strip().upper(),
+                    collector_number,
+                    int(finish_id),
+                ) in context.owned_finishes
 
                 finish_url = cardmarket_url_for_finish(row, finish_id, guide)
                 if not finish_url:
@@ -924,7 +934,9 @@ def sync_prices_from_guide(
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
-                        _record_price_move(price_moves, row, finish_id, current_value, 0)
+                        _record_price_move(
+                            price_moves, row, finish_id, current_value, 0, owned=owned_finish,
+                        )
                         continue
                     stats["still_missing"] += 1
                     totals["still_missing_fields"] += 1
@@ -942,7 +954,9 @@ def sync_prices_from_guide(
                         stats["updated"] += 1
                         totals["updated_fields"] += 1
                         totals["cleared_fields"] += 1
-                        _record_price_move(price_moves, row, finish_id, current_value, 0)
+                        _record_price_move(
+                            price_moves, row, finish_id, current_value, 0, owned=owned_finish,
+                        )
                         continue
 
                     stats["still_missing"] += 1
@@ -957,7 +971,9 @@ def sync_prices_from_guide(
                 updates_by_finish[finish_id].append((price, card_set, collector_number))
                 stats["updated"] += 1
                 totals["updated_fields"] += 1
-                _record_price_move(price_moves, row, finish_id, current_value, price)
+                _record_price_move(
+                    price_moves, row, finish_id, current_value, price, owned=owned_finish,
+                )
 
             percent = 15 + (75 * index / card_total)
             bucket = int(percent) // 10

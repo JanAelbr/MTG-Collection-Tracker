@@ -1,15 +1,13 @@
 <script setup>
-import { computed, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, ref } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { api, ignoreAborted } from "../api";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
-import { formatEuro, formatProfit, setDisplayName } from "../utils/format";
-import {
-  HISTORY_SCALE_ABSOLUTE,
-  HISTORY_SCALE_RELATIVE,
-} from "../utils/breakdownHistory";
+import EdgeCarousel from "./EdgeCarousel.vue";
+import FavoriteDayChangeTiles from "./FavoriteDayChangeTiles.vue";
+import { formatEuro, formatProfit, setShortName } from "../utils/format";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
 import {
   cardsForArtStyle,
@@ -19,30 +17,47 @@ import {
   rankMoverRows,
 } from "../utils/priceSyncMovers";
 import { applySetGalleryIconFallback, resolveSetIconUri } from "../utils/scryfall";
+import { homeChangesRoute, homeRouteQueryValue } from "../utils/homeRoutes";
 
 const props = defineProps({
-  open: { type: Boolean, default: false },
-  movers: { type: Object, default: () => ({}) },
   cards: { type: Array, default: () => [] },
-  filter: { type: Object, default: null },
+  movers: { type: Object, default: () => ({}) },
+  setDayTiles: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(["close"]);
-
-const scale = ref(HISTORY_SCALE_ABSOLUTE);
-const styleFilter = ref(null);
+const route = useRoute();
+const router = useRouter();
 const setsByCode = ref(new Map());
 
-watch(
-  () => [props.open, props.filter],
-  () => {
-    if (props.open) {
-      styleFilter.value = props.filter || null;
-      loadSetCatalog();
-    }
-  },
-  { immediate: true },
-);
+const routeSetCode = computed(() => homeRouteQueryValue(route.query.set).toUpperCase());
+const routeArtStyle = computed(() => homeRouteQueryValue(route.query.art));
+const setScope = computed(() => {
+  const setCode = routeSetCode.value;
+  if (!setCode) {
+    return null;
+  }
+  const tile = (props.setDayTiles || []).find((item) => (
+    String(item?.setCode || "").trim().toUpperCase() === setCode
+  ));
+  const memberCodes = Array.isArray(tile?.memberCodes) && tile.memberCodes.length
+    ? tile.memberCodes
+    : [setCode];
+  return { setCode, memberCodes };
+});
+const styleFilter = computed(() => {
+  const setCode = routeSetCode.value;
+  const artStyle = routeArtStyle.value;
+  if (!setCode || !artStyle) {
+    return null;
+  }
+  return {
+    setCode,
+    artStyle,
+    label: artStyle,
+  };
+});
+
+loadSetCatalog();
 
 async function loadSetCatalog() {
   const payload = await ignoreAborted(api.getReportsMeta());
@@ -69,7 +84,7 @@ function setMeta(rowOrCode) {
 
 function setName(rowOrCode) {
   const set = setMeta(rowOrCode);
-  return setDisplayName(set) || String(set?.setCode || "").toUpperCase();
+  return setShortName(set) || String(set?.setCode || "").toUpperCase();
 }
 
 function setIcon(rowOrCode) {
@@ -91,67 +106,107 @@ const styleRows = computed(() => collectPriceSyncStyleRows({
   cards: props.cards,
   movers: props.movers,
 }));
-const hasArtStyles = computed(() => styleRows.value.length > 0);
-const showingStyles = computed(() => hasArtStyles.value && !styleFilter.value);
-const activeRows = computed(() => {
-  if (showingStyles.value) {
+function scopeMemberCodes(scope) {
+  const listed = Array.isArray(scope?.memberCodes) ? scope.memberCodes : [];
+  const codes = listed.length ? listed : [scope?.setCode];
+  return new Set(
+    codes
+      .map((code) => String(code || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+}
+
+const visibleStyleRows = computed(() => {
+  if (!setScope.value) {
     return styleRows.value;
   }
+  const members = scopeMemberCodes(setScope.value);
+  return styleRows.value.filter((row) => (
+    members.has(String(row.setCode || "").trim().toUpperCase())
+  ));
+});
+const showingOverview = computed(() => !styleFilter.value && !setScope.value);
+const showingStyles = computed(() => Boolean(setScope.value) && !styleFilter.value);
+const activeRows = computed(() => {
   if (styleFilter.value) {
     return cardsForArtStyle(storedCards.value, styleFilter.value);
   }
+  if (setScope.value) {
+    return visibleStyleRows.value;
+  }
   return storedCards.value;
 });
-const showingCardTiles = computed(() => Boolean(styleFilter.value));
-const ranked = computed(() => rankMoverRows(activeRows.value, {
-  scale: scale.value,
-  limit: 25,
-}));
-const risers = computed(() => ranked.value.risers);
-const fallers = computed(() => ranked.value.fallers);
-const moverColumns = computed(() => {
+
+function columnsFor(rankedRows) {
   const columns = [
-    { id: "up", title: "Risers", rows: risers.value, empty: "No risers this sync." },
-    { id: "down", title: "Fallers", rows: fallers.value, empty: "No fallers this sync." },
+    { id: "up", title: "Risers", rows: rankedRows.risers, empty: "No risers this sync." },
+    { id: "down", title: "Fallers", rows: rankedRows.fallers, empty: "No fallers this sync." },
   ];
   const filled = columns.filter((column) => column.rows.length);
   return filled.length === 1 ? filled : columns;
+}
+
+const pageSections = computed(() => {
+  if (!showingOverview.value) {
+    return [{
+      id: "main",
+      heading: "",
+      tiles: Boolean(styleFilter.value),
+      styles: showingStyles.value,
+      columns: columnsFor(rankMoverRows(activeRows.value, {
+        limit: 25,
+      })),
+    }];
+  }
+  const sections = [{
+    id: "cards",
+    heading: "Top cards",
+    tiles: true,
+    styles: false,
+    columns: columnsFor(rankMoverRows(storedCards.value, {
+      limit: 10,
+    })),
+  }];
+  const styleRanked = rankMoverRows(styleRows.value, {
+    limit: 25,
+  });
+  if (styleRanked.risers.length || styleRanked.fallers.length) {
+    sections.push({
+      id: "styles",
+      heading: "Art styles",
+      tiles: false,
+      styles: true,
+      columns: columnsFor(styleRanked),
+    });
+  }
+  return sections;
 });
-const singleMoverColumn = computed(() => moverColumns.value.length === 1);
 const title = computed(() => {
   if (styleFilter.value) {
     return styleFilter.value.artStyle || styleFilter.value.label || "Art style";
   }
-  return showingStyles.value ? "Price sync art styles" : "Price sync movers";
+  if (setScope.value) {
+    return setName(setScope.value);
+  }
+  return "Changes";
 });
-const titleSet = computed(() => (styleFilter.value ? setMeta(styleFilter.value) : null));
+const titleSet = computed(() => (
+  styleFilter.value || setScope.value
+    ? setMeta(styleFilter.value || setScope.value)
+    : null
+));
+const showBreadcrumb = computed(() => Boolean(setScope.value || styleFilter.value));
 const intro = computed(() => {
-  const scaleLabel = scale.value === HISTORY_SCALE_RELATIVE
-    ? "percent change"
-    : "euro change";
   if (styleFilter.value) {
-    return `Card changes from the last price update for this art style, ranked by ${scaleLabel}. Moves under €1 are omitted.`;
+    return "Owned card changes from the last price update for this art style, ranked by euro change.";
   }
   if (showingStyles.value) {
-    return `Top 25 art styles by ${scaleLabel}. Click a style to see its card changes. Moves under €1 are omitted.`;
+    const family = scopeMemberCodes(setScope.value).size > 1;
+    const scopeLabel = family ? "set family" : "set";
+    return `Owned-card changes from the last price update for this ${scopeLabel}. Top 25 art styles, ranked by euro change.`;
   }
-  return `Top 25 risers and fallers by ${scaleLabel}. Moves under €1 are omitted.`;
+  return "Top 10 owned card risers and fallers, then art styles, from the last price update, ranked by euro change.";
 });
-
-function formatPercent(row) {
-  const percent = Number(row?.percent);
-  if (!Number.isFinite(percent)) {
-    return "";
-  }
-  const formatted = `${Math.abs(percent).toFixed(1)}%`;
-  if (percent > 0) {
-    return `+${formatted}`;
-  }
-  if (percent < 0) {
-    return `−${formatted}`;
-  }
-  return "0.0%";
-}
 
 function formatDelta(row) {
   return formatProfit((Number(row?.current) || 0) - (Number(row?.previous) || 0));
@@ -161,15 +216,15 @@ function formatPrice(value) {
   return formatEuro(value);
 }
 
-function rowLabel(row) {
-  if (showingStyles.value) {
+function rowLabel(row, section) {
+  if (section?.styles) {
     return row.artStyle || row.label;
   }
   return row.label;
 }
 
-function rowMeta(row) {
-  if (showingStyles.value || !row.collectorNumber) {
+function rowMeta(row, section) {
+  if (section?.styles || !row.collectorNumber) {
     return "";
   }
   return `#${row.collectorNumber}`;
@@ -192,201 +247,183 @@ function tileRoute(row) {
 }
 
 function openStyle(row) {
-  if (!showingStyles.value) {
+  const setCode = String(row?.setCode || "").trim();
+  const artStyle = String(row?.artStyle || "").trim();
+  if (!setCode || !artStyle) {
     return;
   }
-  styleFilter.value = {
-    setCode: row.setCode,
-    artStyle: row.artStyle,
-    label: row.label,
-  };
+  router.push(homeChangesRoute({ setCode, artStyle }));
 }
 
-function clearStyleFilter() {
-  styleFilter.value = null;
+function openSet(row) {
+  const setCode = String(row?.setCode || "").trim();
+  if (!setCode) {
+    return;
+  }
+  router.push(homeChangesRoute({ setCode }));
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="modal-backdrop price-sync-movers-backdrop"
-      role="presentation"
-      @click.self="emit('close')"
-    >
-      <div
-        class="modal-card price-sync-movers-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="price-sync-movers-title"
-        @keydown.esc.stop="emit('close')"
-      >
-        <div class="price-sync-movers-header">
-          <h3 id="price-sync-movers-title">
-            <img
-              v-if="titleSet && setIcon(titleSet)"
-              :src="setIcon(titleSet)"
-              alt=""
-              class="price-sync-movers-set-icon"
-              :title="setName(titleSet)"
-              :aria-label="setName(titleSet)"
-              @error="onSetIconError($event, titleSet)"
-            >
-            <span>{{ title }}</span>
-          </h3>
-          <div class="button-group" role="group" aria-label="Change scale">
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: scale === HISTORY_SCALE_ABSOLUTE }"
-              :aria-pressed="scale === HISTORY_SCALE_ABSOLUTE"
-              @click="scale = HISTORY_SCALE_ABSOLUTE"
-            >
-              Absolute
-            </button>
-            <button
-              type="button"
-              class="filter-button"
-              :class="{ active: scale === HISTORY_SCALE_RELATIVE }"
-              :aria-pressed="scale === HISTORY_SCALE_RELATIVE"
-              @click="scale = HISTORY_SCALE_RELATIVE"
-            >
-              Relative
-            </button>
-          </div>
-        </div>
-        <p class="price-sync-movers-intro">{{ intro }}</p>
-        <div
-          class="price-sync-movers-columns"
-          :class="{ 'is-single': singleMoverColumn }"
+  <section class="home-panel price-sync-movers-page">
+    <div class="price-sync-movers-header">
+      <h2 id="price-sync-movers-title">
+        <img
+          v-if="titleSet && setIcon(titleSet)"
+          :src="setIcon(titleSet)"
+          alt=""
+          class="price-sync-movers-set-icon"
+          :title="setName(titleSet)"
+          :aria-label="setName(titleSet)"
+          @error="onSetIconError($event, titleSet)"
         >
-          <section
-            v-for="column in moverColumns"
-            :key="column.id"
-            class="price-sync-movers-column"
-          >
-            <h4>{{ column.title }}</h4>
-            <ol
-              v-if="column.rows.length"
-              class="price-sync-movers-list"
-              :class="{ 'is-tiles': showingCardTiles }"
+        <nav v-if="showBreadcrumb" class="price-sync-breadcrumb" aria-label="Price changes">
+          <RouterLink :to="homeChangesRoute()">Changes</RouterLink>
+          <template v-if="setScope">
+            <span class="price-sync-breadcrumb-sep" aria-hidden="true">/</span>
+            <RouterLink
+              v-if="styleFilter"
+              :to="homeChangesRoute({ setCode: setScope.setCode })"
             >
-              <li v-for="row in column.rows" :key="row.id || row.label">
-                <figure
-                  v-if="showingCardTiles"
-                  class="price-sync-mover-tile"
-                >
-                  <div class="price-sync-mover-tile-image">
-                    <CardInteractiveImage
-                      v-if="tileCard(row).imageUri"
-                      :src="tileCard(row).imageUri"
-                      :alt="tileCard(row).name"
-                      :card="tileCard(row)"
-                      img-class="price-sync-mover-tile-art"
-                      :show-details="false"
-                      :show-copy-controls="false"
-                    />
-                    <div v-else class="price-sync-mover-tile-placeholder">
-                      {{ tileCard(row).name || rowLabel(row) }}
-                    </div>
-                    <CardFinishBadge
-                      :card="tileCard(row)"
-                      variant="overlay"
-                      compact
-                    />
-                  </div>
-                  <figcaption class="price-sync-mover-tile-caption">
-                    <RouterLink
-                      v-if="tileRoute(row)"
-                      :to="tileRoute(row)"
-                      class="price-sync-mover-tile-name"
-                      :title="tileCard(row).name || rowLabel(row)"
-                    >
-                      {{ tileCard(row).name || rowLabel(row) }}
-                    </RouterLink>
-                    <span
-                      v-else
-                      class="price-sync-mover-tile-name"
-                      :title="tileCard(row).name || rowLabel(row)"
-                    >
-                      {{ tileCard(row).name || rowLabel(row) }}
-                    </span>
-                    <strong
-                      class="price-sync-movers-change"
-                      :class="column.id === 'up' ? 'is-up' : 'is-down'"
-                    >
-                      <span class="price-sync-movers-range">
-                        {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
-                      </span>
-                      <span class="price-sync-movers-deltas">
-                        <span :class="{ 'is-primary': scale === HISTORY_SCALE_ABSOLUTE }">
-                          {{ formatDelta(row) }}
-                        </span>
-                        <span :class="{ 'is-primary': scale === HISTORY_SCALE_RELATIVE }">
-                          {{ formatPercent(row) }}
-                        </span>
-                      </span>
-                    </strong>
-                  </figcaption>
-                </figure>
-                <component
-                  v-else
-                  :is="showingStyles ? 'button' : 'div'"
-                  class="price-sync-movers-item"
-                  :class="{ 'has-set-icon': showingStyles }"
-                  v-bind="showingStyles ? { type: 'button' } : {}"
-                  @click="showingStyles ? openStyle(row) : undefined"
-                >
-                  <img
-                    v-if="showingStyles && setIcon(row)"
-                    :src="setIcon(row)"
-                    alt=""
-                    class="price-sync-movers-set-icon"
-                    :title="setName(row)"
-                    :aria-label="setName(row)"
-                    @error="onSetIconError($event, row)"
-                  >
-                  <span class="price-sync-movers-copy">
-                    <span class="price-sync-movers-name" :title="rowLabel(row)">{{ rowLabel(row) }}</span>
-                    <span v-if="rowMeta(row)" class="price-sync-movers-meta">{{ rowMeta(row) }}</span>
-                  </span>
-                  <strong
-                    class="price-sync-movers-change"
-                    :class="column.id === 'up' ? 'is-up' : 'is-down'"
-                  >
-                    <span class="price-sync-movers-range">
-                      {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
-                    </span>
-                    <span class="price-sync-movers-deltas">
-                      <span :class="{ 'is-primary': scale === HISTORY_SCALE_ABSOLUTE }">
-                        {{ formatDelta(row) }}
-                      </span>
-                      <span :class="{ 'is-primary': scale === HISTORY_SCALE_RELATIVE }">
-                        {{ formatPercent(row) }}
-                      </span>
-                    </span>
-                  </strong>
-                </component>
-              </li>
-            </ol>
-            <p v-else class="price-sync-movers-empty">{{ column.empty }}</p>
-          </section>
-        </div>
-        <div class="modal-actions">
-          <button
-            v-if="styleFilter"
-            type="button"
-            class="btn btn-secondary"
-            @click="clearStyleFilter"
-          >
-            All art styles
-          </button>
-          <button type="button" class="btn btn-primary" @click="emit('close')">
-            Close
-          </button>
-        </div>
-      </div>
+              {{ setName(setScope) }}
+            </RouterLink>
+            <span v-else aria-current="page">{{ setName(setScope) }}</span>
+          </template>
+          <template v-if="styleFilter">
+            <span class="price-sync-breadcrumb-sep" aria-hidden="true">/</span>
+            <span aria-current="page">{{ styleFilter.artStyle || styleFilter.label }}</span>
+          </template>
+        </nav>
+        <span v-else>{{ title }}</span>
+      </h2>
     </div>
-  </Teleport>
+    <p class="price-sync-movers-intro">{{ intro }}</p>
+    <div v-if="showingOverview && setDayTiles.length" class="price-sync-favorite-day">
+      <h3>Favourite sets</h3>
+      <FavoriteDayChangeTiles
+        :items="setDayTiles"
+        @select="openSet"
+      />
+    </div>
+    <div
+      v-for="section in pageSections"
+      :key="section.id"
+      class="price-sync-movers-section"
+    >
+      <h3 v-if="section.heading" class="price-sync-section-heading">{{ section.heading }}</h3>
+    <div
+      class="price-sync-movers-columns"
+      :class="{ 'is-single': section.columns.length === 1 }"
+    >
+      <section
+        v-for="column in section.columns"
+        :key="column.id"
+        class="price-sync-movers-column"
+      >
+        <h3>{{ column.title }}</h3>
+        <EdgeCarousel
+          v-if="section.tiles && column.rows.length"
+          :label="column.title.toLowerCase()"
+        >
+        <ol class="price-sync-movers-list is-tiles is-edge-carousel-track">
+          <li v-for="row in column.rows" :key="row.id || row.label">
+            <figure
+              v-if="section.tiles"
+              class="price-sync-mover-tile"
+            >
+              <div class="price-sync-mover-tile-image">
+                <CardInteractiveImage
+                  v-if="tileCard(row).imageUri"
+                  :src="tileCard(row).imageUri"
+                  :alt="tileCard(row).name"
+                  :card="tileCard(row)"
+                  img-class="price-sync-mover-tile-art"
+                  :show-details="false"
+                  :show-copy-controls="false"
+                />
+                <div v-else class="price-sync-mover-tile-placeholder">
+                  {{ tileCard(row).name || rowLabel(row, section) }}
+                </div>
+                <CardFinishBadge
+                  :card="tileCard(row)"
+                  variant="overlay"
+                  compact
+                />
+              </div>
+              <figcaption class="price-sync-mover-tile-caption">
+                <RouterLink
+                  v-if="tileRoute(row)"
+                  :to="tileRoute(row)"
+                  class="price-sync-mover-tile-name"
+                  :title="tileCard(row).name || rowLabel(row, section)"
+                >
+                  {{ tileCard(row).name || rowLabel(row, section) }}
+                </RouterLink>
+                <span
+                  v-else
+                  class="price-sync-mover-tile-name"
+                  :title="tileCard(row).name || rowLabel(row, section)"
+                >
+                  {{ tileCard(row).name || rowLabel(row, section) }}
+                </span>
+                <strong
+                  class="price-sync-movers-change"
+                  :class="column.id === 'up' ? 'is-up' : 'is-down'"
+                >
+                  <span class="price-sync-movers-range">
+                    {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
+                  </span>
+                  <span class="price-sync-movers-deltas">
+                    <span class="is-primary">{{ formatDelta(row) }}</span>
+                  </span>
+                </strong>
+              </figcaption>
+            </figure>
+          </li>
+        </ol>
+        </EdgeCarousel>
+        <ol
+          v-else-if="column.rows.length"
+          class="price-sync-movers-list"
+        >
+          <li v-for="row in column.rows" :key="row.id || row.label">
+            <component
+              :is="section.styles ? 'button' : 'div'"
+              class="price-sync-movers-item"
+              :class="{ 'has-set-icon': section.styles }"
+              v-bind="section.styles ? { type: 'button' } : {}"
+              @click="section.styles ? openStyle(row) : undefined"
+            >
+              <img
+                v-if="section.styles && setIcon(row)"
+                :src="setIcon(row)"
+                alt=""
+                class="price-sync-movers-set-icon"
+                :title="setName(row)"
+                :aria-label="setName(row)"
+                @error="onSetIconError($event, row)"
+              >
+              <span class="price-sync-movers-copy">
+                <span class="price-sync-movers-name" :title="rowLabel(row, section)">{{ rowLabel(row, section) }}</span>
+                <span v-if="rowMeta(row, section)" class="price-sync-movers-meta">{{ rowMeta(row, section) }}</span>
+              </span>
+              <strong
+                class="price-sync-movers-change"
+                :class="column.id === 'up' ? 'is-up' : 'is-down'"
+              >
+                <span class="price-sync-movers-range">
+                  {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
+                </span>
+                <span class="price-sync-movers-deltas">
+                  <span class="is-primary">{{ formatDelta(row) }}</span>
+                </span>
+              </strong>
+            </component>
+          </li>
+        </ol>
+        <p v-else class="price-sync-movers-empty">{{ column.empty }}</p>
+      </section>
+    </div>
+    </div>
+  </section>
 </template>

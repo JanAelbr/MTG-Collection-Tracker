@@ -108,18 +108,6 @@
   flex-direction: column;
 }
 
-.favorites-home-carousel-nav {
-  display: flex;
-  gap: 6px;
-}
-
-.favorites-home-carousel-nav .btn {
-  min-width: 36px;
-  padding: 4px 10px;
-  font-size: 1.15rem;
-  line-height: 1;
-}
-
 .favorites-home-card-carousel {
   scroll-snap-type: x mandatory;
 }
@@ -132,6 +120,21 @@
   margin: 0 0 10px;
   font-size: 0.82rem;
   color: #666;
+}
+
+.favorites-home-day-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.favorites-home-day-block h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #546e7a;
 }
 
 .favorites-home-movers ol {
@@ -218,15 +221,29 @@ button.favorites-home-mover-card {
   }
 }
 
+.favorites-home-art-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+  align-items: start;
+}
+
 .favorites-home-art-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 18px;
+  min-width: 0;
+  margin-bottom: 0;
 }
 
-.favorites-home-art-row:last-child {
-  margin-bottom: 0;
+.favorites-home-art-row.is-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .favorites-home-art-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .favorites-home-art-row-header {
@@ -235,6 +252,10 @@ button.favorites-home-mover-card {
   align-items: center;
   gap: 10px;
   padding-right: 36px;
+}
+
+.favorites-home-art-row-header .favorite-day-tiles {
+  margin-left: auto;
 }
 
 .favorites-home-drag-handle,
@@ -271,6 +292,10 @@ button.favorites-home-mover-card {
 }
 
 .favorites-home-art-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #1b5e20;
   font-weight: 700;
   text-decoration: none;
@@ -355,6 +380,15 @@ button.favorites-home-mover-card {
   border-radius: 10px;
   background: #fff;
   color: inherit;
+}
+
+.favorites-home-set-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: inherit;
   text-decoration: none;
 }
 
@@ -378,6 +412,9 @@ button.favorites-home-mover-card {
 }
 
 .favorites-home-set-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.95rem;
 }
 

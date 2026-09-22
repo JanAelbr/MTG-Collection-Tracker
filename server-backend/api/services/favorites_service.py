@@ -17,7 +17,7 @@ from util.favorites import (
     normalize_favorite_card,
     normalize_favorite_cards,
 )
-from util.set_catalog import load_set_icon_uris
+from util.set_catalog import load_set_display_names, load_set_icon_uris
 
 
 def toggle_favorite_card(
@@ -170,7 +170,12 @@ def _sort_gallery_cards(cards: list[dict]) -> list[dict]:
     )
 
 
-def _placeholder_favorite_card(item: dict) -> dict:
+def _set_display_name(names: dict[str, str], set_code: str) -> str:
+    code = str(set_code or "").strip().upper()
+    return names.get(code) or code
+
+
+def _placeholder_favorite_card(item: dict, set_names: dict[str, str] | None = None) -> dict:
     finish = normalize_finish(item["finish"])
     set_code = item["setCode"]
     collector_number = item["collectorNumber"]
@@ -181,6 +186,7 @@ def _placeholder_favorite_card(item: dict) -> dict:
         "foil": finish,
         "finishLabel": finish_label(finish),
         "name": f"{set_code} #{collector_number}",
+        "setName": _set_display_name(set_names or {}, set_code),
         "imageUri": "",
         "imageUriBack": "",
         "owned": False,
@@ -271,6 +277,7 @@ def _hydrate_favorite_art_styles(
     option_cache: dict[str, dict[str, dict]],
     icon_uris: dict[str, str],
     family_roots: dict[str, str],
+    set_names: dict[str, str],
 ) -> list[dict]:
     result: list[dict] = []
     for item in favorite_art_styles:
@@ -278,10 +285,14 @@ def _hydrate_favorite_art_styles(
         art_style = item["artStyle"]
         style_key = favorite_art_style_key(set_code, art_style)
         cards = _cards_for_prints(prints_by_style.get(style_key, []), by_print)
+        set_name = _set_display_name(set_names, set_code)
+        for card in cards:
+            card["setName"] = set_name
         option = option_cache.get(set_code, {}).get(art_style)
         root = family_roots.get(set_code) or set_code
         result.append({
             "setCode": set_code,
+            "setName": set_name,
             "artStyle": art_style,
             "label": art_style,
             "favorite": True,
@@ -298,16 +309,23 @@ def _hydrate_favorite_art_styles(
 def _hydrate_favorite_cards(
     favorite_cards: list[dict],
     indexed: dict[str, dict],
+    set_names: dict[str, str],
 ) -> list[dict]:
     result: list[dict] = []
     for item in favorite_cards:
         finish = normalize_finish(item["finish"])
         key = favorite_card_key(item["setCode"], item["collectorNumber"], finish)
+        set_name = _set_display_name(set_names, item["setCode"])
         match = indexed.get(key)
         if match:
-            result.append({**match, "favorite": True, "missing": False})
+            result.append({
+                **match,
+                "favorite": True,
+                "missing": False,
+                "setName": set_name,
+            })
             continue
-        result.append(_placeholder_favorite_card({**item, "finish": finish}))
+        result.append(_placeholder_favorite_card({**item, "finish": finish}, set_names))
     return result
 
 
@@ -376,6 +394,7 @@ def list_favorites(conn: sqlite3.Connection) -> dict:
     favorite_sets = settings_service.get_favorite_sets(conn)
     favorite_art_styles = settings_service.get_favorite_art_styles(conn)
     favorite_cards = settings_service.get_favorite_cards(conn)
+    set_names = load_set_display_names(conn)
     prints_by_style = _load_art_style_print_keys(conn, favorite_art_styles)
     enriched = _enriched_favorite_prints(conn, favorite_cards, prints_by_style)
     return {
@@ -390,8 +409,13 @@ def list_favorites(conn: sqlite3.Connection) -> dict:
             ),
             icon_uris=load_set_icon_uris(conn),
             family_roots=load_family_roots(conn),
+            set_names=set_names,
         ),
-        "cards": _hydrate_favorite_cards(favorite_cards, _index_cards_by_finish(enriched)),
+        "cards": _hydrate_favorite_cards(
+            favorite_cards,
+            _index_cards_by_finish(enriched),
+            set_names,
+        ),
         "favoriteSets": favorite_sets,
         "favoriteArtStyles": favorite_art_styles,
         "favoriteCards": favorite_cards,

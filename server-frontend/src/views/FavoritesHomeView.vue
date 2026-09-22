@@ -1,7 +1,8 @@
 <script setup>
 import "../styles/favorites-home.css";
-import { computed, onMounted, ref, watch } from "vue";
-import { api, clearClientCache, ignoreAborted, isApiAbortError } from "../api";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { api, clearClientCache, ignoreAborted } from "../api";
 import CollectionCardGrid from "../components/CollectionCardGrid.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
@@ -10,8 +11,9 @@ import {
   fetchPricingSettings,
   usePricingSettings,
 } from "../composables/pricingSettings";
+import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { collectionRouteForSet } from "../utils/setScope";
-import { formatSetCountLabel, formatProfit, setDisplayName } from "../utils/format";
+import { formatSetCountLabel, setShortName } from "../utils/format";
 import { resolveSetIconUri } from "../utils/scryfall";
 import { cardFinish } from "../utils/finishes";
 import {
@@ -21,87 +23,74 @@ import {
 } from "../utils/favorites";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { filterCollectionCards } from "../utils/collectionFilters";
-import {
-  defaultCollectionSortDir,
-  sortCollectionCards,
-} from "../utils/collectionSort";
 import { shouldApplyPriceTileTint } from "../utils/catalogGroups";
+import EdgeCarousel from "../components/EdgeCarousel.vue";
+import FavoriteDayChangeTiles from "../components/FavoriteDayChangeTiles.vue";
+import PriceSyncMoversPanel from "../components/PriceSyncMoversModal.vue";
 import {
+  bindHomeChangesNavigation,
   lastPriceSyncOutcome,
   priceSyncHasMovers,
   showStoredPriceSyncMovers,
 } from "../composables/startupPriceSync";
+import { homeChangesRoute, isHomeChangesRoute } from "../utils/homeRoutes";
 import {
-  MOVER_SCALE_ABSOLUTE,
-  MOVER_SCALE_PERCENT,
-  loadMoverScale,
-  saveMoverScale,
-  topArtStyleMoversFromHistory,
-  topArtStyleRisersFromHistory,
-} from "../utils/breakdownHistory";
+  firstPriceSyncCards,
+  favoriteArtStyleDayRows,
+  favoriteCardDayRows,
+  favoriteSetDayRows,
+} from "../utils/priceSyncMovers";
 
-const GALLERY_SORT_OPTIONS = [
-  { id: "value", label: "Value" },
-  { id: "name", label: "Name" },
-  { id: "number", label: "Number" },
-  { id: "cmc", label: "CMC" },
-  { id: "rarity", label: "Rarity" },
-];
-
+const route = useRoute();
+const router = useRouter();
+const showingChanges = computed(() => isHomeChangesRoute(route));
 const payload = ref(null);
 const loading = ref(true);
 const loadError = ref("");
-const historyPoints = ref([]);
-const favoriteCardsScroller = ref(null);
-const moverScale = ref(loadMoverScale());
 const dragArtFrom = ref(-1);
 const dragArtOver = ref(-1);
 const lastPriceSyncStatus = ref(null);
-const galleryOwnedFilter = ref("owned");
-const gallerySort = ref("number");
-const gallerySortDir = ref(defaultCollectionSortDir("number"));
+const catalogSetNames = ref(new Map());
+const catalogSets = ref([]);
+const { showSetBrowserSubsets } = useSetGalleryFilter();
 const { settings: pricingSettings, collectionCardScale, collectionPriceTileTint } = usePricingSettings();
 const showPriceTileTint = computed(() => shouldApplyPriceTileTint({
   enabled: collectionPriceTileTint.value,
-  sort: gallerySort.value,
 }));
 const { toggleArtStyleFavorite, favoriteCards, favoriteArtStyles } = useFavorites();
 
 const sets = computed(() => payload.value?.sets || []);
 const artStyles = computed(() => payload.value?.artStyles || []);
 const cards = computed(() => payload.value?.cards || []);
-const artStyleMoverOptions = computed(() => ({
-  limit: 10,
-  favoriteSetCodes: sets.value.map((set) => set.setCode),
-  scale: moverScale.value,
-}));
-const artStyleRisers = computed(() =>
-  topArtStyleRisersFromHistory(historyPoints.value, artStyleMoverOptions.value),
+const lastSyncCards = computed(() => firstPriceSyncCards(
+  lastPriceSyncOutcome.value,
+  lastPriceSyncStatus.value,
+));
+const favoriteStyleDayTiles = computed(() =>
+  favoriteArtStyleDayRows(artStyles.value, lastSyncCards.value),
 );
-const artStyleFallers = computed(() =>
-  topArtStyleMoversFromHistory(historyPoints.value, {
-    ...artStyleMoverOptions.value,
-    direction: "down",
-  }),
-);
-const artStyleMoverColumns = computed(() => [
-  { id: "up", title: "Top risers", rows: artStyleRisers.value },
-  { id: "down", title: "Top fallers", rows: artStyleFallers.value },
-].filter((column) => column.rows.length));
-const moverCompareDate = computed(() => {
-  const points = historyPoints.value;
-  if (!Array.isArray(points) || points.length < 2) {
-    return "";
+const favoriteStyleDayByKey = computed(() => {
+  const next = new Map();
+  for (const row of favoriteStyleDayTiles.value) {
+    next.set(favoriteArtStyleKey(row.setCode, row.artStyle), row);
   }
-  return String(points[points.length - 2]?.date || "").trim();
+  return next;
 });
-const moverCompareCaption = computed(() => {
-  const date = formatSnapshotDay(moverCompareDate.value);
-  return date
-    ? `Art styles in favourite sets vs ${date}`
-    : "Art styles in favourite sets vs previous snapshot";
-});
-
+const ownedCards = computed(() => filterCollectionCards(cards.value, {
+  ownedFilter: "owned",
+}));
+const favoriteCardDayTiles = computed(() =>
+  favoriteCardDayRows(ownedCards.value, lastSyncCards.value),
+);
+const favoriteSetDayTiles = computed(() =>
+  favoriteSetDayRows(sets.value, lastSyncCards.value, {
+    catalogSets: catalogSets.value,
+    includeHiddenSubsets: showSetBrowserSubsets.value,
+  }).map((row) => ({
+    ...row,
+    label: setNameFor(row.setCode),
+  })),
+);
 const hasLastPriceMovers = computed(() => (
   priceSyncHasMovers(lastPriceSyncOutcome.value)
   || priceSyncHasMovers(lastPriceSyncStatus.value?.lastSync || lastPriceSyncStatus.value)
@@ -115,38 +104,46 @@ async function loadLastPriceSync() {
 }
 
 function openStylePriceMovers(row) {
-  showStoredPriceSyncMovers(lastPriceSyncStatus.value || lastPriceSyncOutcome.value, {
+  showStoredPriceSyncMovers(lastPriceSyncStatus.value || lastPriceSyncOutcome.value);
+  router.push(homeChangesRoute({
     setCode: row.setCode,
-    artStyle: row.artStyle,
-    label: row.artStyle || row.label,
-  });
+    artStyle: row.artStyle || row.label,
+  }));
 }
 
 function openLastPriceMovers() {
   showStoredPriceSyncMovers(lastPriceSyncStatus.value || lastPriceSyncOutcome.value);
+  router.push(homeChangesRoute());
 }
 
-const displayCards = computed(() => {
-  const filtered = filterCollectionCards(cards.value, {
-    ownedFilter: galleryOwnedFilter.value,
-  });
-  return applyGalleryDisplayToCards(filtered);
-});
+function openCardDayChange(row) {
+  const match = lastSyncCards.value.find((card) => (
+    String(card.setCode || "").trim().toUpperCase() === String(row.setCode || "").trim().toUpperCase()
+    && String(card.collectorNumber || "").trim() === String(row.collectorNumber || "").trim()
+  ));
+  if (match?.artStyle) {
+    openStylePriceMovers({
+      setCode: match.setCode,
+      artStyle: match.artStyle,
+      label: match.artStyle,
+    });
+    return;
+  }
+  openLastPriceMovers();
+}
+
+const displayCards = computed(() => applyGalleryDisplayToCards(ownedCards.value));
 
 const displayArtStyles = computed(() =>
-  artStyles.value.map((style) => {
-    const filtered = filterCollectionCards(style.cards || [], {
-      ownedFilter: galleryOwnedFilter.value,
-    });
-    const sorted = sortCollectionCards(filtered, {
-      sort: gallerySort.value,
-      dir: gallerySortDir.value,
-    });
-    return {
-      ...style,
-      cards: applyGalleryDisplayToCards(sorted),
-    };
-  }),
+  artStyles.value.map((style) => ({
+    ...style,
+    cards: applyGalleryDisplayToCards(filterCollectionCards(style.cards || [], {
+      ownedFilter: "owned",
+    })),
+    dayChange: favoriteStyleDayByKey.value.get(
+      favoriteArtStyleKey(style.setCode, style.artStyle),
+    ) || null,
+  })),
 );
 
 const galleryCardCount = computed(() => {
@@ -158,45 +155,10 @@ const galleryCardCount = computed(() => {
   return favouriteCards + artGalleryCards;
 });
 
-const galleryTotalCardCount = computed(() => {
-  const favouriteCards = cards.value.length;
-  const artGalleryCards = artStyles.value.reduce(
-    (sum, style) => sum + (style.cards?.length || 0),
-    0,
-  );
-  return favouriteCards + artGalleryCards;
-});
-
 const gallerySummary = computed(() => {
   const shown = galleryCardCount.value;
-  const total = galleryTotalCardCount.value;
-  if (galleryOwnedFilter.value === "owned") {
-    return `${shown} owned card${shown === 1 ? "" : "s"}`;
-  }
-  return `${shown} shown · ${total} total`;
+  return `${shown} owned card${shown === 1 ? "" : "s"}`;
 });
-
-const cardsReorderable = computed(() => galleryOwnedFilter.value === "all");
-
-function setGalleryOwnedFilter(next) {
-  if (galleryOwnedFilter.value === next) {
-    return;
-  }
-  galleryOwnedFilter.value = next;
-}
-
-function onGallerySortChange(event) {
-  const next = event.target.value;
-  if (next === gallerySort.value) {
-    return;
-  }
-  gallerySort.value = next;
-  gallerySortDir.value = defaultCollectionSortDir(next);
-}
-
-function toggleGallerySortDir() {
-  gallerySortDir.value = gallerySortDir.value === "asc" ? "desc" : "asc";
-}
 
 const isEmpty = computed(
   () => !sets.value.length && !artStyles.value.length && !cards.value.length,
@@ -231,9 +193,75 @@ function artCountLabel(style) {
   return `${style.ownedCount}/${style.catalogCount}`;
 }
 
+function fullSetName(code, label = "") {
+  const cleaned = setShortName({
+    setCode: code,
+    label: label || code,
+  });
+  const normalized = String(code || "").trim().toUpperCase();
+  if (cleaned && cleaned.toUpperCase() !== normalized) {
+    return cleaned;
+  }
+  return "";
+}
+
+const setNameByCode = computed(() => {
+  const names = new Map();
+  const remember = (code, label) => {
+    const key = String(code || "").trim().toUpperCase();
+    if (!key || names.has(key)) {
+      return;
+    }
+    const name = fullSetName(key, label);
+    if (name) {
+      names.set(key, name);
+    }
+  };
+  for (const set of sets.value) {
+    remember(set.setCode, set.name || set.label);
+  }
+  for (const card of cards.value) {
+    remember(card.setCode, card.setLabel || card.setName);
+  }
+  for (const style of artStyles.value) {
+    remember(style.setCode, style.setName);
+    for (const card of style.cards || []) {
+      remember(card.setCode, card.setName || card.setLabel);
+    }
+  }
+  return names;
+});
+
+function setNameFor(code) {
+  const key = String(code || "").trim().toUpperCase();
+  return setNameByCode.value.get(key) || catalogSetNames.value.get(key) || key;
+}
+
+async function loadCatalogSetNames() {
+  const meta = await ignoreAborted(api.getReportsMeta());
+  if (!meta) {
+    return;
+  }
+  const next = new Map();
+  const visible = [];
+  for (const set of meta.sets || []) {
+    const code = String(set.setCode || "").trim().toUpperCase();
+    if (!code || code === "ALL") {
+      continue;
+    }
+    visible.push(set);
+    const name = fullSetName(code, set.name || set.label);
+    if (name) {
+      next.set(code, name);
+    }
+  }
+  catalogSets.value = visible;
+  catalogSetNames.value = next;
+}
+
 function artStyleTitle(style) {
   const counts = artCountLabel(style);
-  const base = `${style.setCode} · ${style.artStyle}`;
+  const base = `${setNameFor(style.setCode)} · ${style.artStyle}`;
   return counts ? `${base} (${counts})` : base;
 }
 
@@ -251,115 +279,13 @@ async function loadFavorites({ silent = false } = {}) {
     payload.value = next;
   } catch (error) {
     if (!silent) {
-      loadError.value = error.message || "Could not load favourites.";
+      loadError.value = error.message || "Could not load home.";
     }
   } finally {
     if (!silent) {
       loading.value = false;
     }
   }
-}
-
-async function loadArtStyleRisers() {
-  try {
-    const next = await ignoreAborted(api.listStorageBreakdownHistory());
-    if (!next) {
-      return;
-    }
-    historyPoints.value = next.points || [];
-  } catch (error) {
-    if (!isApiAbortError(error)) {
-      historyPoints.value = [];
-    }
-  }
-}
-
-function scrollFavoriteCards(direction) {
-  const scroller = favoriteCardsScroller.value;
-  if (!scroller) {
-    return;
-  }
-  const item = scroller.querySelector(".collection-card-grid-item");
-  const gap = item
-    ? Number.parseFloat(getComputedStyle(item.parentElement).columnGap || "16") || 16
-    : 16;
-  const step = item
-    ? item.getBoundingClientRect().width + gap
-    : scroller.clientWidth * 0.8;
-  scroller.scrollBy({ left: direction * step, behavior: "smooth" });
-}
-
-function formatMoverValue(row) {
-  if (moverScale.value === MOVER_SCALE_ABSOLUTE) {
-    return formatProfit((Number(row?.current) || 0) - (Number(row?.previous) || 0));
-  }
-  const percent = Number(row?.percent);
-  if (!Number.isFinite(percent)) {
-    return "";
-  }
-  const formatted = `${Math.abs(percent).toFixed(1)}%`;
-  if (percent > 0) {
-    return `+${formatted}`;
-  }
-  if (percent < 0) {
-    return `−${formatted}`;
-  }
-  return `0.0%`;
-}
-
-function formatSnapshotDay(raw) {
-  const text = String(raw || "").trim();
-  if (!text) {
-    return "";
-  }
-  const date = new Date(`${text.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) {
-    return text;
-  }
-  return date.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-watch(moverScale, (next) => {
-  saveMoverScale(next);
-});
-
-function setMoverScale(next) {
-  moverScale.value = next === MOVER_SCALE_ABSOLUTE
-    ? MOVER_SCALE_ABSOLUTE
-    : MOVER_SCALE_PERCENT;
-}
-
-function moverSet(row) {
-  const code = String(row?.setCode || "").trim().toUpperCase();
-  if (!code) {
-    return null;
-  }
-  return sets.value.find(
-    (set) => String(set.setCode || "").trim().toUpperCase() === code,
-  ) || { setCode: code };
-}
-
-function moverSetIcon(row) {
-  const set = moverSet(row);
-  return set ? setIcon(set) : "";
-}
-
-function onMoverCardEnter(event) {
-  const card = event.currentTarget;
-  const label = card.querySelector(".favorites-home-mover-label");
-  if (!label) {
-    return;
-  }
-  card.classList.toggle("is-label-clipped", label.scrollWidth > label.clientWidth + 0.5);
-}
-
-function onMoverCardLeave(event) {
-  event.currentTarget.classList.remove("is-label-clipped");
 }
 
 function syncCardsFromFavoriteList(nextFavorites) {
@@ -508,13 +434,24 @@ async function onArtDrop(index, event) {
   }
 }
 
+let unbindChangesNav = () => {};
+
 onMounted(async () => {
+  unbindChangesNav = bindHomeChangesNavigation(() => {
+    if (route.name === "home") {
+      router.push(homeChangesRoute());
+    }
+  });
   await Promise.all([
     fetchPricingSettings(),
     loadFavorites(),
-    loadArtStyleRisers(),
     loadLastPriceSync(),
+    loadCatalogSetNames(),
   ]);
+});
+
+onUnmounted(() => {
+  unbindChangesNav();
 });
 </script>
 
@@ -522,198 +459,112 @@ onMounted(async () => {
   <div class="favorites-home-page collection-page">
     <header class="favorites-home-header">
       <div class="favorites-home-header-row">
-        <h1>Favourites</h1>
-        <button
-          v-if="hasLastPriceMovers"
-          type="button"
-          class="btn btn-secondary"
-          @click="openLastPriceMovers"
-        >
-          Last price movers
-        </button>
+        <h1>Home</h1>
+        <div class="button-group" role="group" aria-label="Home view">
+          <RouterLink
+            :to="{ name: 'home' }"
+            class="filter-button"
+            :class="{ active: !showingChanges }"
+            :aria-current="!showingChanges ? 'page' : undefined"
+          >
+            Starred
+          </RouterLink>
+          <RouterLink
+            v-if="hasLastPriceMovers"
+            :to="homeChangesRoute()"
+            class="filter-button"
+            :class="{ active: showingChanges }"
+            :aria-current="showingChanges ? 'page' : undefined"
+          >
+            Changes
+          </RouterLink>
+          <button
+            v-else
+            type="button"
+            class="filter-button"
+            disabled
+          >
+            Changes
+          </button>
+        </div>
       </div>
       <p class="favorites-home-intro">
-        Cards, art styles, and sets you have starred. Drag cards and art-style rows to reorder.
+        {{ showingChanges
+          ? "Owned risers and fallers from the last price update."
+          : "Cards, art styles, and sets you have starred. Drag cards and art-style rows to reorder." }}
       </p>
     </header>
 
-    <LoadingIndicator v-if="loading" label="Loading favourites…" />
+    <LoadingIndicator v-if="loading" label="Loading home…" />
     <p v-else-if="loadError" class="favorites-home-error">{{ loadError }}</p>
     <template v-else>
-      <p v-if="isEmpty" class="favorites-home-empty">
-        No favourites yet. Star a card tile, an art style in the filter list, or a set in the gallery.
+      <p v-if="isEmpty && !showingChanges" class="favorites-home-empty">
+        Nothing on Home yet. Star a card tile, an art style in the filter list, or a set in the gallery.
       </p>
 
+      <template v-if="!showingChanges">
       <div
         v-if="cards.length || artStyles.length"
         class="favorites-home-gallery-toolbar"
       >
-        <div
-          class="button-group collection-ownership-group collection-ownership-group--binary"
-          role="group"
-          aria-label="Ownership filter"
-        >
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: galleryOwnedFilter === 'owned' }"
-            @click="setGalleryOwnedFilter('owned')"
-          >
-            Owned
-          </button>
-          <button
-            type="button"
-            class="filter-button"
-            :class="{ active: galleryOwnedFilter === 'all' }"
-            @click="setGalleryOwnedFilter('all')"
-          >
-            All
-          </button>
-        </div>
-        <label class="collection-all-sort favorites-home-gallery-sort" for="favorites-gallery-sort">
-          <span class="visually-hidden">Sort art styles by</span>
-          <div class="collection-sort-row">
-            <select id="favorites-gallery-sort" :value="gallerySort" @change="onGallerySortChange">
-              <option
-                v-for="option in GALLERY_SORT_OPTIONS"
-                :key="option.id"
-                :value="option.id"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-            <button
-              type="button"
-              class="btn btn-secondary collection-sort-dir"
-              :title="gallerySortDir === 'asc' ? 'Ascending' : 'Descending'"
-              :aria-label="`Sort ${gallerySortDir === 'asc' ? 'ascending' : 'descending'}`"
-              @click="toggleGallerySortDir"
-            >
-              {{ gallerySortDir === "asc" ? "↑" : "↓" }}
-            </button>
-          </div>
-        </label>
         <p class="favorites-home-gallery-summary">{{ gallerySummary }}</p>
       </div>
 
       <div
-        v-if="cards.length || artStyleMoverColumns.length"
+        v-if="cards.length"
         class="favorites-home-highlights"
       >
-        <section v-if="cards.length" class="favorites-home-section home-panel favorites-home-cards-pane">
+        <section class="favorites-home-section home-panel favorites-home-cards-pane">
           <div class="favorites-home-section-header">
             <h2>Cards</h2>
-            <div
-              v-if="displayCards.length > 1"
-              class="favorites-home-carousel-nav"
-            >
-              <button
-                type="button"
-                class="btn btn-secondary"
-                aria-label="Previous favourite cards"
-                @click="scrollFavoriteCards(-1)"
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                class="btn btn-secondary"
-                aria-label="Next favourite cards"
-                @click="scrollFavoriteCards(1)"
-              >
-                ›
-              </button>
+          </div>
+          <EdgeCarousel v-if="displayCards.length" label="favourite cards">
+            <div class="favorites-home-cards favorites-home-art-gallery favorites-home-card-carousel collection-gallery-panel is-edge-carousel-track">
+              <CollectionCardGrid
+                :cards="displayCards"
+                show-set-label
+                :set-label-for="setNameFor"
+                :card-scale="collectionCardScale"
+                :price-tile-tint="showPriceTileTint"
+                @ownership-changed="onOwnershipChanged"
+                @favorite-changed="onCardFavoriteChanged"
+                @reorder="onReorderCards"
+              />
             </div>
-          </div>
-          <div
-            v-if="displayCards.length"
-            ref="favoriteCardsScroller"
-            class="favorites-home-cards favorites-home-art-gallery favorites-home-card-carousel collection-gallery-panel"
-          >
-            <CollectionCardGrid
-              :cards="displayCards"
-              show-set-label
-              show-unowned-badge
-              :reorderable="cardsReorderable"
-              :card-scale="collectionCardScale"
-              :price-tile-tint="showPriceTileTint"
-              @ownership-changed="onOwnershipChanged"
-              @favorite-changed="onCardFavoriteChanged"
-              @reorder="onReorderCards"
-            />
-          </div>
+          </EdgeCarousel>
           <p v-else class="favorites-home-muted">
-            {{ galleryOwnedFilter === "owned" ? "No owned favourite cards." : "No favourite cards." }}
+            No owned favourite cards.
           </p>
         </section>
-        <section
-          v-for="column in artStyleMoverColumns"
-          :key="column.id"
+        <aside
+          v-if="favoriteCardDayTiles.length"
           class="favorites-home-section home-panel favorites-home-movers"
         >
           <div class="favorites-home-section-header">
-            <h2>{{ column.title }}</h2>
-            <div class="button-group" role="group" aria-label="Change scale">
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: moverScale === MOVER_SCALE_PERCENT }"
-                :aria-pressed="moverScale === MOVER_SCALE_PERCENT"
-                @click="setMoverScale(MOVER_SCALE_PERCENT)"
-              >
-                %
-              </button>
-              <button
-                type="button"
-                class="filter-button"
-                :class="{ active: moverScale === MOVER_SCALE_ABSOLUTE }"
-                :aria-pressed="moverScale === MOVER_SCALE_ABSOLUTE"
-                @click="setMoverScale(MOVER_SCALE_ABSOLUTE)"
-              >
-                €
-              </button>
-            </div>
+            <h2>Today</h2>
           </div>
           <p class="favorites-home-riser-caption">
-            {{ moverCompareCaption }}
+            Owned + and − from the last price update.
           </p>
-          <ol>
-            <li v-for="row in column.rows" :key="row.id">
-              <button
-                type="button"
-                class="favorites-home-set-card favorites-home-mover-card"
-                :class="{ 'is-down': column.id === 'down' }"
-                :title="row.artStyle || row.label"
-                @click="openStylePriceMovers(row)"
-                @mouseenter="onMoverCardEnter"
-                @mouseleave="onMoverCardLeave"
-              >
-                <img
-                  v-if="moverSetIcon(row)"
-                  :src="moverSetIcon(row)"
-                  alt=""
-                  class="favorites-home-set-icon"
-                  loading="lazy"
-                >
-                <span class="favorites-home-mover-label">{{ row.artStyle || row.label }}</span>
-                <strong
-                  :class="row.percent < 0 ? 'reports-loss' : 'reports-gain'"
-                >{{ formatMoverValue(row) }}</strong>
-              </button>
-            </li>
-          </ol>
-        </section>
+          <FavoriteDayChangeTiles
+            variant="list"
+            :items="favoriteCardDayTiles"
+            @select="openCardDayChange"
+          />
+        </aside>
       </div>
 
       <section v-if="artStyles.length" class="favorites-home-section home-panel">
         <div class="favorites-home-section-header">
           <h2>Art styles</h2>
         </div>
+        <div class="favorites-home-art-list">
         <div
           v-for="(style, index) in displayArtStyles"
           :key="`${style.setCode}|${style.artStyle}`"
           class="favorites-home-art-row"
           :class="{
+            'is-wide': isLargeArtGallery(style),
             'is-dragging': dragArtFrom === index,
             'is-drop-target': dragArtOver === index && dragArtFrom !== index,
           }"
@@ -734,6 +585,12 @@ onMounted(async () => {
             <RouterLink :to="artStyleRoute(style)" class="favorites-home-art-row-title">
               {{ artStyleTitle(style) }}
             </RouterLink>
+            <FavoriteDayChangeTiles
+              v-if="style.dayChange"
+              variant="inline"
+              :items="[style.dayChange]"
+              @select="openStylePriceMovers"
+            />
             <button
               type="button"
               class="favorites-home-star is-favorite"
@@ -744,24 +601,26 @@ onMounted(async () => {
               ★
             </button>
           </div>
+          <EdgeCarousel
+            v-if="style.cards?.length && !isLargeArtGallery(style)"
+            label="cards"
+          >
+            <div class="favorites-home-art-gallery collection-gallery-panel is-edge-carousel-track">
+              <CollectionCardGrid
+                :cards="style.cards"
+                :card-scale="collectionCardScale"
+                :price-tile-tint="showPriceTileTint"
+                @ownership-changed="onOwnershipChanged"
+                @favorite-changed="onCardFavoriteChanged"
+              />
+            </div>
+          </EdgeCarousel>
           <div
-            v-if="style.cards?.length"
-            class="favorites-home-art-gallery collection-gallery-panel"
-            :class="{ 'is-scrollable-group': isLargeArtGallery(style) }"
+            v-else-if="style.cards?.length"
+            class="favorites-home-art-gallery collection-gallery-panel is-scrollable-group"
           >
             <VirtualizedCollectionCardGrid
-              v-if="isLargeArtGallery(style)"
               :cards="style.cards"
-              show-unowned-badge
-              :card-scale="collectionCardScale"
-              :price-tile-tint="showPriceTileTint"
-              @ownership-changed="onOwnershipChanged"
-              @favorite-changed="onCardFavoriteChanged"
-            />
-            <CollectionCardGrid
-              v-else
-              :cards="style.cards"
-              show-unowned-badge
               :card-scale="collectionCardScale"
               :price-tile-tint="showPriceTileTint"
               @ownership-changed="onOwnershipChanged"
@@ -769,46 +628,54 @@ onMounted(async () => {
             />
           </div>
           <p v-else class="favorites-home-muted">
-            {{ galleryOwnedFilter === "owned" ? "No owned cards in this art style." : "No cards in this art style yet." }}
+            No owned cards in this art style.
           </p>
+        </div>
         </div>
       </section>
 
       <section v-if="sets.length" class="favorites-home-section home-panel">
         <h2>Sets</h2>
         <div class="favorites-home-set-grid">
-          <RouterLink
+          <div
             v-for="set in sets"
             :key="set.setCode"
-            :to="setRoute(set)"
             class="favorites-home-set-card"
           >
-            <img
-              v-if="setIcon(set)"
-              :src="setIcon(set)"
-              alt=""
-              class="favorites-home-set-icon"
-              loading="lazy"
-            >
-            <div class="favorites-home-set-meta">
-              <strong>{{ set.setCode }}</strong>
-              <span>{{ setDisplayName(set) || set.label || set.setCode }}</span>
-              <span v-if="formatSetCountLabel(set)" class="favorites-home-muted">
-                {{ formatSetCountLabel(set) }}
-              </span>
-            </div>
+            <RouterLink :to="setRoute(set)" class="favorites-home-set-link">
+              <img
+                v-if="setIcon(set)"
+                :src="setIcon(set)"
+                alt=""
+                class="favorites-home-set-icon"
+                loading="lazy"
+              >
+              <div class="favorites-home-set-meta">
+                <strong>{{ setNameFor(set.setCode) }}</strong>
+                <span v-if="formatSetCountLabel(set)" class="favorites-home-muted">
+                  {{ formatSetCountLabel(set) }}
+                </span>
+              </div>
+            </RouterLink>
             <button
               type="button"
               class="favorites-home-star is-favorite"
               aria-label="Unfavourite set"
               title="Unfavourite set"
-              @click.prevent.stop="onUnfavoriteSet(set)"
+              @click="onUnfavoriteSet(set)"
             >
               ★
             </button>
-          </RouterLink>
+          </div>
         </div>
       </section>
+      </template>
+      <PriceSyncMoversPanel
+        v-else
+        :cards="lastSyncCards"
+        :movers="lastPriceSyncOutcome?.movers"
+        :set-day-tiles="favoriteSetDayTiles"
+      />
     </template>
   </div>
 </template>

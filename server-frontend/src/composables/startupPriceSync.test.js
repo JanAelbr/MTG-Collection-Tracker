@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  bindHomeChangesNavigation,
   lastPriceSyncOutcome,
   normalizePriceSyncMovers,
   priceSyncHasMovers,
-  priceSyncMoversModalOpen,
   recordCompletedPriceSync,
   shouldStartStartupPriceSync,
   formatPriceSyncRunningMessage,
@@ -37,7 +37,11 @@ describe("recordCompletedPriceSync", () => {
     expect(priceSyncHasMovers(lastPriceSyncOutcome.value)).toBe(false);
   });
 
-  it("opens the movers modal after a changed sync", () => {
+  it("asks Home to open changes after a changed sync", () => {
+    let opened = 0;
+    const unbind = bindHomeChangesNavigation(() => {
+      opened += 1;
+    });
     recordCompletedPriceSync({
       status: "completed",
       pricesUnchanged: false,
@@ -48,7 +52,8 @@ describe("recordCompletedPriceSync", () => {
     });
     expect(lastPriceSyncOutcome.value.pricesUnchanged).toBe(false);
     expect(priceSyncHasMovers(lastPriceSyncOutcome.value)).toBe(true);
-    expect(priceSyncMoversModalOpen.value).toBe(true);
+    expect(opened).toBe(1);
+    unbind();
   });
 
   it("normalizes legacy flat mover lists", () => {

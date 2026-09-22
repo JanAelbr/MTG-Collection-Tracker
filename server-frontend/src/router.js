@@ -26,13 +26,17 @@ const router = createRouter({
     if (savedPosition) {
       return savedPosition;
     }
+    if (to.name === "home-changes" && from.name === "home-changes") {
+      return { top: 0 };
+    }
     if (to.path === from.path && to.name === from.name) {
       return false;
     }
     return { top: 0 };
   },
   routes: [
-    { path: "/", name: "home", component: FavoritesHomeView, meta: { title: "Favourites" } },
+    { path: "/", name: "home", component: FavoritesHomeView, meta: { title: "Home" } },
+    { path: "/changes", name: "home-changes", component: FavoritesHomeView, meta: { title: "Changes" } },
     { path: "/collection", redirect: "/collection/all" },
     {
       path: "/collection/search",

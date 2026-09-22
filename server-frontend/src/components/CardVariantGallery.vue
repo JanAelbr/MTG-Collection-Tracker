@@ -2,6 +2,7 @@
 import "../styles/card-detail.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
+import EdgeCarousel from "./EdgeCarousel.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import { formatEuro } from "../utils/format";
@@ -33,7 +34,7 @@ const emit = defineEmits(["select"]);
 
 const prevCount = ref(NEIGHBOR_BATCH);
 const nextCount = ref(NEIGHBOR_BATCH);
-const listRef = ref(null);
+const carouselRef = ref(null);
 
 const visibleCards = computed(() => {
   if (!props.showArrows || props.currentIndex < 0 || !props.cards.length) {
@@ -56,6 +57,7 @@ const hasMoreNext = computed(
 
 const listClass = computed(() => ({
   "card-variant-list": true,
+  "is-edge-carousel-track": true,
   "is-fit-centered": props.centered && !props.showArrows,
 }));
 
@@ -71,8 +73,16 @@ function collectorNumberLabel(card) {
   return `#${String(card.collectorNumber).padStart(3, "0")}`;
 }
 
+function scrollingEl() {
+  const exposed = carouselRef.value?.scroller;
+  if (!exposed) {
+    return null;
+  }
+  return exposed instanceof HTMLElement ? exposed : exposed.value || null;
+}
+
 function scrollList(alignment = "center") {
-  const list = listRef.value;
+  const list = scrollingEl();
   if (!list) {
     return;
   }
@@ -153,7 +163,8 @@ function onSelect(card) {
     </div>
     <h2 v-else>{{ title }}</h2>
 
-    <div ref="listRef" :class="listClass">
+    <EdgeCarousel ref="carouselRef" :label="title || 'cards'">
+    <div :class="listClass">
       <template v-for="card in visibleCards" :key="`${card.setCode}-${card.collectorNumber}-${card.artStyle || ''}`">
         <button
           v-if="selectable && !card.isCurrent"
@@ -298,5 +309,6 @@ function onSelect(card) {
         </div>
       </template>
     </div>
+    </EdgeCarousel>
   </section>
 </template>

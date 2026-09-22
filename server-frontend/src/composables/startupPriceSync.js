@@ -6,7 +6,17 @@ import { hasSnapshotForDate, utcTodayDate } from "./storageBreakdownHistory";
 export const startupPriceSyncStatus = ref("idle");
 export const startupPriceSyncMessage = ref("");
 export const lastPriceSyncOutcome = ref(null);
-export const priceSyncMoversModalOpen = ref(false);
+
+let openChangesOnHome = null;
+
+export function bindHomeChangesNavigation(handler) {
+  openChangesOnHome = handler;
+  return () => {
+    if (openChangesOnHome === handler) {
+      openChangesOnHome = null;
+    }
+  };
+}
 
 let started = false;
 let pollTimer = null;
@@ -66,15 +76,14 @@ export function recordCompletedPriceSync(status) {
     ),
     movers,
     cards,
-    filter: null,
     syncedAt: status.finishedAt || status.lastSync?.syncedAt || "",
   };
   if (!lastPriceSyncOutcome.value.pricesUnchanged && priceSyncHasMovers(lastPriceSyncOutcome.value)) {
-    priceSyncMoversModalOpen.value = true;
+    openChangesOnHome?.();
   }
 }
 
-export function showStoredPriceSyncMovers(status, filter = null) {
+export function showStoredPriceSyncMovers(status) {
   const stored = status?.lastSync || status;
   if (!stored) {
     return;
@@ -84,13 +93,8 @@ export function showStoredPriceSyncMovers(status, filter = null) {
     message: stored.message || "Last price sync",
     movers: normalizePriceSyncMovers(stored.movers),
     cards: stored.cards || status?.cards || [],
-    filter: filter || null,
     syncedAt: stored.syncedAt || "",
   };
-  priceSyncMoversModalOpen.value = (
-    priceSyncHasMovers(lastPriceSyncOutcome.value)
-    || Boolean(filter)
-  );
 }
 
 export function formatPriceSyncRunningMessage(status, fallback = "Updating prices…") {
@@ -115,10 +119,6 @@ export function formatPriceSyncRunningMessage(status, fallback = "Updating price
 }
 
 export const PRICE_SYNC_POLL_MS = 1000;
-
-export function dismissPriceSyncMoversModal() {
-  priceSyncMoversModalOpen.value = false;
-}
 
 function stopPolling() {
   if (pollTimer) {

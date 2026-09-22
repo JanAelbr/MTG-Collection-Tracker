@@ -287,7 +287,6 @@ def list_art_style_card_movers(
         FINISH_NONFOIL,
         finish_label,
     )
-    from util.cardmarket_prices import PRICE_SYNC_MIN_ABS_DELTA
     from util.price_history import get_price_snapshot_dates
 
     normalized = normalize_set_code(set_code) or str(set_code or "").strip().upper()
@@ -351,8 +350,6 @@ def list_art_style_card_movers(
             if previous <= 0 or current == previous:
                 continue
             delta = current - previous
-            if abs(delta) < PRICE_SYNC_MIN_ABS_DELTA:
-                continue
             finish = finish_label(finish_id)
             label = name or f"{normalized} #{number}"
             if finish:

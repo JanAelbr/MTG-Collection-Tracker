@@ -4,6 +4,7 @@ import DeckSwapCardModal from "./DeckSwapCardModal.vue";
 import CardFinishBadge from "./CardFinishBadge.vue";
 import DeckStackCardDetail from "./DeckStackCardDetail.vue";
 import DeckTypeIcon from "./DeckTypeIcon.vue";
+import EdgeCarousel from "./EdgeCarousel.vue";
 import {
   effectiveDeckOwnedQty,
   isDeckCardFullyOwned,
@@ -184,7 +185,8 @@ function closeAddModal() {
         No cards to display.
       </div>
 
-      <div v-else class="deck-stacks-scroll">
+      <EdgeCarousel v-else label="deck cards">
+      <div class="deck-stacks-scroll is-edge-carousel-track">
         <section
           v-for="group in stackColumns"
           :key="group.key"
@@ -297,6 +299,7 @@ function closeAddModal() {
           </div>
         </section>
       </div>
+      </EdgeCarousel>
 
       <DeckSwapCardModal
         v-if="defaultDeckId"

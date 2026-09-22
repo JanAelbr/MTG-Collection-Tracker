@@ -12,6 +12,7 @@ import CardInteractiveImage from "./CardInteractiveImage.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import PriceStrategyValue from "./PriceStrategyValue.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
+import EdgeCarousel from "./EdgeCarousel.vue";
 import { cardFinish, cardRouteQuery, finishLabel } from "../utils/finishes";
 import { buildManaCurveChartData } from "../utils/manaCurve";
 import {
@@ -472,7 +473,8 @@ function unknownCardName(card) {
           No priced cards in this deck yet.
         </p>
 
-        <div v-else class="deck-overview-top-grid">
+        <EdgeCarousel v-else label="top cards">
+        <div class="deck-overview-top-grid is-edge-carousel-track">
           <figure
             v-for="(card, index) in topCards"
             :key="`${card.setCode}-${card.collectorNumber}-${cardFinish(card)}-${index}`"
@@ -518,6 +520,7 @@ function unknownCardName(card) {
             </figcaption>
           </figure>
         </div>
+        </EdgeCarousel>
       </section>
     </div>
 

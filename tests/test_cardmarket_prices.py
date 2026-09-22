@@ -499,6 +499,59 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         self.assertEqual(market_value_foil, 7.0)
         self.assertEqual(history_rows, [(0, 3.5), (1, 7.0)])
 
+    def test_sync_omits_unowned_cards_from_mover_overview(self):
+        unowned = {
+            "set_code": "LTR",
+            "collector_number": "2",
+            "name": "Unowned",
+            "market_value": 10.0,
+            "market_value_foil": None,
+            "market_value_etched": None,
+            "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=99",
+            "has_nonfoil": 1,
+            "has_foil": 0,
+            "has_etched": 0,
+        }
+        owned = {
+            "set_code": "LTR",
+            "collector_number": "1",
+            "name": "Owned",
+            "market_value": 1.0,
+            "market_value_foil": None,
+            "market_value_etched": None,
+            "cardmarket_url": "https://www.cardmarket.com/en/Magic/Products?idProduct=42",
+            "has_nonfoil": 1,
+            "has_foil": 0,
+            "has_etched": 0,
+        }
+        guide = {42: {"trend": 5.0}, 99: {"trend": 40.0}}
+        self.conn.close()
+        with unittest.mock.patch(
+            "util.cardmarket_prices.DB_PATH",
+            self.db_path,
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.load_price_sync_context",
+            return_value=self.context,
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.clear_unowned_prices_for_non_qualifying_sets",
+            return_value=0,
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.list_cards_for_price_sync",
+            return_value=[owned, unowned],
+        ), unittest.mock.patch(
+            "util.cardmarket_prices.load_price_guide_index",
+            return_value=guide,
+        ):
+            stats = sync_prices_from_guide(
+                "2026-06-16",
+                set_codes={"LTR"},
+                missing_only=False,
+            )
+
+        self.assertEqual(stats["updated_fields"], 2)
+        self.assertEqual([card["collectorNumber"] for card in stats["cards"]], ["1"])
+        self.assertEqual(stats["movers"]["absolute"]["risers"][0]["collectorNumber"], "1")
+
     def test_sync_skips_history_for_unchanged_values(self):
         row = {
             "set_code": "LTR",
@@ -552,7 +605,7 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
 
 
 class PriceMoverRankTests(unittest.TestCase):
-    def test_ranks_absolute_and_relative_and_ignores_sub_euro_moves(self):
+    def test_ranks_absolute_and_relative_including_sub_euro_moves(self):
         ranked = _rank_price_movers(
             [
                 {"delta": 1.0, "percent": 100.0},
@@ -566,19 +619,19 @@ class PriceMoverRankTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["delta"] for item in ranked["absolute"]["risers"]],
-            [10.0, 1.0],
+            [10.0, 1.0, 0.4],
         )
         self.assertEqual(
             [item["delta"] for item in ranked["absolute"]["fallers"]],
-            [-8.0, -2.0],
+            [-8.0, -2.0, -0.5],
         )
         self.assertEqual(
             [item["delta"] for item in ranked["relative"]["risers"]],
-            [1.0, 10.0],
+            [1.0, 0.4, 10.0],
         )
         self.assertEqual(
             [item["delta"] for item in ranked["relative"]["fallers"]],
-            [-2.0, -8.0],
+            [-0.5, -2.0, -8.0],
         )
 
 
