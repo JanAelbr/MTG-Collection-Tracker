@@ -227,6 +227,17 @@ export function filterCollectionCards(
     result = result.filter((card) => isEffectivelyOwned(card));
   } else if (ownedFilter === "unowned") {
     result = result.filter((card) => !isEffectivelyOwned(card));
+  } else if (ownedFilter === "missing-number") {
+    const ownedNumbers = new Set();
+    for (const card of cards || []) {
+      const finish = card.finish ?? card.foil ?? 0;
+      if ((finish === 0 || finish === 1) && isEffectivelyOwned(card)) {
+        ownedNumbers.add(`${String(card.setCode).toUpperCase()}|${card.collectorNumber}`);
+      }
+    }
+    result = result.filter((card) => !ownedNumbers.has(
+      `${String(card.setCode).toUpperCase()}|${card.collectorNumber}`,
+    ));
   }
   if (typeFilter && typeFilter !== "all") {
     result = result.filter((card) => cardMatchesCollectionTypeFilter(card, typeFilter));

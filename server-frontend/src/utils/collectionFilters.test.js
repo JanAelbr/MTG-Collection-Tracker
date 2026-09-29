@@ -172,4 +172,41 @@ describe("collectionFilters search", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0].name).toBe("Counterspell");
   });
+
+  it("hides a collector number owned as foil or non-foil", () => {
+    const cards = [
+      { setCode: "LTR", collectorNumber: "1", name: "Owned nonfoil", finish: 0, owned: 1 },
+      { setCode: "LTR", collectorNumber: "1", name: "Owned nonfoil", finish: 1, owned: 0 },
+      { setCode: "LTR", collectorNumber: "2", name: "Missing", finish: 0, owned: 0 },
+      { setCode: "LTR", collectorNumber: "2", name: "Missing", finish: 1, owned: 0 },
+      { setCode: "LTR", collectorNumber: "3", name: "Etched only", finish: 2, owned: 1 },
+      { setCode: "LTR", collectorNumber: "3", name: "Etched only", finish: 0, owned: 0 },
+    ];
+    const filtered = filterCollectionCards(cards, { ownedFilter: "missing-number" });
+    expect(filtered.map((card) => `${card.collectorNumber}:${card.finish}`)).toEqual([
+      "2:0",
+      "2:1",
+      "3:2",
+      "3:0",
+    ]);
+  });
+
+  it("combines unique numbers with a finish filter", () => {
+    const cards = [
+      { setCode: "LTR", collectorNumber: "1", name: "Owned nonfoil", finish: 0, owned: 1 },
+      { setCode: "LTR", collectorNumber: "1", name: "Owned nonfoil", finish: 1, owned: 0 },
+      { setCode: "LTR", collectorNumber: "2", name: "Missing", finish: 0, owned: 0 },
+      { setCode: "LTR", collectorNumber: "2", name: "Missing", finish: 1, owned: 0 },
+    ];
+    const foils = filterCollectionCards(cards, {
+      ownedFilter: "missing-number",
+      foilFilter: "foil",
+    });
+    expect(foils.map((card) => `${card.collectorNumber}:${card.finish}`)).toEqual(["2:1"]);
+    const nonfoils = filterCollectionCards(cards, {
+      ownedFilter: "missing-number",
+      foilFilter: "nonfoil",
+    });
+    expect(nonfoils.map((card) => `${card.collectorNumber}:${card.finish}`)).toEqual(["2:0"]);
+  });
 });

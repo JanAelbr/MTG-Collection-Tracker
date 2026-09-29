@@ -320,6 +320,7 @@ function setViewMode(mode) {
         type="button"
         class="collection-lens-chip"
         :class="{ active: activeLens === lens.id }"
+        :title="lens.title || undefined"
         @click="emit('select-lens', lens.id)"
       >
         {{ lens.label }}

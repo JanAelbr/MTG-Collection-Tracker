@@ -41,7 +41,7 @@ from util.price_history import (
 _ENRICHED_REPORTS_TTL = 300
 
 REPORT_TYPES = frozenset({"risers", "fallers", "all"})
-OWNED_FILTERS = frozenset({"owned", "all", "unowned"})
+OWNED_FILTERS = frozenset({"owned", "all", "unowned", "missing-number"})
 FOIL_FILTERS = frozenset({"all", "nonfoil", "foil", "etched"})
 TYPE_FILTERS = frozenset({"all", *COLLECTION_FILTER_TYPES})
 
@@ -175,6 +175,34 @@ def build_collection_filter_scopes(
         toughness_min=toughness_min,
         search=search,
     )
+    # Unique numbers must see foil and non-foil ownership even when the
+    # gallery is limited to one finish. Finish is applied earlier, so scan
+    # the same filters with every finish still present.
+    ownership_cards = None
+    if normalized_owned == "missing-number" and normalized_foil != "all":
+        ownership_cards = _apply_filters(
+            scope_cards,
+            set_code=set_code,
+            family=use_family,
+            art_style=effective_art,
+            owned_filter="all",
+            foil_filter="all",
+            type_filter=normalized_type,
+            color_filters=parsed_colors,
+            color_mode=parsed_color_mode,
+            storage_filters=storage_filters or [],
+        )
+        ownership_cards = _apply_all_view_extra_filters(
+            ownership_cards,
+            rarity_filter=rarity_filter,
+            cmc_min=cmc_min,
+            cmc_max=cmc_max,
+            price_min=price_min,
+            price_max=price_max,
+            power_min=power_min,
+            toughness_min=toughness_min,
+            search=search,
+        )
     filtered = _apply_filters(
         filter_scope,
         set_code=set_code,
@@ -185,6 +213,7 @@ def build_collection_filter_scopes(
         type_filter="all",
         color_filters=[],
         color_mode=parsed_color_mode,
+        ownership_cards=ownership_cards,
     )
     return {
         "setCode": set_code,
@@ -911,6 +940,7 @@ def _apply_filters(
     color_mode: str = "exact",
     storage_filters: list[str] | None = None,
     family: bool = False,
+    ownership_cards: list[dict] | None = None,
 ) -> list[dict]:
     result = cards
     if set_code and set_code != "All" and not family:
@@ -928,6 +958,17 @@ def _apply_filters(
         result = [card for card in result if card.get("owned")]
     elif owned_filter == "unowned":
         result = [card for card in result if not card.get("owned")]
+    elif owned_filter == "missing-number":
+        ownership_source = cards if ownership_cards is None else ownership_cards
+        owned_numbers = {
+            (card["setCode"], str(card["collectorNumber"]))
+            for card in ownership_source
+            if card.get("owned") and int(card.get("finish") or 0) in (0, 1)
+        }
+        result = [
+            card for card in result
+            if (card["setCode"], str(card["collectorNumber"])) not in owned_numbers
+        ]
     if type_filter and type_filter != "all":
         result = [
             card for card in result

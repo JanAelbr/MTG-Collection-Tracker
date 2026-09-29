@@ -1082,8 +1082,10 @@ function applyCollectionLens(lensId) {
     return;
   }
   ownedFilter.value = lens.ownedFilter;
-  foilFilter.value = lens.foilFilter || "all";
-  storeFoilFilter(foilFilter.value);
+  if ("foilFilter" in lens) {
+    foilFilter.value = lens.foilFilter || "all";
+    storeFoilFilter(foilFilter.value);
+  }
   if (lens.sort) {
     allCardsSort.value = lens.sort;
     allCardsSortDir.value = lens.sortDir || defaultAllCardsSortDir(lens.sort);

@@ -1,4 +1,4 @@
-import { formatEuro, formatProfit } from "./format.js";
+import { formatEuro, formatProfit, setShortName } from "./format.js";
 
 export const HISTORY_TOP_N = 3;
 export const HISTORY_TOP_SERIES = "top";
@@ -49,18 +49,17 @@ export function rebaseSeriesValues(values, { metric, scale } = normalizeHistoryV
     }
     return nums.map((value) => (value / base) * 100);
   }
-  if (unit === HISTORY_SCALE_ABSOLUTE) {
-    return nums.map((value, index) => (index === 0 ? 0 : value - nums[index - 1]));
+  const baseIndex = nums.findIndex((value) => value !== 0);
+  if (baseIndex < 0) {
+    return nums.map(() => 0);
   }
+  const base = nums[baseIndex];
   return nums.map((value, index) => {
-    if (index === 0) {
+    if (index < baseIndex) {
       return 0;
     }
-    const previous = nums[index - 1];
-    if (previous === 0) {
-      return 0;
-    }
-    return ((value - previous) / previous) * 100;
+    const delta = value - base;
+    return unit === HISTORY_SCALE_ABSOLUTE ? delta : (delta / base) * 100;
   });
 }
 
@@ -188,6 +187,53 @@ export function seriesPlotAmount(points, source, seriesId, view) {
     return 0;
   }
   return values[values.length - 1];
+}
+
+export function groupArtStyleSeriesOptions(points = [], view) {
+  const options = seriesPickerOptions(points, "artStyle", view);
+  const setNames = new Map();
+  for (const point of points || []) {
+    for (const row of point?.sets || []) {
+      const id = String(row.id || "");
+      if (id && row.label) {
+        setNames.set(id, row.label);
+      }
+    }
+  }
+  const top = [];
+  const groups = new Map();
+  for (const item of options) {
+    if (item.id === HISTORY_TOP_SERIES) {
+      top.push(item);
+      continue;
+    }
+    const parsed = parseArtStyleSeriesId(item.id, item.label);
+    const setCode = parsed.setCode || "";
+    const bucket = groups.get(setCode) || {
+      setCode,
+      label: setShortName({
+        setCode,
+        label: setNames.get(setCode) || setCode || "Other",
+      }) || setCode || "Other",
+      items: [],
+      value: Number.NEGATIVE_INFINITY,
+    };
+    bucket.items.push({
+      ...item,
+      styleLabel: parsed.artStyle || item.label,
+    });
+    const amount = Number(item.value);
+    if (Number.isFinite(amount) && amount > bucket.value) {
+      bucket.value = amount;
+    }
+    groups.set(setCode, bucket);
+  }
+  return {
+    top,
+    groups: [...groups.values()].sort((left, right) => (
+      right.value - left.value || left.label.localeCompare(right.label)
+    )),
+  };
 }
 
 export function seriesPickerOptions(points, source, view) {

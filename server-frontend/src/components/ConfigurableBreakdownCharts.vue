@@ -19,6 +19,7 @@ import {
   buildHistoryChartView,
   formatHistoryPlotValue,
   historySourceOptions,
+  groupArtStyleSeriesOptions,
   seriesPickerOptions,
 } from "../utils/breakdownHistory";
 
@@ -43,6 +44,7 @@ const options = computed(() => ({
 const { historyView, setHistoryView } = useHistoryView(props.storageKey);
 const charts = ref(loadBreakdownCharts(props.storageKey, options.value));
 const tilesModal = ref(null);
+const collapsedArtSets = ref({});
 
 watch(
   () => [props.storageKey, sources.value.map((source) => source.id).join("|")],
@@ -65,6 +67,21 @@ function chartTitle(chart) {
 
 function seriesChoices(chart) {
   return seriesPickerOptions(points.value, chart.source, historyView.value);
+}
+
+function artStyleGroups() {
+  return groupArtStyleSeriesOptions(points.value, historyView.value);
+}
+
+function artSetOpen(setCode) {
+  return !collapsedArtSets.value[setCode];
+}
+
+function toggleArtSet(setCode) {
+  collapsedArtSets.value = {
+    ...collapsedArtSets.value,
+    [setCode]: artSetOpen(setCode),
+  };
 }
 
 function seriesValueClass(value) {
@@ -154,10 +171,60 @@ function closeSeriesTiles() {
           <nav
             v-if="chart.source !== 'all'"
             class="breakdown-chart-series-list"
+            :class="{ 'is-grouped': chart.source === 'artStyle' }"
             :aria-label="`${chartTitle(chart)} series`"
           >
+            <template v-if="chart.source === 'artStyle'">
+              <button
+                v-for="item in artStyleGroups().top"
+                :key="item.id"
+                type="button"
+                class="breakdown-chart-series-option"
+                :class="{ active: chart.series === item.id }"
+                @click="updateChart(index, { series: item.id })"
+              >
+                <span class="breakdown-chart-series-label">{{ item.label }}</span>
+              </button>
+              <section
+                v-for="group in artStyleGroups().groups"
+                :key="group.setCode || group.label"
+                class="breakdown-chart-series-group"
+              >
+                <button
+                  type="button"
+                  class="breakdown-chart-series-set"
+                  :aria-expanded="artSetOpen(group.setCode)"
+                  :title="group.label"
+                  @click="toggleArtSet(group.setCode)"
+                >
+                  <span class="breakdown-chart-series-chevron" aria-hidden="true">
+                    {{ artSetOpen(group.setCode) ? "▾" : "▸" }}
+                  </span>
+                  <span class="breakdown-chart-series-label">{{ group.label }}</span>
+                </button>
+                <div v-show="artSetOpen(group.setCode)" class="breakdown-chart-series-group-items">
+                  <button
+                    v-for="item in group.items"
+                    :key="item.id"
+                    type="button"
+                    class="breakdown-chart-series-option"
+                    :class="{ active: chart.series === item.id }"
+                    @click="updateChart(index, { series: item.id })"
+                  >
+                    <span class="breakdown-chart-series-label">{{ item.styleLabel }}</span>
+                    <span
+                      v-if="item.value != null"
+                      class="breakdown-chart-series-value"
+                      :class="seriesValueClass(item.value)"
+                    >
+                      {{ formatHistoryPlotValue(item.value, historyView) }}
+                    </span>
+                  </button>
+                </div>
+              </section>
+            </template>
             <button
-              v-for="item in seriesChoices(chart)"
+              v-for="item in chart.source === 'artStyle' ? [] : seriesChoices(chart)"
               :key="item.id"
               type="button"
               class="breakdown-chart-series-option"

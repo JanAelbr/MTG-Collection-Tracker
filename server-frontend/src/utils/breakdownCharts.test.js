@@ -5,6 +5,7 @@ import {
 import {
   HISTORY_TOP_SERIES,
   buildHistoryChartView,
+  groupArtStyleSeriesOptions,
   historySourceOptions,
   seriesPickerOptions,
   topArtStyleMoversFromHistory,
@@ -131,6 +132,43 @@ describe("buildHistoryChartView", () => {
     });
   });
 
+  it("groups art style options by set, highest set first", () => {
+    const groupedPoints = [
+      {
+        date: "2026-08-01",
+        sets: [
+          { id: "LTR", label: "The Lord of the Rings (LTR)" },
+          { id: "MH3", label: "Modern Horizons 3 (MH3)" },
+        ],
+        artStyles: [
+          { id: "LTR|Showcase", label: "Showcase", current: 50 },
+          { id: "LTR|Borderless", label: "Borderless", current: 10 },
+          { id: "MH3|Showcase", label: "Showcase", current: 40 },
+        ],
+      },
+      {
+        date: "2026-08-15",
+        sets: [
+          { id: "LTR", label: "The Lord of the Rings (LTR)" },
+          { id: "MH3", label: "Modern Horizons 3 (MH3)" },
+        ],
+        artStyles: [
+          { id: "LTR|Showcase", label: "Showcase", current: 70 },
+          { id: "LTR|Borderless", label: "Borderless", current: 12 },
+          { id: "MH3|Showcase", label: "Showcase", current: 80 },
+        ],
+      },
+    ];
+    const grouped = groupArtStyleSeriesOptions(groupedPoints);
+    expect(grouped.top.map((item) => item.id)).toEqual([HISTORY_TOP_SERIES]);
+    expect(grouped.groups.map((group) => group.setCode)).toEqual(["MH3", "LTR"]);
+    expect(grouped.groups[0].label).toBe("Modern Horizons 3");
+    expect(grouped.groups[1].items.map((item) => item.styleLabel)).toEqual([
+      "Showcase",
+      "Borderless",
+    ]);
+  });
+
   it("orders picker options by relative price instead of euro value", () => {
     expect(seriesPickerOptions(points, "set", {
       metric: "value",
@@ -142,13 +180,59 @@ describe("buildHistoryChartView", () => {
     ]);
   });
 
-  it("ranks top series by period change when that view is selected", () => {
+  it("plots absolute change as the cumulative euro difference from the first price", () => {
+    const view = buildHistoryChartView([
+      ...points,
+      {
+        date: "2026-08-20",
+        copies: 12,
+        current: 120,
+        sets: [
+          { id: "LTR", label: "LTR", copies: 9, current: 88 },
+          { id: "LTC", label: "LTC", copies: 3, current: 32 },
+        ],
+      },
+    ], {
+      source: "set",
+      series: "LTR",
+      metric: "change",
+      scale: "absolute",
+    });
+    expect(view.series[0].values).toEqual([0, 30, 8]);
+  });
+
+  it("plots relative change as the cumulative percent from the first price", () => {
+    const view = buildHistoryChartView([
+      ...points,
+      {
+        date: "2026-08-20",
+        copies: 12,
+        current: 120,
+        sets: [
+          { id: "LTR", label: "LTR", copies: 9, current: 88 },
+          { id: "LTC", label: "LTC", copies: 3, current: 32 },
+        ],
+      },
+    ], {
+      source: "set",
+      series: "LTR",
+      metric: "change",
+      scale: "relative",
+    });
+    expect(view.series[0].values[0]).toBe(0);
+    expect(view.series[0].values[1]).toBeCloseTo(37.5);
+    expect(view.series[0].values[2]).toBeCloseTo(10);
+  });
+
+  it("ranks top series by cumulative relative change", () => {
     const view = buildHistoryChartView(points, {
       source: "set",
       metric: "change",
       scale: "relative",
     });
     expect(view.series.map((item) => item.id)).toEqual(["LTC", "LTR"]);
+    expect(view.series[0].values).toEqual([0, 50]);
+    expect(view.series[1].values[1]).toBeCloseTo(37.5);
   });
 });
 

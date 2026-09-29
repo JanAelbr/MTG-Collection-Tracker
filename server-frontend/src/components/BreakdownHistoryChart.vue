@@ -23,6 +23,7 @@ const props = defineProps({
 
 const emit = defineEmits(["open-series"]);
 
+const COPY_CHANGE_COLOR = "#ad1457";
 const DEFAULT_WIDTH = 640;
 const DEFAULT_HEIGHT = 220;
 const width = ref(DEFAULT_WIDTH);
@@ -179,10 +180,34 @@ function yFor(value) {
   return padding.value.top + plotHeight.value - ((amount - scaleMin.value) / range) * plotHeight.value;
 }
 
-function linePath(values) {
-  return (values || [])
-    .map((value, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(value)}`)
-    .join(" ");
+function copyChangedAt(copies, index) {
+  if (index <= 0) {
+    return false;
+  }
+  const current = Number(copies?.[index]) || 0;
+  const previous = Number(copies?.[index - 1]) || 0;
+  return current !== previous;
+}
+
+function linePaths(item) {
+  const values = item?.values || [];
+  const paths = [];
+  let commands = [];
+  values.forEach((value, index) => {
+    const point = `${xFor(index)} ${yFor(value)}`;
+    if (index === 0 || copyChangedAt(item.copies, index)) {
+      if (commands.length) {
+        paths.push(commands.join(" "));
+      }
+      commands = [`M ${point}`];
+      return;
+    }
+    commands.push(`L ${point}`);
+  });
+  if (commands.length) {
+    paths.push(commands.join(" "));
+  }
+  return paths.filter((path) => path.includes("L"));
 }
 
 function formatY(value) {
@@ -219,6 +244,13 @@ function openSeries(item) {
 }
 
 function seriesChange(item) {
+  if (
+    view.value.metric === "change"
+    && view.value.scale === "relative"
+    && baselineIndex.value === 0
+  ) {
+    return "";
+  }
   const values = item?.rawValues || item?.values || [];
   if (!values.length) {
     return "";
@@ -237,6 +269,16 @@ function selectBaseline(dot) {
   baselineIndex.value = baselineIndex.value === dot.index ? 0 : dot.index;
 }
 
+function copyDeltaLabel(delta) {
+  const amount = Number(delta) || 0;
+  if (!amount) {
+    return "";
+  }
+  const noun = Math.abs(amount) === 1 ? "copy" : "copies";
+  const sign = amount > 0 ? "+" : "−";
+  return `${sign}${Math.abs(amount)} ${noun}`;
+}
+
 const dots = computed(() => {
   const items = [];
   props.series.forEach((item, seriesIndex) => {
@@ -244,16 +286,21 @@ const dots = computed(() => {
       const raw = item.rawValues || item.values || [];
       const previousRaw = index > 0 ? raw[index - 1] : null;
       const currentRaw = raw[index];
+      const copies = Number(item.copies?.[index]) || 0;
+      const previousCopies = index > 0 ? (Number(item.copies?.[index - 1]) || 0) : copies;
+      const copyDelta = index > 0 ? copies - previousCopies : 0;
       items.push({
         key: `${item.id}-${index}`,
         index,
         x: xFor(index),
         y: yFor(value),
-        color: seriesColor(seriesIndex),
+        color: copyDelta ? COPY_CHANGE_COLOR : seriesColor(seriesIndex),
         date: props.dates[index] || "",
         label: item.label,
         value: Number(value) || 0,
-        copies: Number(item.copies?.[index]) || 0,
+        copies,
+        copyDelta,
+        copyDeltaLabel: copyDeltaLabel(copyDelta),
         isBaseline: index === baselineIndex.value,
         change: historyPlotFromZero(view.value)
           ? formatPercentChange(
@@ -352,17 +399,19 @@ const tooltipStyle = computed(() => {
           >
             {{ formatX(date, index) }}
           </text>
-          <path
-            v-for="(item, index) in series"
-            :key="item.id"
-            class="breakdown-history-line"
-            :d="linePath(item.values)"
-            fill="none"
-            :stroke="seriesColor(index)"
-            stroke-width="2.5"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-          />
+          <template v-for="(item, index) in series" :key="item.id">
+            <path
+              v-for="(path, pathIndex) in linePaths(item)"
+              :key="`${item.id}-${pathIndex}`"
+              class="breakdown-history-line"
+              :d="path"
+              fill="none"
+              :stroke="seriesColor(index)"
+              stroke-width="2.5"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            />
+          </template>
           <g v-for="dot in dots" :key="dot.key">
             <circle
               class="breakdown-history-hit"
@@ -383,7 +432,17 @@ const tooltipStyle = computed(() => {
               stroke-width="1.75"
               pointer-events="none"
             />
+            <rect
+              v-if="dot.copyDelta"
+              :x="dot.x - 4"
+              :y="dot.y - 4"
+              width="8"
+              height="8"
+              :fill="dot.color"
+              pointer-events="none"
+            />
             <circle
+              v-else
               :cx="dot.x"
               :cy="dot.y"
               r="3.5"
@@ -405,7 +464,10 @@ const tooltipStyle = computed(() => {
             {{ formatPlot(hovered.value) }}
             <template v-if="hovered.change"> {{ hovered.change }}</template>
           </span>
-          <span v-if="hovered.copies">{{ hovered.copies }} {{ hovered.copies === 1 ? "copy" : "copies" }}</span>
+          <span v-if="hovered.copies || hovered.copyDeltaLabel">
+            <template v-if="hovered.copies">{{ hovered.copies }} {{ hovered.copies === 1 ? "copy" : "copies" }}</template>
+            <template v-if="hovered.copyDeltaLabel"> · {{ hovered.copyDeltaLabel }}</template>
+          </span>
           <span class="breakdown-history-tooltip-hint">Click to measure % from here</span>
         </div>
       </Teleport>

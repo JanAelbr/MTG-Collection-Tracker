@@ -258,6 +258,61 @@ class ReportsApiServiceTests(unittest.TestCase):
             [("1", 1), ("2", 0)],
         )
 
+    def test_apply_filters_missing_number_hides_owned_foil_or_nonfoil(self):
+        """Owning foil or non-foil hides every finish of that collector number."""
+        cards = [
+            {"setCode": "LTR", "collectorNumber": "1", "finish": 0, "owned": True},
+            {"setCode": "LTR", "collectorNumber": "1", "finish": 1, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "1", "finish": 2, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "2", "finish": 0, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "2", "finish": 1, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "3", "finish": 2, "owned": True},
+            {"setCode": "LTR", "collectorNumber": "3", "finish": 0, "owned": False},
+        ]
+        filtered = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="missing-number",
+            foil_filter="all",
+        )
+        self.assertEqual(
+            [(card["collectorNumber"], card["finish"]) for card in filtered],
+            [("2", 0), ("2", 1), ("3", 2), ("3", 0)],
+        )
+
+    def test_apply_filters_missing_number_keeps_finish_filter(self):
+        """Foil or non-foil narrows the unique list without hiding the other finish's ownership."""
+        cards = [
+            {"setCode": "LTR", "collectorNumber": "1", "finish": 0, "owned": True},
+            {"setCode": "LTR", "collectorNumber": "1", "finish": 1, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "2", "finish": 0, "owned": False},
+            {"setCode": "LTR", "collectorNumber": "2", "finish": 1, "owned": False},
+        ]
+        foils = reports_service._apply_filters(
+            cards,
+            set_code="All",
+            art_style="",
+            owned_filter="missing-number",
+            foil_filter="foil",
+        )
+        self.assertEqual(
+            [(card["collectorNumber"], card["finish"]) for card in foils],
+            [("2", 1)],
+        )
+        nonfoils = reports_service._apply_filters(
+            [card for card in cards if card["finish"] == 0],
+            set_code="All",
+            art_style="",
+            owned_filter="missing-number",
+            foil_filter="all",
+            ownership_cards=cards,
+        )
+        self.assertEqual(
+            [(card["collectorNumber"], card["finish"]) for card in nonfoils],
+            [("2", 0)],
+        )
+
     def test_apply_filters_by_enchantment_type(self):
         cards = [
             {

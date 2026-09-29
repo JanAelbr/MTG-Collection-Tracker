@@ -44,7 +44,7 @@ const SEARCH_SORT_DIR_DEFAULTS = {
   power: "desc",
   toughness: "desc",
 };
-const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned"]);
+const ALL_CARDS_OWNED_FILTERS = new Set(["owned", "all", "unowned", "missing-number"]);
 const ALL_CARDS_FINISH_FILTERS = new Set(["nonfoil", "foil", "etched"]);
 import { COLLECTION_TYPE_FILTER_VALUES } from "./collectionTypes";
 import { COLLECTION_RARITY_FILTER_VALUES } from "./collectionRarities";

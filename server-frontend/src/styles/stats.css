@@ -589,6 +589,46 @@ button.stats-card-action:focus-visible {
   font-weight: 700;
 }
 
+.breakdown-chart-series-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.breakdown-chart-series-set {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #102027;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.breakdown-chart-series-set:hover {
+  background: #e4ebe6;
+}
+
+.breakdown-chart-series-chevron {
+  flex: 0 0 auto;
+  width: 12px;
+  color: #546e7a;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.breakdown-chart-series-group-items .breakdown-chart-series-option {
+  padding-left: 18px;
+}
+
 .breakdown-chart-body .breakdown-history-chart {
   min-width: 0;
   min-height: 0;

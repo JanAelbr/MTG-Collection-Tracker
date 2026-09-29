@@ -293,6 +293,16 @@ onMounted(async () => {
           >
             Unowned
           </button>
+          <button
+            v-if="showUnownedFilter"
+            type="button"
+            class="filter-button"
+            :class="{ active: ownedFilter === 'missing-number' }"
+            title="Hide collector numbers you already own in foil or non-foil"
+            @click="emit('set-owned-filter', 'missing-number')"
+          >
+            Unique
+          </button>
         </div>
       </div>
 
