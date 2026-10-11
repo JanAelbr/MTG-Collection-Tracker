@@ -8,7 +8,6 @@ from api.services.reports_service import (
     FOIL_FILTERS,
     ReportsError,
     _apply_filters,
-    _load_enriched_prints,
     _load_enriched_report_cards,
     _resolve_set_codes,
 )
@@ -109,48 +108,129 @@ def _fts_match_query(term: str, *, column: str | None = None) -> str:
     return " AND ".join(f"{token}*" for token in tokens)
 
 
-def _cheapest_market_value(
-    market_value,
-    market_value_foil,
-    market_value_etched,
-    *,
-    foil_filter: str = "all",
-) -> float | None:
-    values: list[float] = []
+_IDENTITY_JSON_SQL = """
+CASE
+  WHEN json_valid(c.color_identity)
+    AND TRIM(c.color_identity) NOT IN ('', '[]')
+  THEN c.color_identity
+  WHEN json_valid(c.colors) THEN c.colors
+  ELSE '[]'
+END
+""".strip()
+
+_WUBRG_SQL = "'W','U','B','R','G'"
+
+_CATALOG_SELECT_SQL = """
+    c.set_code,
+    c.collector_number,
+    c.name,
+    COALESCE(c.art_style, '') AS art_style,
+    COALESCE(c.image_uri, '') AS image_uri,
+    COALESCE(c.image_uri_back, '') AS image_uri_back,
+    c.cmc,
+    c.power,
+    c.toughness,
+    c.rarity,
+    c.colors,
+    c.color_identity,
+    COALESCE(c.oracle_text, '') AS oracle_text,
+    COALESCE(c.type_line, '') AS type_line,
+    COALESCE(c.card_type, '') AS card_type,
+    c.market_value,
+    c.market_value_foil,
+    c.market_value_etched,
+    c.has_nonfoil,
+    c.has_foil,
+    c.has_etched
+""".strip()
+
+_RARITY_RANK_SQL = """
+CASE LOWER(COALESCE(c.rarity, ''))
+  WHEN 'common' THEN 0
+  WHEN 'uncommon' THEN 1
+  WHEN 'rare' THEN 2
+  WHEN 'mythic' THEN 3
+  WHEN 'special' THEN 4
+  WHEN 'bonus' THEN 5
+  ELSE 99
+END
+""".strip()
+
+
+def _stat_sql(column: str) -> str:
+    return (
+        f"CASE WHEN {column} IS NULL OR TRIM({column}) = '' OR TRIM({column}) = '*' "
+        f"THEN NULL ELSE CAST({column} AS REAL) END"
+    )
+
+
+def _exact_identity_clause(colors: list[str]) -> tuple[str, list]:
+    """Color identity must equal the selected pips. Colorless is an empty identity."""
+    pips = [color for color in colors if color in {"W", "U", "B", "R", "G"}]
+    expr = f"({_IDENTITY_JSON_SQL})"
+    empty = (
+        f"NOT EXISTS (SELECT 1 FROM json_each({expr}) "
+        f"WHERE UPPER(json_each.value) IN ({_WUBRG_SQL}))"
+    )
+    if not pips:
+        return empty, []
+    placeholders = ", ".join("?" for _ in pips)
+    clause = (
+        f"(SELECT COUNT(*) FROM json_each({expr}) "
+        f"WHERE UPPER(json_each.value) IN ({_WUBRG_SQL})) = ? "
+        f"AND NOT EXISTS (SELECT 1 FROM json_each({expr}) "
+        f"WHERE UPPER(json_each.value) IN ({_WUBRG_SQL}) "
+        f"AND UPPER(json_each.value) NOT IN ({placeholders}))"
+    )
+    return clause, [len(pips), *pips]
+
+
+def _allowed_identity_clause(allowed: list[str]) -> tuple[str, list]:
+    """Card identity must be a subset of the allowed pips."""
+    pips = [color for color in allowed if color in {"W", "U", "B", "R", "G"}]
+    if not pips:
+        return _exact_identity_clause(["C"])
+    expr = f"({_IDENTITY_JSON_SQL})"
+    placeholders = ", ".join("?" for _ in pips)
+    clause = (
+        f"NOT EXISTS (SELECT 1 FROM json_each({expr}) "
+        f"WHERE UPPER(json_each.value) IN ({_WUBRG_SQL}) "
+        f"AND UPPER(json_each.value) NOT IN ({placeholders}))"
+    )
+    return clause, pips
+
+
+def _append_includes_color_clause(clauses: list[str], params: list, colors: list[str]) -> None:
+    color_parts: list[str] = []
+    for color in colors:
+        if color == "C":
+            color_parts.append("(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')")
+            continue
+        color_parts.append("c.colors LIKE ?")
+        params.append(f'%"{color}"%')
+    clauses.append("(" + " OR ".join(color_parts) + ")")
+
+
+def _positive_price_sql(foil_filter: str) -> str:
     normalized = (foil_filter or "all").strip().lower()
-
-    def _add(raw):
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return
-        if value > 0:
-            values.append(value)
-
-    if normalized in {"foil", "1"}:
-        _add(market_value_foil)
-    elif normalized in {"etched", "2"}:
-        _add(market_value_etched)
-    elif normalized in {"nonfoil", "0"}:
-        _add(market_value)
-    else:
-        _add(market_value)
-        _add(market_value_foil)
-        _add(market_value_etched)
-    return min(values) if values else None
-
-
-def _print_matches_foil_flags(row: sqlite3.Row, foil_filter: str) -> bool:
-    normalized = (foil_filter or "all").strip().lower()
-    if normalized in {"all", ""}:
-        return True
-    if normalized in {"foil", "1"}:
-        return bool(row["has_foil"])
-    if normalized in {"etched", "2"}:
-        return bool(row["has_etched"])
-    if normalized in {"nonfoil", "0"}:
-        return bool(row["has_nonfoil"]) if row["has_nonfoil"] is not None else True
-    return True
+    columns = {
+        "foil": "c.market_value_foil",
+        "1": "c.market_value_foil",
+        "etched": "c.market_value_etched",
+        "2": "c.market_value_etched",
+        "nonfoil": "c.market_value",
+        "0": "c.market_value",
+    }
+    column = columns.get(normalized)
+    if column:
+        return f"CASE WHEN {column} > 0 THEN {column} END"
+    return """(
+        SELECT MIN(value) FROM (
+            SELECT c.market_value AS value
+            UNION ALL SELECT c.market_value_foil
+            UNION ALL SELECT c.market_value_etched
+        ) WHERE value > 0
+    )"""
 
 
 def _build_catalog_search_clauses(
@@ -227,34 +307,12 @@ def _build_catalog_search_clauses(
         params.append(normalized_type)
 
     colors = list(color_filters or [])
-    if colors:
-        use_identity = parse_collection_color_mode(color_mode) == "exact"
-        color_parts: list[str] = []
-        for color in colors:
-            if color == "C":
-                if use_identity:
-                    color_parts.append(
-                        "("
-                        "c.color_identity IS NULL OR TRIM(c.color_identity) = ''"
-                        " OR c.color_identity = '[]'"
-                        " OR ("
-                        "(c.color_identity IS NULL OR TRIM(c.color_identity) = '')"
-                        " AND (c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
-                        ")"
-                        ")"
-                    )
-                else:
-                    color_parts.append(
-                        "(c.colors IS NULL OR TRIM(c.colors) = '' OR c.colors = '[]')"
-                    )
-            elif use_identity:
-                color_parts.append("(c.color_identity LIKE ? OR c.colors LIKE ?)")
-                params.append(f'%"{color}"%')
-                params.append(f'%"{color}"%')
-            else:
-                color_parts.append("c.colors LIKE ?")
-                params.append(f'%"{color}"%')
-        clauses.append("(" + " OR ".join(color_parts) + ")")
+    if colors and parse_collection_color_mode(color_mode) == "exact":
+        clause, extra = _exact_identity_clause(colors)
+        clauses.append(clause)
+        params.extend(extra)
+    elif colors:
+        _append_includes_color_clause(clauses, params, colors)
 
     roles = list(role_filters or [])
     if roles:
@@ -322,180 +380,287 @@ def _build_catalog_search_clauses(
     return clauses, params, joins, fts_query
 
 
-def _query_matching_prints(
-    conn: sqlite3.Connection,
-    *,
-    name_search: str = "",
-    text_search: str = "",
-    creature_type_search: str = "",
-    keyword_search: str = "",
-    type_filter: str = "all",
-    color_filters: list[str] | None = None,
-    color_mode: str = DEFAULT_COLLECTION_COLOR_MODE,
-    color_identity: list[str] | None = None,
-    rarity_filter: str = "all",
-    cmc_min: float | None = None,
-    cmc_max: float | None = None,
-    price_min: float | None = None,
-    price_max: float | None = None,
-    power_min: float | None = None,
-    toughness_min: float | None = None,
-    role_filters: list[str] | None = None,
-    owned_filter: str = "all",
-    storage_filters: list[str] | None = None,
-    foil_filter: str = "all",
-) -> list[dict]:
-    """Return lightweight print rows for catalog-wide search ranking (no set enrichment)."""
-    clauses, params, joins, _fts = _build_catalog_search_clauses(
-        conn,
-        name_search=name_search,
-        text_search=text_search,
-        creature_type_search=creature_type_search,
-        keyword_search=keyword_search,
-        type_filter=type_filter,
-        color_filters=color_filters,
-        color_mode=color_mode,
-        rarity_filter=rarity_filter,
-        cmc_min=cmc_min,
-        cmc_max=cmc_max,
-        power_min=power_min,
-        toughness_min=toughness_min,
-        role_filters=role_filters,
-        owned_filter=owned_filter,
-        storage_filters=storage_filters,
-        foil_filter=foil_filter,
-    )
-    join_sql = " ".join(joins)
+def _append_price_bounds(clauses: list[str], params: list, price_sql: str, price_min, price_max) -> None:
+    if price_min is not None:
+        clauses.append(f"({price_sql}) >= ?")
+        params.append(float(price_min))
+    if price_max is not None:
+        clauses.append(f"({price_sql}) <= ?")
+        params.append(float(price_max))
+
+
+def _catalog_match_parts(conn: sqlite3.Connection, **kwargs) -> tuple[list[str], list, list[str], str]:
+    """WHERE clauses for catalog search, including price and commander identity."""
+    price_min = kwargs.pop("price_min", None)
+    price_max = kwargs.pop("price_max", None)
+    color_identity = kwargs.pop("color_identity", None)
+    exact_name = str(kwargs.pop("exact_name", "") or "").strip()
+    foil_filter = kwargs.get("foil_filter") or "all"
+    clauses, params, joins, _fts = _build_catalog_search_clauses(conn, **kwargs)
+    if exact_name:
+        clauses.append("c.name = ?")
+        params.append(exact_name)
+    if color_identity is not None:
+        clause, extra = _allowed_identity_clause(list(color_identity))
+        clauses.append(clause)
+        params.extend(extra)
+    price_sql = _positive_price_sql(foil_filter)
+    _append_price_bounds(clauses, params, price_sql, price_min, price_max)
+    return clauses, params, joins, price_sql
+
+
+def _cards_from_sql(conn: sqlite3.Connection, joins: list[str]) -> tuple[str, str]:
     has_sets = bool(
         conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sets' LIMIT 1"
         ).fetchone()
     )
-    released_select = "s.released_at" if has_sets else "NULL AS released_at"
     sets_join = "LEFT JOIN sets s ON s.set_code = c.set_code" if has_sets else ""
+    released = "COALESCE(s.released_at, '')" if has_sets else "''"
+    return f"FROM cards c {sets_join} {' '.join(joins)}", released
+
+
+def _nulls_last_sql(expr: str, direction: str) -> str:
+    return f"CASE WHEN ({expr}) IS NULL THEN 1 ELSE 0 END ASC, ({expr}) {direction}"
+
+
+def _newest_order_sql(released_expr: str, direction: str) -> str:
+    collector = "CAST(c.collector_number AS INTEGER)"
+    art = "COALESCE(c.art_style, '')"
+    return f"{released_expr} {direction}, {collector} {direction}, {art} {direction}"
+
+
+def _search_order_sql(sort: str, direction: str, released_expr: str, price_sql: str) -> str:
+    newest = _newest_order_sql(released_expr, "DESC")
+    name = "LOWER(c.name)"
+    if sort == "name":
+        return f"{name} {direction}, {newest}"
+    if sort == "value":
+        return f"{_nulls_last_sql(price_sql, direction)}, {name} ASC, {newest}"
+    if sort == "cmc":
+        return f"{_nulls_last_sql('c.cmc', direction)}, {name} ASC, {newest}"
+    if sort == "power":
+        return f"{_nulls_last_sql(_stat_sql('c.power'), direction)}, {name} ASC, {newest}"
+    if sort == "toughness":
+        return f"{_nulls_last_sql(_stat_sql('c.toughness'), direction)}, {name} ASC, {newest}"
+    if sort == "rarity":
+        return f"{_RARITY_RANK_SQL} {direction}, {name} ASC, {newest}"
+    return _newest_order_sql(released_expr, direction)
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+            (table_name,),
+        ).fetchone()
+    )
+
+
+def _parse_stored_roles(raw) -> list[str]:
+    import json
+
+    try:
+        parsed = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(role) for role in parsed if role]
+
+
+def _roles_by_name(conn: sqlite3.Connection, names: list[str]) -> dict[str, list[str]]:
+    if not names or not _table_exists(conn, "card_name_roles"):
+        return {}
+    placeholders = ", ".join("?" for _ in names)
+    rows = conn.execute(
+        f"SELECT name, roles FROM card_name_roles WHERE name IN ({placeholders})",
+        names,
+    ).fetchall()
+    return {row[0]: _parse_stored_roles(row[1]) for row in rows}
+
+
+def _attach_roles(conn: sqlite3.Connection, cards: list[dict]) -> list[dict]:
+    roles = _roles_by_name(conn, [card["name"] for card in cards if card.get("name")])
+    if not roles:
+        return cards
+    return [{**card, "roles": roles.get(card.get("name") or "", [])} for card in cards]
+
+
+def _positive_price(raw) -> float | None:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _catalog_card_from_row(row: sqlite3.Row) -> dict:
+    keys = set(row.keys())
+    rarity = str(row["rarity"] or "").strip().lower() or None
+    released = row["released_at"] if "released_at" in keys else ""
+    owned = bool(row["owned_flag"]) if "owned_flag" in keys else False
+    return {
+        "setCode": row["set_code"],
+        "collectorNumber": str(row["collector_number"]),
+        "name": row["name"],
+        "artStyle": row["art_style"] or "",
+        "imageUri": row["image_uri"] or "",
+        "imageUriBack": row["image_uri_back"] or "",
+        "cmc": row["cmc"],
+        "power": row["power"],
+        "toughness": row["toughness"],
+        "rarity": rarity,
+        "colors": parse_card_colors(row["colors"]),
+        "colorIdentity": parse_card_colors(row["color_identity"]),
+        "oracleText": row["oracle_text"] or "",
+        "typeLine": row["type_line"] or "",
+        "cardType": row["card_type"] or "",
+        "marketValue": row["market_value"],
+        "marketValueFoil": row["market_value_foil"],
+        "marketValueEtched": row["market_value_etched"],
+        "currentValue": _positive_price(row["sort_price"] if "sort_price" in keys else None),
+        "hasNonfoil": bool(row["has_nonfoil"]) if row["has_nonfoil"] is not None else True,
+        "hasFoil": bool(row["has_foil"]),
+        "hasEtched": bool(row["has_etched"]),
+        "releasedAt": released or "",
+        "finish": 0,
+        "foil": 0,
+        "owned": owned,
+    }
+
+
+def _fetch_search_page(
+    conn: sqlite3.Connection,
+    *,
+    from_sql: str,
+    where_sql: str,
+    params: list,
+    order_sql: str,
+    price_sql: str,
+    owned_sql: str,
+    released_expr: str,
+    limit: int,
+    offset: int,
+) -> list[sqlite3.Row]:
+    sql = f"""
+        WITH matched AS (
+            SELECT
+                {_CATALOG_SELECT_SQL},
+                {released_expr} AS released_at,
+                ({price_sql}) AS sort_price,
+                CASE WHEN {owned_sql} THEN 1 ELSE 0 END AS owned_flag,
+                ROW_NUMBER() OVER (ORDER BY {order_sql}) AS global_rn
+            {from_sql}
+            WHERE {where_sql}
+        )
+        SELECT * FROM (
+            SELECT
+                matched.*,
+                MIN(global_rn) OVER (PARTITION BY name) AS name_pos,
+                ROW_NUMBER() OVER (
+                    PARTITION BY name
+                    ORDER BY
+                        CASE WHEN sort_price IS NULL OR sort_price <= 0 THEN 1 ELSE 0 END,
+                        sort_price,
+                        global_rn
+                ) AS cheap_rn
+            FROM matched
+        )
+        WHERE cheap_rn = 1
+        ORDER BY name_pos
+        LIMIT ? OFFSET ?
+    """
+    return conn.execute(sql, [*params, limit, offset]).fetchall()
+
+
+def _count_match_names(conn: sqlite3.Connection, from_sql: str, where_sql: str, params: list) -> int:
+    row = conn.execute(
+        f"SELECT COUNT(DISTINCT c.name) {from_sql} WHERE {where_sql}",
+        params,
+    ).fetchone()
+    return int(row[0])
+
+
+def _filtered_print_counts(
+    conn: sqlite3.Connection,
+    names: list[str],
+    from_sql: str,
+    where_sql: str,
+    params: list,
+) -> dict[str, int]:
+    if not names:
+        return {}
+    placeholders = ", ".join("?" for _ in names)
+    distinct = (
+        "c.set_code || char(31) || CAST(c.collector_number AS TEXT) "
+        "|| char(31) || COALESCE(c.art_style, '')"
+    )
+    rows = conn.execute(
+        f"""
+        SELECT c.name, COUNT(DISTINCT {distinct})
+        {from_sql}
+        WHERE {where_sql} AND c.name IN ({placeholders})
+        GROUP BY c.name
+        """,
+        [*params, *names],
+    ).fetchall()
+    return {row[0]: int(row[1]) for row in rows}
+
+
+def _with_variant_counts(
+    conn: sqlite3.Connection,
+    cards: list[dict],
+    *,
+    owned_filter: str,
+    from_sql: str,
+    where_sql: str,
+    params: list,
+) -> list[dict]:
+    names = [card.get("name") or "" for card in cards]
+    if (owned_filter or "").strip().lower() == "owned":
+        counts = _filtered_print_counts(conn, [name for name in names if name], from_sql, where_sql, params)
+    else:
+        counts = _catalog_variant_counts_for_names(conn, names)
+    return [
+        {**card, "variantCount": int(counts.get(card.get("name") or "", 1))}
+        for card in cards
+    ]
+
+
+def _owned_flag_sql(conn: sqlite3.Connection) -> str:
+    return _owned_print_exists_sql("c", include_instances=_has_card_instances_table(conn))
+
+
+def _query_catalog_prints(conn: sqlite3.Connection, *, set_code: str = "All", **kwargs) -> list[dict]:
+    """Matching catalog rows with images and stored prices, no report enrichment."""
+    clauses, params, joins, price_sql = _catalog_match_parts(conn, **kwargs)
+    normalized_set = (set_code or "All").strip()
+    if normalized_set.upper() != "ALL":
+        codes = _resolve_set_codes(conn, set_code=normalized_set)
+        placeholders = ", ".join("?" for _ in codes)
+        clauses.append(f"UPPER(c.set_code) IN ({placeholders})")
+        params.extend(code.upper() for code in codes)
+    from_sql, released = _cards_from_sql(conn, joins)
     rows = conn.execute(
         f"""
         SELECT
-            c.set_code,
-            c.collector_number,
-            c.name,
-            c.art_style,
-            c.cmc,
-            c.power,
-            c.toughness,
-            c.rarity,
-            c.colors,
-            c.color_identity,
-            c.oracle_text,
-            c.type_line,
-            c.card_type,
-            c.market_value,
-            c.market_value_foil,
-            c.market_value_etched,
-            c.has_nonfoil,
-            c.has_foil,
-            c.has_etched,
-            {released_select}
-        FROM cards c
-        {sets_join}
-        {join_sql}
+            {_CATALOG_SELECT_SQL},
+            {released} AS released_at,
+            ({price_sql}) AS sort_price,
+            CASE WHEN {_owned_flag_sql(conn)} THEN 1 ELSE 0 END AS owned_flag
+        {from_sql}
         WHERE {" AND ".join(clauses)}
         """,
         params,
     ).fetchall()
-
-    keyword_terms = parse_keyword_search_terms(keyword_search)
-    parsed_color_mode = parse_collection_color_mode(color_mode)
-    selected_colors = list(color_filters or [])
-    light_cards: list[dict] = []
-    for row in rows:
-        if not _print_matches_foil_flags(row, foil_filter):
-            continue
-        if keyword_terms:
-            oracle = (row["oracle_text"] or "").lower()
-            if not all(
-                re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", oracle)
-                for term in keyword_terms
-            ):
-                continue
-
-        card = {
-            "setCode": row["set_code"],
-            "collectorNumber": str(row["collector_number"]),
-            "name": row["name"],
-            "artStyle": row["art_style"] or "",
-            "cmc": row["cmc"],
-            "power": row["power"],
-            "toughness": row["toughness"],
-            "rarity": (str(row["rarity"] or "").strip().lower() or None),
-            "colors": parse_card_colors(row["colors"]),
-            "colorIdentity": parse_card_colors(row["color_identity"]),
-            "oracleText": row["oracle_text"] or "",
-            "typeLine": row["type_line"] or "",
-            "cardType": row["card_type"] or "",
-            "marketValue": row["market_value"],
-            "marketValueFoil": row["market_value_foil"],
-            "marketValueEtched": row["market_value_etched"],
-            "hasNonfoil": bool(row["has_nonfoil"]) if row["has_nonfoil"] is not None else True,
-            "hasFoil": bool(row["has_foil"]),
-            "hasEtched": bool(row["has_etched"]),
-            "releasedAt": row["released_at"] or "",
-            "finish": 0,
-            "foil": 0,
-        }
-        if selected_colors and not card_matches_collection_color_filter(
-            card,
-            selected_colors,
-            color_mode=parsed_color_mode,
-        ):
-            continue
-        if color_identity is not None and not _card_matches_allowed_color_identity(
-            card,
-            color_identity,
-        ):
-            continue
-
-        current_value = _cheapest_market_value(
-            row["market_value"],
-            row["market_value_foil"],
-            row["market_value_etched"],
-            foil_filter=foil_filter,
-        )
-        card["currentValue"] = current_value
-        if not card_matches_collection_price_filter(
-            card,
-            price_min=price_min,
-            price_max=price_max,
-        ):
-            continue
-        light_cards.append(card)
-    return light_cards
+    return _attach_roles(conn, [_catalog_card_from_row(row) for row in rows])
 
 
-def _pick_enriched_finish_for_print(
-    enriched_rows: list[dict],
-    *,
-    set_code: str,
-    collector_number: str,
-    foil_filter: str = "all",
-) -> dict | None:
-    matches = [
-        card for card in enriched_rows
-        if str(card.get("setCode") or "").upper() == str(set_code).upper()
-        and str(card.get("collectorNumber") or "") == str(collector_number)
-    ]
-    if not matches:
-        return None
-    normalized = (foil_filter or "all").strip().lower()
-    if normalized in {"foil", "1"}:
-        matches = [card for card in matches if int(card.get("finish") or 0) == 1]
-    elif normalized in {"etched", "2"}:
-        matches = [card for card in matches if int(card.get("finish") or 0) == 2]
-    elif normalized in {"nonfoil", "0"}:
-        matches = [card for card in matches if int(card.get("finish") or 0) == 0]
-    if not matches:
-        return None
-    return min(matches, key=_current_value_sort_key)
+def _search_page_bounds(page: int, page_size: int) -> tuple[int, int, int]:
+    safe_page_size = max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE))
+    safe_page = max(1, int(page))
+    return safe_page, safe_page_size, (safe_page - 1) * safe_page_size
 
 
 def _search_cards_print_first(
@@ -513,7 +678,7 @@ def _search_cards_print_first(
     page_size: int,
     filter_kwargs: dict,
 ) -> dict:
-    light_pool = _query_matching_prints(
+    clauses, params, joins, price_sql = _catalog_match_parts(
         conn,
         name_search=name_term,
         text_search=text_term,
@@ -523,64 +688,39 @@ def _search_cards_print_first(
         foil_filter=foil_filter,
         **filter_kwargs,
     )
-    release_dates = {
-        str(card.get("setCode") or "").upper(): card.get("releasedAt") or ""
-        for card in light_pool
-    }
-    # Fill any gaps from catalog for ranking consistency.
-    catalog_dates = _load_set_release_dates(conn)
-    for set_code, released_at in catalog_dates.items():
-        release_dates.setdefault(set_code, released_at)
-
-    ranked = _rank_search_pool(
-        light_pool,
-        sort=sort,
-        sort_dir=sort_dir,
-        release_dates=release_dates,
-    )
-    # Rank uses _newest_first_key which reads release_dates; light cards also have releasedAt.
-    unique_ranked = _dedupe_ranked_by_name(ranked)
-    total = len(unique_ranked)
-    safe_page_size = max(1, min(int(page_size), MAX_SEARCH_PAGE_SIZE))
-    safe_page = max(1, page)
-    start = (safe_page - 1) * safe_page_size
-    page_slice = unique_ranked[start : start + safe_page_size]
-
-    prints = [
-        (card.get("setCode") or "", str(card.get("collectorNumber") or ""))
-        for card in page_slice
-    ]
-    enriched = _load_enriched_prints(conn, prints)
-    page_cards = []
-    for light in page_slice:
-        picked = _pick_enriched_finish_for_print(
-            enriched,
-            set_code=light.get("setCode") or "",
-            collector_number=str(light.get("collectorNumber") or ""),
-            foil_filter=foil_filter,
-        )
-        page_cards.append(picked or light)
-
-    variant_counts = _search_variant_counts(
+    from_sql, released = _cards_from_sql(conn, joins)
+    where_sql = " AND ".join(clauses)
+    total = _count_match_names(conn, from_sql, where_sql, params)
+    safe_page, safe_page_size, offset = _search_page_bounds(page, page_size)
+    direction = "ASC" if normalize_search_sort_dir(sort, sort_dir) == "asc" else "DESC"
+    rows = _fetch_search_page(
         conn,
-        page_cards,
-        light_pool,
-        owned_filter=owned_filter,
+        from_sql=from_sql,
+        where_sql=where_sql,
+        params=params,
+        order_sql=_search_order_sql(normalize_search_sort(sort), direction, released, price_sql),
+        price_sql=price_sql,
+        owned_sql=_owned_flag_sql(conn),
+        released_expr=released,
+        limit=safe_page_size,
+        offset=offset,
     )
-    page_cards = [
-        {
-            **card,
-            "variantCount": int(variant_counts.get(card.get("name") or "", 1)),
-        }
-        for card in page_cards
-    ]
+    cards = _attach_roles(conn, [_catalog_card_from_row(row) for row in rows])
+    cards = _with_variant_counts(
+        conn,
+        cards,
+        owned_filter=owned_filter,
+        from_sql=from_sql,
+        where_sql=where_sql,
+        params=params,
+    )
     total_pages = max(1, (total + safe_page_size - 1) // safe_page_size) if total else 1
     return {
         "page": safe_page,
         "pageSize": safe_page_size,
         "totalMatches": total,
         "totalPages": total_pages,
-        "cards": page_cards,
+        "cards": cards,
     }
 
 
@@ -590,22 +730,6 @@ def _load_set_release_dates(conn: sqlite3.Connection) -> dict[str, str]:
         set_code: meta.get("released_at") or ""
         for set_code, meta in catalog.items()
     }
-
-
-def _sets_for_exact_name(conn: sqlite3.Connection, name: str) -> list[str]:
-    """Sets that print this exact card name — used to avoid enriching the whole catalog."""
-    rows = conn.execute(
-        f"""
-        SELECT DISTINCT set_code
-        FROM cards
-        WHERE name = ?
-          AND {exclude_alchemy_sql()}
-          AND {exclude_alchemy_art_style_sql()}
-        ORDER BY set_code
-        """,
-        (name.strip(),),
-    ).fetchall()
-    return [row[0] for row in rows]
 
 
 def _has_card_instances_table(conn: sqlite3.Connection) -> bool:
@@ -1612,23 +1736,14 @@ def list_name_variants(
         "toughness_min": toughness_min,
         "storage_filters": storage_filters or [],
     }
-    # Selecting one search result must not re-enrich every set in the catalog.
-    # Scope enrichment to sets that actually print this exact name.
-    name_set_codes = _sets_for_exact_name(conn, trimmed_name)
-    if (set_code or "All").strip().upper() != "ALL":
-        scoped = set(_resolve_set_codes(conn, set_code=set_code))
-        name_set_codes = [code for code in name_set_codes if code in scoped]
-
     # Variant browsing follows the search ownership scope: owned search only
-    # lists printings we have. Finish/price overlay still uses the full catalog
-    # so foil/etched guide prices remain on those owned prints.
-    pool = _filtered_pool(
+    # lists printings we have. Finish flags still come from the catalog row.
+    pool = _query_catalog_prints(
         conn,
         set_code=set_code,
         owned_filter=normalized_owned,
         foil_filter=normalized_foil,
         exact_name=trimmed_name,
-        set_codes=name_set_codes,
         **filter_kwargs,
     )
     release_dates = _load_set_release_dates(conn)
@@ -1645,13 +1760,12 @@ def list_name_variants(
     if normalized_foil == "all":
         full_pool = pool
     else:
-        full_pool = _filtered_pool(
+        full_pool = _query_catalog_prints(
             conn,
             set_code=set_code,
             owned_filter="all",
             foil_filter="all",
             exact_name=trimmed_name,
-            set_codes=name_set_codes,
             **filter_kwargs,
         )
     print_flags = _load_print_finish_flags(conn, trimmed_name)

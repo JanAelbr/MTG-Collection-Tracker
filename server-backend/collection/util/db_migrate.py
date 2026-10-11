@@ -233,8 +233,7 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
     )
 
 
-def ensure_cards_fts(conn: sqlite3.Connection) -> None:
-    """FTS5 index over card name/text for catalog search (prefix + token match)."""
+def _ensure_cards_fts_objects(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts USING fts5(
@@ -246,7 +245,6 @@ def ensure_cards_fts(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    # Keep the external-content index in sync with cards mutations.
     conn.execute(
         """
         CREATE TRIGGER IF NOT EXISTS cards_fts_ai AFTER INSERT ON cards BEGIN
@@ -274,13 +272,53 @@ def ensure_cards_fts(conn: sqlite3.Connection) -> None:
         END
         """
     )
+
+
+def _fts_doc_count(conn: sqlite3.Connection) -> int | None:
+    """Indexed documents. COUNT(*) on cards_fts follows the content table."""
     try:
-        fts_count = int(conn.execute("SELECT COUNT(*) FROM cards_fts").fetchone()[0])
-        cards_count = int(conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0])
+        row = conn.execute("SELECT COUNT(*) FROM cards_fts_docsize").fetchone()
     except sqlite3.Error:
+        return None
+    return int(row[0])
+
+
+def _fts_rowids_diverge(conn: sqlite3.Connection) -> bool:
+    ghost = conn.execute(
+        """
+        SELECT 1 FROM cards_fts_docsize AS d
+        WHERE NOT EXISTS (SELECT 1 FROM cards AS c WHERE c.rowid = d.id)
+        LIMIT 1
+        """
+    ).fetchone()
+    if ghost:
+        return True
+    missing = conn.execute(
+        """
+        SELECT 1 FROM cards AS c
+        WHERE NOT EXISTS (SELECT 1 FROM cards_fts_docsize AS d WHERE d.id = c.rowid)
+        LIMIT 1
+        """
+    ).fetchone()
+    return missing is not None
+
+
+def _cards_fts_needs_rebuild(conn: sqlite3.Connection) -> bool:
+    indexed = _fts_doc_count(conn)
+    if indexed is None:
+        return False
+    cards_count = int(conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0])
+    if indexed != cards_count:
+        return True
+    return _fts_rowids_diverge(conn)
+
+
+def ensure_cards_fts(conn: sqlite3.Connection) -> None:
+    """FTS5 index over card name/text for catalog search (prefix + token match)."""
+    _ensure_cards_fts_objects(conn)
+    if not _cards_fts_needs_rebuild(conn):
         return
-    if fts_count == cards_count:
-        return
+    log.info("Rebuilding cards_fts; indexed rowids do not match cards")
     conn.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
 
 

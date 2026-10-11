@@ -15,14 +15,9 @@ from api.services import search_service  # noqa: E402
 from api.cache import bump_cache_epoch  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.card_name_roles import ensure_card_name_roles_table  # noqa: E402
-from util.db_migrate import ensure_card_columns  # noqa: E402
+from util.db_migrate import ensure_card_columns, ensure_cards_fts  # noqa: E402
 from util.set_catalog import ensure_sets_table  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
-
-
-def _enrich_prints_return(cards):
-    """Adapter: mock `_load_enriched_prints` with a fixed print list."""
-    return list(cards)
 
 
 class ReportsApiServiceTests(unittest.TestCase):
@@ -515,8 +510,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         load_ranked.assert_called_once()
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_matches_name(self, load_enriched):
+    def test_search_matches_name(self):
         self.conn.execute(
             """
             UPDATE cards
@@ -536,52 +530,20 @@ class ReportsApiServiceTests(unittest.TestCase):
             """
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "1",
-                    "name": "Frodo Baggins",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Legendary Creature — Halfling Scout",
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "2",
-                    "name": "Samwise Gamgee",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Legendary Creature — Halfling Peasant",
-                    "currentValue": 1.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(self.conn, search="frodo")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
-        load_enriched.assert_called_once()
-        self.assertEqual(
-            load_enriched.call_args.args[1],
-            [("LTR", "1")],
-        )
+        self.assertEqual(payload["cards"][0]["setCode"], "LTR")
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_empty_query_returns_no_cards(self, load_enriched):
-        load_enriched.return_value = []
+    def test_search_empty_query_returns_no_cards(self):
         payload = search_service.search_cards(self.conn, search="")
         self.assertEqual(payload["totalMatches"], 0)
         self.assertEqual(payload["cards"], [])
         payload_text = search_service.search_cards(self.conn, text_search="")
         self.assertEqual(payload_text["totalMatches"], 0)
         self.assertEqual(payload_text["cards"], [])
-        load_enriched.assert_not_called()
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_matches_oracle_text(self, load_enriched):
+    def test_search_matches_oracle_text(self):
         self.conn.executemany(
             """
             INSERT INTO cards (
@@ -598,40 +560,11 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "10",
-                    "name": "Lightning Bolt",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Instant",
-                    "oracleText": "Lightning Bolt deals 3 damage to any target.",
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "11",
-                    "name": "Shock",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Instant",
-                    "oracleText": "Shock deals 2 damage to any target.",
-                    "currentValue": 1.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(self.conn, text_search="3 damage")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
-        load_enriched.assert_called_once()
-        self.assertEqual(load_enriched.call_args.args[1], [("LTR", "10")])
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_matches_creature_type(self, load_enriched):
+    def test_search_matches_creature_type(self):
         self.conn.executemany(
             """
             INSERT INTO cards (
@@ -645,36 +578,11 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "20",
-                    "name": "Frodo Baggins",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Legendary Creature — Halfling Scout",
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "21",
-                    "name": "Lightning Bolt",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Instant",
-                    "currentValue": 1.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(self.conn, creature_type_search="halfling")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_filters_by_role_or_match(self, load_enriched):
+    def test_search_filters_by_role_or_match(self):
         ensure_card_name_roles_table(self.conn)
         self.conn.executemany(
             """
@@ -701,43 +609,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "30",
-                    "name": "Cultivate",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Sorcery",
-                    "roles": ["ramp"],
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "31",
-                    "name": "Brainstorm",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Instant",
-                    "roles": ["draw"],
-                    "currentValue": 1.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "32",
-                    "name": "Swords to Plowshares",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Instant",
-                    "roles": ["removal"],
-                    "currentValue": 3.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(
             self.conn,
             role_filters=["ramp", "draw"],
@@ -746,8 +617,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         names = {card["name"] for card in payload["cards"]}
         self.assertEqual(names, {"Cultivate", "Brainstorm"})
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_role_only_without_name(self, load_enriched):
+    def test_search_role_only_without_name(self):
         ensure_card_name_roles_table(self.conn)
         self.conn.execute(
             """
@@ -764,21 +634,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             """
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "40",
-                    "name": "Sol Ring",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Artifact",
-                    "roles": ["ramp", "fast_mana"],
-                    "currentValue": 2.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(self.conn, role_filters=["ramp"])
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Sol Ring")
@@ -790,8 +645,7 @@ class ReportsApiServiceTests(unittest.TestCase):
             ["ramp", "draw"],
         )
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_filters_by_storage(self, load_enriched):
+    def test_search_filters_by_storage(self):
         self.conn.execute(
             """
             UPDATE cards
@@ -800,21 +654,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             """
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "1",
-                    "name": "Frodo Baggins",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Legendary Creature — Halfling Scout",
-                    "locations": [{"slug": "storage:general", "label": "General", "count": 2}],
-                    "currentValue": 2.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(
             self.conn,
             search="",
@@ -832,8 +671,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_filters_by_type(self, load_enriched):
+    def test_search_filters_by_type(self):
         self.conn.executemany(
             """
             INSERT INTO cards (
@@ -849,34 +687,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "50",
-                    "name": "Lightning Bolt",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Instant",
-                    "cardType": "instant",
-                    "oracleText": "Lightning Bolt deals 3 damage to any target.",
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "51",
-                    "name": "Grizzly Bears",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "typeLine": "Creature — Bear",
-                    "cardType": "creature",
-                    "oracleText": "",
-                    "currentValue": 0.1,
-                },
-            ]
-        )
         payload = search_service.search_cards(
             self.conn,
             search="",
@@ -886,9 +696,8 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Lightning Bolt")
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_creature_and_colors_scopes_set_codes(self, load_enriched):
-        """Creature+color search must enrich only the ranked page prints."""
+    def test_search_creature_and_colors_scopes_set_codes(self):
+        """Creature+color search matches the exact identity across sets."""
         self.conn.executemany(
             """
             INSERT INTO cards (
@@ -912,21 +721,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             [("IKO", "2"), ("WAR", "3")],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "IKO",
-                    "collectorNumber": "2",
-                    "name": "Parcelbeast",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "colors": ["U", "G"],
-                    "typeLine": "Creature — Elemental Beast",
-                    "currentValue": 2.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(
             self.conn,
             creature_type_search="beast",
@@ -935,73 +729,49 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Parcelbeast")
-        load_enriched.assert_called_once()
-        self.assertEqual(load_enriched.call_args.args[1], [("IKO", "2")])
+        self.assertEqual(payload["cards"][0]["setCode"], "IKO")
+        self.assertTrue(payload["cards"][0]["owned"])
 
-    @patch("api.services.search_service._load_enriched_report_cards")
-    def test_list_name_variants(self, load_enriched):
-        load_enriched.return_value = (
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "1",
-                    "name": "Frodo Baggins",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "currentValue": 2.0,
-                },
-                {
-                    "setCode": "HOU",
-                    "collectorNumber": "99",
-                    "name": "Frodo Baggins",
-                    "artStyle": "Borderless",
-                    "finish": 0,
-                    "owned": False,
-                    "currentValue": 5.0,
-                },
-            ],
-            None,
+    def test_list_name_variants(self):
+        self.conn.execute(
+            """
+            UPDATE cards
+            SET name = 'Frodo Baggins', market_value = 2.0
+            WHERE set_code = 'LTR' AND collector_number = '1'
+            """
         )
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched
+            ) VALUES ('HOU', '99', 'Frodo Baggins', 'Borderless', 5.0, 1, 0, 0)
+            """
+        )
+        self.conn.commit()
         payload = search_service.list_name_variants(self.conn, name="Frodo Baggins")
         self.assertEqual(payload["totalVariants"], 2)
         set_codes = [variant["setCode"] for variant in payload["variants"]]
         self.assertEqual(set(set_codes), {"LTR", "HOU"})
 
-    @patch("api.services.search_service._load_enriched_report_cards")
-    def test_list_name_variants_owned_filter_hides_unowned_prints(self, load_enriched):
+    def test_list_name_variants_owned_filter_hides_unowned_prints(self):
         """Owned search only browses printings we actually own."""
-        load_enriched.return_value = (
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "1",
-                    "name": "Frodo Baggins",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": True,
-                    "currentValue": 2.0,
-                    "valuesByStrategy": {"trend": 2.0},
-                    "hasNonfoil": True,
-                    "hasFoil": False,
-                    "hasEtched": False,
-                },
-                {
-                    "setCode": "HOU",
-                    "collectorNumber": "99",
-                    "name": "Frodo Baggins",
-                    "artStyle": "Borderless",
-                    "finish": 0,
-                    "owned": False,
-                    "currentValue": 5.0,
-                    "valuesByStrategy": {"trend": 5.0},
-                    "hasNonfoil": True,
-                    "hasFoil": False,
-                    "hasEtched": False,
-                },
-            ],
-            None,
+        self.conn.execute(
+            """
+            UPDATE cards
+            SET name = 'Frodo Baggins', market_value = 2.0
+            WHERE set_code = 'LTR' AND collector_number = '1'
+            """
         )
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched
+            ) VALUES ('HOU', '99', 'Frodo Baggins', 'Borderless', 5.0, 1, 0, 0)
+            """
+        )
+        self.conn.commit()
         payload = search_service.list_name_variants(
             self.conn,
             name="Frodo Baggins",
@@ -1012,9 +782,7 @@ class ReportsApiServiceTests(unittest.TestCase):
         self.assertEqual(payload["variants"][0]["setCode"], "LTR")
         self.assertTrue(payload["variants"][0].get("owned"))
 
-    @patch("api.services.search_service._load_enriched_report_cards")
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_and_variants_order_newest_first(self, load_prints, load_enriched):
+    def test_search_and_variants_order_newest_first(self):
         ensure_sets_table(self.conn)
         self.conn.executemany(
             """
@@ -1041,50 +809,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        enriched_cards = [
-            {
-                "setCode": "LTR",
-                "collectorNumber": "1",
-                "name": "Lightning Bolt",
-                "artStyle": "01. Main set",
-                "finish": 0,
-                "owned": False,
-                "typeLine": "Instant",
-                "currentValue": 1.0,
-            },
-            {
-                "setCode": "MH3",
-                "collectorNumber": "120",
-                "name": "Lightning Bolt",
-                "artStyle": "Borderless",
-                "finish": 0,
-                "owned": False,
-                "typeLine": "Instant",
-                "currentValue": 2.0,
-            },
-            {
-                "setCode": "LTR",
-                "collectorNumber": "2",
-                "name": "Shock",
-                "artStyle": "01. Main set",
-                "finish": 0,
-                "owned": False,
-                "typeLine": "Instant",
-                "currentValue": 1.0,
-            },
-            {
-                "setCode": "MH3",
-                "collectorNumber": "121",
-                "name": "Shock",
-                "artStyle": "Borderless",
-                "finish": 0,
-                "owned": False,
-                "typeLine": "Instant",
-                "currentValue": 1.5,
-            },
-        ]
-        load_prints.return_value = _enrich_prints_return(enriched_cards)
-        load_enriched.return_value = (enriched_cards, None)
         search_payload = search_service.search_cards(self.conn, search="lightning")
         self.assertEqual(search_payload["totalMatches"], 1)
         self.assertEqual(search_payload["sort"], "newest")
@@ -1097,8 +821,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             {card["name"] for card in search_payload["cards"]},
             {"Lightning Bolt"},
         )
-        load_prints.assert_called_once()
-        self.assertEqual(load_prints.call_args.args[1], [("MH3", "120")])
 
         variants_payload = search_service.list_name_variants(self.conn, name="Lightning Bolt")
         self.assertEqual(
@@ -1106,8 +828,7 @@ class ReportsApiServiceTests(unittest.TestCase):
             ["MH3", "LTR"],
         )
 
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_search_sort_by_name_and_value(self, load_enriched):
+    def test_search_sort_by_name_and_value(self):
         ensure_sets_table(self.conn)
         self.conn.executemany(
             """
@@ -1134,55 +855,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_enriched.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "10",
-                    "name": "Lightning Bolt",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Instant",
-                    "currentValue": 1.0,
-                    "cmc": 1.0,
-                },
-                {
-                    "setCode": "MH3",
-                    "collectorNumber": "120",
-                    "name": "Lightning Bolt",
-                    "artStyle": "Borderless",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Instant",
-                    "currentValue": 5.0,
-                    "cmc": 1.0,
-                },
-                {
-                    "setCode": "LTR",
-                    "collectorNumber": "11",
-                    "name": "Shock",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Instant",
-                    "currentValue": 3.0,
-                    "cmc": 1.0,
-                },
-                {
-                    "setCode": "MH3",
-                    "collectorNumber": "121",
-                    "name": "Shock",
-                    "artStyle": "Borderless",
-                    "finish": 0,
-                    "owned": False,
-                    "typeLine": "Instant",
-                    "currentValue": 0.5,
-                    "cmc": 1.0,
-                },
-            ]
-        )
-
         by_name = search_service.search_cards(
             self.conn, creature_type_search="instant", sort="name", sort_dir="asc"
         )
@@ -1192,7 +864,6 @@ class ReportsApiServiceTests(unittest.TestCase):
             [card["name"] for card in by_name["cards"]],
             ["Lightning Bolt", "Shock"],
         )
-        self.assertEqual(len(load_enriched.call_args.args[1]), 2)
 
         by_value = search_service.search_cards(
             self.conn, creature_type_search="instant", sort="value", sort_dir="desc"
@@ -1209,9 +880,8 @@ class ReportsApiServiceTests(unittest.TestCase):
         )
 
     @patch("api.services.reports_service._load_enriched_set")
-    @patch("api.services.search_service._load_enriched_prints")
-    def test_catalog_name_search_does_not_enrich_full_sets(self, load_prints, load_set):
-        """Catalog search enriches page prints only — never whole matched sets."""
+    def test_catalog_name_search_does_not_enrich_full_sets(self, load_set):
+        """Catalog search reads card rows directly and does not load whole sets."""
         self.conn.executemany(
             """
             INSERT INTO cards (
@@ -1228,28 +898,65 @@ class ReportsApiServiceTests(unittest.TestCase):
             ],
         )
         self.conn.commit()
-        load_prints.return_value = _enrich_prints_return(
-            [
-                {
-                    "setCode": "C21",
-                    "collectorNumber": "1",
-                    "name": "Sol Ring",
-                    "artStyle": "01. Main set",
-                    "finish": 0,
-                    "owned": False,
-                    "currentValue": 1.0,
-                },
-            ]
-        )
         payload = search_service.search_cards(self.conn, search="Sol Ring")
         self.assertEqual(payload["totalMatches"], 1)
         self.assertEqual(payload["cards"][0]["name"], "Sol Ring")
+        self.assertEqual(payload["cards"][0]["variantCount"], 3)
+        self.assertIn(payload["cards"][0]["setCode"], {"C21", "LTR", "MH2"})
         load_set.assert_not_called()
-        load_prints.assert_called_once()
-        prints = load_prints.call_args.args[1]
-        self.assertEqual(len(prints), 1)
-        self.assertIn(prints[0][0], {"C21", "LTR", "MH2"})
-        self.assertEqual(prints[0][1], {"C21": "1", "LTR": "3", "MH2": "5"}[prints[0][0]])
+
+    def test_search_returns_cards_from_multiple_sets(self):
+        self.conn.executemany(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched
+            ) VALUES (?, ?, ?, '01. Main set', 1.0, 1, 0, 0)
+            """,
+            [
+                ("LTR", "80", "Alpha Card"),
+                ("MH3", "81", "Beta Card"),
+            ],
+        )
+        self.conn.commit()
+        payload = search_service.search_cards(self.conn, search="card")
+        set_codes = {card["setCode"] for card in payload["cards"]}
+        self.assertIn("LTR", set_codes)
+        self.assertIn("MH3", set_codes)
+        self.assertGreaterEqual(payload["totalMatches"], 2)
+
+    def test_stale_cards_fts_rebuilds_and_finds_second_set(self):
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched
+            ) VALUES ('LTR', '90', 'Frodo Baggins', '01. Main set', 1.0, 1, 0, 0)
+            """
+        )
+        self.conn.commit()
+        ensure_cards_fts(self.conn)
+        self.conn.execute("DROP TRIGGER IF EXISTS cards_fts_ai")
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, has_nonfoil, has_foil, has_etched
+            ) VALUES ('MH3', '91', 'Frodo Baggins', 'Borderless', 2.0, 1, 0, 0)
+            """
+        )
+        self.conn.commit()
+        indexed = self.conn.execute("SELECT COUNT(*) FROM cards_fts_docsize").fetchone()[0]
+        cards = self.conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+        self.assertNotEqual(indexed, cards)
+        ensure_cards_fts(self.conn)
+        indexed = self.conn.execute("SELECT COUNT(*) FROM cards_fts_docsize").fetchone()[0]
+        cards = self.conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+        self.assertEqual(indexed, cards)
+        payload = search_service.search_cards(self.conn, search="frodo")
+        self.assertEqual(payload["totalMatches"], 1)
+        self.assertEqual(payload["cards"][0]["name"], "Frodo Baggins")
+        self.assertGreaterEqual(payload["cards"][0]["variantCount"], 2)
 
     @patch("api.services.reports_service.values_by_strategy_for_finish")
     def test_enrich_card_stores_values_by_strategy(self, values_mock):
