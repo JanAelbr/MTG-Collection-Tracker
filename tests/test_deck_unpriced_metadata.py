@@ -158,6 +158,20 @@ class DeckUnpricedMetadataRefreshTests(unittest.TestCase):
         self.assertEqual(stats["stats"]["unknownCount"], 0)
         self.assertEqual(stats["stats"]["current"], 2.5)
 
+    @patch("api.services.pricing_helpers.price_from_strategy", return_value=2.5)
+    def test_deck_viewer_uses_catalog_name_when_stored_name_is_placeholder(self, _price_mock):
+        self.conn.execute(
+            "UPDATE deck_cards SET card_name = 'LTC #284', in_catalog = 1"
+        )
+        self.conn.execute(
+            "UPDATE cards SET market_value = 2.5 WHERE id = 'LTC-284'"
+        )
+        self.conn.commit()
+
+        stats = decks_service.load_deck_stats(self.conn, deck_id="1")
+
+        self.assertEqual(stats["stats"]["cards"][0]["cardName"], "Sol Ring")
+
     @patch("util.scryfall_catalog_sync.import_set_catalog_from_scryfall", return_value=120)
     def test_refresh_updates_stale_in_catalog_flags(self, mock_import):
         self.conn.execute("UPDATE deck_cards SET in_catalog = 0")

@@ -1,4 +1,5 @@
 import { formatEuro, formatProfit, setShortName } from "./format.js";
+import { profileLocalStorage } from "./profileStorage.js";
 
 export const HISTORY_TOP_N = 3;
 export const HISTORY_TOP_SERIES = "top";
@@ -23,7 +24,7 @@ export function loadHistoryView(storageKey) {
     return normalizeHistoryView(null);
   }
   try {
-    return normalizeHistoryView(JSON.parse(localStorage.getItem(`${storageKey}:view`) || "null"));
+    return normalizeHistoryView(JSON.parse(profileLocalStorage.getItem(`${storageKey}:view`) || "null"));
   } catch {
     return normalizeHistoryView(null);
   }
@@ -33,7 +34,7 @@ export function saveHistoryView(storageKey, view) {
   if (!storageKey || typeof localStorage === "undefined") {
     return;
   }
-  localStorage.setItem(`${storageKey}:view`, JSON.stringify(normalizeHistoryView(view)));
+  profileLocalStorage.setItem(`${storageKey}:view`, JSON.stringify(normalizeHistoryView(view)));
 }
 
 export function rebaseSeriesValues(values, { metric, scale } = normalizeHistoryView(null)) {

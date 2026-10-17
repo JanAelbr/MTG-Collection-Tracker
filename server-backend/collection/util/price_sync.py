@@ -4,11 +4,11 @@ from datetime import date
 
 from lib.art_styles import get_art_style
 from lib.config import (
-    DB_PATH,
     HTTP_USER_AGENT,
     canonical_set_code_lower,
     normalize_set_code,
 )
+from lib.db import connect_catalog
 from lib.run_log import BuildTimer, get_logger
 from util.cardmarket_prices import sync_prices_from_guide
 from util.last_price_sync import empty_price_sync_movers
@@ -16,7 +16,6 @@ from util.card_finishes import card_finish_flags
 from util.card_prices import load_existing_card_prices
 from util.cardmarket_urls import load_existing_cardmarket_urls, merge_cardmarket_urls
 from util.db_migrate import ensure_card_columns, ensure_card_prices_table
-from util.deck_tables import list_deck_sync_set_codes
 from util.scryfall_card import (
     card_cmc,
     card_color_identity_json,
@@ -39,7 +38,7 @@ from util.alchemy_cards import is_alchemy_scryfall_card
 from util.card_name_roles import refresh_card_name_roles_for_card
 from util.scryfall_client import scryfall_get
 from util.set_catalog import upsert_set_from_card
-from util.tracked_sets import ensure_tracked_sets_ready, list_tracked_set_codes
+from util.tracked_sets import list_tracked_set_codes
 
 HEADERS = {"User-Agent": HTTP_USER_AGENT}
 INSERT_CARD_SQL = """
@@ -107,14 +106,19 @@ def mark_catalog_synced(cursor, set_code: str, synced_at: str) -> None:
 
 
 def get_set_codes() -> list[str]:
-    with sqlite3.connect(DB_PATH) as conn:
-        ensure_tracked_sets_ready(conn)
-        purchase_sets = {
+    """Tracked sets plus deck print sets across every profile (lowercase codes)."""
+    from util.profile_demand import collect_catalog_demand
+
+    with connect_catalog(row_factory=None) as conn:
+        tracked_sets = {
             canonical_set_code_lower(code)
             for code in list_tracked_set_codes(conn)
         }
-        deck_sets = {canonical_set_code_lower(code) for code in list_deck_sync_set_codes(conn)}
-    return sorted(code for code in (purchase_sets | deck_sets) if code)
+    deck_sets = {
+        canonical_set_code_lower(code)
+        for code in collect_catalog_demand().deck_set_codes
+    }
+    return sorted(code for code in (tracked_sets | deck_sets) if code)
 
 
 def scryfall_search_url(set_code: str) -> str:
@@ -345,9 +349,12 @@ def update_cardmarket_prices_only(
     )
     timer = BuildTimer(log)
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    ensure_card_prices_table(conn)
-    conn.close()
+    conn = connect_catalog(row_factory=None)
+    try:
+        ensure_card_prices_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
 
     tracked_set_codes = {normalize_set_code(code) for code in set_codes if normalize_set_code(code)}
     if not tracked_set_codes:

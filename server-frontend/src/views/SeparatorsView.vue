@@ -25,8 +25,11 @@ import {
   saveStorageSeparatorStyle,
 } from "../utils/storageSeparatorStyle";
 import {
+  buildBinderArtStyleGroups,
   buildBinderSeparators,
   buildStorageSeparators,
+  loadBinderExcludedArtStyles,
+  saveBinderExcludedArtStyles,
 } from "../utils/separatorItems";
 
 const MODE_STORAGE = "storage";
@@ -63,15 +66,26 @@ const {
 
 const mode = ref(MODE_STORAGE);
 const binderStyle = ref({ ...DEFAULT_BINDER_SEPARATOR_STYLE });
+const excludedArtStyleKeys = ref(new Set());
 const storageStyle = ref({ ...DEFAULT_STORAGE_SEPARATOR_STYLE });
 const previewIndex = ref(0);
 const rulesBySetCode = ref(new Map());
 const rulesLoading = ref(false);
 const rulesError = ref("");
+let excludedArtStylesReady = false;
+
+const artStyleGroups = computed(() => {
+  if (mode.value !== MODE_BINDER) {
+    return [];
+  }
+  return buildBinderArtStyleGroups(selectedSets.value, rulesBySetCode.value);
+});
 
 const separators = computed(() => {
   if (mode.value === MODE_BINDER) {
-    return buildBinderSeparators(selectedSets.value, rulesBySetCode.value);
+    return buildBinderSeparators(selectedSets.value, rulesBySetCode.value, {
+      excludedKeys: excludedArtStyleKeys.value,
+    });
   }
   return buildStorageSeparators(selectedSets.value);
 });
@@ -90,6 +104,42 @@ const showInitialLoading = computed(() =>
 
 function selectPreview(index) {
   previewIndex.value = index;
+}
+
+function toggleBinderArtStyle(key) {
+  const next = new Set(excludedArtStyleKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  excludedArtStyleKeys.value = next;
+}
+
+function selectAllBinderArtStyles() {
+  const next = new Set(excludedArtStyleKeys.value);
+  for (const group of artStyleGroups.value) {
+    for (const style of group.styles || []) {
+      next.delete(style.key);
+    }
+  }
+  excludedArtStyleKeys.value = next;
+}
+
+function selectSetBinderArtStyles(group) {
+  const next = new Set(excludedArtStyleKeys.value);
+  for (const style of group.styles || []) {
+    next.delete(style.key);
+  }
+  excludedArtStyleKeys.value = next;
+}
+
+function clearSetBinderArtStyles(group) {
+  const next = new Set(excludedArtStyleKeys.value);
+  for (const style of group.styles || []) {
+    next.add(style.key);
+  }
+  excludedArtStyleKeys.value = next;
 }
 
 function printSeparators() {
@@ -159,6 +209,13 @@ watch(
   { deep: true },
 );
 
+watch(excludedArtStyleKeys, (next) => {
+  if (!excludedArtStylesReady) {
+    return;
+  }
+  saveBinderExcludedArtStyles(next);
+});
+
 watch(
   storageStyle,
   (next) => {
@@ -180,6 +237,8 @@ watch(
 
 onMounted(async () => {
   binderStyle.value = loadBinderSeparatorStyle();
+  excludedArtStyleKeys.value = loadBinderExcludedArtStyles();
+  excludedArtStylesReady = true;
   storageStyle.value = loadStorageSeparatorStyle();
   await loadPicker();
 });
@@ -328,7 +387,7 @@ onMounted(async () => {
         One taller divider per set — sleeve width, set label on the top tab.
       </p>
       <p v-else class="separators-page-muted">
-        Card-sized inserts — one per set art style, with collector number range.
+        Card-sized inserts. Choose which art styles to include for each set; each insert shows that style’s collector number range.
       </p>
     </div>
 
@@ -357,6 +416,13 @@ onMounted(async () => {
         v-if="mode === MODE_BINDER"
         v-model="binderStyle"
         class="separators-no-print"
+        :art-style-groups="artStyleGroups"
+        :excluded-art-style-keys="excludedArtStyleKeys"
+        :art-styles-loading="rulesLoading"
+        @toggle-art-style="toggleBinderArtStyle"
+        @select-all-art-styles="selectAllBinderArtStyles"
+        @select-set-art-styles="selectSetBinderArtStyles"
+        @clear-set-art-styles="clearSetBinderArtStyles"
       />
       <StorageSeparatorStylePanel
         v-else

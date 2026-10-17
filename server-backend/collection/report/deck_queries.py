@@ -2,7 +2,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH
+from lib.db import connect_current
 from util.alchemy_cards import exclude_alchemy_sql
 from util.price_history import PriceSnapshotCache, card_price_key, load_price_snapshot_cache
 
@@ -70,9 +70,12 @@ SELECT
 FROM decks d
 LEFT JOIN deck_cards dc
     ON dc.deck_id = d.deck_id
-    AND dc.in_catalog = 1
+LEFT JOIN cards c
+    ON c.set_code = dc.set_code
+    AND c.collector_number = dc.collector_number
 LEFT JOIN sets s
     ON s.set_code = dc.set_code
+    AND (dc.in_catalog = 1 OR c.set_code IS NOT NULL)
 GROUP BY d.deck_id
 ORDER BY favorite DESC, release_year, d.name
 """
@@ -99,7 +102,7 @@ def load_deck_cards_df(
         )
         params = (int(deck_id),)
     if conn is None:
-        with sqlite3.connect(DB_PATH) as connection:
+        with connect_current(row_factory=None) as connection:
             return pd.read_sql_query(query, connection, params=params or None)
     return pd.read_sql_query(query, conn, params=params or None)
 
@@ -112,7 +115,7 @@ def format_deck_label(name: str, release_year: int | None = None) -> str:
 # Load deck metadata for selectors and navigation.
 def load_deck_list(conn: sqlite3.Connection | None = None) -> list[dict]:
     if conn is None:
-        with sqlite3.connect(DB_PATH) as connection:
+        with connect_current(row_factory=None) as connection:
             rows = connection.execute(DECK_LIST_QUERY).fetchall()
     else:
         rows = conn.execute(DECK_LIST_QUERY).fetchall()

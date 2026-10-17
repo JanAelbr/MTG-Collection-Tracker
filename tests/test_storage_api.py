@@ -69,6 +69,134 @@ class StorageApiServiceTests(unittest.TestCase):
         slugs = [item["slug"] for item in locations]
         self.assertNotIn(created["slug"], slugs)
 
+    def test_delete_storage_moves_or_removes_cards_and_keeps_the_last(self):
+        from util.storage_tables import seed_storage_locations
+
+        general = "storage:general"
+        binder = storage_service.create_location(self.conn, label="Trade box")
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                set_code TEXT NOT NULL,
+                collector_number TEXT NOT NULL,
+                finish INTEGER NOT NULL,
+                purchase_value REAL NOT NULL DEFAULT 0,
+                UNIQUE (set_code, collector_number, finish)
+            )
+            """
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("LTR", "1", 0, binder["slug"], 2.0),
+                ("LTR", "2", 0, binder["slug"], 3.0),
+            ],
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '1', 0, 2)"
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '2', 0, 3)"
+        )
+        self.conn.commit()
+
+        with self.assertRaises(storage_service.StorageError):
+            storage_service.delete_location(self.conn, binder["slug"])
+
+        storage_service.delete_location(
+            self.conn,
+            binder["slug"],
+            disposition="move",
+            move_to=general,
+        )
+        moved = self.conn.execute(
+            "SELECT COUNT(*) FROM card_instances WHERE location_slug = ?",
+            (general,),
+        ).fetchone()[0]
+        self.assertEqual(moved, 2)
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM storage_locations WHERE location_slug = ?",
+                (binder["slug"],),
+            ).fetchone()
+        )
+
+        doomed = storage_service.create_location(self.conn, label="Bulk box")
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTR', '1', 0, ?, 2)
+            """,
+            (doomed["slug"],),
+        )
+        self.conn.commit()
+        storage_service.delete_location(self.conn, doomed["slug"], disposition="delete")
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM card_instances WHERE set_code = 'LTR' AND collector_number = '1'"
+            ).fetchone()[0],
+            1,
+        )
+        self.assertIsNotNone(
+            self.conn.execute(
+                "SELECT 1 FROM purchases WHERE set_code = 'LTR' AND collector_number = '1'"
+            ).fetchone()
+        )
+
+        only = storage_service.create_location(self.conn, label="Only extra")
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTR', '9', 0, ?, 1)
+            """,
+            (only["slug"],),
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '9', 0, 1)"
+        )
+        self.conn.commit()
+        manual = [
+            item for item in storage_service.list_locations(self.conn)
+            if item["locationType"] != "deck"
+        ]
+        for item in manual:
+            if item["slug"] == general:
+                continue
+            storage_service.delete_location(
+                self.conn,
+                item["slug"],
+                disposition="delete",
+            )
+        last = [
+            item for item in storage_service.list_locations(self.conn)
+            if item["locationType"] != "deck"
+        ]
+        self.assertEqual(len(last), 1)
+        self.assertFalse(last[0]["canDelete"])
+        with self.assertRaises(storage_service.StorageError):
+            storage_service.delete_location(self.conn, last[0]["slug"], disposition="delete")
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM card_instances WHERE collector_number = '9'").fetchone()[0],
+            0,
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM purchases WHERE collector_number = '9'"
+            ).fetchone()
+        )
+
+        seed_storage_locations(self.conn)
+        slugs = {item["slug"] for item in storage_service.list_locations(self.conn)}
+        self.assertNotIn("binder:ltr-black", slugs)
+        self.assertIn(general, slugs)
+
     def test_storage_breakdown_aggregates_value_and_mix(self):
         from unittest.mock import patch
 

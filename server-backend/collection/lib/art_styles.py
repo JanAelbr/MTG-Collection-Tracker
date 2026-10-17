@@ -3,6 +3,7 @@ import sqlite3
 
 from lib.art_style_seed import BUNDLED_ART_STYLE_RULES
 from lib.config import ART_STYLES_DIR, canonical_set_code_lower
+from lib.db import table_exists
 from lib.run_log import get_logger
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
 
@@ -84,6 +85,8 @@ def validate_art_style_rules(rules: list) -> list[str]:
 
 
 def _ensure_art_style_rules_table(conn: sqlite3.Connection) -> None:
+    if table_exists(conn, ART_STYLE_RULES_TABLE):
+        return
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {ART_STYLE_RULES_TABLE} (

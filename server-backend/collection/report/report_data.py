@@ -2,7 +2,8 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH, EXCLUDED_SET_CODES, normalize_set_code
+from lib.db import connect_catalog, connect_current, table_exists
+from lib.config import EXCLUDED_SET_CODES, normalize_set_code
 from util.deck_tables import list_deck_sync_set_codes
 from report.report_queries import (
     OWNED_CARDS_FOR_SET_QUERY,
@@ -33,11 +34,16 @@ _set_display_names_cache: dict[str, str] | None = None
 
 
 # Load set display names from the sets catalog table.
-def get_set_display_names(refresh: bool = False) -> dict[str, str]:
+def get_set_display_names(
+    refresh: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, str]:
+    if conn is not None:
+        return query_set_display_names(conn)
     global _set_display_names_cache
     if _set_display_names_cache is None or refresh:
-        with sqlite3.connect(DB_PATH) as conn:
-            _set_display_names_cache = query_set_display_names(conn)
+        with connect_catalog(row_factory=None) as catalog:
+            _set_display_names_cache = query_set_display_names(catalog)
     return _set_display_names_cache
 
 
@@ -122,10 +128,7 @@ def build_set_option(
 
 def _table_has_card_instances(conn: sqlite3.Connection) -> bool:
     return (
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-        ).fetchone()
-        is not None
+        table_exists(conn, "card_instances")
     )
 
 
@@ -224,13 +227,13 @@ def build_sorted_set_options(
     include_all: bool = True,
 ) -> list[dict]:
     favorites = favorite_sets or []
-    set_names = get_set_display_names()
+    set_names = get_set_display_names(conn=conn)
     owned_counts = load_owned_count_by_set(conn)
     catalog_counts = load_catalog_count_by_set(conn)
     icon_uris = load_set_icon_uris(conn)
     catalog = load_sets_catalog(conn)
     relations = load_set_relations(conn)
-    all_codes = get_all_set_codes()
+    all_codes = get_all_set_codes(conn)
     known = {code.upper() for code in all_codes}
     families = build_family_index(known, relations)
 
@@ -403,10 +406,15 @@ def build_art_style_options_for_set(conn: sqlite3.Connection, set_code: str) -> 
     from api.cache import get_cache_epoch, memory_cache
 
     normalized = set_code.strip().upper()
+    db_id = _database_identity(conn)
+    if db_id is None:
+        owned_counts = _load_art_style_owned_counts(conn, set_code=normalized)
+        catalog_counts = _load_art_style_catalog_counts(conn, set_code=normalized)
+        return _build_art_style_options_from_counts(owned_counts, catalog_counts)
     epoch = get_cache_epoch()
     cache_key = memory_cache.make_key(
         "report_data.art_styles",
-        {"setCode": normalized},
+        {"setCode": normalized, "db": db_id},
         epoch,
     )
     cached = memory_cache.get(cache_key)
@@ -428,15 +436,20 @@ def build_art_style_options(conn: sqlite3.Connection, set_code: str = "All") -> 
 
 
 # Collect set codes from tracked sets, the database, and deck lists.
-def get_all_set_codes() -> list[str]:
-    with sqlite3.connect(DB_PATH) as conn:
-        tracked_sets = list_tracked_set_codes(conn)
-        deck_sets = list_deck_sync_set_codes(conn)
-        db_sets = pd.read_sql_query(
-            "SELECT DISTINCT set_code FROM cards ORDER BY set_code",
-            conn,
-        )["set_code"].tolist()
+def get_all_set_codes(conn: sqlite3.Connection | None = None) -> list[str]:
+    if conn is not None:
+        return _all_set_codes(conn)
+    with connect_current(row_factory=None) as own:
+        return _all_set_codes(own)
 
+
+def _all_set_codes(conn: sqlite3.Connection) -> list[str]:
+    tracked_sets = list_tracked_set_codes(conn)
+    deck_sets = list_deck_sync_set_codes(conn)
+    db_sets = pd.read_sql_query(
+        "SELECT DISTINCT set_code FROM cards ORDER BY set_code",
+        conn,
+    )["set_code"].tolist()
     return sorted(
         code for code in {normalize_set_code(raw) for raw in (set(db_sets) | set(tracked_sets) | set(deck_sets))}
         if code and code not in EXCLUDED_SET_CODES
@@ -450,7 +463,7 @@ def load_collection_data(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if conn is not None:
         return _load_collection_data(conn, owned_only)
-    with sqlite3.connect(DB_PATH) as db_conn:
+    with connect_current(row_factory=None) as db_conn:
         return _load_collection_data(db_conn, owned_only)
 
 

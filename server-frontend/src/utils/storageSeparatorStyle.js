@@ -1,3 +1,5 @@
+import { profileLocalStorage } from "./profileStorage.js";
+
 export const STORAGE_SEPARATOR_STYLE_KEY = "lotr.separators.storageStyle";
 
 export const STORAGE_META_FORMATS = Object.freeze([
@@ -131,7 +133,7 @@ export function normalizeStorageSeparatorStyle(input = {}) {
 
 export function loadStorageSeparatorStyle() {
   try {
-    const raw = localStorage.getItem(STORAGE_SEPARATOR_STYLE_KEY);
+    const raw = profileLocalStorage.getItem(STORAGE_SEPARATOR_STYLE_KEY);
     if (!raw) {
       return { ...DEFAULT_STORAGE_SEPARATOR_STYLE };
     }
@@ -143,7 +145,7 @@ export function loadStorageSeparatorStyle() {
 
 export function saveStorageSeparatorStyle(settings) {
   const normalized = normalizeStorageSeparatorStyle(settings);
-  localStorage.setItem(STORAGE_SEPARATOR_STYLE_KEY, JSON.stringify(normalized));
+  profileLocalStorage.setItem(STORAGE_SEPARATOR_STYLE_KEY, JSON.stringify(normalized));
   return normalized;
 }
 

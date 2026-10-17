@@ -57,4 +57,7 @@ def import_set_catalog_from_scryfall(
     if count == 0:
         raise ValueError(f"No cards found for set {normalized} on Scryfall")
 
+    from util.deck_helpers import relink_unresolved_deck_cards
+
+    relink_unresolved_deck_cards(conn, [normalized])
     return count

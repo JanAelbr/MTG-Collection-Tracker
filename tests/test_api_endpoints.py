@@ -177,18 +177,17 @@ def _seed_test_db(db_path: Path) -> None:
 
 class ApiEndpointTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db_path = Path(self.temp_dir.name) / "test.db"
         _seed_test_db(self.db_path)
-        self.db_patch = patch("api.db.DB_PATH", self.db_path)
-        self.config_patch = patch("lib.config.DB_PATH", self.db_path)
-        self.db_patch.start()
-        self.config_patch.start()
+        from lib.db import use_single_database
+
+        self._single_db = use_single_database(self.db_path)
+        self._single_db.__enter__()
         self.client = TestClient(app)
 
     def tearDown(self):
-        self.db_patch.stop()
-        self.config_patch.stop()
+        self._single_db.__exit__(None, None, None)
         self.temp_dir.cleanup()
 
     def _get(self, path: str) -> None:

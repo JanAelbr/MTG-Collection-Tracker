@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from lib.config import normalize_set_code
 from lib.art_styles import import_art_style_rules, load_all_art_style_rules
+from lib.db import table_exists
 from util.app_tables import ensure_app_tables
 from util.card_finishes import normalize_finish
 from util.deck_tables import ensure_deck_tables
@@ -280,13 +281,7 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
 
     ensure_storage_tables(conn)
     storage_breakdown_snapshots = []
-    snapshot_table = conn.execute(
-        """
-        SELECT 1 FROM sqlite_master
-        WHERE type = 'table' AND name = 'storage_breakdown_snapshots'
-        """
-    ).fetchone()
-    if snapshot_table:
+    if table_exists(conn, "storage_breakdown_snapshots"):
         storage_breakdown_snapshots = [
             {
                 "snapshotDate": row["snapshot_date"],
@@ -326,9 +321,29 @@ def build_collection_payload(conn: sqlite3.Connection) -> dict:
     }
 
 
-def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
-    sets_referenced = _sets_referenced(collection)
+def manifest_profile(manifest: dict) -> dict | None:
+    """Optional source-profile block (name/color/avatar); absent in older backups."""
+    raw = manifest.get("profile") if isinstance(manifest, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name") or "").strip()
+    if not name:
+        return None
     return {
+        "name": name,
+        "color": str(raw.get("color") or "").strip() or None,
+        "avatar": str(raw.get("avatar") or "").strip() or None,
+    }
+
+
+def build_manifest(
+    collection: dict,
+    *,
+    art_style_sets: list[str],
+    profile: dict | None = None,
+) -> dict:
+    sets_referenced = _sets_referenced(collection)
+    manifest = {
         "formatVersion": FORMAT_VERSION,
         "exportedAt": _utc_now_iso(),
         "summary": {
@@ -343,6 +358,13 @@ def build_manifest(collection: dict, *, art_style_sets: list[str]) -> dict:
             "setsReferenced": sets_referenced,
         },
     }
+    if profile:
+        manifest["profile"] = {
+            "name": profile.get("name") or "",
+            "color": profile.get("color") or "",
+            "avatar": profile.get("avatar") or "",
+        }
+    return manifest
 
 
 def summarize_backup(collection: dict, art_styles: dict[str, list]) -> dict:
@@ -355,10 +377,10 @@ def summarize_backup(collection: dict, art_styles: dict[str, list]) -> dict:
     }
 
 
-def export_collection_zip(conn: sqlite3.Connection) -> bytes:
+def export_collection_zip(conn: sqlite3.Connection, *, profile: dict | None = None) -> bytes:
     collection = build_collection_payload(conn)
     art_styles = load_all_art_style_rules(conn)
-    manifest = build_manifest(collection, art_style_sets=sorted(art_styles))
+    manifest = build_manifest(collection, art_style_sets=sorted(art_styles), profile=profile)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -420,6 +442,7 @@ def preview_backup(data: bytes) -> dict:
     manifest, collection, art_styles = parse_backup_zip(data)
     summary = summarize_backup(collection, art_styles)
     summary["exportedAt"] = manifest.get("exportedAt")
+    summary["profile"] = manifest_profile(manifest)
     return summary
 
 
@@ -574,7 +597,6 @@ def _clear_collection_data(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM deck_cards")
     conn.execute("DELETE FROM decks")
     conn.execute("DELETE FROM purchases")
-    conn.execute("DELETE FROM art_style_rules")
     conn.execute(
         """
         DELETE FROM storage_locations

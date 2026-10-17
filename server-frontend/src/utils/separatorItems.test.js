@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  binderArtStyleKey,
+  buildBinderArtStyleGroups,
   buildBinderSeparators,
   buildStorageSeparators,
   formatArtStyleNumberRange,
+  loadBinderExcludedArtStyles,
   releaseYear,
+  saveBinderExcludedArtStyles,
 } from "./separatorItems.js";
 
 describe("separatorItems", () => {
@@ -74,6 +78,40 @@ describe("separatorItems", () => {
       numberRange: "#1 – #280",
     });
     expect(items[1].artStyle).toBe("Showcase");
+  });
+
+  it("skips binder separators for excluded art styles", () => {
+    const rules = new Map([
+      ["LTR", [
+        { name: "Regular", firstNumber: 1, lastNumber: 280 },
+        { name: "Showcase", firstNumber: 301, lastNumber: 350 },
+      ]],
+      ["MH3", []],
+    ]);
+    const sets = [
+      { setCode: "LTR", label: "The Lord of the Rings (LTR)" },
+      { setCode: "MH3", label: "Modern Horizons 3 (MH3)" },
+    ];
+    const groups = buildBinderArtStyleGroups(sets, rules);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].styles.map((style) => style.artStyle)).toEqual(["Regular", "Showcase"]);
+    expect(groups[0].styles[1].key).toBe(binderArtStyleKey("LTR", "Showcase"));
+
+    const items = buildBinderSeparators(sets, rules, {
+      excludedKeys: new Set([binderArtStyleKey("ltr", "Regular")]),
+    });
+    expect(items.map((item) => item.artStyle)).toEqual(["Showcase", ""]);
+    expect(items[1].setCode).toBe("MH3");
+  });
+
+  it("remembers excluded binder art styles", () => {
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, value),
+    };
+    saveBinderExcludedArtStyles(new Set(["LTR|Showcase", "", 4]));
+    expect(loadBinderExcludedArtStyles()).toEqual(new Set(["LTR|Showcase"]));
   });
 
   it("falls back to one binder separator when a set has no rules", () => {

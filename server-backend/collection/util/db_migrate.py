@@ -1,11 +1,14 @@
 import sqlite3
 from datetime import date
 
+from lib.db import is_attached_table, table_exists, table_schema
 from lib.config import SET_CODE_ALIASES
 from lib.run_log import get_logger
 from util.card_prices import ensure_card_prices_table
 
 log = get_logger(__name__)
+
+CARD_DETAIL_METADATA_RELOAD_KEY = "card_detail_metadata_reload_v1"
 
 CARD_COLUMNS = {
     "image_uri": "TEXT",
@@ -137,14 +140,12 @@ def list_top_set_codes_by_collection_size(
         LIMIT ?
         """,
         (limit,),
-    ).fetchall()
+    ).fetchall() if table_exists(conn, "purchases") else []
     codes = [str(row[0]).upper() for row in rows if row[0]]
     if len(codes) >= limit:
         return codes[:limit]
 
-    has_tracked = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tracked_sets' LIMIT 1"
-    ).fetchone()
+    has_tracked = table_exists(conn, "tracked_sets")
     if has_tracked:
         tracked_rows = conn.execute(
             "SELECT set_code FROM tracked_sets ORDER BY set_code ASC"
@@ -178,24 +179,15 @@ def reload_top_set_catalogs(conn: sqlite3.Connection, limit: int = 15) -> list[s
 
 
 def ensure_card_detail_metadata(conn: sqlite3.Connection) -> None:
+    from util.catalog_meta import get_catalog_meta, set_catalog_meta
+
     ensure_card_columns(conn)
-    row = conn.execute(
-        "SELECT value FROM user_settings WHERE key = ?",
-        ("card_detail_metadata_reload_v1",),
-    ).fetchone()
-    if row and row[0] == "done":
+    if get_catalog_meta(conn, CARD_DETAIL_METADATA_RELOAD_KEY) == "done":
         log.debug("Card detail metadata reload skipped (already done)")
         return
     log.info("Starting card detail metadata reload (top sets)")
     reloaded = reload_top_set_catalogs(conn, limit=15)
-    conn.execute(
-        """
-        INSERT INTO user_settings (key, value)
-        VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        """,
-        ("card_detail_metadata_reload_v1", "done"),
-    )
+    set_catalog_meta(conn, CARD_DETAIL_METADATA_RELOAD_KEY, "done")
     conn.commit()
     if reloaded:
         log.info(
@@ -219,6 +211,8 @@ def ensure_card_columns(conn: sqlite3.Connection) -> None:
 
 
 def ensure_card_indexes(conn: sqlite3.Connection) -> None:
+    if is_attached_table(conn, "cards"):
+        return
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_code ON cards(set_code)"
     )
@@ -315,6 +309,8 @@ def _cards_fts_needs_rebuild(conn: sqlite3.Connection) -> bool:
 
 def ensure_cards_fts(conn: sqlite3.Connection) -> None:
     """FTS5 index over card name/text for catalog search (prefix + token match)."""
+    if is_attached_table(conn, "cards"):
+        return
     _ensure_cards_fts_objects(conn)
     if not _cards_fts_needs_rebuild(conn):
         return
@@ -342,6 +338,8 @@ def dedupe_purchases(conn: sqlite3.Connection) -> int:
 
 # Ensure one purchase row per set, collector number, and finish.
 def ensure_purchase_unique_index(conn: sqlite3.Connection) -> None:
+    if table_schema(conn, "purchases") != "main":
+        return
     dedupe_purchases(conn)
     cursor = conn.cursor()
     cursor.execute(
@@ -351,11 +349,8 @@ def ensure_purchase_unique_index(conn: sqlite3.Connection) -> None:
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-        (table_name,),
-    ).fetchone()
-    return row is not None
+    """Persistent tables only: TEMP ownership views on catalog connections are skipped."""
+    return table_schema(conn, table_name) not in (None, "temp")
 
 
 def _migrate_alias_rows(
@@ -453,7 +448,8 @@ def consolidate_set_code_aliases(conn: sqlite3.Connection) -> None:
         _migrate_alias_deck_cards(conn, alias, canonical)
         _migrate_alias_card_prices(conn, alias, canonical)
         migrate_tracked_set_alias(conn, alias, canonical)
-        conn.execute("DELETE FROM cards WHERE set_code = ?", (alias,))
+        if _table_exists(conn, "cards"):
+            conn.execute("DELETE FROM cards WHERE set_code = ?", (alias,))
         if _table_exists(conn, "sets"):
             conn.execute("DELETE FROM sets WHERE set_code = ?", (alias,))
 

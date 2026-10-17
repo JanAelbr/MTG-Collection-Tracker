@@ -26,7 +26,7 @@ def _serialize_deck_cards(deck_df: pd.DataFrame) -> list[dict]:
         cards.append({
             "deck_id": int(row["deck_id"]),
             "deck_name": row["deck_name"],
-            "card_name": str_or_empty(row["card_name"]) or deck_card_display_name(row),
+            "card_name": deck_card_display_name(row),
             "set_code": row["set_code"] or "",
             "collector_number": str(row["collector_number"]) if row["collector_number"] else "",
             "finish": int(row["finish"]),
@@ -59,7 +59,7 @@ def _serialize_unknown_cards(deck_df: pd.DataFrame) -> list[dict]:
     cards = []
     for _, row in unknown.iterrows():
         cards.append({
-            "card_name": str_or_empty(row["card_name"]) or deck_card_display_name(row),
+            "card_name": deck_card_display_name(row),
             "qty": int(row["qty"]),
             "section": row["section"],
             "set_code": row["set_code"] or "",

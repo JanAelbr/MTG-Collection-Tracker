@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
+import { profileLocalStorage } from "../utils/profileStorage.js";
 
 const settings = ref(null);
 const LEGACY_PAGE_SIZE_KEY = "reportPageSize";
@@ -22,7 +23,7 @@ export async function savePricingSettings(patch) {
   }
   settings.value = next;
   if (patch.pageSize != null) {
-    localStorage.setItem(LEGACY_PAGE_SIZE_KEY, String(settings.value.pageSize));
+    profileLocalStorage.setItem(LEGACY_PAGE_SIZE_KEY, String(settings.value.pageSize));
   }
   const strategyOnly = Object.keys(patch).length > 0 && Object.keys(patch).every((key) =>
     [

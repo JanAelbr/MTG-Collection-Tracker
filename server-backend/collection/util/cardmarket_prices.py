@@ -9,8 +9,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from lib.config import DATA_DIR, DB_PATH, HTTP_USER_AGENT
+from lib.db import table_exists
+from lib.config import DATA_DIR, HTTP_USER_AGENT
 from lib.run_log import get_logger
+from util.profile_demand import catalog_connection_with_demand
 from util.card_prices import (
     record_card_price,
     snapshot_owned_cardmarket_prices,
@@ -85,10 +87,7 @@ OWNED_PRINT_EXISTS_CLAUSE = """
 
 
 def _deck_cards_table_exists(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'deck_cards'"
-    ).fetchone()
-    return row is not None
+    return table_exists(conn, "deck_cards")
 
 
 def _load_owned_finishes(conn: sqlite3.Connection) -> frozenset[tuple[str, str, int]]:
@@ -128,9 +127,7 @@ def _load_set_owned_counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 def load_owned_price_set_codes(conn: sqlite3.Connection) -> set[str]:
     """Set codes with at least one owned print (purchases or deck copies)."""
-    has_purchases = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purchases'"
-    ).fetchone()
+    has_purchases = table_exists(conn, "purchases")
     if not has_purchases:
         return set()
     return {
@@ -480,7 +477,7 @@ def update_card_price_in_db(
     """
     params = (price, set_code.upper(), str(collector_number))
     if conn is None:
-        with sqlite3.connect(DB_PATH) as own_conn:
+        with catalog_connection_with_demand(row_factory=None) as own_conn:
             own_conn.execute(sql, params)
             if price_date:
                 record_card_price(
@@ -547,7 +544,7 @@ def list_cards_for_price_sync(
         if conn is not None:
             include_deck = _deck_cards_table_exists(conn)
         else:
-            with sqlite3.connect(DB_PATH) as own_conn:
+            with catalog_connection_with_demand(row_factory=None) as own_conn:
                 include_deck = _deck_cards_table_exists(own_conn)
         owned_clause = _owned_print_exists_clause(include_deck=include_deck)
         if qualifying_sets:
@@ -559,8 +556,7 @@ def list_cards_for_price_sync(
     query += " ORDER BY set_code, CAST(collector_number AS INTEGER), collector_number"
 
     if conn is None:
-        with sqlite3.connect(DB_PATH) as own_conn:
-            own_conn.row_factory = sqlite3.Row
+        with catalog_connection_with_demand() as own_conn:
             return own_conn.execute(query, params).fetchall()
 
     row_factory = conn.row_factory
@@ -812,9 +808,7 @@ def sync_prices_from_guide(
     report(12, f"Loaded {len(guide)} Cardmarket products")
     from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("PRAGMA synchronous = NORMAL")
-        conn.row_factory = sqlite3.Row
+    with catalog_connection_with_demand() as conn:
         ensure_card_columns(conn)
         report(13, "Backfilling Cardmarket URLs")
         backfilled_urls = backfill_cardmarket_urls(conn, guide)

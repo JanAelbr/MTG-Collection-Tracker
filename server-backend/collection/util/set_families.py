@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from lib.db import table_exists
 from lib.config import normalize_set_code
 from util.set_catalog import ensure_sets_columns, ensure_sets_table
 
@@ -181,9 +182,7 @@ def _known_set_codes_from_db(conn: sqlite3.Connection) -> list[str]:
         code = normalize_set_code(raw)
         if code:
             codes.add(code)
-    if conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards' LIMIT 1"
-    ).fetchone():
+    if table_exists(conn, "cards"):
         for (raw,) in conn.execute("SELECT DISTINCT set_code FROM cards"):
             code = normalize_set_code(raw)
             if code:

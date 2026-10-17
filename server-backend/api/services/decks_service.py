@@ -2230,7 +2230,7 @@ def refresh_deck_unpriced_metadata(
     *,
     deck_id: str,
 ) -> dict:
-    from api.cache import bump_cache_epoch
+    from api.cache import bump_catalog_epoch
     from lib.config import normalize_set_code
     from report.deck_queries import deck_scope
     from util.deck_tables import ensure_deck_tables
@@ -2275,16 +2275,12 @@ def refresh_deck_unpriced_metadata(
         except Exception as exc:
             errors.append({"setCode": set_code, "message": str(exc)})
 
-    from util.deck_helpers import sync_deck_cards_in_catalog
+    from util.deck_helpers import relink_unresolved_deck_cards
 
-    catalog_flags_updated = sync_deck_cards_in_catalog(
-        conn,
-        deck_id=deck_key,
-        set_codes=set_codes or None,
-    )
+    relink_unresolved_deck_cards(conn, set_codes)
 
     conn.commit()
-    bump_cache_epoch()
+    bump_catalog_epoch()
 
     if not set_codes:
         message = "No unpriced cards with set codes to refresh."

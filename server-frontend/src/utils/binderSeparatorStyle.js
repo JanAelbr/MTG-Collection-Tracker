@@ -1,3 +1,5 @@
+import { profileLocalStorage } from "./profileStorage.js";
+
 export const BINDER_SEPARATOR_STYLE_KEY = "lotr.separators.binderStyle";
 
 export const BINDER_FONT_OPTIONS = Object.freeze([
@@ -209,7 +211,7 @@ export function applyBinderBackgroundTheme(settings, themeId) {
 
 export function loadBinderSeparatorStyle() {
   try {
-    const raw = localStorage.getItem(BINDER_SEPARATOR_STYLE_KEY);
+    const raw = profileLocalStorage.getItem(BINDER_SEPARATOR_STYLE_KEY);
     if (!raw) {
       return { ...DEFAULT_BINDER_SEPARATOR_STYLE };
     }
@@ -221,7 +223,7 @@ export function loadBinderSeparatorStyle() {
 
 export function saveBinderSeparatorStyle(settings) {
   const normalized = normalizeBinderSeparatorStyle(settings);
-  localStorage.setItem(BINDER_SEPARATOR_STYLE_KEY, JSON.stringify(normalized));
+  profileLocalStorage.setItem(BINDER_SEPARATOR_STYLE_KEY, JSON.stringify(normalized));
   return normalized;
 }
 

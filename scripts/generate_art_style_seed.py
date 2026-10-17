@@ -10,16 +10,16 @@ COLLECTION = ROOT / "server-backend" / "collection"
 if str(COLLECTION) not in sys.path:
     sys.path.insert(0, str(COLLECTION))
 
-from lib.config import DB_PATH  # noqa: E402
+from lib.config import CATALOG_DB_PATH  # noqa: E402
 
 OUT = COLLECTION / "lib" / "art_style_seed.py"
 
 
 def main() -> None:
-    if not DB_PATH.is_file():
-        raise SystemExit(f"Database not found: {DB_PATH}")
+    if not CATALOG_DB_PATH.is_file():
+        raise SystemExit(f"Database not found: {CATALOG_DB_PATH}")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(CATALOG_DB_PATH)
     try:
         rows = conn.execute(
             "SELECT set_code, rules_json FROM art_style_rules ORDER BY set_code"

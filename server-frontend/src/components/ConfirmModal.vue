@@ -9,9 +9,15 @@ const props = defineProps({
   cancelLabel: { type: String, default: "Cancel" },
   danger: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
+  requireText: { type: String, default: "" },
+  typed: { type: String, default: "" },
 });
 
-const emit = defineEmits(["confirm", "cancel"]);
+const emit = defineEmits(["confirm", "cancel", "update:typed"]);
+
+const confirmLocked = computed(() =>
+  Boolean(props.requireText) && props.typed !== props.requireText,
+);
 
 const confirmButtonClass = computed(() =>
   props.danger ? "btn btn-danger" : "btn btn-primary",
@@ -25,7 +31,7 @@ function onCancel() {
 }
 
 function onConfirm() {
-  if (props.busy) {
+  if (props.busy || confirmLocked.value) {
     return;
   }
   emit("confirm");
@@ -56,6 +62,17 @@ function onConfirm() {
         >
           {{ message }}
         </p>
+        <label v-if="requireText" class="confirm-modal-type">
+          <span>Type <strong>{{ requireText }}</strong> to confirm</span>
+          <input
+            :value="typed"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            @input="emit('update:typed', $event.target.value)"
+            @keydown.enter.prevent="onConfirm"
+          />
+        </label>
         <div class="modal-actions">
           <button
             type="button"
@@ -68,7 +85,7 @@ function onConfirm() {
           <button
             type="button"
             :class="confirmButtonClass"
-            :disabled="busy"
+            :disabled="busy || confirmLocked"
             @click="onConfirm"
           >
             {{ busy ? "Working…" : confirmLabel }}

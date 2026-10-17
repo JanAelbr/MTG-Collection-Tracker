@@ -137,9 +137,19 @@ def update_location(
 
 
 @router.delete("/locations/{slug}")
-def delete_location(slug: str, conn: sqlite3.Connection = Depends(get_db)):
+def delete_location(
+    slug: str,
+    disposition: str | None = None,
+    moveTo: str | None = None,
+    conn: sqlite3.Connection = Depends(get_db),
+):
     try:
-        storage_service.delete_location(conn, slug)
+        storage_service.delete_location(
+            conn,
+            slug,
+            disposition=disposition,
+            move_to=moveTo,
+        )
     except StorageError as exc:
         raise _handle_storage_error(exc) from exc
     return {"ok": True}

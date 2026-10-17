@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server-backend" / "collection"))
 
-from lib.config import DB_PATH
+from lib.config import CATALOG_DB_PATH
 from util.cardmarket_prices import load_price_guide_index, sync_prices_from_guide
 from util.cardmarket_urls import backfill_cardmarket_urls
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
@@ -37,10 +37,10 @@ def print_ring_rows(conn: sqlite3.Connection, title: str) -> None:
 
 
 def main() -> None:
-    print("DB_PATH", DB_PATH)
+    print("CATALOG_DB_PATH", CATALOG_DB_PATH)
     guide = load_price_guide_index()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(CATALOG_DB_PATH) as conn:
         print_ring_rows(conn, "Before")
         import_set_catalog_from_scryfall(conn, "LTC", force_scryfall=True)
         backfilled = backfill_cardmarket_urls(conn, guide)
@@ -55,7 +55,7 @@ def main() -> None:
     )
     print("\nPrice sync:", result)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(CATALOG_DB_PATH) as conn:
         print_ring_rows(conn, "After price sync")
 
 

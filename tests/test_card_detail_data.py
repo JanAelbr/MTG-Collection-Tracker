@@ -92,7 +92,9 @@ class CardDetailDataTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_index_payload_omits_history_and_snapshots(self):
-        with patch("report.card_detail_data.DB_PATH", self.db_path):
+        from lib.db import use_single_database
+
+        with use_single_database(self.db_path):
             self.conn.close()
             payload, histories = load_card_detail_assets()
 

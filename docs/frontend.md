@@ -72,11 +72,21 @@ Runtime caching (service worker) prefetches set icons from **mtg-vectors** (jsDe
 | **Collection** | `/collection/all` | Catalog · Storage · Decks |
 | **Print** | `/print` | Cards · Separators |
 | **Sell** | `/sell` | — |
-| **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
+| **Settings** | `/settings/display` | Display · Sets · Sync · Backup · Profiles |
 
 Storage views use `?view=gallery|table|breakdown`. Catalog uses `?view=gallery|table|stats` (table/stats need a specific set).
 
 `/collection`, old `/stats`, and `/reports/*` URLs redirect into Collection or Settings as appropriate.
+
+### Profiles
+
+The switcher sits at the right of the top bar. Its colour is the active profile (`--profile-accent` stripe under the bar). Choosing another profile reloads the page so collection state cannot leak across profiles. The active id is kept per tab (`sessionStorage`) and the last-used id is remembered for new tabs.
+
+`/profiles` is a full-screen picker with no app chrome. Settings → Profiles lists every profile.
+
+Print lists, separator styles, breakdown chart layouts, and the saved page size are stored as `profile:<id>:<key>` in `localStorage`. Sidebar width, sort, and foil filter stay on the device. Existing values are copied into the first profile once.
+
+API calls send `X-Profile-Id`. The client cache key includes the profile id, and `X-Cache-Epoch` is compared as the string `"<catalog>.<profile>"`.
 
 ---
 

@@ -2,19 +2,14 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-from lib.config import DB_PATH
+from lib.db import connect_catalog, connect_current, connect_profile, connect_registry
+
+__all__ = ["connect", "connect_catalog", "connect_profile", "connect_registry", "db_session"]
 
 
 def connect() -> sqlite3.Connection:
-    # timeout matches busy_timeout so concurrent request threads wait instead of
-    # failing immediately when another writer holds the lock briefly.
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    return conn
+    """Connection for the request's active profile (shared catalog attached)."""
+    return connect_current()
 
 
 @contextmanager

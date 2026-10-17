@@ -2,7 +2,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH
+from lib.db import connect_current
 from report.report_stats import load_catalog_art_counts, stats_scope
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.price_history import PriceSnapshotCache, load_price_snapshot_cache
@@ -332,7 +332,7 @@ def load_stats_client_payload(
 ) -> dict:
     if conn is not None:
         return _load_stats_client_payload(conn, owned_df, catalog_df, pages)
-    with sqlite3.connect(DB_PATH) as db_conn:
+    with connect_current(row_factory=None) as db_conn:
         return _load_stats_client_payload(db_conn, owned_df, catalog_df, pages)
 
 

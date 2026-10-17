@@ -648,6 +648,60 @@
   margin: 0;
 }
 
+.binder-style-check--spread {
+  width: 100%;
+}
+
+.binder-art-style-muted {
+  margin: 0;
+  color: #6b6256;
+  font-size: 0.82rem;
+}
+
+.binder-art-style-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.binder-art-style-set {
+  display: grid;
+  gap: 6px;
+}
+
+.binder-art-style-set + .binder-art-style-set {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.binder-art-style-set-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.binder-art-style-set-name {
+  min-width: 0;
+  color: #514633;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.binder-art-style-set-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.binder-art-style-range {
+  margin-left: auto;
+  color: #6b6256;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ——— Separator cards (shared screen + print) ——— */
 
 .binder-separator {

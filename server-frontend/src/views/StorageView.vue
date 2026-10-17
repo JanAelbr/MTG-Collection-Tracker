@@ -808,21 +808,87 @@ function onInlineDescKeydown(event) {
   }
 }
 
+const deleteDialog = ref(null);
+const deleteDialogError = ref("");
+const deleteDialogBusy = ref(false);
+
+const deleteMoveTargets = computed(() => {
+  const slug = deleteDialog.value?.slug;
+  if (!slug) {
+    return [];
+  }
+  return locations.value.filter((location) => (
+    location.slug !== slug
+    && location.locationType !== "deck"
+    && !String(location.slug).startsWith("deck:")
+  ));
+});
+
 async function deleteLocation(location) {
-  if (!location.canDelete) {
+  if (!location?.canDelete) {
     return;
   }
-  const ok = await confirmDialog({
-    title: "Delete storage",
-    message: `Delete empty storage “${location.label}”?`,
-    confirmLabel: "Delete",
-    danger: true,
-  });
-  if (!ok) {
+  const copies = Number(location.cardCount || 0);
+  if (copies <= 0) {
+    const ok = await confirmDialog({
+      title: "Delete storage",
+      message: `Delete “${location.label}”?`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) {
+      return;
+    }
+    await api.deleteStorageLocation(location.slug);
+    await loadLocations();
     return;
   }
-  await api.deleteStorageLocation(location.slug);
-  await loadLocations();
+  const targets = locations.value.filter((item) => (
+    item.slug !== location.slug
+    && item.locationType !== "deck"
+    && !String(item.slug).startsWith("deck:")
+  ));
+  deleteDialogError.value = "";
+  deleteDialog.value = {
+    slug: location.slug,
+    label: location.label,
+    cardCount: copies,
+    mode: "move",
+    moveTo: targets[0]?.slug || "",
+  };
+}
+
+function closeDeleteDialog() {
+  if (deleteDialogBusy.value) {
+    return;
+  }
+  deleteDialog.value = null;
+  deleteDialogError.value = "";
+}
+
+async function confirmDeleteDialog() {
+  const dialog = deleteDialog.value;
+  if (!dialog || deleteDialogBusy.value) {
+    return;
+  }
+  if (dialog.mode === "move" && !dialog.moveTo) {
+    deleteDialogError.value = "Choose a storage to move the cards to.";
+    return;
+  }
+  deleteDialogBusy.value = true;
+  deleteDialogError.value = "";
+  try {
+    await api.deleteStorageLocation(dialog.slug, {
+      disposition: dialog.mode,
+      moveTo: dialog.mode === "move" ? dialog.moveTo : null,
+    });
+    deleteDialog.value = null;
+    await loadLocations();
+  } catch (error) {
+    deleteDialogError.value = error.message || "Could not delete this storage.";
+  } finally {
+    deleteDialogBusy.value = false;
+  }
 }
 
 async function removeOneCopy(card) {
@@ -1258,7 +1324,7 @@ onMounted(async () => {
       </nav>
 
       <div class="storage-detail">
-        <div v-if="isWholeCollectionSelected" class="storage-detail-header">
+        <div v-if="isWholeCollectionSelected && !selectedLocation" class="storage-detail-header">
           <div class="storage-detail-title-row">
             <div class="storage-detail-title-main">
               <h2>Whole collection</h2>
@@ -1715,6 +1781,41 @@ onMounted(async () => {
           />
         </div>
       </div>
+    </div>
+
+    <div v-if="deleteDialog" class="modal-backdrop" @click.self="closeDeleteDialog">
+      <form class="modal-card" @submit.prevent="confirmDeleteDialog">
+        <h3>Delete {{ deleteDialog.label }}</h3>
+        <p class="storage-delete-lead">
+          This storage holds {{ deleteDialog.cardCount }}
+          {{ deleteDialog.cardCount === 1 ? "copy" : "copies" }}.
+        </p>
+        <label class="storage-delete-choice">
+          <input v-model="deleteDialog.mode" type="radio" value="move" />
+          <span>Move the cards to another storage</span>
+        </label>
+        <label v-if="deleteDialog.mode === 'move'" class="storage-delete-target">
+          <span>Move to</span>
+          <select v-model="deleteDialog.moveTo" required>
+            <option v-for="target in deleteMoveTargets" :key="target.slug" :value="target.slug">
+              {{ target.label }}
+            </option>
+          </select>
+        </label>
+        <label class="storage-delete-choice">
+          <input v-model="deleteDialog.mode" type="radio" value="delete" />
+          <span>Delete these owned cards from the collection</span>
+        </label>
+        <p v-if="deleteDialogError" class="storage-inline-error">{{ deleteDialogError }}</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" :disabled="deleteDialogBusy" @click="closeDeleteDialog">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-danger" :disabled="deleteDialogBusy">
+            {{ deleteDialogBusy ? "Deleting…" : "Delete storage" }}
+          </button>
+        </div>
+      </form>
     </div>
 
     <div v-if="editor.open" class="modal-backdrop" @click.self="closeEditor">

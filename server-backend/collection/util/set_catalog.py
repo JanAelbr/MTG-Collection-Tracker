@@ -4,6 +4,7 @@ from datetime import date
 import requests
 
 from lib.config import HTTP_USER_AGENT
+from lib.db import is_attached_table, table_exists
 from lib.run_log import get_logger
 from util.scryfall_client import scryfall_get
 
@@ -56,6 +57,8 @@ WHERE set_code = ?
 
 # Create the sets catalog table when missing.
 def ensure_sets_table(conn: sqlite3.Connection) -> None:
+    if is_attached_table(conn, "sets"):
+        return
     conn.executescript(SETS_TABLE_SQL)
 
 
@@ -353,9 +356,7 @@ def sets_needing_metadata_sync(cursor: sqlite3.Cursor, set_codes: list[str]) -> 
 def load_set_codes_missing_icon(conn: sqlite3.Connection) -> list[str]:
     ensure_sets_table(conn)
     ensure_sets_columns(conn)
-    if not conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards' LIMIT 1"
-    ).fetchone():
+    if not table_exists(conn, "cards"):
         return []
     rows = conn.execute(
         """
@@ -376,9 +377,7 @@ def load_set_codes_missing_relations(conn: sqlite3.Connection) -> list[str]:
     from util.tracked_sets import list_tracked_set_codes
 
     candidates: set[str] = set(load_catalog_set_codes(conn))
-    if conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tracked_sets' LIMIT 1"
-    ).fetchone():
+    if table_exists(conn, "tracked_sets"):
         for raw in list_tracked_set_codes(conn):
             code = (raw or "").upper()
             if code:

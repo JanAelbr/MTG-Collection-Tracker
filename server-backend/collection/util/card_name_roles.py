@@ -7,8 +7,10 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
+from lib.db import is_attached_table
 from lib.run_log import format_duration, get_logger
 from util.card_role_seed import card_roles_for
+from util.catalog_meta import get_catalog_meta, set_catalog_meta
 
 log = get_logger(__name__)
 
@@ -16,6 +18,8 @@ CARD_NAME_ROLES_BACKFILL_KEY = "card_name_roles_backfill_v1"
 
 
 def ensure_card_name_roles_table(conn: sqlite3.Connection) -> None:
+    if is_attached_table(conn, "card_name_roles"):
+        return
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS card_name_roles (
@@ -106,19 +110,11 @@ def roles_for_card_name(conn: sqlite3.Connection, name: str) -> list[str]:
 
 def backfill_card_name_roles(conn: sqlite3.Connection, *, force: bool = False) -> int:
     """Fill card_name_roles from distinct catalog names. Returns upserted count."""
-    from util.app_tables import ensure_app_tables
-
     ensure_card_name_roles_table(conn)
-    ensure_app_tables(conn)
 
-    if not force:
-        row = conn.execute(
-            "SELECT value FROM user_settings WHERE key = ?",
-            (CARD_NAME_ROLES_BACKFILL_KEY,),
-        ).fetchone()
-        if row and row[0] == "done":
-            log.debug("Card name roles backfill skipped (already done)")
-            return 0
+    if not force and get_catalog_meta(conn, CARD_NAME_ROLES_BACKFILL_KEY) == "done":
+        log.debug("Card name roles backfill skipped (already done)")
+        return 0
 
     started = time.perf_counter()
     rows = conn.execute(
@@ -142,14 +138,7 @@ def backfill_card_name_roles(conn: sqlite3.Connection, *, force: bool = False) -
         upsert_card_name_roles(conn, str(name), card=card)
         upserted += 1
 
-    conn.execute(
-        """
-        INSERT INTO user_settings (key, value)
-        VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        """,
-        (CARD_NAME_ROLES_BACKFILL_KEY, "done"),
-    )
+    set_catalog_meta(conn, CARD_NAME_ROLES_BACKFILL_KEY, "done")
     conn.commit()
     log.info(
         "Card name roles backfill finished: %s name(s) (%s)",
@@ -158,9 +147,9 @@ def backfill_card_name_roles(conn: sqlite3.Connection, *, force: bool = False) -
     )
     if upserted:
         try:
-            from api.cache import bump_cache_epoch
+            from api.cache import bump_catalog_epoch
 
-            bump_cache_epoch()
+            bump_catalog_epoch()
         except ImportError:
             pass
     return upserted

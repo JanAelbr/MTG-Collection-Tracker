@@ -2,9 +2,12 @@ import sqlite3
 from datetime import datetime, timezone
 
 from lib.config import normalize_set_code
+from lib.db import table_exists
 
 
 def ensure_tracked_sets_table(conn: sqlite3.Connection) -> None:
+    if table_exists(conn, "tracked_sets"):
+        return
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS tracked_sets (
@@ -71,7 +74,7 @@ def migrate_tracked_set_alias(
     alias: str,
     canonical: str,
 ) -> None:
-    if not _table_exists(conn, "tracked_sets"):
+    if not table_exists(conn, "tracked_sets"):
         return
     conn.execute(
         """
@@ -85,11 +88,3 @@ def migrate_tracked_set_alias(
         (canonical, alias, canonical),
     )
     conn.execute("DELETE FROM tracked_sets WHERE set_code = ?", (alias,))
-
-
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-        (table_name,),
-    ).fetchone()
-    return row is not None

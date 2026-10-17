@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
+from lib.db import table_exists
 from api.cache import bump_cache_epoch
 from api.services import settings_service
 from api.services.pricing_service import list_price_strategies, price_from_strategy, values_by_strategy_for_finish
@@ -247,9 +248,7 @@ def listed_asking_by_print_key(conn: sqlite3.Connection) -> dict[str, float]:
     from util.card_finishes import card_price_key
 
     ensure_sale_listings_table(conn)
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sale_listings'"
-    ).fetchone()
+    table = table_exists(conn, "sale_listings")
     if not table:
         return {}
 
@@ -280,9 +279,7 @@ def listed_asking_by_instance_id(conn: sqlite3.Connection) -> dict[int, float]:
 def listed_listings_by_instance_id(conn: sqlite3.Connection) -> dict[int, dict]:
     """Map instance_id -> {listingId, listingPrice} for currently listed copies."""
     ensure_sale_listings_table(conn)
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sale_listings'"
-    ).fetchone()
+    table = table_exists(conn, "sale_listings")
     if not table:
         return {}
 

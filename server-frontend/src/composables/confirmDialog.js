@@ -8,6 +8,8 @@ const state = reactive({
   cancelLabel: "Cancel",
   danger: false,
   busy: false,
+  requireText: "",
+  typed: "",
 });
 
 let resolvePromise = null;
@@ -15,6 +17,8 @@ let resolvePromise = null;
 function reset() {
   state.open = false;
   state.busy = false;
+  state.requireText = "";
+  state.typed = "";
   resolvePromise = null;
 }
 
@@ -26,6 +30,7 @@ function reset() {
  *   confirmLabel?: string,
  *   cancelLabel?: string,
  *   danger?: boolean,
+ *   requireText?: string,
  * }} [options]
  */
 export function confirmDialog(options = {}) {
@@ -38,6 +43,8 @@ export function confirmDialog(options = {}) {
   state.confirmLabel = options.confirmLabel || "Confirm";
   state.cancelLabel = options.cancelLabel || "Cancel";
   state.danger = Boolean(options.danger);
+  state.requireText = options.requireText || "";
+  state.typed = "";
   state.busy = false;
   state.open = true;
   return new Promise((resolve) => {
@@ -45,7 +52,14 @@ export function confirmDialog(options = {}) {
   });
 }
 
+export function setConfirmTyped(value) {
+  state.typed = value;
+}
+
 export function acceptConfirmDialog() {
+  if (state.requireText && state.typed !== state.requireText) {
+    return;
+  }
   if (!resolvePromise) {
     reset();
     return;

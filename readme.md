@@ -6,7 +6,7 @@ A Python + Vue workflow to track a **Magic: The Gathering** collection — singl
 
 The application:
 
-- stores everything in a **SQLite** database (`collection.db`)
+- stores the shared card catalog and one SQLite file per profile under `%LOCALAPPDATA%\MtgCollectionTracker\`
 - syncs card catalogs via the Scryfall API and EUR prices via Cardmarket
 - tracks sets in **`tracked_sets`**; load catalogs from **Settings → Sets** (or right-click refresh in the set browser)
 - tracks commander deck contents and ownership in **`decks`** / **`deck_cards`** / **`purchases`**
@@ -96,7 +96,7 @@ The repo tracks **source code**, not your local database or generated caches.
 | Tracked in git | Not tracked in git |
 |----------------|-------------------|
 | `scripts/`, `server-backend/`, `server-frontend/`, `tests/`, `docs/` | `.venv/` |
-| `readme.md`, `requirements.txt` | `collection.db` (in `%LOCALAPPDATA%\MtgCollectionTracker\`) |
+| `readme.md`, `requirements.txt` | `%LOCALAPPDATA%\MtgCollectionTracker\` (`app.db`, `catalog.db`, `profiles/`) |
 | | Cardmarket cache, Scryfall cache |
 | | `runtime/` (LAN published frontend, TLS, logs) |
 
@@ -153,7 +153,7 @@ The app is a **PWA** (installable; icons in `server-frontend/public/`). Regenera
 
 **API docs (Swagger UI):** browse and try endpoints at http://localhost:8000/docs (or http://localhost:5173/docs during dev). ReDoc is at `/redoc`; the OpenAPI schema is at `/openapi.json`.
 
-The SQLite database lives in `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` (Windows), or `~/MtgCollectionTracker/collection.db` elsewhere.
+Data lives in `%LOCALAPPDATA%\MtgCollectionTracker\` (Windows) or `~/MtgCollectionTracker/` elsewhere: `app.db` (profile list), `catalog.db` (shared cards, sets, and prices), and `profiles/<id>/profile.db` (that profile's collection). An older `collection.db` is split into this layout on first start and kept as a backup.
 
 #### LAN runtime (startup service)
 
@@ -189,7 +189,7 @@ Optional cleanup: if an old broken **At startup** scheduled task named `MtgColle
 | **Collection** | `/collection/all` | Catalog · Storage · Decks |
 | **Print** | `/print` | Cards · Separators |
 | **Sell** | `/sell` | — |
-| **Settings** | `/settings/display` | Display · Sets · Stats · Sync · Backup |
+| **Settings** | `/settings/display` | Display · Sets · Sync · Backup · Profiles |
 
 `/collection`, old `/stats`, and `/reports/*` URLs redirect into Collection or Settings as appropriate.
 
@@ -203,7 +203,8 @@ The top bar and Collection subnav stay fixed while scrolling.
 | **Sets** | `/settings/sets` | Load / remove set families, favourites, reload catalogs from Scryfall |
 | **Stats** | `/settings/stats` | Portfolio stats across all tracked sets |
 | **Sync** | `/settings/sync` | Cardmarket price sync; clear orphan catalogs |
-| **Backup** | `/settings/backup` | Export / import `.mtgbackup.zip` |
+| **Backup** | `/settings/backup` | Export / import `.mtgbackup.zip` for the active profile |
+| **Profiles** | `/settings/profiles` | Create, switch, duplicate, import, and delete profiles |
 
 When prices are older than today, Collection also shows a **Sync prices** banner until you sync or prices catch up.
 
@@ -319,7 +320,7 @@ Daily price updates use the **Cardmarket price guide** (one JSON download per ru
 |------|--------|------|
 | Catalog sync | Scryfall | Once per tracked set, when first loaded from Settings → Sets or the set browser |
 | Metadata backfill | Scryfall | When `colors`, `type_line`, or `card_type` are missing for cards in a tracked set |
-| Set metadata | Scryfall | Once per set, when the set row is not yet in `collection.db` |
+| Set metadata | Scryfall | Once per set, when the set row is not yet in `catalog.db` |
 | Price sync | Cardmarket price guide | Every run: owned cards; unowned only in qualifying sets |
 
 Unowned prices in other sets are cleared and no longer updated.
@@ -330,9 +331,15 @@ Scryfall provides card names, images, finish flags, Cardmarket product URLs, col
 
 ---
 
+## Profiles
+
+The top-bar avatar switches profiles. Each profile has its own owned cards, decks, storage, sales, and settings. The catalog and prices are shared, so a set loaded once is available to every profile. With more than one profile, the window title includes the profile name and the top bar shows that profile's colour.
+
+`/profiles` is the full-screen picker. It opens when this browser has not chosen a profile yet and more than one exists. Settings → Profiles manages them. Export writes the active profile; **Import profile from backup** creates a new one beside it.
+
 ## Data model
 
-Database: `%LOCALAPPDATA%\MtgCollectionTracker\collection.db` on Windows, or `~/MtgCollectionTracker/collection.db` elsewhere (SQLite)
+`catalog.db` holds `cards`, `sets`, `tracked_sets`, `card_prices`, `art_style_rules`, and `card_name_roles`. Each `profiles/<id>/profile.db` holds `purchases`, `decks`, `deck_cards`, storage, sales, and `user_settings`.
 
 ```mermaid
 erDiagram
@@ -444,7 +451,7 @@ Owned finishes. Updated when you change ownership in Catalog or Storage.
 
 ### `tracked_sets`
 
-Set codes registered from Settings → Sets (`tracked_sets` table in `collection.db`).
+Set codes registered from Settings → Sets (`tracked_sets` table in `catalog.db`). Removing a set is blocked while any profile owns cards or deck slots in it.
 
 ### `decks` / `deck_cards`
 

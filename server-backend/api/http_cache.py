@@ -18,7 +18,7 @@ def with_price_strategy(conn, params: dict | None = None) -> dict:
     return merged
 
 
-def cache_headers(*, etag: str, ttl: int, epoch: int) -> dict[str, str]:
+def cache_headers(*, etag: str, ttl: int, epoch: str) -> dict[str, str]:
     return {
         "ETag": etag,
         "Cache-Control": "private, no-store",

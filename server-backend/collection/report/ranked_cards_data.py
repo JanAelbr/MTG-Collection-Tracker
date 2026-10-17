@@ -2,7 +2,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH
+from lib.db import connect_current
 from report.report_queries import (
     ALL_CARDS_QUERY,
     ORPHAN_PURCHASES_QUERY,
@@ -158,7 +158,7 @@ def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
 
 # Load owned and unowned finish rows for ranked reports.
 def load_ranked_cards_data() -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_current(row_factory=None) as conn:
         ensure_card_columns(conn)
         cards_df = pd.read_sql_query(ALL_CARDS_QUERY, conn)
         orphan_df = pd.read_sql_query(ORPHAN_PURCHASES_QUERY, conn)
@@ -172,7 +172,7 @@ def load_ranked_cards_data_for_set(set_code: str) -> pd.DataFrame:
     normalized = (set_code or "").strip().upper()
     if not normalized:
         return pd.DataFrame()
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_current(row_factory=None) as conn:
         ensure_card_columns(conn)
         cards_df = pd.read_sql_query(SET_CARDS_QUERY, conn, params=(normalized,))
         orphan_df = pd.read_sql_query(SET_ORPHAN_PURCHASES_QUERY, conn, params=(normalized,))

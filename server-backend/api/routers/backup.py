@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -12,21 +13,28 @@ from api.services.backup_service import BackupImportError
 router = APIRouter(prefix="/backup", tags=["backup"])
 
 
-def _export_filename() -> str:
+def export_filename(profile_name: str | None = None) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return f"mtg-collection-{stamp}.mtgbackup.zip"
+    slug = re.sub(r"[^a-z0-9]+", "-", str(profile_name or "").lower()).strip("-")
+    suffix = f"-{slug}" if slug else ""
+    return f"mtg-collection{suffix}-{stamp}.mtgbackup.zip"
 
 
-@router.get("/export")
-def export_collection(conn: sqlite3.Connection = Depends(get_db)) -> Response:
-    payload = backup_service.build_export_bytes(conn)
+def backup_zip_response(payload: bytes, profile_name: str | None = None) -> Response:
     return Response(
         content=payload,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="{_export_filename()}"',
+            "Content-Disposition": f'attachment; filename="{export_filename(profile_name)}"',
         },
     )
+
+
+@router.get("/export")
+def export_collection(conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    profile = backup_service.current_profile_manifest()
+    payload = backup_service.build_export_bytes(conn, profile=profile)
+    return backup_zip_response(payload, (profile or {}).get("name"))
 
 
 @router.post("/preview")

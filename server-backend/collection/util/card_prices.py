@@ -1,5 +1,6 @@
 import sqlite3
 
+from lib.db import is_attached_table
 from util.card_finishes import (
     FINISH_ETCHED,
     FINISH_FOIL,
@@ -94,7 +95,8 @@ def _purchase_exists(
 def ensure_card_prices_table(conn: sqlite3.Connection) -> None:
     from util.finish_migration import ensure_finish_migration
 
-    conn.executescript(CARD_PRICES_TABLE_SQL)
+    if not is_attached_table(conn, "card_prices"):
+        conn.executescript(CARD_PRICES_TABLE_SQL)
     ensure_finish_migration(conn)
 
 

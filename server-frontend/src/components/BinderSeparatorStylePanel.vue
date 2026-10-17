@@ -14,6 +14,19 @@ import {
   normalizeBinderSeparatorStyle,
 } from "../utils/binderSeparatorStyle";
 
+const props = defineProps({
+  artStyleGroups: { type: Array, default: () => [] },
+  excludedArtStyleKeys: { type: Set, default: () => new Set() },
+  artStylesLoading: { type: Boolean, default: false },
+});
+
+const emit = defineEmits([
+  "toggle-art-style",
+  "select-all-art-styles",
+  "select-set-art-styles",
+  "clear-set-art-styles",
+]);
+
 const model = defineModel({
   type: Object,
   required: true,
@@ -88,6 +101,29 @@ const fontSummary = computed(() => {
   const size = titleLabels[model.value.titleScale] || model.value.titleScale;
   return `${family} · ${size}`;
 });
+
+const artStyleTotal = computed(() =>
+  props.artStyleGroups.reduce((total, group) => total + (group.styles?.length || 0), 0),
+);
+
+const artStyleSummary = computed(() => {
+  if (!artStyleTotal.value) {
+    return props.artStylesLoading ? "Loading" : "None";
+  }
+  let excluded = 0;
+  for (const group of props.artStyleGroups) {
+    for (const style of group.styles || []) {
+      if (props.excludedArtStyleKeys.has(style.key)) {
+        excluded += 1;
+      }
+    }
+  }
+  return `${artStyleTotal.value - excluded} of ${artStyleTotal.value}`;
+});
+
+function artStyleIncluded(key) {
+  return !props.excludedArtStyleKeys.has(key);
+}
 </script>
 
 <template>
@@ -98,6 +134,64 @@ const fontSummary = computed(() => {
         Reset
       </button>
     </div>
+
+    <SeparatorStyleSection title="Art styles" :summary="artStyleSummary" default-open>
+      <p v-if="artStylesLoading && !artStyleGroups.length" class="binder-art-style-muted">
+        Loading art styles…
+      </p>
+      <p v-else-if="!artStyleGroups.length" class="binder-art-style-muted">
+        Select a set with art style rules. Sets without rules still get one separator.
+      </p>
+      <template v-else>
+        <div class="binder-art-style-actions">
+          <button
+            type="button"
+            class="btn btn-secondary btn-small"
+            @click="emit('select-all-art-styles')"
+          >
+            Select all
+          </button>
+        </div>
+        <div
+          v-for="group in artStyleGroups"
+          :key="group.setCode"
+          class="binder-art-style-set"
+        >
+          <div class="binder-art-style-set-header">
+            <span class="binder-art-style-set-name">{{ group.setName }}</span>
+            <span class="binder-art-style-set-actions">
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                @click="emit('select-set-art-styles', group)"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                @click="emit('clear-set-art-styles', group)"
+              >
+                None
+              </button>
+            </span>
+          </div>
+          <label
+            v-for="style in group.styles"
+            :key="style.key"
+            class="binder-style-check binder-style-check--spread"
+          >
+            <input
+              type="checkbox"
+              :checked="artStyleIncluded(style.key)"
+              @change="emit('toggle-art-style', style.key)"
+            />
+            <span>{{ style.artStyle }}</span>
+            <span v-if="style.numberRange" class="binder-art-style-range">{{ style.numberRange }}</span>
+          </label>
+        </div>
+      </template>
+    </SeparatorStyleSection>
 
     <SeparatorStyleSection title="Background" :summary="backgroundSummary">
       <div class="binder-bg-theme-grid" role="listbox" aria-label="Background theme">

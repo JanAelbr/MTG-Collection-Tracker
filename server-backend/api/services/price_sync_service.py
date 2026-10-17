@@ -1,6 +1,7 @@
 import sqlite3
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 from lib.config import normalize_set_code
 from lib.run_log import get_logger
@@ -73,9 +74,12 @@ def resolve_price_sync_scope(
     *,
     set_code: str | None = None,
 ) -> tuple[set[str], set[str]]:
-    """Return (sets to scan, sets to price in full including unowned prints)."""
-    from api.services import settings_service
-    from util.cardmarket_prices import load_owned_price_set_codes
+    """Return (sets to scan, sets to price in full including unowned prints).
+
+    Prices live in the shared catalog, so the scope is the union of every
+    profile's favourites and owned prints.
+    """
+    from util.profile_demand import collect_catalog_demand
 
     if set_code:
         full_sets = expand_set_codes_with_families(
@@ -84,16 +88,14 @@ def resolve_price_sync_scope(
         )
         return full_sets, full_sets
 
-    favourite_sets = expand_set_codes_with_families(
-        conn,
-        [code for code in settings_service.get_favorite_sets(conn) if code],
-    )
-    owned_sets = {
-        normalize_set_code(code)
-        for code in load_owned_price_set_codes(conn)
-        if normalize_set_code(code)
-    }
-    return favourite_sets | owned_sets, favourite_sets
+    if _scope_uses_connection(conn):
+        from util.profile_demand import load_profile_demand
+
+        demand = load_profile_demand(conn)
+    else:
+        demand = collect_catalog_demand()
+    favourite_sets = expand_set_codes_with_families(conn, sorted(demand.favourite_sets))
+    return favourite_sets | demand.owned_set_codes, favourite_sets
 
 
 def resolve_price_sync_set_codes(
@@ -103,6 +105,109 @@ def resolve_price_sync_set_codes(
 ) -> set[str]:
     scan_codes, _full_sets = resolve_price_sync_scope(conn, set_code=set_code)
     return scan_codes
+
+
+def _scope_uses_connection(conn: sqlite3.Connection) -> bool:
+    """True when ``conn`` is the whole collection (single file or a unit-test database)."""
+    from lib.db import get_layout, main_database_path, single_database_path
+
+    if single_database_path() is not None:
+        return True
+    main = main_database_path(conn)
+    if not main:
+        return True
+    try:
+        return not Path(main).resolve().is_relative_to(get_layout().profiles_dir.resolve())
+    except OSError:
+        return True
+
+
+def _record_profile_snapshots(*, force: bool) -> None:
+    """Daily value snapshot for every profile, each on its own connection."""
+    from api.services.storage_service import record_daily_collection_snapshot
+    from lib.db import connect_catalog, single_database_path
+    from util.profile_demand import iter_profile_connections, list_profile_ids
+
+    if single_database_path() is not None or not list_profile_ids():
+        snap_conn = connect_catalog(row_factory=sqlite3.Row)
+        try:
+            saved = record_daily_collection_snapshot(snap_conn, skip_if_unchanged=not force)
+            snap_conn.commit()
+        except Exception:
+            log.exception("Daily collection snapshot failed")
+            return
+        finally:
+            snap_conn.close()
+        if saved.get("unchanged"):
+            log.info("Daily collection snapshot unchanged")
+        else:
+            log.info("Daily collection snapshot saved")
+        return
+
+    for profile_id, snap_conn in iter_profile_connections(row_factory=sqlite3.Row):
+        try:
+            saved = record_daily_collection_snapshot(snap_conn, skip_if_unchanged=not force)
+            snap_conn.commit()
+        except Exception:
+            log.exception("Daily collection snapshot failed for profile %s", profile_id)
+            continue
+        if saved.get("unchanged"):
+            log.info("Daily collection snapshot unchanged for profile %s", profile_id)
+        else:
+            log.info("Daily collection snapshot saved for profile %s", profile_id)
+
+
+def _profile_owned_keys(conn: sqlite3.Connection) -> set[tuple[str, str, int]]:
+    from util.profile_demand import load_profile_demand
+
+    demand = load_profile_demand(conn)
+    return demand.purchase_keys | demand.deck_owned_keys
+
+
+def _move_key(move: dict) -> tuple[str, str, int] | None:
+    """Print key, or None when the move does not name a print (kept for every profile)."""
+    set_code = normalize_set_code(move.get("setCode")) or ""
+    number = str(move.get("collectorNumber") or "").strip()
+    if not set_code or not number:
+        return None
+    try:
+        finish_id = int(move.get("finishId"))
+    except (TypeError, ValueError):
+        raw_id = str(move.get("id") or "")
+        parts = raw_id.split("|")
+        try:
+            finish_id = int(parts[2]) if len(parts) >= 3 else 0
+        except ValueError:
+            finish_id = 0
+    return set_code, number, finish_id
+
+
+def _profile_owns_move(move: dict, owned: set[tuple[str, str, int]]) -> bool:
+    key = _move_key(move)
+    return key is None or key in owned
+
+
+def scope_price_moves_to_profile(
+    conn: sqlite3.Connection,
+    movers,
+    cards,
+) -> tuple[dict, list]:
+    """Price sync records moves for prints owned by any profile; keep this profile's."""
+    from util.cardmarket_prices import _rank_price_movers
+
+    owned = _profile_owned_keys(conn)
+    card_list = [card for card in cards or [] if isinstance(card, dict)]
+    scoped_cards = [card for card in card_list if _profile_owns_move(card, owned)]
+    if scoped_cards and all("percent" in card and "delta" in card for card in scoped_cards):
+        return _rank_price_movers(scoped_cards), scoped_cards
+    normalized = normalize_price_sync_movers(movers)
+    return {
+        view: {
+            side: [move for move in normalized[view][side] if _profile_owns_move(move, owned)]
+            for side in ("risers", "fallers")
+        }
+        for view in ("absolute", "relative")
+    }, scoped_cards
 
 
 def _run_price_sync(set_codes: set[str], extra_qualifying_sets: set[str], force: bool) -> None:
@@ -138,9 +243,8 @@ def _run_price_sync(set_codes: set[str], extra_qualifying_sets: set[str], force:
             force_cardmarket=force,
             on_progress=on_progress,
         ) or {}
-        from api.cache import bump_cache_epoch
+        from api.cache import bump_catalog_epoch
         from api.services.pricing_service import refresh_guide_cache
-        from lib.config import DB_PATH
         from util.price_history import mark_price_sync_checked
 
         applied = bool(result.get("applied") or (result.get("updated_fields") or 0) > 0)
@@ -151,24 +255,9 @@ def _run_price_sync(set_codes: set[str], extra_qualifying_sets: set[str], force:
         if applied or force:
             on_progress(92, "Refreshing price cache")
             refresh_guide_cache()
-            bump_cache_epoch()
-            try:
-                from api.services.storage_service import record_daily_collection_snapshot
-
-                on_progress(95, "Saving collection snapshot")
-                with sqlite3.connect(DB_PATH) as snap_conn:
-                    snap_conn.row_factory = sqlite3.Row
-                    saved = record_daily_collection_snapshot(
-                        snap_conn,
-                        skip_if_unchanged=not force,
-                    )
-                    if saved.get("unchanged"):
-                        log.info("Daily collection snapshot unchanged; skipped store")
-                    else:
-                        log.info("Daily collection snapshot saved")
-                    snap_conn.commit()
-            except Exception:
-                log.exception("Daily collection snapshot failed")
+            bump_catalog_epoch()
+            on_progress(95, "Saving collection snapshots")
+            _record_profile_snapshots(force=force)
             try:
                 mark_price_sync_checked()
             except Exception:
@@ -424,18 +513,25 @@ def hydrate_price_sync_cards(conn: sqlite3.Connection, cards) -> list:
 def get_price_sync_status(conn: sqlite3.Connection) -> dict:
     last_sync = load_last_price_sync()
     if last_sync:
+        last_movers, last_cards = scope_price_moves_to_profile(
+            conn, last_sync.get("movers"), last_sync.get("cards"),
+        )
         last_sync = {
             **last_sync,
-            "cards": hydrate_price_sync_cards(conn, last_sync.get("cards") or []),
+            "movers": last_movers,
+            "cards": hydrate_price_sync_cards(conn, last_cards),
         }
     with _lock:
-        movers = normalize_price_sync_movers(_state.get("movers"))
-        if _state["status"] != "running" and not movers_have_rows(movers) and last_sync:
-            movers = last_sync.get("movers") or empty_price_sync_movers()
-        cards = hydrate_price_sync_cards(
-            conn,
-            _state.get("cards") or (last_sync or {}).get("cards") or [],
-        )
+        state_movers = _state.get("movers")
+        state_cards = list(_state.get("cards") or [])
+        status = _state["status"]
+    movers, cards = scope_price_moves_to_profile(conn, state_movers, state_cards)
+    if status != "running" and not movers_have_rows(movers) and last_sync:
+        movers = last_sync.get("movers") or empty_price_sync_movers()
+    if not cards and last_sync:
+        cards = last_sync.get("cards") or []
+    cards = hydrate_price_sync_cards(conn, cards)
+    with _lock:
         payload = {
             "status": _state["status"],
             "startedAt": _state["started_at"],

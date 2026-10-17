@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from lib.config import DB_PATH
+from lib.db import connect_current, table_exists
 from util.price_history import card_price_key, load_card_detail_compare_context
 from util.set_catalog import load_sets_catalog
 from util.storage_tables import ensure_storage_tables
@@ -75,9 +75,7 @@ def _load_price_histories(conn: sqlite3.Connection) -> dict[str, list[dict]]:
 
 # Load physical storage locations grouped by card finish.
 def _load_card_locations(conn: sqlite3.Connection) -> dict[str, list[dict]]:
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if not table:
         return {}
 
@@ -236,7 +234,7 @@ def _build_card_index_and_histories(
 
 # Build the lightweight card index and per-set history payloads.
 def load_card_detail_assets() -> tuple[dict, dict[str, dict[str, dict]]]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_current(row_factory=None) as conn:
         ensure_storage_tables(conn)
         ensure_card_columns(conn)
         cards_df = pd.read_sql_query(

@@ -1,5 +1,6 @@
 import sqlite3
 
+from lib.db import table_exists
 from util.card_finishes import FINISH_ETCHED, FINISH_FOIL, FINISH_NONFOIL
 
 
@@ -9,11 +10,7 @@ def _table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (table,),
-    ).fetchone()
-    return row is not None
+    return table_exists(conn, table)
 
 
 def _drop_orphan_migration_table(conn: sqlite3.Connection, table: str) -> None:

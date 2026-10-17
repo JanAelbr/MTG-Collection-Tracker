@@ -17,11 +17,13 @@ import {
   touchCachedEntry,
 
 } from "./apiCache.js";
+import { profileHeaders } from "./utils/profileSession.js";
 
 
 
 const listeners = {
   error: new Set(),
+  profileNotFound: new Set(),
 };
 
 const activeControllers = new Map();
@@ -86,6 +88,69 @@ export function onError(callback) {
   return () => listeners.error.delete(callback);
 }
 
+/** Called when the server no longer knows this tab's profile (deleted elsewhere). */
+export function onProfileNotFound(callback) {
+  listeners.profileNotFound.add(callback);
+  return () => listeners.profileNotFound.delete(callback);
+}
+
+export function isProfileNotFound(response, payload) {
+  return response?.status === 404 && payload?.detail?.code === "profile_not_found";
+}
+
+function errorMessage(response, payload, fallback) {
+  const detail = payload?.detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || String(item)).join(", ");
+  }
+  if (detail && typeof detail.message === "string") {
+    return detail.message;
+  }
+  return `${fallback} (${response.status})`;
+}
+
+/** Non-JSON-body requests (multipart uploads, downloads) with profile scoping. */
+async function profileFetch(path, options = {}, failureLabel = "Request failed") {
+  const response = await fetch(`/api${path}`, {
+    ...options,
+    headers: profileHeaders(options.headers || {}),
+  });
+  if (response.ok) {
+    return response;
+  }
+  const payload = await parseJson(response);
+  if (isProfileNotFound(response, payload)) {
+    listeners.profileNotFound.forEach((listener) => listener());
+  }
+  const message = errorMessage(response, payload, failureLabel);
+  notifyError(message);
+  throw new Error(message);
+}
+
+function filenameFromResponse(response, fallback) {
+  const header = response.headers.get("Content-Disposition") || "";
+  const match = header.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : fallback;
+}
+
+async function downloadResponse(response, fallbackName) {
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromResponse(response, fallbackName);
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function defaultBackupFilename() {
+  const stamp = new Date().toISOString().slice(0, 10);
+  return `mtg-collection-${stamp}.mtgbackup.zip`;
+}
+
 
 
 async function parseJson(response) {
@@ -120,7 +185,7 @@ function shouldUseClientCache(method, path) {
 
   }
 
-  if (path.startsWith("/prices/sync/status")) {
+  if (path.startsWith("/prices/sync/status") || path.startsWith("/profiles")) {
 
     return false;
 
@@ -171,10 +236,10 @@ async function performApiRequest(path, options = {}) {
     }
   }
 
-  const headers = {
+  const headers = profileHeaders({
     "Content-Type": "application/json",
     ...(options.headers || {}),
-  };
+  });
 
   if (useCache) {
     const cached = getCachedEntry(cacheKey);
@@ -204,13 +269,10 @@ async function performApiRequest(path, options = {}) {
 
     const payload = await parseJson(response);
     if (!response.ok) {
-      const detail = payload?.detail;
-      const message =
-        typeof detail === "string"
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((item) => item.msg || String(item)).join(", ")
-            : `Request failed (${response.status})`;
+      if (isProfileNotFound(response, payload)) {
+        listeners.profileNotFound.forEach((listener) => listener());
+      }
+      const message = errorMessage(response, payload, "Request failed");
       notifyError(message);
       throw new Error(message);
     }
@@ -294,13 +356,20 @@ export const api = {
 
     }),
 
-  deleteStorageLocation: (slug) =>
-
-    apiRequest(`/storage/locations/${encodeURIComponent(slug)}`, {
-
-      method: "DELETE",
-
-    }),
+  deleteStorageLocation: (slug, { disposition = null, moveTo = null } = {}) => {
+    const params = new URLSearchParams();
+    if (disposition) {
+      params.set("disposition", disposition);
+    }
+    if (moveTo) {
+      params.set("moveTo", moveTo);
+    }
+    const query = params.toString();
+    return apiRequest(
+      `/storage/locations/${encodeURIComponent(slug)}${query ? `?${query}` : ""}`,
+      { method: "DELETE" },
+    );
+  },
 
   getStorageLocationCards: (slug) =>
     apiRequest(`/storage/locations/${encodeURIComponent(slug)}/cards`),
@@ -960,56 +1029,87 @@ export const api = {
   },
 
   exportCollectionBackup: async () => {
-    const response = await fetch("/api/backup/export");
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      const message = payload?.detail || `Export failed (${response.status})`;
-      notifyError(message);
-      throw new Error(message);
-    }
-    const blob = await response.blob();
-    const stamp = new Date().toISOString().slice(0, 10);
-    const filename = `mtg-collection-${stamp}.mtgbackup.zip`;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+    const response = await profileFetch("/backup/export", {}, "Export failed");
+    await downloadResponse(response, defaultBackupFilename());
   },
 
   previewCollectionBackup: async (file) => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch("/api/backup/preview", {
-      method: "POST",
-      body: form,
-    });
-    const payload = await parseJson(response);
-    if (!response.ok) {
-      const message = payload?.detail || `Preview failed (${response.status})`;
-      notifyError(message);
-      throw new Error(message);
-    }
-    return payload;
+    const response = await profileFetch(
+      "/backup/preview",
+      { method: "POST", body: form },
+      "Preview failed",
+    );
+    return parseJson(response);
   },
 
   importCollectionBackup: async (file, mode = "replace") => {
     const form = new FormData();
     form.append("file", file);
     form.append("mode", mode);
-    const response = await fetch("/api/backup/import", {
-      method: "POST",
-      body: form,
-    });
-    const payload = await parseJson(response);
-    if (!response.ok) {
-      const message = payload?.detail || `Import failed (${response.status})`;
-      notifyError(message);
-      throw new Error(message);
-    }
+    const response = await profileFetch(
+      "/backup/import",
+      { method: "POST", body: form },
+      "Import failed",
+    );
     clearClientCache();
-    return payload;
+    return parseJson(response);
+  },
+
+  listProfiles: ({ stats = false } = {}) =>
+    apiRequest(`/profiles${stats ? "?stats=true" : ""}`),
+
+  getProfile: (profileId) => apiRequest(`/profiles/${encodeURIComponent(profileId)}`),
+
+  createProfile: ({ name, color = null, avatar = null, copyFrom = null }) =>
+    apiRequest("/profiles", {
+      method: "POST",
+      body: JSON.stringify({ name, color, avatar, copyFrom }),
+    }),
+
+  updateProfile: (profileId, patch) =>
+    apiRequest(`/profiles/${encodeURIComponent(profileId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  deleteProfile: (profileId) =>
+    apiRequest(`/profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" }),
+
+  activateProfile: (profileId) =>
+    apiRequest(`/profiles/${encodeURIComponent(profileId)}/activate`, { method: "POST" }),
+
+  reorderProfiles: (profileIds) =>
+    apiRequest("/profiles/order", {
+      method: "PUT",
+      body: JSON.stringify({ profileIds }),
+    }),
+
+  importProfile: async (file, { name = "", color = "" } = {}) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (name) {
+      form.append("name", name);
+    }
+    if (color) {
+      form.append("color", color);
+    }
+    const response = await profileFetch(
+      "/profiles/import",
+      { method: "POST", body: form },
+      "Profile import failed",
+    );
+    return parseJson(response);
+  },
+
+  exportProfile: async (profileId) => {
+    const response = await profileFetch(
+      `/profiles/${encodeURIComponent(profileId)}/export`,
+      {},
+      "Export failed",
+    );
+    await downloadResponse(response, defaultBackupFilename());
   },
 
   syncBackupCatalogs: (setCodes) =>

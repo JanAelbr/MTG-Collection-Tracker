@@ -9,11 +9,29 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 
-from api.db import connect
-from api.routers import backup, cards, deck_builder, decks, favorites, health, manager, meta, prices, reports, sales, settings, stats, storage
+from api.db import connect_profile
+from api.profile_middleware import ProfileContextMiddleware
+from api.routers import (
+    backup,
+    cards,
+    deck_builder,
+    decks,
+    favorites,
+    health,
+    manager,
+    meta,
+    prices,
+    profiles,
+    reports,
+    sales,
+    settings,
+    stats,
+    storage,
+)
 from lib.config import FRONTEND_DIST
+from lib.db import single_database_path
 from lib.run_log import configure_logging, get_logger
-from util.schema import ensure_database_schema
+from util.storage_layout import bootstrap_storage
 
 OPENAPI_PATH_PREFIXES = ("docs", "redoc", "openapi.json")
 log = get_logger(__name__)
@@ -37,31 +55,38 @@ def _preload_price_guide() -> None:
         log.warning("Could not preload Cardmarket price guide at startup", exc_info=True)
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    configure_logging(verbose=_verbose_logging_enabled())
-    log.info("API starting")
-    conn = connect()
-    try:
-        ensure_database_schema(conn)
-        from api.services.decks_service import reconcile_all_deck_owned_storage
+def _reconcile_profile_storage(profile_id: str) -> None:
+    from api.services.decks_service import reconcile_all_deck_owned_storage
 
+    conn = connect_profile(profile_id)
+    try:
         result = reconcile_all_deck_owned_storage(conn)
         if result.get("claimedToDeck") or result.get("movedToStorage"):
             log.info(
-                "Deck storage reconcile: claimed=%s released=%s rows=%s",
+                "Deck storage reconcile (%s): claimed=%s released=%s rows=%s",
+                profile_id,
                 result.get("claimedToDeck"),
                 result.get("movedToStorage"),
                 result.get("ownedRows"),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    configure_logging(verbose=_verbose_logging_enabled())
+    log.info("API starting")
+    try:
+        if single_database_path() is None:
+            for profile_id in bootstrap_storage():
+                _reconcile_profile_storage(profile_id)
         _preload_price_guide()
         log.info("API ready")
     except Exception:
-        log.exception("API startup failed during schema ensure")
+        log.exception("API startup failed during storage bootstrap")
         raise
-    finally:
-        conn.close()
     yield
     log.info("API shutting down")
 
@@ -79,6 +104,13 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=[
         {"name": "health", "description": "Service health checks."},
+        {
+            "name": "profiles",
+            "description": (
+                "Collection profiles. Every other endpoint is scoped to the profile in the "
+                "X-Profile-Id header (default profile when omitted)."
+            ),
+        },
         {"name": "meta", "description": "App metadata (price freshness, cache epoch)."},
         {"name": "settings", "description": "User preferences and favourites."},
         {"name": "favorites", "description": "Favourite sets, art styles, and cards."},
@@ -119,6 +151,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 async def api_docs_redirect() -> RedirectResponse:
     return RedirectResponse(url="/docs")
 
+# Registered before CORS so CORS stays outermost and also wraps profile 404s.
+app.add_middleware(ProfileContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -134,6 +168,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(profiles.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(favorites.router, prefix="/api")

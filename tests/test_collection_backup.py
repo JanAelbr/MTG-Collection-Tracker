@@ -231,7 +231,7 @@ class CollectionBackupTests(unittest.TestCase):
         self.assertEqual(restored[0]["name"], "01. Custom main")
         self.assertEqual(restored[1]["lastNumber"], 300)
 
-    def test_replace_import_clears_art_styles_not_in_backup(self):
+    def test_replace_import_keeps_shared_art_styles_absent_from_backup(self):
         save_art_style_rules(
             self.conn,
             "NCC",
@@ -262,7 +262,7 @@ class CollectionBackupTests(unittest.TestCase):
         import_collection_zip(replace_conn, partial_archive, mode="replace")
         replace_conn.commit()
 
-        self.assertIsNone(
+        self.assertIsNotNone(
             replace_conn.execute(
                 "SELECT 1 FROM art_style_rules WHERE set_code = 'ncc'",
             ).fetchone(),

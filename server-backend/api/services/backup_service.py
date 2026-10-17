@@ -1,6 +1,6 @@
 import sqlite3
 
-from api.cache import bump_cache_epoch
+from api.cache import bump_cache_epoch, bump_catalog_epoch
 from lib.config import normalize_set_code
 from lib.run_log import get_logger
 from util.collection_backup import (
@@ -15,9 +15,19 @@ from util.tracked_sets import add_tracked_set, is_set_tracked, remove_tracked_se
 log = get_logger(__name__)
 
 
-def build_export_bytes(conn: sqlite3.Connection) -> bytes:
+def current_profile_manifest() -> dict | None:
+    from lib.profile_context import get_current_profile_id
+    from util.profile_registry import get_profile
+
+    profile = get_profile(get_current_profile_id())
+    if profile is None:
+        return None
+    return {"name": profile.name, "color": profile.color, "avatar": profile.avatar}
+
+
+def build_export_bytes(conn: sqlite3.Connection, *, profile: dict | None = None) -> bytes:
     log.info("Building collection backup export")
-    data = export_collection_zip(conn)
+    data = export_collection_zip(conn, profile=profile or current_profile_manifest())
     log.info("Collection backup export ready (%s bytes)", len(data))
     return data
 
@@ -82,7 +92,7 @@ def sync_catalogs_for_sets(conn: sqlite3.Connection, set_codes: list[str]) -> di
             log.exception("Catalog sync failed for %s", normalized)
 
     conn.commit()
-    bump_cache_epoch()
+    bump_catalog_epoch()
     message = (
         f"Catalog sync finished: {len(synced)} imported, "
         f"{len(skipped)} already present, {len(errors)} failed."

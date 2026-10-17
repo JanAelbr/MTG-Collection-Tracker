@@ -53,10 +53,11 @@ class PerformanceBenchmarkTests(unittest.TestCase):
         )
         cls.conn.commit()
 
+        from lib.db import use_single_database
+
+        cls._single_db = use_single_database(cls.db_path)
+        cls._single_db.__enter__()
         cls._patches = [
-            patch("api.db.DB_PATH", cls.db_path),
-            patch("lib.config.DB_PATH", cls.db_path),
-            patch("report.ranked_cards_data.DB_PATH", cls.db_path),
             patch("api.services.pricing_service._load_guide", return_value={}),
         ]
         for item in cls._patches:
@@ -68,6 +69,7 @@ class PerformanceBenchmarkTests(unittest.TestCase):
     def tearDownClass(cls):
         for item in reversed(cls._patches):
             item.stop()
+        cls._single_db.__exit__(None, None, None)
         cls.conn.close()
         cls._temp_dir.cleanup()
         if cls._results:
@@ -426,10 +428,11 @@ class PerformanceHttpBenchmarkTests(unittest.TestCase):
         cls.db_path = Path(cls._temp_dir.name) / "benchmark-http.db"
         cls.summary = seed_benchmark_collection(cls.db_path, card_count=DEFAULT_CARD_COUNT)
 
+        from lib.db import use_single_database
+
+        cls._single_db = use_single_database(cls.db_path)
+        cls._single_db.__enter__()
         cls._patches = [
-            patch("api.db.DB_PATH", cls.db_path),
-            patch("lib.config.DB_PATH", cls.db_path),
-            patch("report.ranked_cards_data.DB_PATH", cls.db_path),
             patch("api.services.pricing_service._load_guide", return_value={}),
         ]
         for item in cls._patches:
@@ -442,6 +445,7 @@ class PerformanceHttpBenchmarkTests(unittest.TestCase):
     def tearDownClass(cls):
         for item in reversed(cls._patches):
             item.stop()
+        cls._single_db.__exit__(None, None, None)
         cls._temp_dir.cleanup()
         if cls._results:
             print("\n--- HTTP performance benchmarks ---", file=sys.stderr)

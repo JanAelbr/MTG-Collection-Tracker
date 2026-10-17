@@ -353,6 +353,24 @@ class BackupCatalogSyncRequest(BaseModel):
     setCodes: list[str] = Field(default_factory=list)
 
 
+class ProfileCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    color: str | None = Field(default=None, max_length=16)
+    avatar: str | None = Field(default=None, max_length=4)
+    copyFrom: str | None = Field(default=None, pattern="^[0-9a-f]{32}$")
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    color: str | None = Field(default=None, max_length=16)
+    avatar: str | None = Field(default=None, max_length=4)
+    isDefault: bool | None = None
+
+
+class ProfileReorder(BaseModel):
+    profileIds: list[str] = Field(default_factory=list)
+
+
 class BuilderCommanderPrint(BaseModel):
     setCode: str = Field(min_length=1, max_length=16)
     collectorNumber: str = Field(min_length=1, max_length=32)

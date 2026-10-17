@@ -1,6 +1,6 @@
 import sqlite3
 
-from lib.config import DB_PATH
+from lib.db import connect_current, table_exists
 from report.report_data import get_all_set_codes
 from util.db_migrate import ensure_card_columns
 
@@ -104,9 +104,7 @@ def load_locations_for_set(
     conn: sqlite3.Connection,
     set_code: str,
 ) -> dict[str, dict[int, list[dict]]]:
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if not table:
         return {}
 
@@ -367,7 +365,7 @@ def load_manager_cards_for_set(conn: sqlite3.Connection, set_code: str) -> list[
 # Build the client payload for collection manager pages.
 def load_manager_client_payload() -> dict:
     sets = get_all_set_codes()
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_current(row_factory=None) as conn:
         conn.row_factory = sqlite3.Row
         ensure_card_columns(conn)
         conn.commit()

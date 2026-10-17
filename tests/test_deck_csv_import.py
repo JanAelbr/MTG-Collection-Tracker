@@ -10,6 +10,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 from api.services import decks_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.deck_csv_import import build_csv_import_plan, parse_deck_csv  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
 from util.storage_tables import ensure_storage_tables, seed_storage_locations  # noqa: E402
 
@@ -42,6 +43,11 @@ class DeckCsvImportTests(unittest.TestCase):
                 image_uri TEXT,
                 cardmarket_url TEXT
             );
+            """
+        )
+        ensure_card_columns(self.conn)
+        self.conn.executescript(
+            """
             CREATE TABLE purchases (
                 purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 set_code TEXT NOT NULL,

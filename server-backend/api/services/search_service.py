@@ -1,6 +1,7 @@
 import sqlite3
 import re
 
+from lib.db import table_exists
 from report.card_detail_data import collector_sort_key
 
 from api.services.reports_service import (
@@ -92,9 +93,7 @@ def _normalize_foil_filter(foil_filter: str) -> str:
 
 def _has_cards_fts(conn: sqlite3.Connection) -> bool:
     return bool(
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards_fts' LIMIT 1"
-        ).fetchone()
+        table_exists(conn, "cards_fts")
     )
 
 
@@ -411,9 +410,7 @@ def _catalog_match_parts(conn: sqlite3.Connection, **kwargs) -> tuple[list[str],
 
 def _cards_from_sql(conn: sqlite3.Connection, joins: list[str]) -> tuple[str, str]:
     has_sets = bool(
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sets' LIMIT 1"
-        ).fetchone()
+        table_exists(conn, "sets")
     )
     sets_join = "LEFT JOIN sets s ON s.set_code = c.set_code" if has_sets else ""
     released = "COALESCE(s.released_at, '')" if has_sets else "''"
@@ -449,12 +446,7 @@ def _search_order_sql(sort: str, direction: str, released_expr: str, price_sql: 
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    return bool(
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-            (table_name,),
-        ).fetchone()
-    )
+    return table_exists(conn, table_name)
 
 
 def _parse_stored_roles(raw) -> list[str]:
@@ -734,9 +726,7 @@ def _load_set_release_dates(conn: sqlite3.Connection) -> dict[str, str]:
 
 def _has_card_instances_table(conn: sqlite3.Connection) -> bool:
     return bool(
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-        ).fetchone()
+        table_exists(conn, "card_instances")
     )
 
 

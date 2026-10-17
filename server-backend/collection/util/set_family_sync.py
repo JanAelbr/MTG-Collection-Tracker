@@ -96,9 +96,9 @@ def ensure_tracked_family_children(
     if added:
         conn.commit()
         try:
-            from api.cache import bump_cache_epoch
+            from api.cache import bump_catalog_epoch
 
-            bump_cache_epoch()
+            bump_catalog_epoch()
         except Exception:
             pass
     return {"added": added, "skipped": skipped, "families": len(roots)}

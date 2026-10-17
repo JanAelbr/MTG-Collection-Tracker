@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { activeProfile, hasMultipleProfiles } from "./composables/activeProfile";
 import { APP_TITLE } from "./constants/app";
+import { getActiveProfileId } from "./utils/profileSession";
 
 // Route components are lazy-loaded so the initial bundle only pays for the
 // view the user actually lands on.
@@ -19,6 +21,8 @@ const SetsView = () => import("./views/SetsView.vue");
 const PrintCardsView = () => import("./views/PrintCardsView.vue");
 const PrintPricesView = () => import("./views/PrintPricesView.vue");
 const SeparatorsView = () => import("./views/SeparatorsView.vue");
+const ProfilePickerView = () => import("./views/ProfilePickerView.vue");
+const SettingsProfilesView = () => import("./views/SettingsProfilesView.vue");
 
 const router = createRouter({
   history: createWebHistory(),
@@ -35,6 +39,7 @@ const router = createRouter({
     return { top: 0 };
   },
   routes: [
+    { path: "/profiles", name: "profiles", component: ProfilePickerView, meta: { title: "Profiles", bare: true } },
     { path: "/", name: "home", component: FavoritesHomeView, meta: { title: "Home" } },
     { path: "/changes", name: "home-changes", component: FavoritesHomeView, meta: { title: "Changes" } },
     { path: "/collection", redirect: "/collection/all" },
@@ -87,6 +92,12 @@ const router = createRouter({
       name: "settings-backup",
       component: SettingsBackupView,
       meta: { title: "Settings" },
+    },
+    {
+      path: "/settings/profiles",
+      name: "settings-profiles",
+      component: SettingsProfilesView,
+      meta: { title: "Profiles" },
     },
     { path: "/home", redirect: "/" },
     { path: "/sets", redirect: "/settings/sets" },
@@ -188,9 +199,18 @@ const router = createRouter({
   ],
 });
 
+router.beforeEach((to) => {
+  if (to.path === "/profiles" || getActiveProfileId()) {
+    return true;
+  }
+  return { path: "/profiles" };
+});
+
 router.afterEach((to) => {
   const section = typeof to.meta.title === "string" ? to.meta.title : "";
-  document.title = section ? `${APP_TITLE} · ${section}` : APP_TITLE;
+  const page = section ? `${APP_TITLE} · ${section}` : APP_TITLE;
+  const profileName = hasMultipleProfiles.value ? activeProfile.value?.name : "";
+  document.title = profileName ? `${page} · ${profileName}` : page;
 });
 
 export default router;

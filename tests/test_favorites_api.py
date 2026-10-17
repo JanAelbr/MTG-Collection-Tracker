@@ -123,17 +123,10 @@ class FavoritesApiTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self._tmpdir.name) / "test.db"
         _seed_test_db(self.db_path)
-        self.db_patch = patch("api.db.DB_PATH", self.db_path)
-        self.db_patch.start()
-        # report loaders import DB_PATH by value — patch each consumer module.
-        self.extra_patches = [
-            patch("lib.config.DB_PATH", self.db_path),
-            patch("report.report_data.DB_PATH", self.db_path),
-            patch("report.ranked_cards_data.DB_PATH", self.db_path),
-            patch("report.manager_data.DB_PATH", self.db_path),
-        ]
-        for item in self.extra_patches:
-            item.start()
+        from lib.db import use_single_database
+
+        self._single_db = use_single_database(self.db_path)
+        self._single_db.__enter__()
         from api.cache import memory_cache
 
         memory_cache.clear()
@@ -141,9 +134,7 @@ class FavoritesApiTests(unittest.TestCase):
 
     def tearDown(self):
         self.client.close()
-        for item in self.extra_patches:
-            item.stop()
-        self.db_patch.stop()
+        self._single_db.__exit__(None, None, None)
         try:
             self._tmpdir.cleanup()
         except PermissionError:

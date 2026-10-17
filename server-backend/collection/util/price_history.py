@@ -10,7 +10,8 @@ import pandas as pd
 
 
 
-from lib.config import DB_PATH
+from lib.db import connect_catalog
+from util.catalog_meta import get_catalog_meta, set_catalog_meta
 
 from util.card_finishes import card_price_key
 
@@ -261,44 +262,22 @@ def load_card_detail_compare_context(
 
 
 def load_last_updated_display(conn: sqlite3.Connection | None = None) -> str:
-
     if conn is None:
-
-        with sqlite3.connect(DB_PATH) as own_conn:
-
+        with connect_catalog(row_factory=None) as own_conn:
             dates = get_price_snapshot_dates(own_conn)
-
     else:
-
         dates = get_price_snapshot_dates(conn)
-
     return dates[0] if dates else "Unknown"
-
-
-
 
 
 PRICE_SYNC_CHECKED_KEY = "price_sync_checked_date"
 
 
 def _price_sync_checked_on(conn: sqlite3.Connection | None) -> str:
-    def read(db: sqlite3.Connection) -> str:
-        try:
-            row = db.execute(
-                "SELECT value FROM user_settings WHERE key = ?",
-                (PRICE_SYNC_CHECKED_KEY,),
-            ).fetchone()
-        except sqlite3.OperationalError:
-            return ""
-        if not row:
-            return ""
-        value = row["value"] if isinstance(row, sqlite3.Row) else row[0]
-        return str(value or "").strip()
-
     if conn is None:
-        with sqlite3.connect(DB_PATH) as own_conn:
-            return read(own_conn)
-    return read(conn)
+        with connect_catalog(row_factory=None) as own_conn:
+            return get_catalog_meta(own_conn, PRICE_SYNC_CHECKED_KEY)
+    return get_catalog_meta(conn, PRICE_SYNC_CHECKED_KEY)
 
 
 def mark_price_sync_checked(
@@ -307,26 +286,13 @@ def mark_price_sync_checked(
     today: date | None = None,
 ) -> None:
     day = (today or date.today()).isoformat()
-
-    def write(db: sqlite3.Connection) -> None:
-        try:
-            db.execute(
-                """
-                INSERT INTO user_settings (key, value)
-                VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                """,
-                (PRICE_SYNC_CHECKED_KEY, day),
-            )
-        except sqlite3.OperationalError:
-            return
-
     if conn is None:
-        with sqlite3.connect(DB_PATH) as own_conn:
-            write(own_conn)
+        with connect_catalog(row_factory=None) as own_conn:
+            set_catalog_meta(own_conn, PRICE_SYNC_CHECKED_KEY, day)
             own_conn.commit()
         return
-    write(conn)
+    set_catalog_meta(conn, PRICE_SYNC_CHECKED_KEY, day)
+
 
 
 # True when the newest snapshot is missing or older than today.

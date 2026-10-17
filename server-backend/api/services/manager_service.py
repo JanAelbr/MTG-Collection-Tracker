@@ -1,6 +1,7 @@
 import sqlite3
 
-from api.cache import bump_cache_epoch, get_cache_epoch, memory_cache
+from api.cache import bump_cache_epoch, bump_catalog_epoch, get_cache_epoch, memory_cache
+from lib.db import table_exists
 from lib.art_styles import (
     load_art_style_rules,
     refresh_art_styles_for_set,
@@ -42,6 +43,7 @@ from util.card_finishes import (
 from util.db_migrate import ensure_card_columns
 from util.app_tables import ensure_app_tables
 from util.deck_tables import list_deck_sync_set_codes
+from util.profile_demand import other_profiles_demand
 from util.scryfall_catalog_sync import import_set_catalog_from_scryfall
 from util.set_catalog import fetch_all_scryfall_sets
 from util.set_families import (
@@ -275,7 +277,7 @@ def save_art_style_rules_for_set(
         raise ManagerError(str(exc), status_code=400) from exc
 
     updated_cards = refresh_art_styles_for_set(conn, normalized)
-    bump_cache_epoch()
+    bump_catalog_epoch()
     art_styles = build_art_style_options_for_set(conn, normalized)
     log.info(
         "Saved art style rules for %s (%s rule(s), %s card(s) updated)",
@@ -684,9 +686,7 @@ def _owned_finishes_for_print(
         (normalized_set, normalized_number),
     ):
         finishes.add(int(row[0]))
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if table:
         for row in conn.execute(
             """
@@ -1430,7 +1430,7 @@ def add_set(conn: sqlite3.Connection, set_code: str) -> dict:
         raise ManagerError(f"Set {root} family already exists")
 
     conn.commit()
-    bump_cache_epoch()
+    bump_catalog_epoch()
     set_names = get_set_display_names(refresh=True)
     log.info(
         "Added tracked family %s members=%s skipped=%s (%s catalog card(s))",
@@ -1524,7 +1524,10 @@ def reload_set_catalog(conn: sqlite3.Connection, set_code: str) -> dict:
             status_code=404,
         )
 
-    bump_cache_epoch()
+    from util.deck_helpers import relink_unresolved_deck_cards
+
+    relink_unresolved_deck_cards(conn, reloaded)
+    bump_catalog_epoch()
     set_names = get_set_display_names(refresh=True)
     root = auto_family[0] if auto_family else (family_codes[0] if family_codes else normalized)
     log.info(
@@ -1551,9 +1554,7 @@ def _delete_catalog_for_set(conn: sqlite3.Connection, set_code: str) -> bool:
     deleted = False
     if conn.execute("DELETE FROM cards WHERE set_code = ?", (code,)).rowcount:
         deleted = True
-    has_prices = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_prices'"
-    ).fetchone()
+    has_prices = table_exists(conn, "card_prices")
     if has_prices and conn.execute(
         "DELETE FROM card_prices WHERE set_code = ?",
         (code,),
@@ -1588,6 +1589,17 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
             f"Cannot remove a set that has owned cards ({', '.join(blocked_owned)})"
         )
 
+    others = other_profiles_demand()
+    blocked_shared = [
+        code for code in family_codes
+        if code in others.owned_set_codes or code in others.deck_set_codes
+    ]
+    if blocked_shared:
+        raise ManagerError(
+            "Cannot remove a set that another profile owns or uses in a deck "
+            f"({', '.join(blocked_shared)})"
+        )
+
     removed: list[str] = []
     for code in family_codes:
         untracked = remove_tracked_set(conn, code)
@@ -1607,7 +1619,7 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
             [code for code in favorites if code.upper() not in removed_upper],
         )
 
-    bump_cache_epoch()
+    bump_catalog_epoch()
     get_set_display_names(refresh=True)
     root = family_codes[0]
     log.info("Removed set family %s members=%s", root, ",".join(removed))
@@ -1617,6 +1629,8 @@ def remove_set(conn: sqlite3.Connection, set_code: str) -> dict:
 def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
     tracked = {normalize_set_code(code) for code in list_tracked_set_codes(conn)}
     tracked |= {code.upper() for code in list_deck_sync_set_codes(conn)}
+    others = other_profiles_demand()
+    tracked |= others.owned_set_codes | others.deck_set_codes
 
     rows = conn.execute("SELECT DISTINCT set_code FROM cards").fetchall()
     orphan_codes = sorted(
@@ -1629,9 +1643,7 @@ def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
 
     deleted_cards = 0
     deleted_prices = 0
-    has_prices = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_prices'"
-    ).fetchone()
+    has_prices = table_exists(conn, "card_prices")
     for code in orphan_codes:
         before_cards = conn.execute(
             "SELECT COUNT(*) FROM cards WHERE set_code = ?",
@@ -1648,7 +1660,7 @@ def prune_orphan_catalogs(conn: sqlite3.Connection) -> dict:
         deleted_prices += before_prices
 
     if orphan_codes:
-        bump_cache_epoch()
+        bump_catalog_epoch()
         get_set_display_names(refresh=True)
         log.info(
             "Pruned %s orphan catalog set(s): deleted %s card(s), %s price row(s)",

@@ -35,7 +35,7 @@ Rows are unique per `(deck_id, set_code, collector_number, finish, section)` —
 
 ### Catalog matching
 
-When you add a card, the API resolves the print against the `cards` table. If the set has not been loaded yet (Settings → Sets), the row is stored with `in_catalog = 0` until you register that set and run a price/catalog sync.
+When you add a card, the API resolves the print against the `cards` table. If the set has not been loaded yet (Settings → Sets), the row is stored with `in_catalog = 0` and a placeholder name (`SET #number`). Refreshing or importing that set rewrites those placeholders from the catalog and relinks unresolved deck cards whose collector number names a printing in a loaded set (for example `PLST` `BLB-127` becomes `BLB` `127` when the List slot is missing and Bloomburrow has that card).
 
 Set codes referenced by deck cards are included in price-update set discovery (`util/deck_tables.list_deck_sync_set_codes`).
 
@@ -73,6 +73,8 @@ Use **Settings → Sync** in the app (Cardmarket only).
 
 ## Backup contents
 
-Collection backups include purchases, decks, deck cards, storage locations, card instances, art-style rules, tracked sets, and user settings. They do **not** include the full Scryfall catalog or price history — restore those by loading sets in Settings → Sets and running price sync after import.
+Collection backups include purchases, decks, deck cards, storage locations, card instances, sale listings, storage snapshots, art-style rules, and user settings of the **active profile**, plus the profile's name and colour in `manifest.json`. They do **not** include tracked sets, the Scryfall catalog, or price history (those live in the shared catalog) — the restore screen lists the referenced sets so you can load them and run price sync after import.
+
+Restoring replaces or merges into the active profile. To bring a backup in next to your current collection instead, use **Settings → Profiles → Import as new profile**. Art-style rules are shared between profiles: restoring a backup only overwrites the rules for the sets it contains.
 
 Implementation: `server-backend/collection/util/collection_backup.py`.

@@ -2,7 +2,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib.config import DB_PATH
+from lib.db import connect_current
 
 
 # Load the number of completion slots available per set.
@@ -12,7 +12,7 @@ def load_catalog_counts(conn: sqlite3.Connection | None = None) -> pd.DataFrame:
     if conn is not None:
         counts = load_catalog_count_by_set(conn)
     else:
-        with sqlite3.connect(DB_PATH) as db_conn:
+        with connect_current(row_factory=None) as db_conn:
             counts = load_catalog_count_by_set(db_conn)
     if not counts:
         return pd.DataFrame(columns=["set_code", "catalog_cards"])

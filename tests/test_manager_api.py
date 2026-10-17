@@ -322,6 +322,33 @@ class ManagerApiServiceTests(unittest.TestCase):
         self.assertEqual(result["catalogCount"], 42)
         mock_import.assert_called_once_with(self.conn, "LTR")
 
+    @patch("api.services.manager_service._family_scope_for_reload", return_value=(["LTR"], ["LTR"]))
+    @patch("api.services.manager_service.import_set_catalog_from_scryfall", return_value=42)
+    def test_reload_set_catalog_relinks_unresolved_deck_cards(self, _mock_import, _mock_family):
+        self.conn.execute(
+            """
+            INSERT INTO decks (name, slug, created_at, updated_at)
+            VALUES ('Sample', 'sample', '2026-01-01', '2026-01-01')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id, card_name, set_code, collector_number, finish, in_catalog
+            ) VALUES (1, 'LTR #1', 'LTR', '1', 0, 0)
+            """
+        )
+        self.conn.commit()
+
+        result = manager_service.reload_set_catalog(self.conn, "LTR")
+
+        row = self.conn.execute(
+            "SELECT card_name, in_catalog FROM deck_cards WHERE deck_id = 1"
+        ).fetchone()
+        self.assertEqual(row["card_name"], "Test Card")
+        self.assertEqual(row["in_catalog"], 1)
+        self.assertEqual(result["setCode"], "LTR")
+
     def test_reload_set_catalog_rejects_unknown_set(self):
         with self.assertRaises(manager_service.ManagerError):
             manager_service.reload_set_catalog(self.conn, "ZZZZ")

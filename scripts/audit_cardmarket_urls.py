@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server-backend" / "collection"))
 
-from lib.config import DB_PATH  # noqa: E402
+from lib.config import CATALOG_DB_PATH  # noqa: E402
 from lib.run_log import configure_logging, get_logger  # noqa: E402
 from util.cardmarket_prices import load_price_guide_index  # noqa: E402
 from util.cardmarket_urls import (  # noqa: E402
@@ -64,10 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     configure_logging(verbose=False)
-    log.info("Auditing Cardmarket URLs in %s", DB_PATH)
+    log.info("Auditing Cardmarket URLs in %s", CATALOG_DB_PATH)
     guide = load_price_guide_index()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(CATALOG_DB_PATH) as conn:
         report = audit_cardmarket_urls(conn, guide, sample_limit=max(1, args.sample_limit))
         if args.json:
             print(json.dumps(report, indent=2))

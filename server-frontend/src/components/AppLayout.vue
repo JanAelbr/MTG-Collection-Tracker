@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 
 import AppLogoIcon from "./AppLogoIcon.vue";
 import NavbarSearch from "./NavbarSearch.vue";
+import ProfileSwitcher from "./ProfileSwitcher.vue";
 import ConfirmDialogHost from "./ConfirmDialogHost.vue";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useCatalogChrome } from "../composables/useCatalogChrome";
@@ -40,6 +41,7 @@ const settingsSubnav = [
   { to: "/settings/sets", label: "Sets" },
   { to: "/settings/sync", label: "Sync" },
   { to: "/settings/backup", label: "Backup" },
+  { to: "/settings/profiles", label: "Profiles" },
 ];
 
 const navItems = [
@@ -212,6 +214,7 @@ onMounted(() => {
           >
             Advanced search
           </RouterLink>
+          <ProfileSwitcher />
         </div>
       </header>
 

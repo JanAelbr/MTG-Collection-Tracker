@@ -1,5 +1,6 @@
 import sqlite3
 
+from lib.db import table_exists
 from api.cache import get_cache_epoch, memory_cache
 from report.card_detail_data import collector_sort_key
 from report.ranked_cards_data import (
@@ -806,9 +807,7 @@ def _load_owned_print_keys(conn: sqlite3.Connection) -> frozenset[str]:
     ):
         keys.add(card_price_key(set_code, collector_number, finish))
 
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if table:
         for set_code, collector_number, finish in conn.execute(
             "SELECT DISTINCT set_code, collector_number, finish FROM card_instances"
@@ -882,9 +881,7 @@ def _enrich_card(
 
 
 def _load_card_locations(conn: sqlite3.Connection) -> dict[str, list[dict]]:
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if not table:
         return {}
 

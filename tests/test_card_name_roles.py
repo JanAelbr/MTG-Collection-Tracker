@@ -89,7 +89,7 @@ class CardNameRolesTests(unittest.TestCase):
         again = backfill_card_name_roles(self.conn)
         self.assertEqual(again, 0)
         flag = self.conn.execute(
-            "SELECT value FROM user_settings WHERE key = ?",
+            "SELECT value FROM catalog_meta WHERE key = ?",
             (CARD_NAME_ROLES_BACKFILL_KEY,),
         ).fetchone()
         self.assertEqual(flag[0], "done")

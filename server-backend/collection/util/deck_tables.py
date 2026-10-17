@@ -1,6 +1,8 @@
 import sqlite3
 import threading
 
+from lib.db import table_exists
+
 _deck_tables_lock = threading.Lock()
 _ready_db_paths: set[str] = set()
 
@@ -201,8 +203,4 @@ def list_deck_sync_set_codes(conn: sqlite3.Connection) -> list[str]:
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-        (table_name,),
-    ).fetchone()
-    return row is not None
+    return table_exists(conn, table_name)

@@ -1,3 +1,5 @@
+import { getActiveProfileId } from "./utils/profileSession.js";
+
 const DEFAULT_TTL_MS = 60_000;
 
 const TTL_BY_PREFIX = [
@@ -28,14 +30,12 @@ export function getKnownEpoch() {
   return knownEpoch;
 }
 
+/** Server epochs are opaque strings ("<catalog>.<profile>"); any change clears the cache. */
 export function noteServerEpoch(epoch) {
   if (epoch == null || epoch === "") {
     return;
   }
-  const next = Number(epoch);
-  if (Number.isNaN(next)) {
-    return;
-  }
+  const next = String(epoch);
   if (knownEpoch !== null && knownEpoch !== next) {
     store.clear();
   }
@@ -68,8 +68,7 @@ export function touchCachedEntry(cacheKey) {
   if (!entry) {
     return;
   }
-  const path = cacheKey.includes(":") ? cacheKey.split(":").slice(1).join(":") : cacheKey;
-  entry.expiresAt = Date.now() + ttlForPath(path);
+  entry.expiresAt = Date.now() + ttlForPath(cachePathFromKey(cacheKey));
 }
 
 export function clearClientCache() {
@@ -122,8 +121,13 @@ export function invalidateAfterMutation(path, method, body) {
   }
 }
 
-export function cacheKeyFor(method, path) {
-  return `${method}:${path}`;
+export function cacheKeyFor(method, path, profileId = getActiveProfileId()) {
+  return `${profileId || "default"}|${method}:${path}`;
+}
+
+export function cachePathFromKey(cacheKey) {
+  const request = cacheKey.includes("|") ? cacheKey.slice(cacheKey.indexOf("|") + 1) : cacheKey;
+  return request.includes(":") ? request.slice(request.indexOf(":") + 1) : request;
 }
 
 export function clientTtlForPath(path) {

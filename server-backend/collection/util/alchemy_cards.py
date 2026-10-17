@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lib.db import table_exists
+
 
 def is_alchemy_collector_number(collector_number: str | None) -> bool:
     return str(collector_number or "").strip().upper().startswith("A-")
@@ -36,9 +38,7 @@ def exclude_alchemy_art_style_sql(column: str = "art_style") -> str:
 
 def prune_alchemy_cards(conn) -> int:
     """Remove alchemy prints from the local catalog table."""
-    if not conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cards' LIMIT 1"
-    ).fetchone():
+    if not table_exists(conn, "cards"):
         return 0
     cursor = conn.execute(
         "DELETE FROM cards WHERE UPPER(collector_number) LIKE 'A-%'"

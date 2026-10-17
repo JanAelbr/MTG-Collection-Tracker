@@ -1,5 +1,7 @@
 import sqlite3
 
+from lib.db import table_exists
+
 BINDER_LOCATIONS = (
     (
         "binder:ltr-black",
@@ -164,7 +166,28 @@ def _upsert_location(
 # Seed binder locations and one row per registered deck.
 def seed_storage_locations(conn: sqlite3.Connection) -> None:
     ensure_storage_tables(conn)
-    for slug, label, location_type, sort_order, set_code, description in BINDER_LOCATIONS:
+    # Built-in binders are only created for a profile that has no storage yet.
+    # Once the user has locations, deleted binders stay deleted.
+    has_storage = conn.execute(
+        """
+        SELECT 1 FROM storage_locations
+        WHERE location_type != 'deck' AND location_slug NOT LIKE 'deck:%'
+        LIMIT 1
+        """
+    ).fetchone()
+    if not has_storage:
+        for slug, label, location_type, sort_order, set_code, description in BINDER_LOCATIONS:
+            _upsert_location(
+                conn,
+                slug,
+                label,
+                location_type,
+                sort_order,
+                set_code=set_code,
+                description=description,
+            )
+
+        slug, label, location_type, sort_order, set_code, description = GENERAL_LOCATION
         _upsert_location(
             conn,
             slug,
@@ -175,20 +198,7 @@ def seed_storage_locations(conn: sqlite3.Connection) -> None:
             description=description,
         )
 
-    slug, label, location_type, sort_order, set_code, description = GENERAL_LOCATION
-    _upsert_location(
-        conn,
-        slug,
-        label,
-        location_type,
-        sort_order,
-        set_code=set_code,
-        description=description,
-    )
-
-    deck_table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'decks'"
-    ).fetchone()
+    deck_table = table_exists(conn, "decks")
     if not deck_table:
         return
 

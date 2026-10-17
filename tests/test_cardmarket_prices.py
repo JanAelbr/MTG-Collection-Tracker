@@ -10,6 +10,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from lib.db import use_single_database  # noqa: E402
 from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
 from util.cardmarket_prices import (  # noqa: E402
     PriceSyncContext,
@@ -329,10 +330,7 @@ class SyncPricesFromGuideTests(unittest.TestCase):
         }
         guide = {738253: {"low": 548.0, "trend-foil": 588.79}}
         self.conn.close()
-        with unittest.mock.patch(
-            "util.cardmarket_prices.DB_PATH",
-            self.db_path,
-        ), unittest.mock.patch(
+        with use_single_database(self.db_path), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -448,10 +446,7 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         }
         guide = {42: {"trend": 3.5, "trend-foil": 7.0}}
         self.conn.close()
-        with unittest.mock.patch(
-            "util.cardmarket_prices.DB_PATH",
-            self.db_path,
-        ), unittest.mock.patch(
+        with use_single_database(self.db_path), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -526,10 +521,7 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         }
         guide = {42: {"trend": 5.0}, 99: {"trend": 40.0}}
         self.conn.close()
-        with unittest.mock.patch(
-            "util.cardmarket_prices.DB_PATH",
-            self.db_path,
-        ), unittest.mock.patch(
+        with use_single_database(self.db_path), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -566,10 +558,7 @@ class SyncPricesFromGuideUpdateTests(unittest.TestCase):
         }
         guide = {42: {"trend": 3.5, "trend-foil": 7.0}}
         self.conn.close()
-        with unittest.mock.patch(
-            "util.cardmarket_prices.DB_PATH",
-            self.db_path,
-        ), unittest.mock.patch(
+        with use_single_database(self.db_path), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context",
             return_value=self.context,
         ), unittest.mock.patch(
@@ -708,7 +697,7 @@ class SyncPairedCardmarketUrlTests(unittest.TestCase):
             738285: {"trend": 0, "trend-foil": 73.42},
         }
         self.conn.close()
-        with unittest.mock.patch("util.cardmarket_prices.DB_PATH", self.db_path), unittest.mock.patch(
+        with use_single_database(self.db_path), unittest.mock.patch(
             "util.cardmarket_prices.load_price_sync_context", return_value=self.context
         ), unittest.mock.patch(
             "util.cardmarket_prices.clear_unowned_prices_for_non_qualifying_sets", return_value=0

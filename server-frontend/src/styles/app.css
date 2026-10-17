@@ -1662,6 +1662,27 @@ body {
   color: #c62828;
 }
 
+.storage-delete-lead {
+  margin: 0 0 12px;
+  color: #455a64;
+}
+
+.storage-delete-choice,
+.storage-delete-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.storage-delete-target {
+  margin-left: 24px;
+}
+
+.storage-delete-target select {
+  flex: 1;
+}
+
 .storage-detail-title-row {
   display: flex;
   align-items: center;
@@ -2511,6 +2532,23 @@ body {
   line-height: 1.45;
   color: #455a64;
   white-space: pre-wrap;
+}
+
+.confirm-modal-type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: #455a64;
+}
+
+.confirm-modal-type input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #c5d0dc;
+  border-radius: 8px;
+  font: inherit;
 }
 
 .confirm-modal .modal-actions {

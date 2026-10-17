@@ -95,9 +95,24 @@ def assert_location_assignable(conn: sqlite3.Connection, slug: str) -> dict:
     return location
 
 
+def _is_deck_location(slug: str, location_type: str) -> bool:
+    return str(location_type or "").lower() == "deck" or str(slug or "").lower().startswith("deck:")
+
+
+def _manual_location_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) FROM storage_locations
+        WHERE location_type != 'deck' AND location_slug NOT LIKE 'deck:%'
+        """
+    ).fetchone()
+    return int(row[0] or 0)
+
+
 def list_locations(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(LOCATIONS_QUERY).fetchall()
-    return [_serialize_location(row) for row in rows]
+    manual_count = _manual_location_count(conn)
+    return [_serialize_location(row, manual_count=manual_count) for row in rows]
 
 
 def get_location(conn: sqlite3.Connection, slug: str) -> dict:
@@ -121,7 +136,7 @@ def get_location(conn: sqlite3.Connection, slug: str) -> dict:
     ).fetchone()
     if row is None:
         raise StorageError("Storage location not found", status_code=404)
-    return _serialize_location(row)
+    return _serialize_location(row, manual_count=_manual_location_count(conn))
 
 
 def create_location(
@@ -185,17 +200,104 @@ def update_location(
     return get_location(conn, slug)
 
 
-def delete_location(conn: sqlite3.Connection, slug: str) -> None:
+def delete_location(
+    conn: sqlite3.Connection,
+    slug: str,
+    *,
+    disposition: str | None = None,
+    move_to: str | None = None,
+) -> None:
+    """Delete a storage. The last non-deck location is kept.
+
+    When the location holds copies, ``disposition`` is ``move`` (relocate them)
+    or ``delete`` (remove those copies from the collection).
+    """
     location = get_location(conn, slug)
-    if location["isSystem"]:
-        raise StorageError("System storage locations cannot be deleted")
-    if location["cardCount"] > 0:
-        raise StorageError("Only empty storage locations can be deleted")
+    if _is_deck_location(location["slug"], location["locationType"]):
+        raise StorageError(DECK_STORAGE_MANUAL_MESSAGE, status_code=400)
+    if not location["canDelete"]:
+        raise StorageError("The last storage cannot be deleted")
+
+    card_count = int(location["cardCount"] or 0)
+    action = (disposition or "").strip().lower()
+    destination = (move_to or "").strip()
+    if card_count:
+        if action not in {"move", "delete"}:
+            raise StorageError("Choose whether to move or delete the cards in this storage")
+        if action == "move":
+            if not destination or destination == slug:
+                raise StorageError("Choose another storage to move the cards to")
+            assert_location_assignable(conn, destination)
+            conn.execute(
+                """
+                UPDATE card_instances
+                SET location_slug = ?
+                WHERE location_slug = ?
+                """,
+                (destination, slug),
+            )
+        else:
+            _delete_location_copies(conn, slug)
+    elif action == "move" and destination:
+        assert_location_assignable(conn, destination)
+
+    _reassign_default_storage(conn, slug, destination if action == "move" and destination else None)
     conn.execute(
         "DELETE FROM storage_locations WHERE location_slug = ?",
         (slug,),
     )
     bump_cache_epoch()
+
+
+def _delete_location_copies(conn: sqlite3.Connection, slug: str) -> None:
+    from api.services.manager_service import _sync_finish_purchase_aggregate
+    from api.services.sale_listings_service import clear_listing_instance_link
+
+    rows = conn.execute(
+        """
+        SELECT instance_id, set_code, collector_number, finish
+        FROM card_instances
+        WHERE location_slug = ?
+        """,
+        (slug,),
+    ).fetchall()
+    prints: set[tuple[str, str, int]] = set()
+    for row in rows:
+        clear_listing_instance_link(conn, int(row["instance_id"]))
+        prints.add((str(row["set_code"]), str(row["collector_number"]), int(row["finish"])))
+    conn.execute("DELETE FROM card_instances WHERE location_slug = ?", (slug,))
+    for set_code, collector_number, finish in prints:
+        _sync_finish_purchase_aggregate(conn, set_code, collector_number, finish)
+
+
+def _reassign_default_storage(
+    conn: sqlite3.Connection,
+    deleted_slug: str,
+    preferred: str | None,
+) -> None:
+    from api.services.settings_service import (
+        get_default_storage_location,
+        save_default_storage_location,
+    )
+
+    if get_default_storage_location(conn) != deleted_slug:
+        return
+    fallback = preferred if preferred and preferred != deleted_slug else None
+    if not fallback:
+        row = conn.execute(
+            """
+            SELECT location_slug FROM storage_locations
+            WHERE location_slug != ?
+              AND location_type != 'deck'
+              AND location_slug NOT LIKE 'deck:%'
+            ORDER BY sort_order, label
+            LIMIT 1
+            """,
+            (deleted_slug,),
+        ).fetchone()
+        fallback = row[0] if row else None
+    if fallback:
+        save_default_storage_location(conn, fallback)
 
 
 def list_location_cards(
@@ -1153,10 +1255,11 @@ def _next_binder_sort_order(conn: sqlite3.Connection) -> int:
     return int(row[0]) + 10
 
 
-def _serialize_location(row: sqlite3.Row) -> dict:
+def _serialize_location(row: sqlite3.Row, *, manual_count: int | None = None) -> dict:
     slug = row["location_slug"]
     card_count = int(row["card_count"])
     is_system = bool(row["is_system"])
+    is_deck = _is_deck_location(slug, row["location_type"])
     return {
         "slug": slug,
         "label": row["label"],
@@ -1166,7 +1269,7 @@ def _serialize_location(row: sqlite3.Row) -> dict:
         "isSystem": is_system,
         "cardCount": card_count,
         "uniquePrints": int(row["unique_prints"]),
-        "canDelete": not is_system and card_count == 0,
+        "canDelete": (not is_deck) and manual_count is not None and manual_count > 1,
         "isCustom": slug.startswith("custom:") or slug.startswith("binder:custom:"),
     }
 

@@ -1,3 +1,5 @@
+import { profileLocalStorage } from "./profileStorage.js";
+
 export const PRINT_PRICES_STATE_KEY = "lotr.print.prices";
 
 export const DEFAULT_PRINT_PRICES_STATE = Object.freeze({
@@ -65,7 +67,7 @@ export function normalizePrintPricesState(raw) {
 
 export function loadPrintPricesState() {
   try {
-    const raw = localStorage.getItem(PRINT_PRICES_STATE_KEY);
+    const raw = profileLocalStorage.getItem(PRINT_PRICES_STATE_KEY);
     if (!raw) {
       return { ...DEFAULT_PRINT_PRICES_STATE, selectedCodes: [], selectedArtStyles: [] };
     }
@@ -77,6 +79,6 @@ export function loadPrintPricesState() {
 
 export function savePrintPricesState(state) {
   const normalized = normalizePrintPricesState(state);
-  localStorage.setItem(PRINT_PRICES_STATE_KEY, JSON.stringify(normalized));
+  profileLocalStorage.setItem(PRINT_PRICES_STATE_KEY, JSON.stringify(normalized));
   return normalized;
 }

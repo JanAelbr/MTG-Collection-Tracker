@@ -7,9 +7,10 @@ from unittest.mock import Mock, patch
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
-from api.cache import bump_cache_epoch, get_cache_epoch, memory_cache  # noqa: E402
+from api.cache import bump_cache_epoch, bump_catalog_epoch, get_cache_epoch, memory_cache  # noqa: E402
 from api.http_cache import serve_cached_json  # noqa: E402
 from api.services import reports_service, settings_service  # noqa: E402
+from lib.profile_context import profile_scope  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 
 
@@ -18,9 +19,35 @@ class CacheTests(unittest.TestCase):
         memory_cache.clear()
 
     def test_bump_cache_epoch_increments(self):
-        first = get_cache_epoch()
+        catalog, profile = get_cache_epoch().split(".")
         second = bump_cache_epoch()
-        self.assertEqual(second, first + 1)
+        self.assertEqual(second, f"{catalog}.{int(profile) + 1}")
+
+    def test_profile_bump_only_invalidates_that_profile(self):
+        key_a = None
+        with profile_scope("a" * 32):
+            key_a = memory_cache.make_key("test.scope", {}, get_cache_epoch())
+            memory_cache.set(key_a, {"value": "a"}, 60)
+        with profile_scope("b" * 32):
+            epoch_b = get_cache_epoch()
+            key_b = memory_cache.make_key("test.scope", {}, epoch_b)
+            self.assertNotEqual(key_a, key_b)
+            memory_cache.set(key_b, {"value": "b"}, 60)
+            bump_cache_epoch()
+            self.assertIsNone(memory_cache.get(key_b))
+            self.assertNotEqual(get_cache_epoch(), epoch_b)
+        with profile_scope("a" * 32):
+            self.assertEqual(memory_cache.get(key_a), {"value": "a"})
+
+    def test_catalog_bump_invalidates_every_profile(self):
+        with profile_scope("a" * 32):
+            epoch_a = get_cache_epoch()
+            key_a = memory_cache.make_key("test.catalog", {}, epoch_a)
+            memory_cache.set(key_a, {"value": "a"}, 60)
+        bump_catalog_epoch()
+        with profile_scope("a" * 32):
+            self.assertIsNone(memory_cache.get(key_a))
+            self.assertNotEqual(get_cache_epoch(), epoch_a)
 
     def test_serve_cached_json_reuses_loader(self):
         request = Mock(headers={})

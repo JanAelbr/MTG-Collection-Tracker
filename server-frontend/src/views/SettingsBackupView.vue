@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api, clearClientCache, ignoreAborted } from "../api";
+import { activeProfile } from "../composables/activeProfile";
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { formatPriceSyncRunningMessage, PRICE_SYNC_POLL_MS } from "../composables/startupPriceSync";
 
@@ -179,10 +180,12 @@ onUnmounted(stopPolling);
 <template>
   <div class="home-page">
     <section class="home-panel">
-      <h2>Backup &amp; restore</h2>
+      <h2>Backup &amp; restore<span v-if="activeProfile"> · {{ activeProfile.name }}</span></h2>
       <p class="home-intro">
-        Export owned cards, decks, storage assignments, and display settings.
-        Card catalog rows and prices are not included — sync those after restoring on a new machine.
+        Export and restore cover only <strong>{{ activeProfile?.name || "the active profile" }}</strong>:
+        owned cards, decks, storage assignments, and display settings.
+        The shared card catalog and prices are not included — sync those after restoring.
+        To keep this collection and load a backup beside it, import it as a new profile under Settings → Profiles.
         <strong>Before upgrading the app</strong>, export a backup here so you can restore if anything goes wrong.
       </p>
 

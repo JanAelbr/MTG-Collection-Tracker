@@ -1,5 +1,6 @@
 import sqlite3
 
+from lib.db import table_exists
 from report.card_detail_data import collector_sort_key
 from report.report_data import format_set_option_label, get_set_display_names
 from report.serialize_helpers import deck_card_display_name
@@ -253,9 +254,7 @@ def _load_print_locations(
     set_code: str,
     collector_number: str,
 ) -> dict[int, list[dict]]:
-    table = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_instances'"
-    ).fetchone()
+    table = table_exists(conn, "card_instances")
     if not table:
         return {}
 

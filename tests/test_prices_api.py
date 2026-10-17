@@ -21,6 +21,10 @@ class PriceSyncServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db_path = Path(self.temp_dir.name) / "test.db"
+        from lib.db import use_single_database
+
+        self._single_db = use_single_database(self.db_path)
+        self._single_db.__enter__()
         self.conn = sqlite3.connect(self.db_path)
         ensure_storage_tables(self.conn)
         self.conn.executescript(
@@ -72,6 +76,7 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.checked_patcher.stop()
         self.snapshot_patcher.stop()
         self.conn.close()
+        self._single_db.__exit__(None, None, None)
         self.temp_dir.cleanup()
 
     @patch("util.price_sync.update_cardmarket_prices_only")
@@ -279,6 +284,17 @@ class PriceSyncServiceTests(unittest.TestCase):
     def test_unchanged_sync_keeps_previous_card_diffs(self, mock_update_prices):
         from util.last_price_sync import save_last_price_sync
 
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                set_code TEXT, collector_number TEXT, finish INTEGER, purchase_value REAL
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '1', 0, 1)"
+        )
+        self.conn.commit()
         save_last_price_sync(
             {
                 "applied": True,
@@ -330,6 +346,16 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.conn.execute(
             "INSERT INTO cards VALUES (?, ?, ?, ?)",
             ("LTR", "1", "Gandalf", "https://example.com/gandalf.jpg"),
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                set_code TEXT, collector_number TEXT, finish INTEGER, purchase_value REAL
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '1', 0, 1)"
         )
         self.conn.commit()
         save_last_price_sync(

@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { cardSelectionKey } from "../utils/collectionScopeStats";
 import { cardDisplayName, cardFinish, normalizeFinish } from "../utils/finishes";
+import { profileLocalStorage } from "../utils/profileStorage.js";
 
 const PRINT_LIST_KEY = "lotr.printList";
 const PRINT_SELECTED_KEY = "lotr.printList.selected";
@@ -30,7 +31,7 @@ function slimCard(card) {
 
 function loadItems() {
   try {
-    const raw = localStorage.getItem(PRINT_LIST_KEY);
+    const raw = profileLocalStorage.getItem(PRINT_LIST_KEY);
     if (!raw) {
       return [];
     }
@@ -49,7 +50,7 @@ function loadItems() {
 function loadSelectedKeys(list) {
   const valid = new Set(list.map((card) => cardSelectionKey(card)));
   try {
-    const raw = localStorage.getItem(PRINT_SELECTED_KEY);
+    const raw = profileLocalStorage.getItem(PRINT_SELECTED_KEY);
     if (!raw) {
       return new Set(valid);
     }
@@ -64,11 +65,11 @@ function loadSelectedKeys(list) {
 }
 
 function persistItems() {
-  localStorage.setItem(PRINT_LIST_KEY, JSON.stringify(items.value));
+  profileLocalStorage.setItem(PRINT_LIST_KEY, JSON.stringify(items.value));
 }
 
 function persistSelected() {
-  localStorage.setItem(PRINT_SELECTED_KEY, JSON.stringify([...selectedKeys.value]));
+  profileLocalStorage.setItem(PRINT_SELECTED_KEY, JSON.stringify([...selectedKeys.value]));
 }
 
 function syncSelectedToItems() {

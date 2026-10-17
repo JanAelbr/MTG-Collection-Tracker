@@ -1,6 +1,7 @@
 """Shared path configuration for the MTG collection tracker."""
 
 import os
+import re
 from pathlib import Path
 
 COLLECTION_DIR = Path(__file__).resolve().parent.parent
@@ -24,6 +25,9 @@ APP_DATA_DIR_NAME = "MtgCollectionTracker"
 
 
 def default_app_data_dir() -> Path:
+    override = (os.environ.get("MTG_APP_DATA_DIR") or "").strip()
+    if override:
+        return Path(override)
     if os.name == "nt":
         local_app_data = os.environ.get("LOCALAPPDATA")
         if local_app_data:
@@ -36,12 +40,36 @@ APP_CACHE_DIR = APP_DATA_DIR / "cache"
 
 
 def resolve_db_path(app_data_dir: Path | None = None) -> Path:
+    """Legacy single-file database (pre multi-profile); only read by the layout migration."""
     target_dir = app_data_dir or APP_DATA_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / "collection.db"
 
 
-DB_PATH = resolve_db_path()
+LEGACY_DB_PATH = resolve_db_path()
+APP_DB_PATH = APP_DATA_DIR / "app.db"
+CATALOG_DB_PATH = APP_DATA_DIR / "catalog.db"
+PROFILES_DIR = APP_DATA_DIR / "profiles"
+PROFILES_TRASH_DIR = PROFILES_DIR / ".trash"
+BACKUPS_DIR = APP_DATA_DIR / "backups"
+PROFILE_DB_FILENAME = "profile.db"
+PROFILE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def is_valid_profile_id(profile_id: str | None) -> bool:
+    return bool(profile_id) and bool(PROFILE_ID_PATTERN.match(str(profile_id)))
+
+
+def profile_dir(profile_id: str, profiles_dir: Path | None = None) -> Path:
+    if not is_valid_profile_id(profile_id):
+        raise ValueError(f"Invalid profile id: {profile_id!r}")
+    return (profiles_dir or PROFILES_DIR) / profile_id
+
+
+def profile_db_path(profile_id: str, profiles_dir: Path | None = None) -> Path:
+    return profile_dir(profile_id, profiles_dir) / PROFILE_DB_FILENAME
+
+
 DATA_DIR = REPO_ROOT / "data"
 ART_STYLES_DIR = DATA_DIR / "art_styles"
 

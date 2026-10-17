@@ -1,4 +1,5 @@
 import { historySourceOptions, HISTORY_TOP_SERIES } from "./breakdownHistory.js";
+import { profileLocalStorage } from "./profileStorage.js";
 
 export const DEDICATED_BREAKDOWN_CHARTS = [
   { id: "all-value", source: "all" },
@@ -40,7 +41,7 @@ export function loadBreakdownCharts(storageKey, options = {}) {
     return normalizeBreakdownCharts(null, options);
   }
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey) || "null");
+    const parsed = JSON.parse(profileLocalStorage.getItem(storageKey) || "null");
     return normalizeBreakdownCharts(parsed, options);
   } catch {
     return normalizeBreakdownCharts(null, options);
@@ -51,7 +52,7 @@ export function saveBreakdownCharts(storageKey, charts, options = {}) {
   if (!storageKey || typeof localStorage === "undefined") {
     return;
   }
-  localStorage.setItem(
+  profileLocalStorage.setItem(
     storageKey,
     JSON.stringify(normalizeBreakdownCharts(charts, options)),
   );
