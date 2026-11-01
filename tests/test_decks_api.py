@@ -9,7 +9,7 @@ from pathlib import Path
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
-from api.services import decks_service  # noqa: E402
+from api.services import decks_service, storage_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.deck_tables import ensure_deck_tables  # noqa: E402
@@ -578,6 +578,114 @@ class DecksApiServiceTests(unittest.TestCase):
             (deck_location,),
         ).fetchone()
         self.assertIsNone(storage_row)
+
+    def test_delete_deck_can_remove_linked_storage_copies(self):
+        result = decks_service.create_deck(
+            self.conn,
+            deck_format="commander",
+            name="Discard Copies",
+            commanders=[{"set_code": "LTC", "collector_number": "284", "finish": 0}],
+        )
+        deck_id = result["deck"]["id"]
+        deck_location = f"deck:{result['deck']['slug'].lower()}"
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTC', '284', 0, ?, 1.0)
+            """,
+            (deck_location,),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO purchases (set_code, collector_number, finish, purchase_value)
+            VALUES ('LTC', '284', 0, 1.0)
+            """
+        )
+        self.conn.commit()
+
+        deleted = decks_service.delete_deck(
+            self.conn,
+            deck_id=str(deck_id),
+            remove_storage_items=True,
+        )
+        self.assertTrue(deleted["removedStorageItems"])
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM card_instances WHERE set_code = 'LTC' AND collector_number = '284'"
+            ).fetchone()[0],
+            0,
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM purchases WHERE set_code = 'LTC' AND collector_number = '284'"
+            ).fetchone()
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM storage_locations WHERE location_slug = ?",
+                (deck_location,),
+            ).fetchone()
+        )
+
+    def test_delete_deck_storage_can_keep_or_remove_the_deck(self):
+        location = storage_service.get_location(self.conn, "deck:sample")
+        self.assertTrue(location["canDelete"])
+        self.assertEqual(location["deckId"], 1)
+        self.conn.execute(
+            """
+            INSERT INTO card_instances (
+                set_code, collector_number, finish, location_slug, purchase_value
+            ) VALUES ('LTC', '284', 0, 'deck:sample', 1.0)
+            """
+        )
+        self.conn.commit()
+
+        with self.assertRaises(storage_service.StorageError):
+            storage_service.delete_location(self.conn, "deck:sample")
+
+        storage_service.delete_location(
+            self.conn,
+            "deck:sample",
+            disposition="move",
+            move_to="storage:general",
+        )
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT location_slug FROM card_instances WHERE collector_number = '284'"
+            ).fetchone()[0],
+            "storage:general",
+        )
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT owned_qty FROM deck_cards WHERE deck_id = 1"
+            ).fetchone()[0],
+            0,
+        )
+        self.assertIsNotNone(
+            self.conn.execute(
+                "SELECT 1 FROM decks WHERE slug = 'sample'"
+            ).fetchone()
+        )
+        self.assertIsNotNone(
+            self.conn.execute(
+                "SELECT 1 FROM storage_locations WHERE location_slug = 'deck:sample'"
+            ).fetchone()
+        )
+
+        storage_service.delete_location(
+            self.conn,
+            "deck:sample",
+            delete_deck=True,
+        )
+        self.assertIsNone(
+            self.conn.execute("SELECT 1 FROM decks WHERE slug = 'sample'").fetchone()
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM storage_locations WHERE location_slug = 'deck:sample'"
+            ).fetchone()
+        )
 
     def test_create_deck_with_commanders(self):
         result = decks_service.create_deck(

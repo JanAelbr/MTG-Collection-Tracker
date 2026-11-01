@@ -356,13 +356,16 @@ export const api = {
 
     }),
 
-  deleteStorageLocation: (slug, { disposition = null, moveTo = null } = {}) => {
+  deleteStorageLocation: (slug, { disposition = null, moveTo = null, deleteDeck = false } = {}) => {
     const params = new URLSearchParams();
     if (disposition) {
       params.set("disposition", disposition);
     }
     if (moveTo) {
       params.set("moveTo", moveTo);
+    }
+    if (deleteDeck) {
+      params.set("deleteDeck", "true");
     }
     const query = params.toString();
     return apiRequest(
@@ -935,10 +938,17 @@ export const api = {
       method: "POST",
     }),
 
-  deleteDeck: (deckId) =>
-    apiRequest(`/decks/${encodeURIComponent(deckId)}`, {
-      method: "DELETE",
-    }),
+  deleteDeck: (deckId, { removeStorageItems = false } = {}) => {
+    const params = new URLSearchParams();
+    if (removeStorageItems) {
+      params.set("removeStorageItems", "true");
+    }
+    const query = params.toString();
+    return apiRequest(
+      `/decks/${encodeURIComponent(deckId)}${query ? `?${query}` : ""}`,
+      { method: "DELETE" },
+    );
+  },
 
   createDeck: (body) =>
     apiRequest("/decks", {

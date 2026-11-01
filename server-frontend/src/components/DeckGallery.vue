@@ -4,7 +4,6 @@ import { api, clearClientCache } from "../api";
 import CardSetSymbol from "./CardSetSymbol.vue";
 import ManaSymbols from "./ManaSymbols.vue";
 import { useDeckRename } from "../composables/useDeckRename";
-import { confirmDialog } from "../composables/confirmDialog";
 import {
   buildDeckGalleryItems,
   deckCardImageUri,
@@ -33,6 +32,7 @@ const menuRef = ref(null);
 const contextMenu = ref(null);
 const deleting = ref(false);
 const favoriting = ref(false);
+const deleteDialog = ref(null);
 
 const galleryItems = computed(() =>
   buildDeckGalleryItems(props.decks, props.pages, deckGalleryFilter.value),
@@ -206,24 +206,42 @@ async function onContextRename() {
   startRename();
 }
 
-async function deleteDeck(deckId) {
-  if (!deckId || deleting.value || renaming.value) {
+function deckOwnedCopies(deck) {
+  const owned = Number(deckStats(deck)?.ownedQty);
+  return Number.isFinite(owned) && owned > 0 ? owned : 0;
+}
+
+function openDeleteDialog(deck) {
+  if (!deck?.id || deleting.value || renaming.value) {
     return;
   }
-  const deck = props.decks.find((item) => String(item.id) === String(deckId));
-  const deckName = deck?.name || "this deck";
-  const ok = await confirmDialog({
-    title: "Delete deck",
-    message: `Delete “${deckName}”? This cannot be undone.`,
-    confirmLabel: "Delete",
-    danger: true,
-  });
-  if (!ok) {
+  deleteDialog.value = {
+    id: deck.id,
+    name: deck.name || "this deck",
+    ownedCopies: deckOwnedCopies(deck),
+    removeStorageItems: false,
+  };
+}
+
+function closeDeleteDialog() {
+  if (deleting.value) {
+    return;
+  }
+  deleteDialog.value = null;
+}
+
+async function confirmDeleteDialog() {
+  const dialog = deleteDialog.value;
+  if (!dialog || deleting.value) {
     return;
   }
   deleting.value = true;
   try {
-    await api.deleteDeck(deckId);
+    await api.deleteDeck(dialog.id, {
+      removeStorageItems: dialog.removeStorageItems,
+    });
+    const deckId = dialog.id;
+    deleteDialog.value = null;
     clearClientCache();
     await props.onDeleted?.(deckId);
   } catch (err) {
@@ -233,13 +251,13 @@ async function deleteDeck(deckId) {
   }
 }
 
-async function onContextDelete() {
+function onContextDelete() {
   const deck = contextMenuDeck.value;
   closeContextMenu();
   if (!deck?.id) {
     return;
   }
-  await deleteDeck(deck.id);
+  openDeleteDialog(deck);
 }
 
 function onDocumentPointerDown(event) {
@@ -470,4 +488,34 @@ onUnmounted(() => {
       </button>
     </div>
   </Teleport>
+
+  <div v-if="deleteDialog" class="modal-backdrop" @click.self="closeDeleteDialog">
+    <form class="modal-card" @submit.prevent="confirmDeleteDialog">
+      <h3>Delete {{ deleteDialog.name }}</h3>
+      <p class="storage-delete-lead">
+        The deck list is removed.
+      </p>
+      <label v-if="deleteDialog.ownedCopies" class="storage-delete-choice">
+        <input v-model="deleteDialog.removeStorageItems" type="checkbox">
+        <span>
+          Also remove the {{ deleteDialog.ownedCopies }}
+          {{ deleteDialog.ownedCopies === 1 ? "copy" : "copies" }}
+          in this deck’s storage from the collection
+        </span>
+      </label>
+      <p v-if="deleteDialog.ownedCopies" class="storage-delete-note">
+        {{ deleteDialog.removeStorageItems
+          ? "Those copies are removed from the collection."
+          : "Those copies move to your default storage." }}
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" :disabled="deleting" @click="closeDeleteDialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-danger" :disabled="deleting">
+          {{ deleting ? "Deleting…" : "Delete" }}
+        </button>
+      </div>
+    </form>
+  </div>
 </template>

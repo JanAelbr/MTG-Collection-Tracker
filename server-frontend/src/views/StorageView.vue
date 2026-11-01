@@ -12,6 +12,9 @@ import ManaSymbols from "../components/ManaSymbols.vue";
 import StorageGroupGallery from "../components/StorageGroupGallery.vue";
 import StorageLocationIcon from "../components/StorageLocationIcon.vue";
 import StorageBreakdownPanel from "../components/StorageBreakdownPanel.vue";
+import StorageExportMenu from "../components/StorageExportMenu.vue";
+import StorageGroupExportButton from "../components/StorageGroupExportButton.vue";
+import StorageSnapshotPicker from "../components/StorageSnapshotPicker.vue";
 import VirtualizedCollectionCardGrid from "../components/VirtualizedCollectionCardGrid.vue";
 import { confirmDialog } from "../composables/confirmDialog";
 import { useStorageBreakdownHistory } from "../composables/storageBreakdownHistory";
@@ -824,12 +827,17 @@ const deleteMoveTargets = computed(() => {
   ));
 });
 
+function isDeckStorage(location) {
+  return location?.locationType === "deck" || String(location?.slug || "").startsWith("deck:");
+}
+
 async function deleteLocation(location) {
   if (!location?.canDelete) {
     return;
   }
   const copies = Number(location.cardCount || 0);
-  if (copies <= 0) {
+  const linkedDeck = isDeckStorage(location);
+  if (!linkedDeck && copies <= 0) {
     const ok = await confirmDialog({
       title: "Delete storage",
       message: `Delete “${location.label}”?`,
@@ -855,6 +863,8 @@ async function deleteLocation(location) {
     cardCount: copies,
     mode: "move",
     moveTo: targets[0]?.slug || "",
+    linkedDeck,
+    deleteDeck: false,
   };
 }
 
@@ -866,12 +876,45 @@ function closeDeleteDialog() {
   deleteDialogError.value = "";
 }
 
-async function confirmDeleteDialog() {
+const deleteConfirmLabel = computed(() => {
+  const dialog = deleteDialog.value;
+  if (dialog?.linkedDeck && dialog.deleteDeck) {
+    return "Delete storage and deck";
+  }
+  if (dialog?.linkedDeck) {
+    return "Remove cards";
+  }
+  return "Delete storage";
+});
+
+const deleteDialogNote = computed(() => {
+  const dialog = deleteDialog.value;
+  if (!dialog?.linkedDeck) {
+    return "";
+  }
+  if (dialog.deleteDeck) {
+    return "The deck list is deleted with this storage.";
+  }
+  if (dialog.cardCount > 0) {
+    return "The deck stays, and this storage is left empty.";
+  }
+  return "Delete the linked deck to remove this empty storage.";
+});
+
+const deleteConfirmDisabled = computed(() => {
   const dialog = deleteDialog.value;
   if (!dialog || deleteDialogBusy.value) {
+    return true;
+  }
+  return Boolean(dialog.linkedDeck && !dialog.deleteDeck && dialog.cardCount <= 0);
+});
+
+async function confirmDeleteDialog() {
+  const dialog = deleteDialog.value;
+  if (!dialog || deleteDialogBusy.value || deleteConfirmDisabled.value) {
     return;
   }
-  if (dialog.mode === "move" && !dialog.moveTo) {
+  if (dialog.cardCount > 0 && dialog.mode === "move" && !dialog.moveTo) {
     deleteDialogError.value = "Choose a storage to move the cards to.";
     return;
   }
@@ -879,11 +922,13 @@ async function confirmDeleteDialog() {
   deleteDialogError.value = "";
   try {
     await api.deleteStorageLocation(dialog.slug, {
-      disposition: dialog.mode,
-      moveTo: dialog.mode === "move" ? dialog.moveTo : null,
+      disposition: dialog.cardCount > 0 ? dialog.mode : null,
+      moveTo: dialog.cardCount > 0 && dialog.mode === "move" ? dialog.moveTo : null,
+      deleteDeck: Boolean(dialog.deleteDeck),
     });
+    const stayOnLocation = dialog.linkedDeck && !dialog.deleteDeck;
     deleteDialog.value = null;
-    await loadLocations();
+    await loadLocations(stayOnLocation ? dialog.slug : "");
   } catch (error) {
     deleteDialogError.value = error.message || "Could not delete this storage.";
   } finally {
@@ -1184,27 +1229,6 @@ onMounted(async () => {
 
 <template>
   <div class="storage-page collection-page">
-    <div class="storage-breakdown-controls">
-      <label class="storage-breakdown-select">
-        <span class="visually-hidden">Saved breakdown</span>
-        <select
-          :value="selectedSnapshotId ?? ''"
-          aria-label="Saved breakdown"
-          @change="onSnapshotDropdownChange"
-        >
-          <option value="">Live current</option>
-          <option
-            v-for="snapshot in snapshotList"
-            :key="snapshot.id"
-            :value="snapshot.id"
-          >
-            {{ snapshotOptionLabel(snapshot) }}
-          </option>
-        </select>
-      </label>
-    </div>
-    <p v-if="snapshotError" class="storage-breakdown-save-error">{{ snapshotError }}</p>
-
     <div class="storage-layout">
       <nav class="storage-location-nav" aria-label="Storage locations">
         <button
@@ -1329,7 +1353,16 @@ onMounted(async () => {
             <div class="storage-detail-title-main">
               <h2>Whole collection</h2>
             </div>
+            <div class="storage-detail-actions">
+              <StorageSnapshotPicker
+                :selected-snapshot-id="selectedSnapshotId"
+                :snapshot-list="snapshotList"
+                :snapshot-option-label="snapshotOptionLabel"
+                @change="onSnapshotDropdownChange"
+              />
+            </div>
           </div>
+          <p v-if="snapshotError" class="storage-detail-snapshot-error">{{ snapshotError }}</p>
           <p class="storage-location-description">All storage, binders, and decks</p>
           <p class="storage-location-stats">
             {{ cardsPayload?.totalCopies ?? selectedLocations.reduce((sum, location) => sum + (location.cardCount || 0), 0) }} copies ·
@@ -1342,7 +1375,16 @@ onMounted(async () => {
             <div class="storage-detail-title-main">
               <h2>{{ selectedLocations.length }} locations</h2>
             </div>
+            <div class="storage-detail-actions">
+              <StorageSnapshotPicker
+                :selected-snapshot-id="selectedSnapshotId"
+                :snapshot-list="snapshotList"
+                :snapshot-option-label="snapshotOptionLabel"
+                @change="onSnapshotDropdownChange"
+              />
+            </div>
           </div>
+          <p v-if="snapshotError" class="storage-detail-snapshot-error">{{ snapshotError }}</p>
           <p class="storage-location-description">{{ selectedLocationLabels }}</p>
           <p class="storage-location-stats">
             {{ cardsPayload?.totalCopies ?? selectedLocations.reduce((sum, location) => sum + (location.cardCount || 0), 0) }} copies ·
@@ -1373,6 +1415,12 @@ onMounted(async () => {
             </div>
 
             <div class="storage-detail-actions">
+              <StorageSnapshotPicker
+                :selected-snapshot-id="selectedSnapshotId"
+                :snapshot-list="snapshotList"
+                :snapshot-option-label="snapshotOptionLabel"
+                @change="onSnapshotDropdownChange"
+              />
               <button
                 v-if="selectedLocation.locationType === 'storage'"
                 type="button"
@@ -1396,6 +1444,7 @@ onMounted(async () => {
               </button>
             </div>
           </div>
+          <p v-if="snapshotError" class="storage-detail-snapshot-error">{{ snapshotError }}</p>
 
           <p v-if="isDeckLocation" class="storage-deck-hint">
             Deck storage is updated automatically when you mark cards owned on the deck.
@@ -1625,6 +1674,15 @@ onMounted(async () => {
                 {{ anyGroupExpanded ? "Collapse all" : "Expand all" }}
               </button>
 
+              <StorageExportMenu
+                v-if="!isBreakdownView"
+                :cards="sortedCards"
+                :groups="cardGroups"
+                :is-grouped="isGrouped"
+                :location-labels="selectedLocationLabels"
+                :disabled="loadingCards"
+              />
+
               <div
                 class="button-group collection-view-mode-group"
                 role="group"
@@ -1710,6 +1768,12 @@ onMounted(async () => {
               :meta-text-for="groupMetaText"
               @toggle="toggleGroup"
             >
+              <template #group-actions="{ group }">
+                <StorageGroupExportButton
+                  :group="group"
+                  :location-labels="selectedLocationLabels"
+                />
+              </template>
               <template #leaf="{ group }">
                 <StorageGroupGallery
                   :cards="group.cards"
@@ -1741,6 +1805,12 @@ onMounted(async () => {
             :meta-text-for="groupMetaText"
             @toggle="toggleGroup"
           >
+            <template #group-actions="{ group }">
+              <StorageGroupExportButton
+                :group="group"
+                :location-labels="selectedLocationLabels"
+              />
+            </template>
             <template #leaf="{ group }">
               <div
                 class="storage-set-group-table"
@@ -1787,32 +1857,45 @@ onMounted(async () => {
       <form class="modal-card" @submit.prevent="confirmDeleteDialog">
         <h3>Delete {{ deleteDialog.label }}</h3>
         <p class="storage-delete-lead">
-          This storage holds {{ deleteDialog.cardCount }}
-          {{ deleteDialog.cardCount === 1 ? "copy" : "copies" }}.
+          <template v-if="deleteDialog.cardCount > 0">
+            This storage holds {{ deleteDialog.cardCount }}
+            {{ deleteDialog.cardCount === 1 ? "copy" : "copies" }}.
+          </template>
+          <template v-else>This storage is empty.</template>
+          <template v-if="deleteDialog.linkedDeck">
+            It is linked to the deck “{{ deleteDialog.label }}”.
+          </template>
         </p>
-        <label class="storage-delete-choice">
-          <input v-model="deleteDialog.mode" type="radio" value="move" />
-          <span>Move the cards to another storage</span>
+        <template v-if="deleteDialog.cardCount > 0">
+          <label class="storage-delete-choice">
+            <input v-model="deleteDialog.mode" type="radio" value="move" />
+            <span>Move the cards to another storage</span>
+          </label>
+          <label v-if="deleteDialog.mode === 'move'" class="storage-delete-target">
+            <span>Move to</span>
+            <select v-model="deleteDialog.moveTo" required>
+              <option v-for="target in deleteMoveTargets" :key="target.slug" :value="target.slug">
+                {{ target.label }}
+              </option>
+            </select>
+          </label>
+          <label class="storage-delete-choice">
+            <input v-model="deleteDialog.mode" type="radio" value="delete" />
+            <span>Delete these owned cards from the collection</span>
+          </label>
+        </template>
+        <label v-if="deleteDialog.linkedDeck" class="storage-delete-choice">
+          <input v-model="deleteDialog.deleteDeck" type="checkbox" />
+          <span>Also delete the linked deck “{{ deleteDialog.label }}”</span>
         </label>
-        <label v-if="deleteDialog.mode === 'move'" class="storage-delete-target">
-          <span>Move to</span>
-          <select v-model="deleteDialog.moveTo" required>
-            <option v-for="target in deleteMoveTargets" :key="target.slug" :value="target.slug">
-              {{ target.label }}
-            </option>
-          </select>
-        </label>
-        <label class="storage-delete-choice">
-          <input v-model="deleteDialog.mode" type="radio" value="delete" />
-          <span>Delete these owned cards from the collection</span>
-        </label>
+        <p v-if="deleteDialogNote" class="storage-delete-note">{{ deleteDialogNote }}</p>
         <p v-if="deleteDialogError" class="storage-inline-error">{{ deleteDialogError }}</p>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" :disabled="deleteDialogBusy" @click="closeDeleteDialog">
             Cancel
           </button>
-          <button type="submit" class="btn btn-danger" :disabled="deleteDialogBusy">
-            {{ deleteDialogBusy ? "Deleting…" : "Delete storage" }}
+          <button type="submit" class="btn btn-danger" :disabled="deleteConfirmDisabled">
+            {{ deleteDialogBusy ? "Deleting…" : deleteConfirmLabel }}
           </button>
         </div>
       </form>

@@ -51,9 +51,11 @@ function snapshotDeltaClass(value) {
       [`storage-set-group--depth-${group.depth || 0}`]: true,
     }"
   >
+    <div class="storage-set-group-header-row">
     <button
       type="button"
       class="storage-set-group-header"
+      :class="{ 'has-group-actions': $slots['group-actions'] }"
       :aria-expanded="isExpanded(group.path)"
       @click="emit('toggle', group.path)"
     >
@@ -109,6 +111,13 @@ function snapshotDeltaClass(value) {
         </span>
       </span>
     </button>
+    <div
+      v-if="$slots['group-actions']"
+      class="storage-set-group-actions"
+    >
+      <slot name="group-actions" :group="group" />
+    </div>
+    </div>
 
     <div v-if="isExpanded(group.path)" class="storage-set-group-body">
       <CollectionGroupTree
@@ -119,6 +128,9 @@ function snapshotDeltaClass(value) {
         :meta-text-for="metaTextFor"
         @toggle="emit('toggle', $event)"
       >
+        <template v-if="$slots['group-actions']" #group-actions="slotProps">
+          <slot name="group-actions" v-bind="slotProps" />
+        </template>
         <template #leaf="slotProps">
           <slot name="leaf" v-bind="slotProps" />
         </template>

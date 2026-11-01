@@ -29,6 +29,7 @@ SELECT
     sl.description,
     sl.sort_order,
     sl.is_system,
+    sl.deck_id,
     COUNT(ci.instance_id) AS card_count,
     COUNT(DISTINCT ci.set_code || '|' || ci.collector_number || '|' || ci.finish) AS unique_prints
 FROM storage_locations sl
@@ -125,6 +126,7 @@ def get_location(conn: sqlite3.Connection, slug: str) -> dict:
             sl.description,
             sl.sort_order,
             sl.is_system,
+            sl.deck_id,
             COUNT(ci.instance_id) AS card_count,
             COUNT(DISTINCT ci.set_code || '|' || ci.collector_number || '|' || ci.finish) AS unique_prints
         FROM storage_locations sl
@@ -206,47 +208,142 @@ def delete_location(
     *,
     disposition: str | None = None,
     move_to: str | None = None,
+    delete_deck: bool = False,
 ) -> None:
     """Delete a storage. The last non-deck location is kept.
 
     When the location holds copies, ``disposition`` is ``move`` (relocate them)
-    or ``delete`` (remove those copies from the collection).
+    or ``delete`` (remove those copies from the collection). Deck storage can
+    also remove its linked deck.
     """
     location = get_location(conn, slug)
     if _is_deck_location(location["slug"], location["locationType"]):
-        raise StorageError(DECK_STORAGE_MANUAL_MESSAGE, status_code=400)
+        _delete_deck_storage(
+            conn,
+            location,
+            disposition=disposition,
+            move_to=move_to,
+            delete_deck=delete_deck,
+        )
+        return
     if not location["canDelete"]:
         raise StorageError("The last storage cannot be deleted")
+    _delete_manual_storage(conn, location, disposition=disposition, move_to=move_to)
 
+
+def _delete_manual_storage(
+    conn: sqlite3.Connection,
+    location: dict,
+    *,
+    disposition: str | None,
+    move_to: str | None,
+) -> None:
+    slug = location["slug"]
     card_count = int(location["cardCount"] or 0)
+    action, destination = _copy_action(conn, slug, card_count, disposition, move_to)
+    if card_count:
+        _apply_copy_action(conn, slug, action, destination)
+    preferred = destination if action == "move" and destination else None
+    _reassign_default_storage(conn, slug, preferred)
+    conn.execute("DELETE FROM storage_locations WHERE location_slug = ?", (slug,))
+    bump_cache_epoch()
+
+
+def _delete_deck_storage(
+    conn: sqlite3.Connection,
+    location: dict,
+    *,
+    disposition: str | None,
+    move_to: str | None,
+    delete_deck: bool,
+) -> None:
+    slug = location["slug"]
+    card_count = int(location["cardCount"] or 0)
+    action, destination = _copy_action(conn, slug, card_count, disposition, move_to)
+    if card_count:
+        _apply_copy_action(conn, slug, action, destination)
+    if delete_deck:
+        _remove_linked_deck(conn, location)
+        return
+    if not card_count:
+        raise StorageError("Delete the linked deck to remove this storage")
+    _clear_deck_owned_qty(conn, location)
+    bump_cache_epoch()
+
+
+def _copy_action(
+    conn: sqlite3.Connection,
+    slug: str,
+    card_count: int,
+    disposition: str | None,
+    move_to: str | None,
+) -> tuple[str, str]:
     action = (disposition or "").strip().lower()
     destination = (move_to or "").strip()
-    if card_count:
-        if action not in {"move", "delete"}:
-            raise StorageError("Choose whether to move or delete the cards in this storage")
-        if action == "move":
-            if not destination or destination == slug:
-                raise StorageError("Choose another storage to move the cards to")
-            assert_location_assignable(conn, destination)
-            conn.execute(
-                """
-                UPDATE card_instances
-                SET location_slug = ?
-                WHERE location_slug = ?
-                """,
-                (destination, slug),
-            )
-        else:
-            _delete_location_copies(conn, slug)
-    elif action == "move" and destination:
+    if card_count and action not in {"move", "delete"}:
+        raise StorageError("Choose whether to move or delete the cards in this storage")
+    if action == "move" and (card_count or destination):
+        if not destination or destination == slug:
+            raise StorageError("Choose another storage to move the cards to")
         assert_location_assignable(conn, destination)
+    return action, destination
 
-    _reassign_default_storage(conn, slug, destination if action == "move" and destination else None)
+
+def _apply_copy_action(
+    conn: sqlite3.Connection,
+    slug: str,
+    action: str,
+    destination: str,
+) -> None:
+    if action == "move":
+        conn.execute(
+            """
+            UPDATE card_instances
+            SET location_slug = ?
+            WHERE location_slug = ?
+            """,
+            (destination, slug),
+        )
+        return
+    _delete_location_copies(conn, slug)
+
+
+def _remove_linked_deck(conn: sqlite3.Connection, location: dict) -> None:
+    from api.services.decks_service import delete_deck
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    deck_id = _deck_id_for_location(conn, location)
+    if deck_id is None:
+        raise StorageError("Linked deck not found", status_code=404)
+    delete_deck(conn, deck_id=str(deck_id))
+
+
+def _clear_deck_owned_qty(conn: sqlite3.Connection, location: dict) -> None:
+    from util.deck_tables import ensure_deck_tables
+
+    ensure_deck_tables(conn)
+    deck_id = _deck_id_for_location(conn, location)
+    if deck_id is None:
+        raise StorageError("Linked deck not found", status_code=404)
     conn.execute(
-        "DELETE FROM storage_locations WHERE location_slug = ?",
-        (slug,),
+        "UPDATE deck_cards SET owned_qty = 0 WHERE deck_id = ?",
+        (deck_id,),
     )
-    bump_cache_epoch()
+
+
+def _deck_id_for_location(conn: sqlite3.Connection, location: dict) -> int | None:
+    deck_id = location.get("deckId")
+    if deck_id is not None:
+        return int(deck_id)
+    slug = str(location.get("slug") or "")
+    if not slug.lower().startswith("deck:"):
+        return None
+    row = conn.execute(
+        "SELECT deck_id FROM decks WHERE lower(slug) = ?",
+        (slug.split(":", 1)[1].lower(),),
+    ).fetchone()
+    return int(row[0]) if row else None
 
 
 def _delete_location_copies(conn: sqlite3.Connection, slug: str) -> None:
@@ -350,6 +447,8 @@ def list_location_cards(
                 "purchaseValue": _float_or_none(row["purchase_value"]),
                 "name": name,
                 "artStyle": str_or_empty(row["art_style"]),
+                "cardmarketUrl": str_or_empty(row["cardmarket_url"]),
+                "cardmarketUrlFoil": str_or_empty(row["cardmarket_url_foil"]),
                 **card_image_fields(row),
                 **card_metadata_api(row),
                 "roles": list(roles),
@@ -1260,6 +1359,7 @@ def _serialize_location(row: sqlite3.Row, *, manual_count: int | None = None) ->
     card_count = int(row["card_count"])
     is_system = bool(row["is_system"])
     is_deck = _is_deck_location(slug, row["location_type"])
+    deck_id = row["deck_id"]
     return {
         "slug": slug,
         "label": row["label"],
@@ -1269,8 +1369,9 @@ def _serialize_location(row: sqlite3.Row, *, manual_count: int | None = None) ->
         "isSystem": is_system,
         "cardCount": card_count,
         "uniquePrints": int(row["unique_prints"]),
-        "canDelete": (not is_deck) and manual_count is not None and manual_count > 1,
+        "canDelete": is_deck or (manual_count is not None and manual_count > 1),
         "isCustom": slug.startswith("custom:") or slug.startswith("binder:custom:"),
+        "deckId": int(deck_id) if deck_id is not None else None,
     }
 
 

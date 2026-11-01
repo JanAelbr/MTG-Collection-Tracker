@@ -459,10 +459,15 @@ def toggle_deck_favorite(
 @router.delete("/{deck_id}")
 def delete_deck(
     deck_id: str,
+    removeStorageItems: bool = False,
     conn: sqlite3.Connection = Depends(get_db),
 ):
     try:
-        return decks_service.delete_deck(conn, deck_id=deck_id)
+        return decks_service.delete_deck(
+            conn,
+            deck_id=deck_id,
+            remove_storage_items=removeStorageItems,
+        )
     except DeckError as exc:
         raise _deck_error(exc) from exc
 

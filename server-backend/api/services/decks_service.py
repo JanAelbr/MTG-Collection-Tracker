@@ -1812,25 +1812,54 @@ def toggle_deck_favorite(conn: sqlite3.Connection, *, deck_id: str) -> dict:
     }
 
 
-def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
+def delete_deck(
+    conn: sqlite3.Connection,
+    *,
+    deck_id: str,
+    remove_storage_items: bool = False,
+) -> dict:
     from api.cache import bump_cache_epoch
-    from api.services.settings_service import get_default_storage_location
     from util.deck_tables import ensure_deck_tables
 
     ensure_deck_tables(conn)
+    deck_key, deck_slug = _deck_identity(conn, deck_id)
+    deck_location = f"deck:{deck_slug}"
+    if remove_storage_items:
+        _discard_deck_storage_copies(conn, deck_location)
+    else:
+        _park_deck_storage_copies(conn, deck_location)
+    _erase_deck(conn, deck_key, deck_location)
+    conn.commit()
+    bump_cache_epoch()
+    log.info(
+        "Deleted deck %s (slug=%s, remove_storage=%s)",
+        deck_key,
+        deck_slug,
+        remove_storage_items,
+    )
+    return {
+        "deletedDeckId": str(deck_key),
+        "removedStorageItems": bool(remove_storage_items),
+    }
+
+
+def _deck_identity(conn: sqlite3.Connection, deck_id: str) -> tuple[int, str]:
     try:
         deck_key = int(deck_id)
     except (TypeError, ValueError) as exc:
         raise DeckError("Deck not found", status_code=404) from exc
-
-    deck_row = conn.execute(
+    row = conn.execute(
         "SELECT deck_id, slug FROM decks WHERE deck_id = ?",
         (deck_key,),
     ).fetchone()
-    if deck_row is None:
+    if row is None:
         raise DeckError("Deck not found", status_code=404)
+    return int(row[0]), str(row[1]).lower()
 
-    deck_location = f"deck:{str(deck_row[1]).lower()}"
+
+def _park_deck_storage_copies(conn: sqlite3.Connection, location: str) -> None:
+    from api.services.settings_service import get_default_storage_location
+
     default_location = get_default_storage_location(conn)
     conn.execute(
         """
@@ -1838,18 +1867,23 @@ def delete_deck(conn: sqlite3.Connection, *, deck_id: str) -> dict:
         SET location_slug = ?
         WHERE location_slug = ?
         """,
-        (default_location, deck_location),
+        (default_location, location),
     )
+
+
+def _discard_deck_storage_copies(conn: sqlite3.Connection, location: str) -> None:
+    from api.services.storage_service import _delete_location_copies
+
+    _delete_location_copies(conn, location)
+
+
+def _erase_deck(conn: sqlite3.Connection, deck_key: int, location: str) -> None:
     conn.execute("DELETE FROM deck_cards WHERE deck_id = ?", (deck_key,))
     conn.execute("DELETE FROM decks WHERE deck_id = ?", (deck_key,))
     conn.execute(
         "DELETE FROM storage_locations WHERE location_slug = ?",
-        (deck_location,),
+        (location,),
     )
-    conn.commit()
-    bump_cache_epoch()
-    log.info("Deleted deck %s (slug=%s)", deck_key, deck_row[1])
-    return {"deletedDeckId": str(deck_key)}
 
 
 def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, include_alternatives: bool = True) -> dict:

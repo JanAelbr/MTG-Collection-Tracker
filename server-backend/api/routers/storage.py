@@ -141,6 +141,7 @@ def delete_location(
     slug: str,
     disposition: str | None = None,
     moveTo: str | None = None,
+    deleteDeck: bool = False,
     conn: sqlite3.Connection = Depends(get_db),
 ):
     try:
@@ -149,6 +150,7 @@ def delete_location(
             slug,
             disposition=disposition,
             move_to=moveTo,
+            delete_deck=deleteDeck,
         )
     except StorageError as exc:
         raise _handle_storage_error(exc) from exc
