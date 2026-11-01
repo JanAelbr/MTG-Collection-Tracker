@@ -559,6 +559,10 @@ export const api = {
 
     if (params.priceIssuesOnly) query.set("priceIssuesOnly", "true");
 
+    if (params.storageFilters?.length) query.set("storage", params.storageFilters.join(","));
+
+    if (params.ownedFilter && params.ownedFilter !== "all") query.set("ownedFilter", params.ownedFilter);
+
     if (params.page) query.set("page", String(params.page));
 
     if (params.pageSize) query.set("pageSize", String(params.pageSize));

@@ -35,6 +35,7 @@ import {
   findStorageLocation,
   groupStorageLocations,
 } from "../utils/storageLocationGroups";
+import { displayCardmarketUrl } from "../utils/cardmarketUrl";
 import { scryfallCardUri } from "../utils/scryfall";
 import CardmarketIcon from "./CardmarketIcon.vue";
 import ScryfallIcon from "./ScryfallIcon.vue";
@@ -101,12 +102,11 @@ const cardmarketLinkUrl = computed(() => {
   if (!card) {
     return "";
   }
-  const foilUrl = String(card.cardmarketUrlFoil || "").trim();
+  const foilUrl = displayCardmarketUrl(card.cardmarketUrlFoil);
   if (cardFinish(card) === FINISH_FOIL && foilUrl) {
     return foilUrl;
   }
-  const url = String(card.cardmarketUrl || "").trim();
-  return url;
+  return displayCardmarketUrl(card.cardmarketUrl);
 });
 
 const scryfallCardLinkUrl = computed(() => {

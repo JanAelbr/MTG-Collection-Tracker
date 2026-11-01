@@ -207,11 +207,87 @@ def _serialize_manager_card(row) -> dict:
     }
 
 
+def _storage_finish_sql(finish_filter: str) -> str:
+    if finish_filter == "foil":
+        return " AND ci_storage.finish = 1"
+    if finish_filter == "nonfoil":
+        return " AND ci_storage.finish = 0"
+    if finish_filter == "etched":
+        return " AND ci_storage.finish = 2"
+    return ""
+
+
+def _storage_exists_clause(
+    storage_filters: list[str] | None,
+    finish_filter: str,
+) -> tuple[str, list]:
+    slugs = [str(slug).strip() for slug in (storage_filters or []) if str(slug).strip()]
+    if not slugs:
+        return "", []
+    placeholders = ", ".join("?" for _ in slugs)
+    clause = (
+        "EXISTS ("
+        "SELECT 1 FROM card_instances ci_storage "
+        "WHERE ci_storage.set_code = c.set_code "
+        "AND CAST(ci_storage.collector_number AS TEXT) = CAST(c.collector_number AS TEXT) "
+        f"AND ci_storage.location_slug IN ({placeholders})"
+        f"{_storage_finish_sql(finish_filter)}"
+        ")"
+    )
+    return clause, slugs
+
+
+_OWNED_NONFOIL_SQL = "(p0.purchase_value IS NOT NULL OR COALESCE(i0.instance_count, 0) > 0)"
+_OWNED_FOIL_SQL = "(p1.purchase_value IS NOT NULL OR COALESCE(i1.instance_count, 0) > 0)"
+_OWNED_ETCHED_SQL = "(p2.purchase_value IS NOT NULL OR COALESCE(i2.instance_count, 0) > 0)"
+
+
+def _owned_match_sql(finish_filter: str) -> str:
+    if finish_filter == "foil":
+        return _OWNED_FOIL_SQL
+    if finish_filter == "nonfoil":
+        return _OWNED_NONFOIL_SQL
+    if finish_filter == "etched":
+        return _OWNED_ETCHED_SQL
+    return f"({_OWNED_NONFOIL_SQL} OR {_OWNED_FOIL_SQL} OR {_OWNED_ETCHED_SQL})"
+
+
+def _unowned_match_sql(finish_filter: str) -> str:
+    if finish_filter == "foil":
+        return f"(c.has_foil = 1 AND NOT {_OWNED_FOIL_SQL})"
+    if finish_filter == "nonfoil":
+        return f"(c.has_nonfoil = 1 AND NOT {_OWNED_NONFOIL_SQL})"
+    if finish_filter == "etched":
+        return f"(c.has_etched = 1 AND NOT {_OWNED_ETCHED_SQL})"
+    return (
+        "("
+        f"(c.has_nonfoil = 1 AND NOT {_OWNED_NONFOIL_SQL})"
+        f" OR (c.has_foil = 1 AND NOT {_OWNED_FOIL_SQL})"
+        f" OR (c.has_etched = 1 AND NOT {_OWNED_ETCHED_SQL})"
+        ")"
+    )
+
+
+def _owned_filter_clause(owned_filter: str, finish_filter: str) -> str:
+    normalized = (owned_filter or "all").strip().lower()
+    if normalized in ("", "all"):
+        return ""
+    if normalized == "owned":
+        return _owned_match_sql(finish_filter)
+    if normalized == "unowned":
+        return _unowned_match_sql(finish_filter)
+    if normalized == "missing-number":
+        return f"NOT ({_OWNED_NONFOIL_SQL} OR {_OWNED_FOIL_SQL})"
+    return ""
+
+
 def _manager_filter_clauses(
     *,
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
 ) -> tuple[str, list]:
     clauses: list[str] = [
         exclude_alchemy_sql("c.collector_number"),
@@ -242,6 +318,15 @@ def _manager_filter_clauses(
         )
         params.extend([like, like, like])
 
+    storage_sql, storage_params = _storage_exists_clause(storage_filters, finish_filter)
+    if storage_sql:
+        clauses.append(storage_sql)
+        params.extend(storage_params)
+
+    owned_sql = _owned_filter_clause(owned_filter, finish_filter)
+    if owned_sql:
+        clauses.append(owned_sql)
+
     if not clauses:
         return "", params
     return " AND " + " AND ".join(clauses), params
@@ -254,6 +339,8 @@ def _execute_manager_query(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
     offset: int | None = None,
     limit: int | None = None,
 ) -> list[dict]:
@@ -263,6 +350,8 @@ def _execute_manager_query(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        storage_filters=storage_filters,
+        owned_filter=owned_filter,
     )
     sql = (
         f"{MANAGER_CARDS_SELECT}\n"
@@ -288,6 +377,8 @@ def count_manager_cards_for_set(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
 ) -> int:
     ensure_card_columns(conn)
     ensure_app_tables(conn)
@@ -295,6 +386,8 @@ def count_manager_cards_for_set(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        storage_filters=storage_filters,
+        owned_filter=owned_filter,
     )
     sql = (
         f"SELECT COUNT(*)\n"
@@ -312,6 +405,8 @@ def query_manager_cards_for_set(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
     price_issues_only: bool = False,
     offset: int = 0,
     limit: int | None = None,
@@ -323,6 +418,8 @@ def query_manager_cards_for_set(
             art_style=art_style,
             search=search,
             finish_filter=finish_filter,
+            storage_filters=storage_filters,
+            owned_filter=owned_filter,
             offset=offset,
             limit=limit,
         )
@@ -332,6 +429,8 @@ def query_manager_cards_for_set(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        storage_filters=storage_filters,
+        owned_filter=owned_filter,
     )
     filtered = [card for card in cards if card.get("price_issues")]
     if limit is None:
@@ -347,6 +446,8 @@ def count_manager_price_issues_for_set(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
 ) -> int:
     cards = _execute_manager_query(
         conn,
@@ -354,6 +455,8 @@ def count_manager_price_issues_for_set(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        storage_filters=storage_filters,
+        owned_filter=owned_filter,
     )
     return sum(1 for card in cards if card.get("price_issues"))
 

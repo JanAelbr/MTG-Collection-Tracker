@@ -33,6 +33,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   "update:allVisibleSelected",
+  "select-owned",
   "toggle-row",
   "set-copy-count",
   "assign-storage",
@@ -218,6 +219,15 @@ onBeforeUnmount(disconnectLoadMoreObserver);
         >
         Select all
       </label>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        :disabled="loading || !finishRows.length"
+        title="Select every owned finish row"
+        @click="emit('select-owned')"
+      >
+        Select owned
+      </button>
 
       <label class="manager-filter manager-filter-storage">
         <span>Assign to</span>

@@ -3,6 +3,8 @@ import {
   compareCollectorNumbers,
   compareManagerCardPrices,
   expandCardFinishRows,
+  filterFinishRowsByOwnership,
+  filterFinishRowsByStorage,
   finishRowKey,
   formatLocationsSummary,
   managerCardPrice,
@@ -46,6 +48,43 @@ describe("useManagerSetTable helpers", () => {
       isFirstFinishRow: false,
       finishRowCount: 2,
     });
+  });
+
+  it("keeps finish rows stored in the selected locations", () => {
+    const card = {
+      collectorNumber: "7",
+      hasNonfoil: true,
+      hasFoil: true,
+      ownedCountNonfoil: 2,
+      ownedCountFoil: 1,
+      locationsNonfoil: [{ slug: "binder:a", label: "Binder A", count: 2 }],
+      locationsFoil: [{ slug: "storage:general", label: "General", count: 1 }],
+    };
+    const rows = expandCardFinishRows([card]);
+    const filtered = filterFinishRowsByStorage(rows, ["binder:a"]);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toMatchObject({
+      finish: FINISH_NONFOIL,
+      isFirstFinishRow: true,
+      finishRowCount: 1,
+    });
+  });
+
+  it("keeps only the finish rows matching the ownership filter", () => {
+    const card = {
+      collectorNumber: "7",
+      hasNonfoil: true,
+      hasFoil: true,
+      ownedCountNonfoil: 1,
+      ownedCountFoil: 0,
+    };
+    const rows = expandCardFinishRows([card]);
+    const owned = filterFinishRowsByOwnership(rows, "owned");
+    const unowned = filterFinishRowsByOwnership(rows, "unowned");
+    expect(owned.map((row) => row.finish)).toEqual([FINISH_NONFOIL]);
+    expect(unowned.map((row) => row.finish)).toEqual([FINISH_FOIL]);
+    expect(filterFinishRowsByOwnership(rows, "all")).toHaveLength(2);
+    expect(filterFinishRowsByOwnership(rows, "missing-number")).toHaveLength(2);
   });
 
   it("does not invent a nonfoil row for foil-only prints with stale pricing", () => {

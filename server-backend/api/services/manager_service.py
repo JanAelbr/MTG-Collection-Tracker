@@ -319,6 +319,8 @@ def list_set_cards(
     art_style: str = "",
     search: str = "",
     finish_filter: str = "all",
+    storage_filters: list[str] | None = None,
+    owned_filter: str = "all",
     price_issues_only: bool = False,
     page: int = 1,
     page_size: int = MANAGER_CARDS_PAGE_SIZE,
@@ -326,6 +328,8 @@ def list_set_cards(
     _validate_set_code(set_code)
     normalized = set_code.upper()
     art_styles = build_art_style_options_for_set(conn, normalized)
+    locations = storage_filters or []
+    ownership = owned_filter or "all"
 
     if price_issues_only:
         total = count_manager_price_issues_for_set(
@@ -334,6 +338,8 @@ def list_set_cards(
             art_style=art_style,
             search=search,
             finish_filter=finish_filter,
+            storage_filters=locations,
+            owned_filter=ownership,
         )
     else:
         total = count_manager_cards_for_set(
@@ -342,6 +348,8 @@ def list_set_cards(
             art_style=art_style,
             search=search,
             finish_filter=finish_filter,
+            storage_filters=locations,
+            owned_filter=ownership,
         )
     safe_page = max(1, page)
     safe_page_size = max(1, min(page_size, 500))
@@ -352,6 +360,8 @@ def list_set_cards(
         art_style=art_style,
         search=search,
         finish_filter=finish_filter,
+        storage_filters=locations,
+        owned_filter=ownership,
         price_issues_only=price_issues_only,
         offset=start,
         limit=safe_page_size,
@@ -373,6 +383,8 @@ def list_set_cards(
             art_style=art_style,
             search=search,
             finish_filter=finish_filter,
+            storage_filters=locations,
+            owned_filter=ownership,
         ),
     }
 

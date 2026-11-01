@@ -82,6 +82,62 @@ function setLocationsForFinish(card, finish, locations) {
   card.locationsNonfoil = next;
 }
 
+function regroupFinishRows(rows, predicate) {
+  const grouped = [];
+  let current = null;
+  let currentKey = null;
+  for (const row of rows) {
+    const key = row.card?.collectorNumber;
+    if (key !== currentKey) {
+      current = [];
+      currentKey = key;
+      grouped.push(current);
+    }
+    if (predicate(row)) {
+      current.push(row);
+    }
+  }
+  const filtered = [];
+  for (const group of grouped) {
+    if (!group.length) {
+      continue;
+    }
+    group.forEach((row, index) => {
+      filtered.push({
+        ...row,
+        isFirstFinishRow: index === 0,
+        finishRowCount: group.length,
+      });
+    });
+  }
+  return filtered;
+}
+
+export function filterFinishRowsByStorage(rows = [], storageFilters = []) {
+  const allowed = new Set(
+    (storageFilters || []).map((slug) => String(slug || "").trim()).filter(Boolean),
+  );
+  if (!allowed.size) {
+    return rows;
+  }
+  return regroupFinishRows(rows, (row) => {
+    const locations = locationsForFinish(row.card, row.finish);
+    return locations.some((location) => allowed.has(location.slug));
+  });
+}
+
+export function filterFinishRowsByOwnership(rows = [], ownedFilter = "all") {
+  const filter = String(ownedFilter || "all").trim().toLowerCase();
+  if (!filter || filter === "all" || filter === "missing-number") {
+    return rows;
+  }
+  const wantOwned = filter === "owned";
+  return regroupFinishRows(
+    rows,
+    (row) => (copyCountForFinish(row.card, row.finish) > 0) === wantOwned,
+  );
+}
+
 export function expandCardFinishRows(cards = []) {
   const rows = [];
   for (const card of cards) {
@@ -346,7 +402,14 @@ export function useManagerSetTable(getParams) {
       priceStrategy: params.priceStrategy,
     });
   });
-  const finishRows = computed(() => expandCardFinishRows(visibleCards.value));
+  const finishRows = computed(() => {
+    const params = getParams();
+    const rows = filterFinishRowsByStorage(
+      expandCardFinishRows(visibleCards.value),
+      params.storageFilters,
+    );
+    return filterFinishRowsByOwnership(rows, params.ownedFilter);
+  });
   const totalMatches = computed(() => cardsMeta.value?.total ?? 0);
   const totalPages = computed(() => cardsMeta.value?.totalPages ?? 1);
   const hasMoreCards = computed(() => loadedPages.value < totalPages.value);
@@ -393,6 +456,18 @@ export function useManagerSetTable(getParams) {
     }
     selectedRows.value = next;
     selectAllVisible.value = true;
+  }
+
+  async function selectOwnedRows() {
+    await loadAllPages();
+    const next = new Set();
+    for (const row of finishRows.value) {
+      if (copyCountForFinish(row.card, row.finish) > 0) {
+        next.add(row.rowKey);
+      }
+    }
+    selectedRows.value = next;
+    selectAllVisible.value = next.size > 0 && next.size === finishRows.value.length;
   }
 
   function clearRowSelection() {
@@ -461,6 +536,8 @@ export function useManagerSetTable(getParams) {
         search: params.search,
         foilFilter: params.foilFilter,
         priceIssuesOnly: params.priceIssuesOnly,
+        storageFilters: params.storageFilters,
+        ownedFilter: params.ownedFilter,
         page: 1,
         pageSize: params.pageSize,
       });
@@ -490,6 +567,8 @@ export function useManagerSetTable(getParams) {
         search: params.search,
         foilFilter: params.foilFilter,
         priceIssuesOnly: params.priceIssuesOnly,
+        storageFilters: params.storageFilters,
+        ownedFilter: params.ownedFilter,
         page: loadedPages.value + 1,
         pageSize: params.pageSize,
       });
@@ -570,6 +649,7 @@ export function useManagerSetTable(getParams) {
     loadMoreCards,
     loadAllPages,
     selectAllRows,
+    selectOwnedRows,
     clearRowSelection,
     resetTableState,
     copyCountForFinish,

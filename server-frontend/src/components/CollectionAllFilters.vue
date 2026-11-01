@@ -134,7 +134,7 @@ const showRoleGroup = computed(
 );
 
 const showStorageGroup = computed(
-  () => props.isAllView && !props.isTableView && props.showStorageFilter,
+  () => props.isAllView && props.showStorageFilter,
 );
 
 const showDetailsGroup = computed(() => props.isAllView && !props.isTableView);
@@ -259,8 +259,9 @@ onMounted(async () => {
     </div>
 
     <div
-      v-if="isAllView && !isTableView && (showOwnershipFilter || showFinishFilter)"
-      class="filter-sidebar-section filter-sidebar-section--compact-filters"
+      v-if="isAllView && (showOwnershipFilter || (!isTableView && showFinishFilter))"
+      class="filter-sidebar-section"
+      :class="{ 'filter-sidebar-section--compact-filters': !isTableView && showFinishFilter }"
     >
       <div v-if="showOwnershipFilter" class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Ownership</p>
@@ -306,7 +307,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="showFinishFilter" class="filter-sidebar-compact-filter">
+      <div v-if="showFinishFilter && !isTableView" class="filter-sidebar-compact-filter">
         <p class="filter-sidebar-label">Finish</p>
         <div class="button-group collection-finish-group">
           <button

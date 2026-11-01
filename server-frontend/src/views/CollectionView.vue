@@ -146,6 +146,8 @@ const managerTable = useManagerSetTable(() => ({
   search: searchQuery.value.trim(),
   foilFilter: foilFilter.value,
   priceIssuesOnly: priceIssuesOnly.value,
+  storageFilters: storageFilters.value,
+  ownedFilter: ownedFilter.value,
   pageSize: pageSize.value,
   sort: allCardsSort.value,
   sortDir: allCardsSortDir.value,
@@ -625,6 +627,10 @@ async function onTableSelectAll(checked) {
     return;
   }
   managerTable.clearRowSelection();
+}
+
+async function onTableSelectOwned() {
+  await managerTable.selectOwnedRows();
 }
 
 async function loadAppMeta() {
@@ -1460,6 +1466,22 @@ watch([isTableView, artStyle, pageSize], () => {
   reloadManagerTable();
 });
 
+watch(
+  () => `${ownedFilter.value}|${storageFilters.value.join(",")}`,
+  () => {
+    if (
+      !routeSyncReady.value
+      || applyingRouteQuery.value
+      || !collectionHydrated.value
+      || suppressPageRouteRead
+      || !isTableView.value
+    ) {
+      return;
+    }
+    reloadManagerTable();
+  },
+);
+
 onMounted(async () => {
   syncViewFromRoute();
   await Promise.all([fetchPricingSettings(), loadMeta(), loadAppMeta(), refreshSyncStatus()]);
@@ -1737,6 +1759,7 @@ onUnmounted(stopPolling);
             :sort-dir="allCardsSortDir"
             :price-strategy="'trend'"
             @update:all-visible-selected="onTableSelectAll"
+            @select-owned="onTableSelectOwned"
             @toggle-row="managerTable.toggleRow"
             @set-copy-count="onTableSetCopyCount"
             @update-single-storage="onTableUpdateSingleStorage"

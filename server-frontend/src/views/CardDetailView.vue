@@ -9,6 +9,7 @@ import CardmarketIcon from "../components/CardmarketIcon.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
 import ScryfallIcon from "../components/ScryfallIcon.vue";
 import { useAsyncLoad } from "../composables/useAsyncLoad";
+import { displayCardmarketUrl } from "../utils/cardmarketUrl";
 import { formatEuro } from "../utils/format";
 import { priceStrategyDescription } from "../utils/priceStrategies";
 import {
@@ -64,10 +65,7 @@ const showEtchedGuidePrices = computed(() =>
   card.value?.guidePriceMatrix?.rows?.some((row) => row.etched != null),
 );
 
-const cardmarketLinkUrl = computed(() => {
-  const url = card.value?.cardmarketUrl;
-  return url && String(url).trim() ? String(url).trim() : "";
-});
+const cardmarketLinkUrl = computed(() => displayCardmarketUrl(card.value?.cardmarketUrl));
 
 const scryfallCardLinkUrl = computed(() => {
   if (!card.value) {

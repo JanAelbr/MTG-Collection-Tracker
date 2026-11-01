@@ -35,6 +35,8 @@ from api.services import manager_service, settings_service
 
 from api.services.manager_service import ManagerError
 
+from api.services.search_service import _parse_storage_filters
+
 from api.services.storage_service import StorageError
 
 
@@ -325,11 +327,17 @@ def list_set_cards(
     foilFilter: str | None = Query(default=None),
     priceIssuesOnly: bool = Query(default=False),
 
+    storage: str = Query(default=""),
+
+    ownedFilter: str = Query(default="all"),
+
     page: int = Query(default=1, ge=1),
 
     pageSize: int = Query(default=100, ge=1, le=500),
 
 ):
+
+    storage_filters = _parse_storage_filters(storage)
 
     params = {
 
@@ -342,6 +350,10 @@ def list_set_cards(
         "finishFilter": finishFilter,
         "foilFilter": foilFilter,
         "priceIssuesOnly": priceIssuesOnly,
+
+        "storage": storage,
+
+        "ownedFilter": ownedFilter,
 
         "page": page,
 
@@ -372,6 +384,10 @@ def list_set_cards(
                 search=search,
 
                 finish_filter=foilFilter or finishFilter,
+
+                storage_filters=storage_filters,
+
+                owned_filter=ownedFilter,
 
                 price_issues_only=priceIssuesOnly,
 

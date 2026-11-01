@@ -185,6 +185,60 @@ class ManagerApiServiceTests(unittest.TestCase):
             {"1", "2"},
         )
 
+    def test_list_set_cards_filters_by_storage_and_ownership(self):
+        self.conn.execute(
+            """
+            INSERT INTO storage_locations (
+                location_slug, label, location_type, sort_order, description
+            ) VALUES ('storage:deckbox', 'Deck box', 'storage', 2, '')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO cards (
+                set_code, collector_number, name, art_style,
+                market_value, market_value_foil, market_value_etched,
+                has_nonfoil, has_foil, has_etched, colors, type_line, card_type
+            ) VALUES ('LTR', '2', 'Unowned', '01. Main set', 1.0, 2.0, NULL, 1, 1, 0, NULL, NULL, NULL)
+            """
+        )
+        self.conn.commit()
+        manager_service.set_copy_allocations(
+            self.conn,
+            set_code="LTR",
+            collector_number="1",
+            finish=0,
+            allocations=[{"locationSlug": "storage:deckbox", "count": 1}],
+        )
+
+        owned = manager_service.list_set_cards(self.conn, "LTR", owned_filter="owned")
+        unowned = manager_service.list_set_cards(self.conn, "LTR", owned_filter="unowned")
+        missing = manager_service.list_set_cards(
+            self.conn,
+            "LTR",
+            owned_filter="missing-number",
+        )
+        stored = manager_service.list_set_cards(
+            self.conn,
+            "LTR",
+            storage_filters=["storage:deckbox"],
+        )
+        foil_owned = manager_service.list_set_cards(
+            self.conn,
+            "LTR",
+            finish_filter="foil",
+            owned_filter="owned",
+        )
+
+        self.assertEqual([card["collectorNumber"] for card in owned["cards"]], ["1"])
+        self.assertEqual(
+            {card["collectorNumber"] for card in unowned["cards"]},
+            {"1", "2"},
+        )
+        self.assertEqual([card["collectorNumber"] for card in missing["cards"]], ["2"])
+        self.assertEqual([card["collectorNumber"] for card in stored["cards"]], ["1"])
+        self.assertEqual(foil_owned["total"], 0)
+
     def test_set_and_clear_ownership(self):
         updated = manager_service.set_ownership(
             self.conn,
