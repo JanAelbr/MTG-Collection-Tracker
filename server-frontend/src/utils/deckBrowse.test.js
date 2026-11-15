@@ -1,10 +1,94 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDeckGalleryItems,
+  deckDayRows,
   filterDecksForGallery,
   getGalleryCommanders,
   sortDecksForGallery,
 } from "./deckBrowse.js";
+
+describe("deck day changes", () => {
+  it("multiplies the sync move by owned copies", () => {
+    const decks = [
+      { id: 1, name: "Tokens" },
+      { id: 2, name: "Mill" },
+    ];
+    const pages = {
+      1: {
+        ownedCurrent: 12,
+        previewCards: [{ section: "commander", cardName: "Baylen" }],
+        ownedPrints: [
+          { setCode: "ltr", collectorNumber: "10", finish: 0, ownedQty: 2 },
+        ],
+      },
+      2: {
+        ownedCurrent: 4,
+        ownedPrints: [
+          { setCode: "MH3", collectorNumber: "1", finish: 1, ownedQty: 1 },
+        ],
+      },
+    };
+    const syncCards = [
+      { setCode: "LTR", collectorNumber: "10", finishId: 0, delta: 0.5 },
+      { setCode: "MH3", collectorNumber: "1", finishId: 1, previous: 2, current: 1.25 },
+    ];
+    expect(deckDayRows(decks, pages, syncCards)).toEqual([
+      {
+        id: 2,
+        name: "Mill",
+        commanders: "",
+        commanderName: "",
+        imageUri: "",
+        setCode: "",
+        collectorNumber: "",
+        finish: null,
+        colors: [],
+        favorite: false,
+        current: 4,
+        up: 0,
+        down: -0.75,
+        delta: -0.75,
+      },
+      {
+        id: 1,
+        name: "Tokens",
+        commanders: "Baylen",
+        commanderName: "Baylen",
+        imageUri: "",
+        setCode: "",
+        collectorNumber: "",
+        finish: null,
+        colors: [],
+        favorite: false,
+        current: 12,
+        up: 1,
+        down: 0,
+        delta: 1,
+      },
+    ]);
+  });
+
+  it("orders favourites first, then colour identity, then name", () => {
+    const decks = [
+      { id: 1, name: "Zedruu" },
+      { id: 2, name: "Azorius" },
+      { id: 3, name: "Heliod", favorite: true },
+      { id: 4, name: "Krenko" },
+    ];
+    const pages = {
+      1: { previewCards: [{ section: "commander", cardName: "Zedruu", colorIdentity: ["U", "R", "W"] }] },
+      2: { previewCards: [{ section: "commander", cardName: "Shorikai", colorIdentity: ["U", "W"] }] },
+      3: { previewCards: [{ section: "commander", cardName: "Heliod", colorIdentity: ["W"] }] },
+      4: { previewCards: [{ section: "commander", cardName: "Krenko", colorIdentity: ["R"] }] },
+    };
+    expect(deckDayRows(decks, pages, []).map((deck) => deck.name)).toEqual([
+      "Heliod",
+      "Krenko",
+      "Azorius",
+      "Zedruu",
+    ]);
+  });
+});
 
 describe("deckBrowse gallery helpers", () => {
   it("reads commanders from previewCards-style payloads", () => {

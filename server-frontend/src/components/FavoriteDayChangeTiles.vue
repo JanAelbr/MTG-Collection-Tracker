@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, useAttrs } from "vue";
 import { formatEuro, formatProfit } from "../utils/format";
-import { priceChangeStyle } from "../utils/priceSyncMovers";
+import { priceChangeStyle, priceChangeTinted } from "../utils/priceSyncMovers";
 import { applySetGalleryIconFallback, resolveSetIconUri, scryfallSmallImageUri } from "../utils/scryfall";
 import CardContextMenu from "./CardContextMenu.vue";
 import CardPreviewDialog from "./CardPreviewDialog.vue";
@@ -14,6 +14,7 @@ const props = defineProps({
   emptyLabel: { type: String, default: "No favourites yet." },
   columns: { type: Boolean, default: false },
   showPrice: { type: Boolean, default: false },
+  backgroundFloor: { type: Number, default: 0 },
 });
 
 const attrs = useAttrs();
@@ -94,10 +95,10 @@ function onSetIconError(event, item) {
         :class="{
           'has-art': showArt && Boolean(item.imageUri),
           'has-extra': Boolean($slots.extra),
-          'is-up': Number(item.delta) > 0,
-          'is-down': Number(item.delta) < 0,
+          'is-up': priceChangeTinted(item.delta, backgroundFloor) && Number(item.delta) > 0,
+          'is-down': priceChangeTinted(item.delta, backgroundFloor) && Number(item.delta) < 0,
         }"
-        :style="priceChangeStyle(item.delta)"
+        :style="priceChangeStyle(item.delta, { floor: backgroundFloor })"
         @click="emit('select', item)"
       >
         <button

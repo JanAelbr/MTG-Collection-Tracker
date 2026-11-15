@@ -85,6 +85,121 @@ export function aggregateArtStyleMovers(cards) {
   }).filter((row) => row.delta !== 0);
 }
 
+export function deckPrintKey(card) {
+  const setCode = String(card?.setCode || "").trim().toUpperCase();
+  const collectorNumber = String(card?.collectorNumber || "").trim();
+  const finish = Number(card?.finishId ?? card?.finish);
+  if (!setCode || !collectorNumber || !Number.isFinite(finish)) {
+    return "";
+  }
+  return `${setCode}|${collectorNumber}|${finish}`;
+}
+
+/** Sync rows for the prints a deck already owns, with owned copy counts. */
+export function cardsForDeckPrints(cards, prints) {
+  const wanted = new Map();
+  for (const line of prints || []) {
+    const key = deckPrintKey(line);
+    if (!key) {
+      continue;
+    }
+    const qty = Number(line.ownedQty);
+    wanted.set(key, (wanted.get(key) || 0) + (Number.isFinite(qty) ? qty : 0));
+  }
+  if (!wanted.size) {
+    return [];
+  }
+  return (cards || []).flatMap((card) => {
+    const key = deckPrintKey(card);
+    if (!wanted.has(key)) {
+      return [];
+    }
+    const ownedQty = wanted.get(key);
+    return [{ ...card, ownedQty: ownedQty > 0 ? ownedQty : 1 }];
+  });
+}
+
+/** Price move multiplied by the copies this deck owns. */
+export function deckImpactRows(cards, prints) {
+  return cardsForDeckPrints(cards, prints).map((card) => {
+    const qty = Math.max(1, Number(card.ownedQty) || 1);
+    const raw = Number(card.delta);
+    const unitDelta = Number.isFinite(raw)
+      ? raw
+      : (Number(card.current) || 0) - (Number(card.previous) || 0);
+    return {
+      ...card,
+      ownedQty: qty,
+      unitDelta,
+      delta: unitDelta * qty,
+    };
+  });
+}
+
+/** How many rows rose or fell, plus the collector numbers that moved. */
+export function changeMoveCounts(rows) {
+  let upCount = 0;
+  let downCount = 0;
+  const movedSlots = new Set();
+  for (const row of rows || []) {
+    const delta = Number(row?.delta) || 0;
+    if (delta > 0) {
+      upCount += 1;
+    } else if (delta < 0) {
+      downCount += 1;
+    } else {
+      continue;
+    }
+    const setCode = String(row?.setCode || "").trim().toUpperCase();
+    const number = String(row?.collectorNumber || "").trim();
+    if (setCode && number) {
+      movedSlots.add(`${setCode}|${number}`);
+    }
+  }
+  return { upCount, downCount, movedSlots };
+}
+
+/** Owned deck prints that are not among the rows that rose or fell. */
+export function deckUnchangedCount(prints, rows) {
+  const moved = new Set();
+  for (const row of rows || []) {
+    if ((Number(row?.delta) || 0) === 0) {
+      continue;
+    }
+    const key = deckPrintKey(row);
+    if (key) {
+      moved.add(key);
+    }
+  }
+  let unchanged = 0;
+  const seen = new Set();
+  for (const line of prints || []) {
+    const key = deckPrintKey(line);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    if (!moved.has(key)) {
+      unchanged += 1;
+    }
+  }
+  return unchanged;
+}
+
+export function deckImpactTotals(rows) {
+  let up = 0;
+  let down = 0;
+  for (const row of rows || []) {
+    const impact = Number(row?.delta) || 0;
+    if (impact > 0) {
+      up += impact;
+    } else if (impact < 0) {
+      down += impact;
+    }
+  }
+  return { up, down, delta: up + down };
+}
+
 export function moverRowToTileCard(row) {
   const finishLabelText = String(row?.finish || "").trim();
   const rawName = String(row?.name || "").trim();
@@ -191,6 +306,33 @@ export function catalogVisibleFamilyCodes(set, catalogSets, { includeHiddenSubse
   return code ? [code] : [];
 }
 
+/** Owned and catalog totals for the same visible family the day-change counts use. */
+export function familySetCounts(memberCodes, catalogSets, fallback = null) {
+  const catalog = catalogByCode(catalogSets);
+  const codes = (memberCodes || [])
+    .map((code) => String(code || "").trim().toUpperCase())
+    .filter(Boolean);
+  let owned = 0;
+  let catalogTotal = 0;
+  let found = false;
+  for (const code of codes) {
+    const meta = catalog.get(code);
+    if (meta?.ownedCount == null || meta?.catalogCount == null) {
+      continue;
+    }
+    found = true;
+    owned += Number(meta.ownedCount) || 0;
+    catalogTotal += Number(meta.catalogCount) || 0;
+  }
+  if (!found) {
+    return {
+      ownedCount: fallback?.ownedCount ?? null,
+      catalogCount: fallback?.catalogCount ?? null,
+    };
+  }
+  return { ownedCount: owned, catalogCount: catalogTotal };
+}
+
 export function favoriteSetDayRows(sets, cards, { catalogSets = [], includeHiddenSubsets = false } = {}) {
   return (sets || []).map((set) => {
     const setCode = String(set?.setCode || "").trim().toUpperCase();
@@ -201,6 +343,16 @@ export function favoriteSetDayRows(sets, cards, { catalogSets = [], includeHidde
       && members.has(String(card.setCode || "").trim().toUpperCase())
     ));
     const change = signedDayChange(matched);
+    let upCount = 0;
+    let downCount = 0;
+    for (const card of matched) {
+      const delta = Number(card.delta);
+      if (delta > 0) {
+        upCount += 1;
+      } else if (delta < 0) {
+        downCount += 1;
+      }
+    }
     return {
       id: setCode,
       kind: "set",
@@ -208,6 +360,8 @@ export function favoriteSetDayRows(sets, cards, { catalogSets = [], includeHidde
       memberCodes,
       label: set?.name || set?.setName || set?.label || setCode,
       ...change,
+      upCount,
+      downCount,
     };
   }).filter((row) => row.setCode);
 }
@@ -317,7 +471,21 @@ export function priceChangeStrength(delta) {
   return Math.min(1, Math.max(0.16, scaled));
 }
 
-export function priceChangeStyle(delta) {
+/** Home leaves moves under this many euros on a plain tile. */
+export const HOME_PRICE_TINT_FLOOR = 0.2;
+
+export function priceChangeTinted(delta, floor = 0) {
+  const amount = Math.abs(Number(delta) || 0);
+  if (amount <= 0) {
+    return false;
+  }
+  return Math.round(amount * 100) >= Math.round(Number(floor) * 100);
+}
+
+export function priceChangeStyle(delta, { floor = 0 } = {}) {
+  if (!priceChangeTinted(delta, floor)) {
+    return undefined;
+  }
   const strength = priceChangeStrength(delta);
   if (!strength) {
     return undefined;

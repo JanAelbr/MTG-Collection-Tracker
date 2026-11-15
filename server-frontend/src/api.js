@@ -536,6 +536,10 @@ export const api = {
 
     }),
 
+  getManagerArtStyles: (setCode) =>
+
+    apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/art-styles`),
+
   getManagerArtStyleRules: (setCode) =>
 
     apiRequest(`/manager/sets/${encodeURIComponent(setCode)}/art-style-rules`),

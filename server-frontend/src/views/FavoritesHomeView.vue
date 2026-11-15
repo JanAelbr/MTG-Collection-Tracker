@@ -8,8 +8,9 @@ import { syncFavoritesFromPayload, useFavorites } from "../composables/favorites
 import { fetchPricingSettings } from "../composables/pricingSettings";
 import { useSetGalleryFilter } from "../composables/setGalleryFilter";
 import { collectionRouteForSet } from "../utils/setScope";
-import { formatEuro, formatProfit, formatSetCountLabel, setShortName } from "../utils/format";
-import { resolveSetIconUri } from "../utils/scryfall";
+import { formatEuro, formatProfit, setShortName } from "../utils/format";
+import { MANA_COLOR_HEX } from "../utils/mtgTheme";
+import { resolveSetIconUri, scryfallSmallImageUri } from "../utils/scryfall";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
 import {
   cardFavoriteKeyFromCard,
@@ -18,7 +19,9 @@ import {
 } from "../utils/favorites";
 import { applyGalleryDisplayToCards } from "../utils/priceStrategies";
 import { filterCollectionCards } from "../utils/collectionFilters";
+import CardPreviewDialog from "../components/CardPreviewDialog.vue";
 import FavoriteDayChangeTiles from "../components/FavoriteDayChangeTiles.vue";
+import ManaSymbols from "../components/ManaSymbols.vue";
 import PriceSyncMoversPanel from "../components/PriceSyncMoversModal.vue";
 import {
   bindHomeChangesNavigation,
@@ -26,14 +29,19 @@ import {
   priceSyncHasMovers,
   showStoredPriceSyncMovers,
 } from "../composables/startupPriceSync";
+import { deckDayRows } from "../utils/deckBrowse";
 import { homeChangesRoute, homeRouteQueryValue } from "../utils/homeRoutes";
 import {
+  HOME_PRICE_TINT_FLOOR,
+  collectPriceSyncCards,
   compareCardsByCollectorNumber,
   firstPriceSyncCards,
+  familySetCounts,
   favoriteArtStyleDayRows,
   favoriteCardDayRows,
   favoriteSetDayRows,
   favoriteSetsDayTotal,
+  rankMoverRows,
 } from "../utils/priceSyncMovers";
 
 defineOptions({ name: "FavoritesHomeView" });
@@ -41,9 +49,14 @@ defineOptions({ name: "FavoritesHomeView" });
 const route = useRoute();
 const router = useRouter();
 const showingDetail = computed(() => Boolean(
-  homeRouteQueryValue(route.query.set) || homeRouteQueryValue(route.query.art),
+  homeRouteQueryValue(route.query.set)
+  || homeRouteQueryValue(route.query.art)
+  || homeRouteQueryValue(route.query.deck),
 ));
+const showChangedOnly = ref(true);
 const payload = ref(null);
+const deckIndex = ref(null);
+const decksLoaded = ref(false);
 const loading = ref(true);
 const loadError = ref("");
 const dragArtFrom = ref(-1);
@@ -102,12 +115,19 @@ const favoriteSetSummaries = computed(() => {
   return sets.value.map((set) => {
     const setCode = String(set.setCode || "").trim().toUpperCase();
     const tile = tiles.get(setCode);
+    const memberCodes = tile?.memberCodes?.length ? tile.memberCodes : [setCode];
+    const counts = familySetCounts(memberCodes, catalogSets.value, set);
     return {
       ...set,
       setCode,
+      memberCodes,
+      ownedCount: counts.ownedCount,
+      catalogCount: counts.catalogCount,
       up: tile?.up || 0,
       down: tile?.down || 0,
       delta: tile?.delta || 0,
+      upCount: tile?.upCount || 0,
+      downCount: tile?.downCount || 0,
     };
   });
 });
@@ -178,11 +198,22 @@ function cardRoute(card) {
   };
 }
 
-function formatSide(amount) {
-  if (!Number(amount)) {
-    return formatEuro(0);
+function favoriteSetOwnedCaption(set) {
+  if (set?.ownedCount == null || set?.catalogCount == null) {
+    return "";
   }
-  return formatProfit(amount);
+  return `${set.ownedCount} of ${set.catalogCount} owned`;
+}
+
+function favoriteSetChangeCaption(set) {
+  const parts = [];
+  if (set.upCount) {
+    parts.push(`${set.upCount} rose`);
+  }
+  if (set.downCount) {
+    parts.push(`${set.downCount} fell`);
+  }
+  return parts.join(" · ");
 }
 
 function openFavoriteCard(row) {
@@ -194,8 +225,14 @@ async function onCardOwnershipChanged() {
 }
 
 const displayCards = computed(() => applyGalleryDisplayToCards(ownedCards.value));
+function changedOnly(rows) {
+  if (!showChangedOnly.value) {
+    return rows;
+  }
+  return rows.filter((row) => Number(row.delta) !== 0);
+}
 const favoriteCardDayTiles = computed(() =>
-  sortChangedFirst(favoriteCardDayRows(displayCards.value, lastSyncCards.value)),
+  changedOnly(sortChangedFirst(favoriteCardDayRows(displayCards.value, lastSyncCards.value))),
 );
 
 const displayArtStyles = computed(() =>
@@ -214,28 +251,62 @@ const artStyleToday = computed(() => {
   const sync = lastSyncCards.value;
   const next = new Map();
   for (const style of displayArtStyles.value) {
-    const rows = favoriteCardDayRows(style.cards, sync).slice().sort(compareCardsByCollectorNumber);
-    next.set(favoriteArtStyleKey(style.setCode, style.artStyle), { shown: rows });
+    const rows = changedOnly(
+      favoriteCardDayRows(style.cards, sync).slice().sort(compareCardsByCollectorNumber),
+    );
+    next.set(favoriteArtStyleKey(style.setCode, style.artStyle), {
+      shown: rows,
+      ownedCount: style.cards?.length || 0,
+    });
   }
   return next;
 });
 
 const galleryCardCount = computed(() => {
-  const favouriteCards = displayCards.value.length;
+  if (showChangedOnly.value) {
+    const artChanged = [...artStyleToday.value.values()].reduce(
+      (sum, style) => sum + (style.shown?.length || 0),
+      0,
+    );
+    return favoriteCardDayTiles.value.length + artChanged;
+  }
   const artGalleryCards = displayArtStyles.value.reduce(
     (sum, style) => sum + (style.cards?.length || 0),
     0,
   );
-  return favouriteCards + artGalleryCards;
+  return displayCards.value.length + artGalleryCards;
 });
 
 const gallerySummary = computed(() => {
   const shown = galleryCardCount.value;
+  if (showChangedOnly.value) {
+    return `${shown} changed card${shown === 1 ? "" : "s"}`;
+  }
   return `${shown} owned card${shown === 1 ? "" : "s"}`;
 });
 
+const homeMoverSides = computed(() => rankMoverRows(
+  collectPriceSyncCards({ cards: lastSyncCards.value }),
+  { limit: 25, minChange: 1 },
+));
+function sideTotal(rows) {
+  return (rows || []).reduce((sum, row) => sum + (Number(row.delta) || 0), 0);
+}
+const riserTotal = computed(() => sideTotal(homeMoverSides.value.risers));
+const fallerTotal = computed(() => sideTotal(homeMoverSides.value.fallers));
+
+const homeDeckRows = computed(() => deckDayRows(
+  deckIndex.value?.decks || [],
+  deckIndex.value?.pages || {},
+  lastSyncCards.value,
+));
+const homeDeckTotal = computed(() => homeDeckRows.value.reduce((total, row) => ({
+  up: total.up + row.up,
+  down: total.down + row.down,
+  delta: total.delta + row.delta,
+}), { up: 0, down: 0, delta: 0 }));
 const isEmpty = computed(
-  () => !sets.value.length && !artStyles.value.length && !cards.value.length,
+  () => !sets.value.length && !artStyles.value.length && !cards.value.length && !homeDeckRows.value.length,
 );
 
 function styleToday(style) {
@@ -244,7 +315,12 @@ function styleToday(style) {
 }
 
 function setRoute(set) {
-  return collectionRouteForSet(set.setCode);
+  const family = (set.memberCodes || []).length > 1;
+  return collectionRouteForSet(set.setCode, "", family);
+}
+
+function setChangesRoute(set) {
+  return homeChangesRoute({ setCode: set.setCode });
 }
 
 function artStyleRoute(style) {
@@ -455,12 +531,44 @@ async function onArtDrop(index, event) {
 let unbindChangesNav = () => {};
 let homeReady = false;
 
+async function loadDeckSummaries() {
+  try {
+    const next = await ignoreAborted(api.getDeckBrowseIndex());
+    if (!next) {
+      return;
+    }
+    deckIndex.value = next;
+  } catch {
+    // Home still renders without the deck list.
+  } finally {
+    decksLoaded.value = true;
+  }
+}
+
+function deckRoute(deck) {
+  return homeChangesRoute({ deckId: deck.id });
+}
+
+function deckPageRoute(deck) {
+  return { name: "decks", query: { deck: String(deck.id) } };
+}
+
+const deckZoom = ref(null);
+
+function openDeckCommander(deck) {
+  if (!deck?.imageUri) {
+    return;
+  }
+  deckZoom.value = deck;
+}
+
 function refreshHome({ silent = false } = {}) {
   return Promise.all([
     fetchPricingSettings(),
     loadFavorites({ silent }),
     loadLastPriceSync(),
     loadCatalogSetNames(),
+    loadDeckSummaries(),
   ]);
 }
 
@@ -485,20 +593,43 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="favorites-home-page collection-page">
+  <div class="favorites-home-page collection-page" :class="{ 'is-changes': showingDetail }">
     <header class="favorites-home-header">
       <div class="favorites-home-header-row">
         <h1>Home</h1>
+        <div
+          v-if="!showingDetail"
+          class="favorites-home-card-scope"
+          role="group"
+          aria-label="Which cards to show"
+        >
+          <button
+            type="button"
+            :class="{ active: showChangedOnly }"
+            :aria-pressed="showChangedOnly"
+            @click="showChangedOnly = true"
+          >
+            Changed
+          </button>
+          <button
+            type="button"
+            :class="{ active: !showChangedOnly }"
+            :aria-pressed="!showChangedOnly"
+            @click="showChangedOnly = false"
+          >
+            All
+          </button>
+        </div>
       </div>
       <p v-if="!showingDetail" class="favorites-home-intro">
-        Starred cards, art styles, and sets, with today's price moves. Drag art-style rows to reorder.
+        Starred cards, art styles, and sets, with today's price moves. Decks are listed underneath. Drag art-style rows to reorder.
       </p>
     </header>
 
     <LoadingIndicator v-if="loading" label="Loading home…" />
     <p v-else-if="loadError" class="favorites-home-error">{{ loadError }}</p>
     <template v-else>
-      <p v-if="isEmpty && !showingDetail" class="favorites-home-empty">
+      <p v-if="isEmpty && decksLoaded && !showingDetail" class="favorites-home-empty">
         Nothing on Home yet. Star a card tile, an art style in the filter list, or a set in the gallery.
       </p>
 
@@ -518,8 +649,8 @@ onUnmounted(() => {
           <div class="favorites-home-section-header">
             <h2>Favourite sets</h2>
             <p class="favorites-home-set-total">
-              <span class="is-up">{{ formatProfit(favoriteSetsTotal.up) }}</span>
-              <span class="is-down">{{ formatProfit(favoriteSetsTotal.down) }}</span>
+              <span class="is-up"><span class="favorites-home-figure-label">Rose</span>{{ formatProfit(favoriteSetsTotal.up) }}</span>
+              <span class="is-down"><span class="favorites-home-figure-label">Fell</span>{{ formatProfit(favoriteSetsTotal.down) }}</span>
               <strong :class="favoriteSetsTotal.delta < 0 ? 'is-down' : 'is-up'">
                 {{ formatProfit(favoriteSetsTotal.delta) }}
               </strong>
@@ -532,34 +663,53 @@ onUnmounted(() => {
               class="favorites-home-set-card"
               :class="{ 'is-open': isFavoriteSetOpen(set) }"
             >
-              <RouterLink :to="setRoute(set)" class="favorites-home-set-link">
-                <img
-                  v-if="setIcon(set)"
-                  :src="setIcon(set)"
-                  alt=""
-                  class="favorites-home-set-icon"
-                  loading="lazy"
+              <div class="favorites-home-set-main">
+                <RouterLink
+                  :to="setRoute(set)"
+                  class="favorites-home-set-icon-link"
+                  :aria-label="`Open ${setNameFor(set.setCode)} in the collection`"
+                  title="Open in the collection"
                 >
-                <div class="favorites-home-set-meta">
-                  <strong>{{ setNameFor(set.setCode) }}</strong>
-                  <span v-if="formatSetCountLabel(set)" class="favorites-home-muted">
-                    {{ formatSetCountLabel(set) }}
+                  <img
+                    v-if="setIcon(set)"
+                    :src="setIcon(set)"
+                    alt=""
+                    class="favorites-home-set-icon"
+                    loading="lazy"
+                  >
+                </RouterLink>
+                <button
+                  type="button"
+                  class="favorites-home-set-expand-hit"
+                  :aria-expanded="isFavoriteSetOpen(set)"
+                  :aria-label="`${isFavoriteSetOpen(set) ? 'Collapse' : 'Expand'} ${setNameFor(set.setCode)}`"
+                  :title="isFavoriteSetOpen(set) ? 'Collapse' : 'Expand'"
+                  @click="toggleFavoriteSet(set)"
+                >
+                  <span class="favorites-home-set-meta">
+                    <strong>{{ setNameFor(set.setCode) }}</strong>
+                    <span v-if="favoriteSetOwnedCaption(set)" class="favorites-home-set-caption is-owned">
+                      {{ favoriteSetOwnedCaption(set) }}
+                    </span>
+                    <span
+                      v-if="showChangedOnly && favoriteSetChangeCaption(set)"
+                      class="favorites-home-set-caption"
+                    >
+                      {{ favoriteSetChangeCaption(set) }}
+                    </span>
                   </span>
-                </div>
-              </RouterLink>
-              <button
-                type="button"
-                class="favorite-set-delta"
-                :class="{ 'is-open': isFavoriteSetOpen(set) }"
-                :aria-expanded="isFavoriteSetOpen(set)"
-                :aria-label="`Today's change for ${setNameFor(set.setCode)}`"
-                title="Today's change"
-                @click="toggleFavoriteSet(set)"
-              >
-                <span class="is-up">{{ formatSide(set.up) }}</span>
-                <span class="is-down">{{ formatSide(set.down) }}</span>
-                <strong :class="set.delta < 0 ? 'is-down' : 'is-up'">{{ formatProfit(set.delta) }}</strong>
-              </button>
+                  <span class="favorites-home-set-chevron" aria-hidden="true"></span>
+                </button>
+                <RouterLink
+                  :to="setChangesRoute(set)"
+                  class="favorite-set-delta"
+                  :class="set.delta < 0 ? 'is-down' : 'is-up'"
+                  :aria-label="`Open price changes for ${setNameFor(set.setCode)}, net ${formatProfit(set.delta)}`"
+                  title="Open price changes"
+                >
+                  <strong>{{ formatProfit(set.delta) }}</strong>
+                </RouterLink>
+              </div>
               <div v-if="isFavoriteSetOpen(set)" class="favorites-home-set-expand">
                 <PriceSyncMoversPanel
                   embedded
@@ -583,6 +733,7 @@ onUnmounted(() => {
             variant="list"
             columns
             show-price
+            :background-floor="HOME_PRICE_TINT_FLOOR"
             :items="favoriteCardDayTiles"
             @select="openFavoriteCard"
             @ownership-changed="onCardOwnershipChanged"
@@ -600,7 +751,7 @@ onUnmounted(() => {
             </template>
           </FavoriteDayChangeTiles>
           <p v-else class="favorites-home-muted">
-            No owned favourite cards.
+            {{ showChangedOnly ? "No favourite cards changed." : "No owned favourite cards." }}
           </p>
         </section>
         <div
@@ -611,6 +762,9 @@ onUnmounted(() => {
           <section class="favorites-home-section home-panel favorites-home-movers">
             <div class="favorites-home-section-header">
               <h2>Risers</h2>
+              <p v-if="riserTotal" class="favorites-home-set-total">
+                <strong class="is-up">{{ formatProfit(riserTotal) }}</strong>
+              </p>
             </div>
             <PriceSyncMoversPanel
               variant="cards"
@@ -624,6 +778,9 @@ onUnmounted(() => {
           <section class="favorites-home-section home-panel favorites-home-movers">
             <div class="favorites-home-section-header">
               <h2>Fallers</h2>
+              <p v-if="fallerTotal" class="favorites-home-set-total">
+                <strong class="is-down">{{ formatProfit(fallerTotal) }}</strong>
+              </p>
             </div>
             <PriceSyncMoversPanel
               variant="cards"
@@ -670,6 +827,7 @@ onUnmounted(() => {
             <FavoriteDayChangeTiles
               v-if="style.dayChange"
               variant="inline"
+              :background-floor="HOME_PRICE_TINT_FLOOR"
               :items="[style.dayChange]"
               @select="openStylePriceMovers"
             />
@@ -688,6 +846,7 @@ onUnmounted(() => {
               variant="list"
               columns
               show-price
+              :background-floor="HOME_PRICE_TINT_FLOOR"
               :items="styleToday(style).shown"
               empty-label="No owned cards in this art style."
               @select="openFavoriteCard"
@@ -695,10 +854,88 @@ onUnmounted(() => {
             />
           </div>
           <p v-else class="favorites-home-muted">
-            No owned cards in this art style.
+            {{ showChangedOnly && styleToday(style).ownedCount ? "No price changes in this art style." : "No owned cards in this art style." }}
           </p>
         </div>
         </div>
+      </section>
+
+      <section v-if="homeDeckRows.length" class="favorites-home-section home-panel">
+        <div class="favorites-home-section-header">
+          <h2>Decks</h2>
+          <p class="favorites-home-set-total">
+            <span class="is-up"><span class="favorites-home-figure-label">Rose</span>{{ formatProfit(homeDeckTotal.up) }}</span>
+            <span class="is-down"><span class="favorites-home-figure-label">Fell</span>{{ formatProfit(homeDeckTotal.down) }}</span>
+            <strong :class="homeDeckTotal.delta < 0 ? 'is-down' : 'is-up'">
+              {{ formatProfit(homeDeckTotal.delta) }}
+            </strong>
+          </p>
+        </div>
+        <div class="favorites-home-deck-grid">
+          <article
+            v-for="deck in homeDeckRows"
+            :key="deck.id"
+            class="favorites-home-deck-card"
+            :style="{ '--deck-accent': MANA_COLOR_HEX[deck.colors[0]] || MANA_COLOR_HEX.C }"
+          >
+            <button
+              v-if="deck.imageUri"
+              type="button"
+              class="favorites-home-deck-art-link"
+              :aria-label="`View larger image of ${deck.commanderName || deck.name}`"
+              title="View larger image"
+              @click="openDeckCommander(deck)"
+            >
+              <img
+                class="favorites-home-deck-art"
+                :src="scryfallSmallImageUri(deck.imageUri)"
+                alt=""
+              >
+            </button>
+            <span v-else class="favorites-home-deck-art is-empty" aria-hidden="true"></span>
+            <RouterLink
+              :to="deckPageRoute(deck)"
+              class="favorites-home-deck-meta"
+              :aria-label="`Open ${deck.name}`"
+              title="Open deck"
+            >
+              <span class="favorites-home-deck-title">
+                <strong>{{ deck.name }}</strong>
+                <span v-if="deck.favorite" class="favorites-home-deck-star" aria-label="Favourite deck">★</span>
+              </span>
+              <span class="favorites-home-deck-sub">
+                <ManaSymbols :colors="deck.colors" :size="14" />
+                <span v-if="deck.commanders">{{ deck.commanders }}</span>
+              </span>
+            </RouterLink>
+            <RouterLink
+              :to="deckRoute(deck)"
+              class="favorites-home-deck-diff"
+              :class="deck.delta < 0 ? 'is-down' : 'is-up'"
+              :aria-label="`Open price changes for ${deck.name}, net ${formatProfit(deck.delta)}`"
+              title="Open price changes"
+            >
+              <strong class="favorites-home-deck-pill" :class="deck.delta < 0 ? 'is-down' : 'is-up'">
+                {{ formatProfit(deck.delta) }}
+              </strong>
+              <span class="favorites-home-deck-split">
+                <span class="is-up">{{ formatProfit(deck.up) }}</span>
+                <span class="is-down">{{ formatProfit(deck.down) }}</span>
+              </span>
+              <span v-if="deck.current != null" class="favorites-home-deck-owned">{{ formatEuro(deck.current) }}</span>
+            </RouterLink>
+          </article>
+        </div>
+        <CardPreviewDialog
+          v-if="deckZoom"
+          :image-uri="deckZoom.imageUri"
+          :alt="deckZoom.commanderName || deckZoom.name"
+          :set-code="deckZoom.setCode"
+          :collector-number="deckZoom.collectorNumber"
+          :finish="deckZoom.finish"
+          :seed="deckZoom"
+          @close="deckZoom = null"
+        />
       </section>
       </template>
       <PriceSyncMoversPanel
@@ -707,6 +944,9 @@ onUnmounted(() => {
         :movers="lastPriceSyncOutcome?.movers"
         :set-day-tiles="favoriteSetDayTiles"
         :source-cards="displayCards"
+        :decks="deckIndex?.decks || []"
+        :deck-pages="deckIndex?.pages || {}"
+        :art-styles="artStyles"
       />
     </template>
   </div>

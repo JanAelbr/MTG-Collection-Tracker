@@ -48,6 +48,9 @@ def ensure_card_indexes(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_cards_set_code ON cards(set_code)"
     )
     conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_set_collector ON cards(set_code, collector_number)"
+    )
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_art_style ON cards(set_code, art_style)"
     )
     # Speeds up the many exact `WHERE name = ?` lookups (variant gallery, print

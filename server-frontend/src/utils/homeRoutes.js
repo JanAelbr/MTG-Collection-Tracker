@@ -1,14 +1,18 @@
-export function homeChangesRoute({ setCode = "", artStyle = "" } = {}) {
+export function homeChangesRoute({ setCode = "", artStyle = "", deckId = "" } = {}) {
   const query = {};
   const code = String(setCode || "").trim();
   const style = String(artStyle || "").trim();
+  const deck = String(deckId || "").trim();
   if (code) {
     query.set = code;
   }
   if (style) {
     query.art = style;
   }
-  if (!query.set && !query.art) {
+  if (deck) {
+    query.deck = deck;
+  }
+  if (!query.set && !query.art && !query.deck) {
     return { name: "home", hash: "#home-movers" };
   }
   return { name: "home-changes", query };

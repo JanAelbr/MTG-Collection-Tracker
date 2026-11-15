@@ -184,19 +184,15 @@ def sync_deck_cards_in_catalog(
     return int(cursor.rowcount)
 
 
-def cheapest_owned_printing_by_name(
-    conn: sqlite3.Connection,
-    card_name: str,
-) -> dict | None:
-    normalized = str(card_name or "").strip()
-    if not normalized:
-        return None
+def owned_printings_by_name(conn: sqlite3.Connection) -> dict[str, list]:
+    """Owned prints grouped by card name. One indexed join, not a catalog scan per name."""
+    grouped: dict[str, list] = {}
     rows = conn.execute(
         f"""
         SELECT
+            c.name,
             c.set_code,
             c.collector_number,
-            c.name,
             p.finish,
             c.market_value,
             c.market_value_foil,
@@ -205,11 +201,26 @@ def cheapest_owned_printing_by_name(
         JOIN cards c
           ON c.set_code = p.set_code
          AND c.collector_number = p.collector_number
-        WHERE LOWER(TRIM(c.name)) = LOWER(TRIM(?))
-          AND {exclude_alchemy_sql("c.collector_number")}
-        """,
-        (normalized,),
+        WHERE {exclude_alchemy_sql("c.collector_number")}
+        """
     ).fetchall()
+    for row in rows:
+        name = str(row["name"] or "").strip().lower()
+        if name:
+            grouped.setdefault(name, []).append(row)
+    return grouped
+
+
+def cheapest_owned_printing_by_name(
+    conn: sqlite3.Connection,
+    card_name: str,
+    *,
+    owned_index: dict[str, list] | None = None,
+) -> dict | None:
+    normalized = str(card_name or "").strip().lower()
+    if not normalized:
+        return None
+    rows = (owned_index if owned_index is not None else owned_printings_by_name(conn)).get(normalized) or []
     best = None
     best_value = None
     for row in rows:

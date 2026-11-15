@@ -1,6 +1,7 @@
 <script setup>
 import "../styles/card-detail.css";
 import { computed, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { api, ignoreAborted } from "../api";
 import { cacheKeyFor, getCachedEntry } from "../apiCache";
 import CardmarketIcon from "./CardmarketIcon.vue";
@@ -9,7 +10,7 @@ import ScryfallIcon from "./ScryfallIcon.vue";
 import { fetchFavorites, useFavorites } from "../composables/favorites";
 import { displayCardmarketUrl } from "../utils/cardmarketUrl";
 import { formatEuro } from "../utils/format";
-import { FINISH_NONFOIL, finishLabel, normalizeFinish } from "../utils/finishes";
+import { FINISH_NONFOIL, cardRouteQuery, finishLabel, normalizeFinish } from "../utils/finishes";
 import { priceStrategyDescription } from "../utils/priceStrategies";
 import { scryfallCardUri, scryfallPrintsSearchUri } from "../utils/scryfall";
 
@@ -69,6 +70,17 @@ const displayImageUri = computed(() => {
     return card.value.imageUriBack;
   }
   return props.imageUri || card.value?.imageUri || "";
+});
+const detailRoute = computed(() => {
+  const { setCode, collectorNumber, finish } = printKey.value;
+  if (!setCode || !collectorNumber) {
+    return null;
+  }
+  return {
+    name: "card",
+    params: { setCode, collectorNumber },
+    query: cardRouteQuery(finish),
+  };
 });
 const title = computed(() => (
   card.value?.name
@@ -238,7 +250,12 @@ onDeactivated(() => {
             <div class="card-detail-meta">
               <div class="card-detail-title-row">
                 <h1>
-                  {{ title }}
+                  <RouterLink
+                    v-if="detailRoute"
+                    :to="detailRoute"
+                    class="card-preview-details-link"
+                  >{{ title }}</RouterLink>
+                  <template v-else>{{ title }}</template>
                   <span
                     v-if="loading && !card?.name"
                     class="loading-spinner card-detail-inline-spinner"

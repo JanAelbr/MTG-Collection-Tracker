@@ -8,10 +8,16 @@ import PriceSyncMiniCardList from "./PriceSyncMiniCardList.vue";
 import { formatEuro, formatProfit, setShortName } from "../utils/format";
 import {
   cardsForArtStyle,
+  changeMoveCounts,
+  deckImpactRows,
+  deckImpactTotals,
+  deckUnchangedCount,
   compareCardsByCollectorNumber,
   collectPriceSyncCards,
   collectPriceSyncStyleRows,
+  HOME_PRICE_TINT_FLOOR,
   priceChangeStyle,
+  priceChangeTinted,
   rankMoverRows,
 } from "../utils/priceSyncMovers";
 import { applySetGalleryIconFallback, resolveSetIconUri } from "../utils/scryfall";
@@ -26,6 +32,9 @@ const props = defineProps({
   side: { type: String, default: "" },
   fixedSetCode: { type: String, default: "" },
   embedded: { type: Boolean, default: false },
+  decks: { type: Array, default: () => [] },
+  deckPages: { type: Object, default: () => ({}) },
+  artStyles: { type: Array, default: () => [] },
 });
 
 const route = useRoute();
@@ -113,6 +122,58 @@ function onSetIconError(event, rowOrCode) {
   }
 }
 
+const styleOwnedCount = ref(null);
+
+watch(
+  [styleFilter, () => props.artStyles],
+  () => {
+    const filter = styleFilter.value;
+    styleOwnedCount.value = null;
+    if (!filter) {
+      return;
+    }
+    const owned = favouriteStyleOwnedCount(filter);
+    if (owned != null) {
+      styleOwnedCount.value = owned;
+      return;
+    }
+    const { setCode, artStyle } = filter;
+    ignoreAborted(api.getManagerArtStyles(setCode)).then((payload) => {
+      if (
+        !styleFilter.value
+        || styleFilter.value.setCode !== setCode
+        || styleFilter.value.artStyle !== artStyle
+      ) {
+        return;
+      }
+      const match = (payload?.artStyles || []).find((style) => (
+        String(style?.artStyle || "").trim() === artStyle
+      ));
+      styleOwnedCount.value = match ? Number(match.ownedCount) || 0 : null;
+    });
+  },
+  { immediate: true },
+);
+
+function favouriteStyleOwnedCount(filter) {
+  const match = (props.artStyles || []).find((style) => (
+    String(style?.setCode || "").trim().toUpperCase() === filter.setCode
+    && String(style?.artStyle || "").trim() === filter.artStyle
+  ));
+  if (!Array.isArray(match?.cards)) {
+    return null;
+  }
+  const owned = new Set();
+  for (const card of match.cards) {
+    const setCode = String(card?.setCode || "").trim().toUpperCase();
+    const number = String(card?.collectorNumber || "").trim();
+    if (setCode && number) {
+      owned.add(`${setCode}|${number}`);
+    }
+  }
+  return owned.size;
+}
+
 const storedCards = computed(() => collectPriceSyncCards({
   cards: props.cards,
   movers: props.movers,
@@ -140,7 +201,21 @@ const visibleStyleRows = computed(() => {
     members.has(String(row.setCode || "").trim().toUpperCase())
   ));
 });
-const showingOverview = computed(() => !styleFilter.value && !setScope.value);
+const routeDeckId = computed(() => homeRouteQueryValue(route.query.deck));
+const deckScope = computed(() => {
+  const deckId = routeDeckId.value;
+  if (!deckId) {
+    return null;
+  }
+  const deck = (props.decks || []).find((item) => String(item?.id) === deckId) || null;
+  const page = props.deckPages?.[deckId] || {};
+  return {
+    id: deckId,
+    name: String(deck?.name || deck?.label || "Deck"),
+    prints: page.ownedPrints || [],
+  };
+});
+const showingOverview = computed(() => !styleFilter.value && !setScope.value && !deckScope.value);
 const showingStyles = computed(() => Boolean(setScope.value) && !styleFilter.value);
 const activeRows = computed(() => {
   if (styleFilter.value) {
@@ -178,6 +253,13 @@ function stylesByTotalChange(rows) {
   });
 }
 
+function rowTintClass(row, column) {
+  if (!priceChangeTinted(row?.delta, backgroundFloor.value)) {
+    return "";
+  }
+  return rowChangeClass(row, column);
+}
+
 function rowChangeClass(row, column) {
   if (column.id === "up") {
     return "is-up";
@@ -188,7 +270,109 @@ function rowChangeClass(row, column) {
   return Number(row?.delta) < 0 ? "is-down" : "is-up";
 }
 
+const isDetailPage = computed(() => props.variant !== "cards" && !props.embedded);
+const backgroundFloor = computed(() => (isDetailPage.value ? 0 : HOME_PRICE_TINT_FLOOR));
+const deckImpact = computed(() => (
+  deckScope.value
+    ? deckImpactRows(storedCards.value, deckScope.value.prints)
+    : []
+));
+const deckTotals = computed(() => deckImpactTotals(deckImpact.value));
+const scopeCards = computed(() => {
+  if (deckScope.value) {
+    return deckImpact.value;
+  }
+  if (styleFilter.value) {
+    return cardsForArtStyle(storedCards.value, styleFilter.value);
+  }
+  if (setScope.value) {
+    const members = scopeMemberCodes(setScope.value);
+    return storedCards.value.filter((card) => (
+      members.has(String(card?.setCode || "").trim().toUpperCase())
+    ));
+  }
+  return [];
+});
+const changeTotals = computed(() => {
+  if (props.embedded || props.variant === "cards") {
+    return null;
+  }
+  let euros = null;
+  if (deckScope.value) {
+    euros = deckTotals.value;
+  } else if (styleFilter.value) {
+    euros = deckImpactTotals(activeRows.value);
+  } else if (showingStyles.value) {
+    euros = deckImpactTotals(visibleStyleRows.value);
+  }
+  if (!euros) {
+    return null;
+  }
+  const counts = changeMoveCounts(scopeCards.value);
+  return {
+    ...euros,
+    upCount: counts.upCount,
+    downCount: counts.downCount,
+    unchangedCount: unchangedCount(counts.movedSlots),
+  };
+});
+
+function unchangedCount(movedSlots) {
+  if (deckScope.value) {
+    return deckUnchangedCount(deckScope.value.prints, scopeCards.value);
+  }
+  if (styleFilter.value) {
+    if (styleOwnedCount.value == null) {
+      return null;
+    }
+    return Math.max(0, styleOwnedCount.value - movedSlots.size);
+  }
+  if (setScope.value) {
+    let owned = 0;
+    let known = false;
+    for (const code of scopeMemberCodes(setScope.value)) {
+      const meta = setsByCode.value.get(code);
+      if (meta?.ownedCount == null) {
+        continue;
+      }
+      known = true;
+      owned += Number(meta.ownedCount) || 0;
+    }
+    if (!known) {
+      return null;
+    }
+    return Math.max(0, owned - movedSlots.size);
+  }
+  return null;
+}
+
+function cardCountLabel(count) {
+  const amount = Number(count) || 0;
+  return `${amount} ${amount === 1 ? "card" : "cards"}`;
+}
+
+function columnBarWidth(row, rows) {
+  const peak = Math.max(0, ...(rows || []).map((item) => Math.abs(Number(item?.delta) || 0)));
+  if (!peak) {
+    return "0%";
+  }
+  const share = Math.abs(Number(row?.delta) || 0) / peak;
+  return `${Math.max(share > 0 ? 8 : 0, share * 100)}%`;
+}
+
 const pageSections = computed(() => {
+  if (deckScope.value) {
+    return [{
+      id: "main",
+      heading: "",
+      tiles: true,
+      styles: false,
+      columns: columnsFor(rankMoverRows(deckImpact.value, {
+        limit: 25,
+        minChange: 1,
+      })),
+    }];
+  }
   if (!showingOverview.value) {
     if (props.embedded && showingStyles.value) {
       return [{
@@ -258,6 +442,9 @@ const visibleSections = computed(() => {
   });
 });
 const title = computed(() => {
+  if (deckScope.value) {
+    return deckScope.value.name;
+  }
   if (styleFilter.value) {
     return styleFilter.value.artStyle || styleFilter.value.label || "Art style";
   }
@@ -271,8 +458,11 @@ const titleSet = computed(() => (
     ? setMeta(styleFilter.value || setScope.value)
     : null
 ));
-const showBreadcrumb = computed(() => Boolean(setScope.value || styleFilter.value));
+const showBreadcrumb = computed(() => Boolean(setScope.value || styleFilter.value || deckScope.value));
 const intro = computed(() => {
+  if (deckScope.value) {
+    return "";
+  }
   if (styleFilter.value) {
     return "Owned card changes from the last price update for this art style, ranked by euro change.";
   }
@@ -365,6 +555,8 @@ function openSet(row) {
     :class="{
       'home-panel': variant !== 'cards' && !embedded,
       'is-embedded': variant === 'cards' || embedded,
+      'is-detail': isDetailPage,
+      'is-deck': Boolean(deckScope),
     }"
   >
     <div v-if="variant !== 'cards' && !embedded" class="price-sync-movers-header">
@@ -390,6 +582,10 @@ function openSet(row) {
             </RouterLink>
             <span v-else aria-current="page">{{ setName(setScope) }}</span>
           </template>
+          <template v-if="deckScope">
+            <span class="price-sync-breadcrumb-sep" aria-hidden="true">/</span>
+            <span aria-current="page">{{ deckScope.name }}</span>
+          </template>
           <template v-if="styleFilter">
             <span class="price-sync-breadcrumb-sep" aria-hidden="true">/</span>
             <span aria-current="page">{{ styleFilter.artStyle || styleFilter.label }}</span>
@@ -398,7 +594,32 @@ function openSet(row) {
         <span v-else>{{ title }}</span>
       </h2>
     </div>
-    <p v-if="variant !== 'cards' && !embedded" class="price-sync-movers-intro">{{ intro }}</p>
+    <p v-if="intro && variant !== 'cards' && !embedded" class="price-sync-movers-intro">{{ intro }}</p>
+    <div
+      v-if="changeTotals"
+      class="price-sync-deck-summary"
+      aria-label="Price change"
+    >
+      <span class="is-up">
+        <small>Rose</small>
+        {{ formatProfit(changeTotals.up) }}
+        <em>{{ cardCountLabel(changeTotals.upCount) }}</em>
+      </span>
+      <span class="is-down">
+        <small>Fell</small>
+        {{ formatProfit(changeTotals.down) }}
+        <em>{{ cardCountLabel(changeTotals.downCount) }}</em>
+      </span>
+      <span v-if="changeTotals.unchangedCount != null" class="is-flat">
+        <small>Unchanged</small>
+        {{ changeTotals.unchangedCount }}
+        <em>{{ changeTotals.unchangedCount === 1 ? "card" : "cards" }}</em>
+      </span>
+      <strong :class="changeTotals.delta < 0 ? 'is-down' : 'is-up'">
+        <small>Net</small>
+        {{ formatProfit(changeTotals.delta) }}
+      </strong>
+    </div>
     <div v-if="variant !== 'cards' && showingOverview && setDayTiles.length" class="price-sync-favorite-day">
       <h3>Favourite sets</h3>
       <FavoriteDayChangeTiles
@@ -420,6 +641,7 @@ function openSet(row) {
         v-for="column in section.columns"
         :key="column.id"
         class="price-sync-movers-column"
+        :class="isDetailPage ? `is-${column.id}` : ''"
       >
         <h3 v-if="!side && column.title">{{ column.title }}</h3>
         <PriceSyncMiniCardList
@@ -427,6 +649,8 @@ function openSet(row) {
           :rows="column.rows"
           :source-cards="sourceCards"
           :direction="column.id"
+          :variant="isDetailPage ? 'detail' : ''"
+          :background-floor="backgroundFloor"
         />
         <ol
           v-else-if="column.rows.length"
@@ -440,10 +664,10 @@ function openSet(row) {
                 'has-set-icon': section.styles,
                 'has-style-toggle': showingStyles && section.styles,
                 'is-open': section.styles && isStyleOpen(row),
-                'is-up': rowChangeClass(row, column) === 'is-up',
-                'is-down': rowChangeClass(row, column) === 'is-down',
+                'is-up': rowTintClass(row, column) === 'is-up',
+                'is-down': rowTintClass(row, column) === 'is-down',
               }"
-              :style="priceChangeStyle(row.delta)"
+              :style="priceChangeStyle(row.delta, { floor: backgroundFloor })"
               v-bind="section.styles ? { type: 'button', 'aria-expanded': showingStyles ? String(isStyleOpen(row)) : undefined } : {}"
               @click="section.styles ? onStyleClick(row) : undefined"
             >
@@ -464,8 +688,22 @@ function openSet(row) {
               <span class="price-sync-movers-copy">
                 <span class="price-sync-movers-name" :title="rowLabel(row, section)">{{ rowLabel(row, section) }}</span>
                 <span v-if="rowMeta(row, section)" class="price-sync-movers-meta">{{ rowMeta(row, section) }}</span>
+                <span v-if="isDetailPage" class="price-sync-deck-prices">
+                  <span class="was">{{ formatPrice(row.previous) }}</span>
+                  <span class="arrow" aria-hidden="true">→</span>
+                  <span class="now">{{ formatPrice(row.current) }}</span>
+                </span>
+                <span v-if="isDetailPage" class="price-sync-deck-bar" aria-hidden="true">
+                  <span :style="{ width: columnBarWidth(row, column.rows) }"></span>
+                </span>
               </span>
               <strong
+                v-if="isDetailPage"
+                class="price-sync-deck-pill"
+                :class="rowChangeClass(row, column)"
+              >{{ formatDelta(row) }}</strong>
+              <strong
+                v-else
                 class="price-sync-movers-change"
                 :class="rowChangeClass(row, column)"
               >
@@ -485,6 +723,8 @@ function openSet(row) {
                 v-if="styleCards(row).length"
                 :rows="styleCards(row)"
                 :source-cards="sourceCards"
+                :variant="isDetailPage ? 'detail' : ''"
+                :background-floor="backgroundFloor"
               />
               <p v-else class="price-sync-movers-empty">No card changes in this art style.</p>
             </div>

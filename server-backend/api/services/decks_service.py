@@ -1,6 +1,11 @@
 import sqlite3
 
-from report.deck_queries import enrich_deck_cards_df, load_deck_cards_df, load_deck_list
+from report.deck_queries import (
+    enrich_deck_cards_df,
+    load_deck_cards_df,
+    load_deck_list,
+    load_deck_summary_rows,
+)
 from report.deck_stats_data import compute_deck_stats_page
 from api.services import settings_service
 from api.services.pricing_helpers import apply_strategy_to_deck_df
@@ -363,44 +368,180 @@ def load_deck_stats(
 
 
 
+def _add_optional(total: float | None, value: float | None) -> float | None:
+    if value is None:
+        return total
+    return (0.0 if total is None else total) + value
+
+
+def _deck_unit_price(row: dict, strategy: str, cache: dict) -> float | None:
+    from api.services.pricing_service import price_from_strategy
+
+    key = (
+        row.get("cardmarket_url"),
+        row.get("cardmarket_url_foil"),
+        int(row.get("finish") or 0),
+        row.get("has_nonfoil"),
+        row.get("has_foil"),
+        row.get("has_etched"),
+    )
+    if key not in cache:
+        cache[key] = price_from_strategy(
+            row.get("cardmarket_url"),
+            key[2],
+            strategy,
+            cardmarket_url_foil=row.get("cardmarket_url_foil"),
+            market_value=row.get("market_value"),
+            market_value_foil=row.get("market_value_foil"),
+            market_value_etched=row.get("market_value_etched"),
+            has_nonfoil=row.get("has_nonfoil"),
+            has_foil=row.get("has_foil"),
+            has_etched=row.get("has_etched"),
+        )
+    return cache[key]
+
+
+def _empty_deck_summary(deck: dict) -> dict:
+    return {
+        "purchasePrice": deck.get("purchasePrice"),
+        "deckSize": 0,
+        "trackedQty": 0,
+        "ownedQty": 0,
+        "current": None,
+        "ownedCurrent": None,
+        "invested": None,
+        "cardProfit": None,
+        "unitSum": 0.0,
+        "unitCount": 0,
+        "unknownQty": 0,
+        "unknownCount": 0,
+        "winners": 0,
+        "losers": 0,
+        "previewCards": [],
+        "ownedPrints": {},
+    }
+
+
+def _accumulate_deck_summary(page: dict, row: dict, strategy: str, price_cache: dict) -> None:
+    from report.serialize_helpers import deck_card_display_name
+    from util.card_metadata import parse_card_colors
+
+    qty = max(int(row.get("qty") or 0), 0)
+    owned_qty = min(max(int(row.get("owned_qty") or 0), 0), qty)
+    in_catalog = bool(int(row.get("in_catalog") or 0)) or row.get("catalog_name") is not None
+    page["deckSize"] += qty
+    page["ownedQty"] += owned_qty
+    if in_catalog:
+        page["trackedQty"] += qty
+
+    unit = _deck_unit_price(row, strategy, price_cache) if in_catalog else None
+    purchase = row.get("purchase_value")
+    invested = float(purchase) * owned_qty if owned_qty > 0 and purchase is not None else None
+    if invested is not None:
+        page["invested"] = _add_optional(page["invested"], invested)
+    if unit is None:
+        page["unknownQty"] += qty
+        page["unknownCount"] += 1
+    else:
+        line_value = unit * qty
+        page["current"] = _add_optional(page["current"], line_value)
+        page["ownedCurrent"] = _add_optional(page["ownedCurrent"], unit * owned_qty)
+        page["unitSum"] += unit
+        page["unitCount"] += 1
+        if invested is not None:
+            card_profit = line_value - invested
+            page["cardProfit"] = _add_optional(page["cardProfit"], card_profit)
+            if card_profit > 0:
+                page["winners"] += 1
+            elif card_profit < 0:
+                page["losers"] += 1
+
+    if owned_qty > 0 and row.get("set_code") and row.get("collector_number"):
+        print_key = (
+            str(row["set_code"]).upper(),
+            str(row["collector_number"]).strip(),
+            int(row.get("finish") or 0),
+        )
+        page["ownedPrints"][print_key] = page["ownedPrints"].get(print_key, 0) + owned_qty
+
+    section = str(row.get("section") or "")
+    if section == "commander" and len(page["previewCards"]) < 2:
+        page["previewCards"].append({
+            "cardName": deck_card_display_name(row),
+            "section": "commander",
+            "setCode": row.get("set_code") or "",
+            "collectorNumber": str(row["collector_number"]) if row.get("collector_number") else "",
+            "finish": int(row.get("finish") or 0),
+            "imageUri": row.get("image_uri") or "",
+            "colors": parse_card_colors(row.get("colors")),
+            "colorIdentity": parse_card_colors(row.get("color_identity")),
+        })
+
+
+def _finish_deck_summary(page: dict) -> dict:
+    deck_size = page["deckSize"]
+    owned_qty = page["ownedQty"]
+    purchase_price = page["purchasePrice"]
+    invested = page["invested"]
+    profit = page["cardProfit"]
+    current = page["current"]
+    if purchase_price is not None:
+        if invested is None or invested == 0:
+            invested = purchase_price
+        if current is not None:
+            profit = current - float(purchase_price)
+    return {
+        "current": current,
+        "ownedCurrent": page["ownedCurrent"],
+        "invested": invested,
+        "profit": profit,
+        "purchasePrice": purchase_price,
+        "deckSize": deck_size,
+        "trackedQty": page["trackedQty"],
+        "ownedQty": owned_qty,
+        "missingQty": max(deck_size - owned_qty, 0),
+        "trackedCoverage": round(page["trackedQty"] / deck_size * 100, 1) if deck_size else None,
+        "ownedCoverage": round(owned_qty / deck_size * 100, 1) if deck_size else None,
+        "average": (page["unitSum"] / page["unitCount"]) if page["unitCount"] else None,
+        "unknownQty": page["unknownQty"],
+        "unknownCount": page["unknownCount"],
+        "unknownCards": [],
+        "winners": page["winners"],
+        "losers": page["losers"],
+        "previewCards": page["previewCards"],
+        "ownedPrints": [
+            {
+                "setCode": set_code,
+                "collectorNumber": collector_number,
+                "finish": finish,
+                "ownedQty": qty,
+            }
+            for (set_code, collector_number, finish), qty in page["ownedPrints"].items()
+        ],
+    }
+
+
 def load_deck_browse_index(conn: sqlite3.Connection) -> dict:
     from util.deck_tables import ensure_deck_tables
 
     ensure_deck_tables(conn)
-    strategy, deck_df = _load_strategy_deck_df(conn)
-
+    strategy = settings_service.get_settings(conn)["priceStrategy"]
     decks = load_deck_list(conn)
-
-    pages = {
-
-        str(deck["id"]): _serialize_deck_stats(
-            compute_deck_stats_page(
-
-                str(deck["id"]),
-
-                deck_df,
-
-                conn,
-
-                include_portfolio_history=False,
-
-            ),
-            conn,
-            include_cards=False,
-        )
-
-        for deck in decks
-
-    }
-
+    rows = load_deck_summary_rows(conn)
+    pending = {str(deck["id"]): _empty_deck_summary(deck) for deck in decks}
+    price_cache: dict = {}
+    for row in rows:
+        page = pending.get(str(row.get("deck_id")))
+        if page is None:
+            continue
+        _accumulate_deck_summary(page, row, strategy, price_cache)
     return {
-
         "priceStrategy": strategy,
-
         "decks": decks,
-
-        "pages": pages,
-
+        "pages": {
+            deck_id: _finish_deck_summary(page)
+            for deck_id, page in pending.items()
+        },
     }
 
 
@@ -1886,7 +2027,13 @@ def _erase_deck(conn: sqlite3.Connection, deck_key: int, location: str) -> None:
     )
 
 
-def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, include_alternatives: bool = True) -> dict:
+def _serialize_deck_card(
+    card: dict,
+    conn: sqlite3.Connection | None = None,
+    *,
+    include_alternatives: bool = True,
+    owned_index: dict | None = None,
+) -> dict:
     from util.card_role_seed import card_roles_for
     from util.deck_helpers import cheapest_owned_printing_by_name
     from api.services.pricing_service import values_by_strategy_for_finish
@@ -1932,8 +2079,12 @@ def _serialize_deck_card(card: dict, conn: sqlite3.Connection | None = None, *, 
         "hasEtched": card.get("has_etched"),
         "inCatalog": card.get("in_catalog"),
     }
-    if include_alternatives and conn is not None and owned_qty < qty:
-        alternative = cheapest_owned_printing_by_name(conn, card.get("card_name"))
+    if include_alternatives and owned_qty < qty and (owned_index is not None or conn is not None):
+        alternative = cheapest_owned_printing_by_name(
+            conn,
+            card.get("card_name"),
+            owned_index=owned_index,
+        )
         if alternative:
             entry["cheapestOwnedAlternative"] = {
                 "setCode": alternative["set_code"],
@@ -1982,8 +2133,11 @@ def _serialize_deck_stats(
         "previewCards": _serialize_deck_preview_cards(stats),
     }
     if include_cards:
+        from util.deck_helpers import owned_printings_by_name
+
+        resolved_index = owned_printings_by_name(conn) if conn is not None else None
         payload["cards"] = [
-            _serialize_deck_card(card, conn)
+            _serialize_deck_card(card, conn, owned_index=resolved_index)
             for card in (stats.get("cards") or [])
         ]
     return payload

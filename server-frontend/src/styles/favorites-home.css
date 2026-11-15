@@ -51,6 +51,32 @@
   margin-bottom: 12px;
 }
 
+.favorites-home-card-scope {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #eef2f6;
+}
+
+.favorites-home-card-scope button {
+  border: 0;
+  background: transparent;
+  color: #667085;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.favorites-home-card-scope button.active {
+  background: #fff;
+  color: #1a1f2e;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
 .favorites-home-gallery-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -442,21 +468,197 @@ button.favorites-home-mover-card {
   gap: 10px;
 }
 
-.favorites-home-set-card {
-  position: relative;
+.favorites-home-deck-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  max-height: calc(148px * 3 + 12px * 2);
+  overflow-y: auto;
+}
+
+.favorites-home-deck-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  min-height: 112px;
   padding: 10px 12px;
+  border: 1px solid #e8e8e8;
+  border-left: 4px solid var(--deck-accent, #bbb5af);
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+}
+
+.favorites-home-deck-art-link {
+  display: flex;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.favorites-home-deck-art-link:focus-visible {
+  outline: 2px solid #607d8b;
+  outline-offset: 2px;
+}
+
+.favorites-home-deck-art-link:hover .favorites-home-deck-art,
+.favorites-home-deck-art-link:focus-visible .favorites-home-deck-art {
+  transform: scale(1.06);
+}
+
+.favorites-home-deck-art {
+  width: 56px;
+  height: 78px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #eceff1;
+  transition: transform 0.15s ease;
+}
+
+.favorites-home-deck-art.is-empty {
+  display: block;
+}
+
+.favorites-home-deck-meta,
+.favorites-home-deck-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.favorites-home-deck-meta {
+  padding: 6px 8px;
+}
+
+.favorites-home-deck-meta:hover,
+.favorites-home-deck-meta:focus-visible {
+  background: #e8f5e9;
+  border-color: #2e7d32;
+  outline: none;
+}
+
+.favorites-home-deck-diff {
+  align-items: flex-end;
+  padding: 6px 8px;
+}
+
+.favorites-home-deck-diff.is-up:hover,
+.favorites-home-deck-diff.is-up:focus-visible {
+  background: #e8f5e9;
+  border-color: #2e7d32;
+  outline: none;
+}
+
+.favorites-home-deck-diff.is-down:hover,
+.favorites-home-deck-diff.is-down:focus-visible {
+  background: #fdecea;
+  border-color: #c62828;
+  outline: none;
+}
+
+.favorites-home-deck-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.favorites-home-deck-title strong,
+.favorites-home-deck-sub span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorites-home-deck-title strong {
+  font-size: 15px;
+}
+
+.favorites-home-deck-star {
+  flex: 0 0 auto;
+  color: #f9a825;
+  font-size: 14px;
+}
+
+.favorites-home-deck-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.favorites-home-deck-sub .mana-symbols {
+  flex: 0 0 auto;
+}
+
+
+.favorites-home-deck-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.favorites-home-deck-pill.is-up {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.favorites-home-deck-pill.is-down {
+  background: #fdecea;
+  color: #b42318;
+}
+
+.favorites-home-deck-split {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.favorites-home-deck-split .is-up {
+  color: #1b5e20;
+}
+
+.favorites-home-deck-split .is-down {
+  color: #b42318;
+}
+
+.favorites-home-deck-owned {
+  color: #667085;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.favorites-home-set-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
   border: 1px solid #e8e8e8;
   border-radius: 10px;
   background: #fff;
   color: inherit;
 }
 
-.favorites-home-set-card.is-open {
-  align-items: flex-start;
+.favorites-home-set-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .favorites-home-set-expand {
@@ -479,18 +681,67 @@ button.favorites-home-mover-card {
   max-height: 240px;
 }
 
-.favorites-home-set-link {
+.favorites-home-set-icon-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   color: inherit;
   text-decoration: none;
 }
 
-.favorites-home-set-card:hover {
-  border-color: #2e7d32;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+.favorites-home-set-icon-link:hover,
+.favorites-home-set-icon-link:focus-visible {
+  background: #e8f5e9;
+  outline: 2px solid #2e7d32;
+  outline-offset: 0;
+}
+
+.favorites-home-set-icon-link:hover .favorites-home-set-icon,
+.favorites-home-set-icon-link:focus-visible .favorites-home-set-icon {
+  transform: scale(1.12);
+}
+
+.favorites-home-set-expand-hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.favorites-home-set-expand-hit:hover,
+.favorites-home-set-expand-hit:focus-visible,
+.favorites-home-set-card.is-open .favorites-home-set-expand-hit {
+  background: #f4f7f8;
+}
+
+.favorites-home-set-expand-hit:focus-visible {
+  outline: 2px solid #607d8b;
+  outline-offset: 0;
+}
+
+.favorites-home-set-chevron {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #667085;
+  border-bottom: 2px solid #667085;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.favorites-home-set-card.is-open .favorites-home-set-chevron {
+  transform: rotate(45deg);
 }
 
 .favorites-home-set-icon {
@@ -498,6 +749,7 @@ button.favorites-home-mover-card {
   height: 28px;
   object-fit: contain;
   flex: 0 0 auto;
+  transition: transform 0.15s ease;
 }
 
 .favorites-home-set-meta {
@@ -547,6 +799,25 @@ button.favorites-home-mover-card {
   color: #f57f17;
 }
 
+.favorites-home-figure-label {
+  margin-right: 4px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.favorites-home-set-caption {
+  color: #667085;
+  font-size: 0.8rem;
+}
+
+.favorites-home-set-meta span.favorites-home-set-caption.is-owned {
+  color: #344054;
+  font-weight: 650;
+}
+
 .favorites-home-set-total {
   display: flex;
   align-items: baseline;
@@ -562,12 +833,14 @@ button.favorites-home-mover-card {
 }
 
 .favorites-home-set-total .is-up,
-.favorite-set-delta .is-up {
+.favorite-set-delta.is-up,
+.favorite-set-delta.is-up strong {
   color: #1b5e20;
 }
 
 .favorites-home-set-total .is-down,
-.favorite-set-delta .is-down {
+.favorite-set-delta.is-down,
+.favorite-set-delta.is-down strong {
   color: #b71c1c;
 }
 
@@ -576,24 +849,35 @@ button.favorites-home-mover-card {
   flex-direction: column;
   align-items: flex-end;
   gap: 1px;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
+  color: inherit;
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  text-decoration: none;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-radius: 8px;
   white-space: nowrap;
 }
 
-.favorite-set-delta:hover,
-.favorite-set-delta.is-open {
-  background: #eef3f7;
+.favorite-set-delta.is-up:hover,
+.favorite-set-delta.is-up:focus-visible {
+  background: #e8f5e9;
+  border-color: #2e7d32;
+  outline: none;
+}
+
+.favorite-set-delta.is-down:hover,
+.favorite-set-delta.is-down:focus-visible {
+  background: #fdecea;
+  border-color: #c62828;
+  outline: none;
 }
 
 .favorite-set-delta strong {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .mini-card-grid {

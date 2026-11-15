@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 
-from report.deck_queries import deck_scope, load_deck_cards_df
+from report.deck_queries import load_deck_cards_df
 from report.serialize_helpers import is_missing, str_or_empty
 from util.card_metadata import _nullable_int_flag, card_row_needs_power_metadata, resolve_card_cmc
 from util.card_role_seed import card_roles_for
@@ -277,13 +277,13 @@ def assess_deck_power_by_id(conn: sqlite3.Connection, deck_id: str) -> dict:
     except (TypeError, ValueError) as exc:
         raise ValueError("Deck not found") from exc
 
-    deck_df = deck_scope(load_deck_cards_df(conn), deck_key)
+    deck_df = load_deck_cards_df(conn, deck_id=deck_key)
     if deck_df.empty:
         return assess_deck_power([], commanders=[])
 
     if _deck_needs_metadata_backfill(deck_df):
         _backfill_deck_set_metadata(conn, deck_df)
-        deck_df = deck_scope(load_deck_cards_df(conn), deck_key)
+        deck_df = load_deck_cards_df(conn, deck_id=deck_key)
 
     cards, commanders = _cards_from_deck_df(deck_df)
     return assess_deck_power(cards, commanders=commanders)

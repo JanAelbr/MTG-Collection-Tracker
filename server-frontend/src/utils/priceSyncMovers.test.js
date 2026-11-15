@@ -2,15 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateArtStyleMovers,
   cardsForArtStyle,
+  cardsForDeckPrints,
+  changeMoveCounts,
+  deckImpactRows,
+  deckImpactTotals,
+  deckUnchangedCount,
   collectPriceSyncCards,
   collectPriceSyncStyleRows,
   firstPriceSyncCards,
   favoriteArtStyleDayRows,
+  familySetCounts,
   favoriteSetDayRows,
   favoriteSetsDayTotal,
   favoriteCardDayRows,
   moverRowToTileCard,
   priceChangeStrength,
+  priceChangeStyle,
+  priceChangeTinted,
   rankMoverRows,
   signedDayChange,
 } from "./priceSyncMovers";
@@ -133,6 +141,62 @@ describe("moverRowToTileCard", () => {
   });
 });
 
+describe("cardsForDeckPrints", () => {
+  it("keeps sync rows for owned deck prints and ignores the rest", () => {
+    const cards = [
+      { setCode: "LTR", collectorNumber: "10", finishId: 0, delta: 0.5, name: "Sol Ring" },
+      { setCode: "LTR", collectorNumber: "11", finishId: 1, delta: -0.2, name: "Arcane Signet" },
+      { setCode: "MH3", collectorNumber: "1", finishId: 0, delta: 1, name: "Other" },
+    ];
+    const prints = [
+      { setCode: "ltr", collectorNumber: "10", finish: 0, ownedQty: 1 },
+    ];
+    expect(cardsForDeckPrints(cards, prints)).toEqual([
+      expect.objectContaining({ name: "Sol Ring", ownedQty: 1 }),
+    ]);
+  });
+
+  it("scales a print's move by the copies the deck owns", () => {
+    const rows = deckImpactRows(
+      [{
+        setCode: "LTR",
+        collectorNumber: "10",
+        finishId: 0,
+        previous: 1,
+        current: 1.5,
+        delta: 0.5,
+        name: "Sol Ring",
+      }],
+      [{ setCode: "LTR", collectorNumber: "10", finish: 0, ownedQty: 2 }],
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        name: "Sol Ring",
+        ownedQty: 2,
+        unitDelta: 0.5,
+        previous: 1,
+        current: 1.5,
+        delta: 1,
+      }),
+    ]);
+    expect(deckImpactTotals(rows)).toEqual({ up: 1, down: 0, delta: 1 });
+  });
+
+  it("counts prints that did not move", () => {
+    const prints = [
+      { setCode: "LTR", collectorNumber: "10", finish: 0 },
+      { setCode: "LTR", collectorNumber: "11", finish: 0 },
+      { setCode: "LTR", collectorNumber: "12", finish: 0 },
+    ];
+    const rows = [
+      { setCode: "LTR", collectorNumber: "10", finishId: 0, delta: 0.5 },
+      { setCode: "LTR", collectorNumber: "11", finishId: 0, delta: -0.2 },
+    ];
+    expect(changeMoveCounts(rows)).toMatchObject({ upCount: 1, downCount: 1 });
+    expect(deckUnchangedCount(prints, rows)).toBe(1);
+  });
+});
+
 describe("signedDayChange", () => {
   it("splits owned risers and fallers for the day", () => {
     expect(signedDayChange([
@@ -145,6 +209,20 @@ describe("signedDayChange", () => {
       current: 21,
       delta: 3,
     });
+  });
+});
+
+describe("familySetCounts", () => {
+  it("sums owned and catalog counts across the visible family", () => {
+    const counts = familySetCounts(
+      ["LTR", "LTC"],
+      [
+        { setCode: "LTR", ownedCount: 831, catalogCount: 834 },
+        { setCode: "LTC", ownedCount: 40, catalogCount: 50 },
+        { setCode: "TLTR", ownedCount: 9, catalogCount: 9 },
+      ],
+    );
+    expect(counts).toEqual({ ownedCount: 871, catalogCount: 884 });
   });
 });
 
@@ -162,6 +240,8 @@ describe("favoriteSetDayRows", () => {
     expect(rows[0].setCode).toBe("LTR");
     expect(rows[0].up).toBe(6);
     expect(rows[0].down).toBe(-3);
+    expect(rows[0].upCount).toBe(1);
+    expect(rows[0].downCount).toBe(1);
     expect(rows[0].memberCodes).toEqual(["LTR"]);
   });
 
@@ -278,6 +358,15 @@ describe("priceChangeStrength", () => {
     expect(priceChangeStrength(20)).toBeGreaterThan(priceChangeStrength(1));
     expect(priceChangeStrength(-40)).toBe(1);
     expect(priceChangeStrength(2)).toBe(priceChangeStrength(-2));
+  });
+
+  it("skips a home background for moves under 20 cents", () => {
+    expect(priceChangeTinted(0.19, 0.2)).toBe(false);
+    expect(priceChangeTinted(-0.2, 0.2)).toBe(true);
+    expect(priceChangeStyle(0.19, { floor: 0.2 })).toBeUndefined();
+    expect(priceChangeStyle(0.2, { floor: 0.2 })).toEqual({
+      "--change-strength": priceChangeStrength(0.2).toFixed(2),
+    });
   });
 });
 

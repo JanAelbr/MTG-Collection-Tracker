@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { api, ignoreAborted } from "../api";
@@ -7,13 +7,15 @@ import CardContextMenu from "./CardContextMenu.vue";
 import CardPreviewDialog from "./CardPreviewDialog.vue";
 import { formatEuro, formatProfit } from "../utils/format";
 import { cardFinish, cardRouteQuery } from "../utils/finishes";
-import { moverRowToTileCard, priceChangeStyle } from "../utils/priceSyncMovers";
+import { moverRowToTileCard, priceChangeStyle, priceChangeTinted } from "../utils/priceSyncMovers";
 import { scryfallSmallImageUri } from "../utils/scryfall";
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   sourceCards: { type: Array, default: () => [] },
   direction: { type: String, default: "" },
+  variant: { type: String, default: "" },
+  backgroundFloor: { type: Number, default: 0 },
 });
 
 const router = useRouter();
@@ -36,6 +38,27 @@ function changeClass(row) {
 
 function formatDelta(row) {
   return formatProfit((Number(row?.current) || 0) - (Number(row?.previous) || 0));
+}
+
+const deckPeak = computed(() => {
+  let peak = 0;
+  for (const row of props.rows || []) {
+    peak = Math.max(peak, Math.abs(Number(row?.delta) || 0));
+  }
+  return peak;
+});
+
+function deckBarWidth(row) {
+  if (!deckPeak.value) {
+    return "0%";
+  }
+  const share = Math.abs(Number(row?.delta) || 0) / deckPeak.value;
+  return `${Math.max(share > 0 ? 8 : 0, share * 100)}%`;
+}
+
+function deckCopies(row) {
+  const qty = Number(row?.ownedQty) || 1;
+  return qty > 1 ? qty : 0;
 }
 
 function tileRoute(row) {
@@ -126,19 +149,19 @@ function closeActions() {
 </script>
 
 <template>
-  <ol class="price-sync-movers-list is-tiles">
+  <ol class="price-sync-movers-list is-tiles" :class="{ 'is-deck': variant === 'detail' }">
     <li
       v-for="(row, index) in rows"
       :key="row.id || row.label"
-      :class="changeClass(row)"
-      :style="priceChangeStyle(row.delta)"
+      :class="priceChangeTinted(row.delta, backgroundFloor) ? changeClass(row) : ''"
+      :style="priceChangeStyle(row.delta, { floor: backgroundFloor })"
     >
       <div
         class="price-sync-mini-row"
-        :class="{ 'is-link': Boolean(tileRoute(row)) }"
+        :class="{ 'is-link': Boolean(tileRoute(row)), 'is-deck': variant === 'detail' }"
         @click="openTile(row, $event)"
       >
-        <span class="price-sync-mini-rank">{{ index + 1 }}</span>
+        <span v-if="variant !== 'detail'" class="price-sync-mini-rank">{{ index + 1 }}</span>
         <span v-if="tileCard(row).imageUri" class="price-sync-mini-art-wrap">
           <button
             type="button"
@@ -168,13 +191,35 @@ function closeActions() {
           </button>
         </span>
         <span v-else class="price-sync-mini-art is-empty" aria-hidden="true"></span>
-        <span class="price-sync-mini-copy">
+        <span v-if="variant === 'detail'" class="price-sync-deck-copy">
+          <strong>{{ tileCard(row).name || row.label }}</strong>
+          <span class="price-sync-deck-meta">
+            <span v-if="tileCard(row).setCode" class="price-sync-deck-set">{{ tileCard(row).setCode }}</span>
+            <span v-if="tileCard(row).collectorNumber">#{{ tileCard(row).collectorNumber }}</span>
+            <span v-if="deckCopies(row)" class="price-sync-deck-qty">×{{ deckCopies(row) }}</span>
+          </span>
+          <span class="price-sync-deck-prices">
+            <span class="was">{{ formatEuro(row.previous) }}</span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <span class="now">{{ formatEuro(row.current) }}</span>
+            <span v-if="deckCopies(row)" class="each">each</span>
+          </span>
+          <span class="price-sync-deck-bar" aria-hidden="true">
+            <span :style="{ width: deckBarWidth(row) }"></span>
+          </span>
+        </span>
+        <span v-else class="price-sync-mini-copy">
           <strong>{{ tileCard(row).name || row.label }}</strong>
           <small v-if="tileCard(row).collectorNumber">
             {{ tileCard(row).setCode }} #{{ tileCard(row).collectorNumber }}
           </small>
         </span>
-        <strong class="price-sync-movers-change" :class="changeClass(row)">
+        <strong
+          v-if="variant === 'detail'"
+          class="price-sync-deck-pill"
+          :class="changeClass(row)"
+        >{{ formatProfit(Number(row.delta) || 0) }}</strong>
+        <strong v-else class="price-sync-movers-change" :class="changeClass(row)">
           <span class="price-sync-movers-range">
             {{ formatEuro(row.previous) }} → {{ formatEuro(row.current) }}
           </span>

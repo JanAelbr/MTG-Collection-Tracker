@@ -82,6 +82,74 @@ export function deckPreviewCards(deck, pages) {
   return stats.previewCards || [];
 }
 
+/** Today's move for each deck, priced from the last sync and multiplied by owned copies. */
+export function deckDayRows(decks, pages, syncCards) {
+  const deltas = new Map();
+  for (const card of syncCards || []) {
+    const setCode = String(card?.setCode || "").trim().toUpperCase();
+    const collectorNumber = String(card?.collectorNumber || "").trim();
+    const finish = Number(card?.finishId ?? card?.finish);
+    if (!setCode || !collectorNumber || !Number.isFinite(finish)) {
+      continue;
+    }
+    const raw = Number(card?.delta);
+    const delta = Number.isFinite(raw)
+      ? raw
+      : (Number(card?.current) || 0) - (Number(card?.previous) || 0);
+    deltas.set(`${setCode}|${collectorNumber}|${finish}`, delta);
+  }
+
+  return (decks || []).map((deck) => {
+    const page = pages?.[String(deck.id)] || {};
+    let up = 0;
+    let down = 0;
+    for (const line of page.ownedPrints || []) {
+      const key = [
+        String(line.setCode || "").trim().toUpperCase(),
+        String(line.collectorNumber || "").trim(),
+        Number(line.finish) || 0,
+      ].join("|");
+      const move = (deltas.get(key) || 0) * (Number(line.ownedQty) || 0);
+      if (move > 0) {
+        up += move;
+      } else if (move < 0) {
+        down += move;
+      }
+    }
+    const commanderCards = (page.previewCards || []).filter(
+      (card) => String(card?.section || "") === "commander",
+    );
+    const commanders = commanderCards.map((card) => card.cardName).filter(Boolean);
+    const art = commanderCards.find((card) => card.imageUri || card.image_uri) || commanderCards[0];
+    const current = page.ownedCurrent ?? page.current ?? null;
+    return {
+      id: deck.id,
+      name: String(deck.name || deck.label || "Deck"),
+      commanders: commanders.join(" / "),
+      commanderName: String(art?.cardName || art?.name || ""),
+      imageUri: String(art?.imageUri || art?.image_uri || ""),
+      setCode: String(art?.setCode || "").trim().toUpperCase(),
+      collectorNumber: String(art?.collectorNumber || "").trim(),
+      finish: art?.finish ?? art?.finishId ?? null,
+      colors: deckColorIdentityFromPages(deck, pages),
+      favorite: Boolean(deck.favorite),
+      current,
+      up,
+      down,
+      delta: up + down,
+    };
+  }).sort((left, right) => {
+    if (left.favorite !== right.favorite) {
+      return left.favorite ? -1 : 1;
+    }
+    const identityDiff = compareColorIdentities(left.colors, right.colors);
+    if (identityDiff) {
+      return identityDiff;
+    }
+    return left.name.localeCompare(right.name, undefined, { numeric: true });
+  });
+}
+
 export function deckCommandersFromPages(deck, pages) {
   return (deckPreviewCards(deck, pages) || []).filter(
     (card) => String(card?.section || "") === "commander",

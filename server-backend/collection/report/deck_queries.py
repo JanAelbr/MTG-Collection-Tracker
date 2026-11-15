@@ -70,12 +70,9 @@ SELECT
 FROM decks d
 LEFT JOIN deck_cards dc
     ON dc.deck_id = d.deck_id
-LEFT JOIN cards c
-    ON c.set_code = dc.set_code
-    AND c.collector_number = dc.collector_number
+    AND dc.in_catalog = 1
 LEFT JOIN sets s
     ON s.set_code = dc.set_code
-    AND (dc.in_catalog = 1 OR c.set_code IS NOT NULL)
 GROUP BY d.deck_id
 ORDER BY favorite DESC, release_year, d.name
 """
@@ -155,6 +152,49 @@ def load_owned_count_by_print(conn: sqlite3.Connection) -> dict[tuple[str, str, 
         key = (str(set_code).upper(), str(collector_number).strip(), int(finish))
         counts.setdefault(key, 1)
     return counts
+
+
+DECK_SUMMARY_QUERY = f"""
+SELECT
+    dc.deck_id,
+    dc.card_name,
+    dc.set_code,
+    dc.collector_number,
+    dc.finish,
+    dc.qty,
+    dc.owned_qty,
+    dc.section,
+    dc.in_catalog,
+    c.name AS catalog_name,
+    c.image_uri,
+    c.colors,
+    c.color_identity,
+    c.cardmarket_url,
+    c.cardmarket_url_foil,
+    c.market_value,
+    c.market_value_foil,
+    c.market_value_etched,
+    c.has_nonfoil,
+    c.has_foil,
+    c.has_etched,
+    p.purchase_value
+FROM deck_cards dc
+LEFT JOIN cards c
+    ON c.set_code = dc.set_code
+    AND c.collector_number = dc.collector_number
+LEFT JOIN purchases p
+    ON p.set_code = dc.set_code
+    AND p.collector_number = dc.collector_number
+    AND p.finish = dc.finish
+WHERE dc.collector_number IS NULL
+   OR {exclude_alchemy_sql("dc.collector_number")}
+ORDER BY dc.deck_id, dc.sort_order
+"""
+
+
+def load_deck_summary_rows(conn: sqlite3.Connection) -> list[dict]:
+    """Narrow deck rows for gallery totals and commander previews."""
+    return [dict(row) for row in conn.execute(DECK_SUMMARY_QUERY)]
 
 
 # Add derived pricing columns used by deck statistics.

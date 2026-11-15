@@ -2829,6 +2829,67 @@ body {
   color: #546e7a;
 }
 
+.price-sync-movers-page.is-detail .price-sync-movers-column.is-up > h3 {
+  color: #1b5e20;
+}
+
+.price-sync-movers-page.is-detail .price-sync-movers-column.is-down > h3 {
+  color: #b42318;
+}
+
+.price-sync-deck-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.price-sync-deck-summary span,
+.price-sync-deck-summary strong {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 92px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f4f7f8;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.price-sync-deck-summary small,
+.price-sync-deck-summary em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #667085;
+}
+
+.price-sync-deck-summary em {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.price-sync-deck-summary .is-flat {
+  color: #344054;
+  background: #f4f7f8;
+}
+
+.price-sync-deck-summary .is-up {
+  color: #1b5e20;
+  background: #f1f8f2;
+}
+
+.price-sync-deck-summary .is-down {
+  color: #b42318;
+  background: #fdf6f6;
+}
+
 .price-sync-movers-list {
   margin: 0;
   padding: 0;
@@ -2980,6 +3041,175 @@ a.price-sync-mini-row:hover,
   align-items: flex-end;
   text-align: right;
   font-size: 11px;
+}
+
+.price-sync-movers-list.is-deck {
+  gap: 8px;
+}
+
+.price-sync-mini-row.is-deck {
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.price-sync-mini-row.is-deck .price-sync-mini-art-wrap,
+.price-sync-mini-row.is-deck .price-sync-mini-art {
+  width: 48px;
+  height: 67px;
+}
+
+.price-sync-deck-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.price-sync-deck-copy strong,
+.price-sync-deck-meta,
+.price-sync-deck-prices {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-sync-deck-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.price-sync-deck-meta,
+.price-sync-deck-prices {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #607d8b;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-sync-deck-set,
+.price-sync-deck-qty {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(38, 50, 56, 0.08);
+  color: #37474f;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+}
+
+.price-sync-deck-prices .was {
+  color: #90a4ae;
+}
+
+.price-sync-deck-prices .now {
+  color: #263238;
+  font-weight: 750;
+}
+
+.price-sync-deck-prices .arrow,
+.price-sync-deck-prices .each {
+  color: #90a4ae;
+  font-size: 11px;
+}
+
+.price-sync-deck-bar {
+  height: 5px;
+  margin-top: 2px;
+  border-radius: 99px;
+  background: rgba(38, 50, 56, 0.08);
+  overflow: hidden;
+}
+
+.price-sync-deck-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.price-sync-movers-list.is-tiles li.is-up .price-sync-deck-bar > span,
+.price-sync-movers-item.is-up .price-sync-deck-bar > span {
+  background: #2e7d32;
+}
+
+.price-sync-movers-list.is-tiles li.is-down .price-sync-deck-bar > span,
+.price-sync-movers-item.is-down .price-sync-deck-bar > span {
+  background: #c62828;
+}
+
+.app-shell:has(.favorites-home-page.is-changes) {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.app-shell:has(.favorites-home-page.is-changes) .app-main {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.favorites-home-page.is-changes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.favorites-home-page.is-changes > .price-sync-movers-page.is-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.price-sync-movers-page.is-detail .price-sync-movers-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.price-sync-movers-page.is-detail .price-sync-movers-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.price-sync-movers-page.is-detail .price-sync-movers-column {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.price-sync-movers-page.is-detail .price-sync-movers-list,
+.price-sync-movers-page.is-detail .price-sync-movers-list.is-tiles {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.price-sync-deck-pill {
+  align-self: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.price-sync-deck-pill.is-up {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.price-sync-deck-pill.is-down {
+  background: #c62828;
+  color: #fff;
 }
 
 .price-sync-mover-tile {
@@ -8209,6 +8439,16 @@ button.card-variant {
 
 .card-preview-face-toggle {
   align-self: center;
+}
+
+.card-preview-details-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-preview-details-link:hover,
+.card-preview-details-link:focus-visible {
+  text-decoration: underline;
 }
 
 .card-preview-info {
