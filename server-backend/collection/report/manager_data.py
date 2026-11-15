@@ -2,7 +2,6 @@ import sqlite3
 
 from lib.db import connect_current, table_exists
 from report.report_data import get_all_set_codes
-from util.db_migrate import ensure_card_columns
 
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_metadata_snake
@@ -344,7 +343,6 @@ def _execute_manager_query(
     offset: int | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    ensure_card_columns(conn)
     ensure_app_tables(conn)
     filter_sql, filter_params = _manager_filter_clauses(
         art_style=art_style,
@@ -380,7 +378,6 @@ def count_manager_cards_for_set(
     storage_filters: list[str] | None = None,
     owned_filter: str = "all",
 ) -> int:
-    ensure_card_columns(conn)
     ensure_app_tables(conn)
     filter_sql, filter_params = _manager_filter_clauses(
         art_style=art_style,
@@ -470,7 +467,6 @@ def load_manager_client_payload() -> dict:
     sets = get_all_set_codes()
     with connect_current(row_factory=None) as conn:
         conn.row_factory = sqlite3.Row
-        ensure_card_columns(conn)
         conn.commit()
         cards_by_set = {
             set_code: load_manager_cards_for_set(conn, set_code)

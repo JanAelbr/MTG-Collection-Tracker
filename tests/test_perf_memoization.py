@@ -50,18 +50,10 @@ class EnsureDeckTablesMemoizationTests(unittest.TestCase):
 
         conn2 = sqlite3.connect(db_path)
         self.addCleanup(conn2.close)
-        with patch("util.deck_tables.ensure_deck_columns") as mock_columns, patch(
-            "util.deck_tables.ensure_deck_finish_column"
-        ) as mock_finish, patch(
-            "util.deck_tables.ensure_deck_card_columns"
-        ) as mock_card_columns, patch(
-            "util.deck_tables.ensure_deck_cards_print_unique"
-        ) as mock_unique:
-            ensure_deck_tables(conn2)
-            mock_columns.assert_not_called()
-            mock_finish.assert_not_called()
-            mock_card_columns.assert_not_called()
-            mock_unique.assert_not_called()
+        statements = []
+        conn2.set_trace_callback(statements.append)
+        ensure_deck_tables(conn2)
+        self.assertFalse(any("CREATE" in sql.upper() for sql in statements))
 
         # And the table is genuinely usable (first call did its job for real).
         conn2.execute("SELECT * FROM decks").fetchall()
@@ -78,9 +70,10 @@ class EnsureDeckTablesMemoizationTests(unittest.TestCase):
         self.assertIn(str(db_path_a), deck_tables._ready_db_paths)
         self.assertNotIn(str(db_path_b), deck_tables._ready_db_paths)
 
-        with patch("util.deck_tables.ensure_deck_columns") as mock_columns:
-            ensure_deck_tables(conn_b)
-            mock_columns.assert_called_once()
+        statements = []
+        conn_b.set_trace_callback(statements.append)
+        ensure_deck_tables(conn_b)
+        self.assertTrue(any("CREATE TABLE" in sql for sql in statements))
         self.assertIn(str(db_path_b), deck_tables._ready_db_paths)
 
     def test_in_memory_databases_are_never_cached(self):
@@ -92,9 +85,10 @@ class EnsureDeckTablesMemoizationTests(unittest.TestCase):
         ensure_deck_tables(conn1)
         self.assertNotIn(":memory:", deck_tables._ready_db_paths)
 
-        with patch("util.deck_tables.ensure_deck_columns") as mock_columns:
-            ensure_deck_tables(conn2)
-            mock_columns.assert_called_once()
+        statements = []
+        conn2.set_trace_callback(statements.append)
+        ensure_deck_tables(conn2)
+        self.assertTrue(any("CREATE TABLE" in sql for sql in statements))
 
 
 class SetCountAndSnapshotCacheMemoizationTests(unittest.TestCase):

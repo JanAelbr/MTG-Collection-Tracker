@@ -13,7 +13,6 @@ from lib.run_log import get_logger
 from report.card_detail_data import collector_sort_key
 from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.card_metadata import card_image_fields, card_metadata_api
-from util.db_migrate import ensure_card_columns
 from util.set_catalog import load_set_display_names
 
 log = get_logger(__name__)
@@ -403,7 +402,6 @@ def list_location_cards(
     *,
     price_strategy: str,
 ) -> dict:
-    ensure_card_columns(conn)
     get_location(conn, slug)
     rows = conn.execute(LOCATION_CARDS_QUERY, (slug,)).fetchall()
     from api.services.sale_listings_service import listed_listings_by_instance_id
@@ -561,7 +559,6 @@ def get_storage_breakdown(
     top_sets: int = 8,
 ) -> dict:
     """Aggregate copies, value, and mix for one storage location."""
-    ensure_card_columns(conn)
     location = get_location(conn, location_slug)
     rows = conn.execute(BREAKDOWN_INSTANCES_QUERY, (location["slug"],)).fetchall()
 

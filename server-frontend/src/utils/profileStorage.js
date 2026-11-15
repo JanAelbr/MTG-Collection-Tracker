@@ -13,7 +13,6 @@ export const PROFILE_SCOPED_KEYS = Object.freeze([
   "settingsBreakdownHistoryCharts:view",
   "reportPageSize",
 ]);
-export const PROFILE_STORAGE_MIGRATED_KEY = "lotr.profileStorage.migrated";
 
 function area() {
   try {
@@ -39,28 +38,6 @@ export const profileLocalStorage = {
     area()?.removeItem(profileStorageKey(key));
   },
 };
-
-/**
- * One-time copy of pre-profile values into ``profileId`` (the profile that
- * received the legacy collection). Originals are left in place.
- */
-export function migrateLegacyProfileStorage(profileId, keys = PROFILE_SCOPED_KEYS) {
-  const storage = area();
-  if (!storage || !profileId || storage.getItem(PROFILE_STORAGE_MIGRATED_KEY)) {
-    return 0;
-  }
-  let copied = 0;
-  for (const key of keys) {
-    const value = storage.getItem(key);
-    const target = profileStorageKey(key, profileId);
-    if (value != null && storage.getItem(target) == null) {
-      storage.setItem(target, value);
-      copied += 1;
-    }
-  }
-  storage.setItem(PROFILE_STORAGE_MIGRATED_KEY, "1");
-  return copied;
-}
 
 export function removeProfileStorage(profileId) {
   const storage = area();

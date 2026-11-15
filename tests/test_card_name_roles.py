@@ -9,10 +9,9 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.card_name_roles import (  # noqa: E402
-    CARD_NAME_ROLES_BACKFILL_KEY,
-    backfill_card_name_roles,
     ensure_card_name_roles_table,
     load_card_name_roles_map,
+    refresh_card_name_roles_for_card,
     roles_for_card_name,
     upsert_card_name_roles,
 )
@@ -60,7 +59,7 @@ class CardNameRolesTests(unittest.TestCase):
         self.assertEqual(mapping["Sol Ring"], roles)
         self.assertEqual(mapping["sol ring"], roles)
 
-    def test_backfill_writes_distinct_names_once(self):
+    def test_refresh_writes_roles_for_each_name(self):
         self.conn.executemany(
             """
             INSERT INTO cards (set_code, collector_number, name, type_line, oracle_text, card_type)
@@ -81,15 +80,19 @@ class CardNameRolesTests(unittest.TestCase):
         )
         self.conn.commit()
 
-        upserted = backfill_card_name_roles(self.conn, force=True)
-        self.assertEqual(upserted, 2)
+        for name, type_line, oracle_text, card_type in (
+            ("Cultivate", "Sorcery",
+             "Search your library for up to two basic land cards, reveal those cards, "
+             "put one onto the battlefield tapped and the other into your hand, then shuffle.",
+             "sorcery"),
+            ("Lightning Bolt", "Instant", "Lightning Bolt deals 3 damage to any target.", "instant"),
+        ):
+            refresh_card_name_roles_for_card(self.conn, {
+                "name": name,
+                "type_line": type_line,
+                "oracle_text": oracle_text,
+                "card_type": card_type,
+            })
+        self.conn.commit()
         self.assertIn("ramp", roles_for_card_name(self.conn, "Cultivate"))
         self.assertIn("removal", roles_for_card_name(self.conn, "Lightning Bolt"))
-
-        again = backfill_card_name_roles(self.conn)
-        self.assertEqual(again, 0)
-        flag = self.conn.execute(
-            "SELECT value FROM catalog_meta WHERE key = ?",
-            (CARD_NAME_ROLES_BACKFILL_KEY,),
-        ).fetchone()
-        self.assertEqual(flag[0], "done")

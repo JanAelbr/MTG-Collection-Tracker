@@ -19,7 +19,6 @@ from util.card_finishes import (
     MARKET_VALUE_COLUMNS,
 )
 from util.card_metadata import card_metadata_snake
-from util.db_migrate import ensure_card_columns
 
 DEFAULT_PAGE_SIZE = 25
 
@@ -159,7 +158,6 @@ def expand_cards_for_ranking(cards_df: pd.DataFrame) -> pd.DataFrame:
 # Load owned and unowned finish rows for ranked reports.
 def load_ranked_cards_data() -> pd.DataFrame:
     with connect_current(row_factory=None) as conn:
-        ensure_card_columns(conn)
         cards_df = pd.read_sql_query(ALL_CARDS_QUERY, conn)
         orphan_df = pd.read_sql_query(ORPHAN_PURCHASES_QUERY, conn)
     if not orphan_df.empty:
@@ -173,7 +171,6 @@ def load_ranked_cards_data_for_set(set_code: str) -> pd.DataFrame:
     if not normalized:
         return pd.DataFrame()
     with connect_current(row_factory=None) as conn:
-        ensure_card_columns(conn)
         cards_df = pd.read_sql_query(SET_CARDS_QUERY, conn, params=(normalized,))
         orphan_df = pd.read_sql_query(SET_ORPHAN_PURCHASES_QUERY, conn, params=(normalized,))
     if not orphan_df.empty:
@@ -197,7 +194,6 @@ def load_ranked_cards_data_for_prints(
     if not cleaned:
         return pd.DataFrame()
 
-    ensure_card_columns(conn)
     conn.execute("DROP TABLE IF EXISTS _search_print_keys")
     conn.execute(
         """

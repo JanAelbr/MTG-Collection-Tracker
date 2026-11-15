@@ -100,7 +100,7 @@ class PriceSyncServiceTests(unittest.TestCase):
         kwargs = mock_update_prices.call_args.kwargs
         self.assertEqual(kwargs.get("set_codes"), set())
         self.assertEqual(kwargs.get("extra_qualifying_sets"), set())
-        self.assertFalse(kwargs.get("force_cardmarket"))
+        self.assertTrue(kwargs.get("force_cardmarket"))
         self.snapshot_mock.assert_not_called()
 
     @patch("util.price_sync.update_cardmarket_prices_only", side_effect=RuntimeError("boom"))
@@ -196,6 +196,29 @@ class PriceSyncServiceTests(unittest.TestCase):
         self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"LTR"})
 
     @patch("util.price_sync.update_cardmarket_prices_only")
+    def test_single_card_sync_does_not_price_the_rest_of_the_set(self, mock_update_prices):
+        mock_update_prices.return_value = None
+        price_sync_service.start_price_sync(
+            self.conn,
+            set_code="mh3",
+            collector_number="12",
+        )
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            status = price_sync_service.get_price_sync_status(self.conn)
+            if status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        mock_update_prices.assert_called_once()
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("set_codes"), {"MH3"})
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), set())
+        self.assertEqual(mock_update_prices.call_args.kwargs.get("explicit_cards"), {("MH3", "12")})
+        self.assertFalse(mock_update_prices.call_args.kwargs.get("force_cardmarket"))
+        self.assertFalse(self.sync_cache.is_file())
+
+    @patch("util.price_sync.update_cardmarket_prices_only")
     def test_explicit_set_code_syncs_that_set(self, mock_update_prices):
         mock_update_prices.return_value = None
         price_sync_service.start_price_sync(self.conn, set_code="mh3")
@@ -210,6 +233,8 @@ class PriceSyncServiceTests(unittest.TestCase):
         mock_update_prices.assert_called_once()
         self.assertEqual(mock_update_prices.call_args.kwargs.get("set_codes"), {"MH3"})
         self.assertEqual(mock_update_prices.call_args.kwargs.get("extra_qualifying_sets"), {"MH3"})
+        self.assertFalse(mock_update_prices.call_args.kwargs.get("force_cardmarket"))
+        self.assertFalse(mock_update_prices.call_args.kwargs.get("explicit_cards"))
 
     @patch("api.cache.bump_cache_epoch")
     @patch("api.services.pricing_service.refresh_guide_cache")
@@ -219,8 +244,14 @@ class PriceSyncServiceTests(unittest.TestCase):
             "applied": True,
             "updated_fields": 2,
             "movers": {
-                "risers": [{"id": "up", "label": "Up", "percent": 20, "delta": 2}],
-                "fallers": [{"id": "down", "label": "Down", "percent": -10, "delta": -1}],
+                "absolute": {
+                    "risers": [{"id": "up", "label": "Up", "delta": 2}],
+                    "fallers": [{"id": "down", "label": "Down", "delta": -1}],
+                },
+                "relative": {
+                    "risers": [{"id": "up", "label": "Up", "percent": 20}],
+                    "fallers": [{"id": "down", "label": "Down", "percent": -10}],
+                },
             },
         }
         price_sync_service.start_price_sync(self.conn)

@@ -22,6 +22,7 @@ from util.profile_registry import (
     validate_new_profile,
 )
 from util.profile_store import (
+    copy_profile_parts,
     discard_profile_database,
     duplicate_profile_database,
     initialize_profile_database,
@@ -31,6 +32,7 @@ from util.profile_store import (
 
 log = get_logger(__name__)
 IMPORTED_PROFILE_NAME = "Imported collection"
+PROFILE_COPY_PARTS = frozenset({"collection", "decks", "storage"})
 
 
 class ProfileError(Exception):
@@ -142,19 +144,27 @@ def create_profile(
     color: str | None = None,
     avatar: str | None = None,
     duplicate_from: str | None = None,
+    copy_parts: set[str] | None = None,
 ) -> dict:
     if duplicate_from:
         _require(duplicate_from)
+    if copy_parts is not None and not duplicate_from:
+        raise ProfileError("Choose a profile to copy from")
+    if copy_parts is not None and (not copy_parts or not copy_parts <= PROFILE_COPY_PARTS):
+        raise ProfileError("Choose collection, decks, or storage to copy")
     try:
         validate_new_profile(name=name, color=color, avatar=avatar)
     except ProfileValidationError as exc:
         raise ProfileError(str(exc)) from exc
     profile_id = new_profile_id()
+    full_copy = bool(duplicate_from) and (copy_parts is None or copy_parts == PROFILE_COPY_PARTS)
     try:
-        if duplicate_from:
+        if full_copy:
             duplicate_profile_database(duplicate_from, profile_id)
         else:
             initialize_profile_database(profile_id)
+            if duplicate_from and copy_parts:
+                copy_profile_parts(duplicate_from, profile_id, copy_parts)
         profile = insert_profile(name=name, color=color, avatar=avatar, profile_id=profile_id)
     except ProfileValidationError as exc:
         discard_profile_database(profile_id)
@@ -166,7 +176,8 @@ def create_profile(
         "Created profile %s (%s)%s",
         profile.name,
         profile.id,
-        f" from {duplicate_from}" if duplicate_from else "",
+        f" from {duplicate_from} ({', '.join(sorted(copy_parts))})" if duplicate_from and copy_parts
+        else (f" from {duplicate_from}" if duplicate_from else ""),
     )
     return serialize_profile(profile, with_stats=True)
 

@@ -1,5 +1,4 @@
 import runpy
-import sqlite3
 from pathlib import Path
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
@@ -117,6 +116,51 @@ class ProfileApiTests(ProfileStorageTestCase):
         ).json()
         self.assertEqual(copy["stats"]["ownedPrints"], 1)
 
+    def test_copy_storage_solutions_without_the_collection(self):
+        conn = connect_profile(self.default_id)
+        try:
+            conn.execute(
+                """
+                INSERT INTO storage_locations (
+                    location_slug, label, location_type, sort_order, description, is_system
+                ) VALUES ('binder:trades', 'Trades', 'binder', 5, 'Cards for trade', 0)
+                """
+            )
+            conn.execute(
+                "DELETE FROM storage_locations WHERE location_slug = 'binder:ltr-black'"
+            )
+            conn.execute(
+                """
+                INSERT INTO purchases (set_code, collector_number, finish, purchase_value)
+                VALUES ('LTR', '1', 0, 1)
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        created = self.api.post(
+            "/api/profiles",
+            json={"name": "Storage only", "copyFrom": self.default_id, "copyParts": ["storage"]},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        profile = created.json()
+        self.assertEqual(profile["stats"]["ownedPrints"], 0)
+        copied = connect_profile(profile["id"])
+        try:
+            labels = {
+                row[0]: row[1]
+                for row in copied.execute(
+                    "SELECT location_slug, label FROM storage_locations"
+                )
+            }
+            purchases = copied.execute("SELECT COUNT(*) FROM purchases").fetchone()[0]
+        finally:
+            copied.close()
+        self.assertEqual(labels.get("binder:trades"), "Trades")
+        self.assertNotIn("binder:ltr-black", labels)
+        self.assertEqual(purchases, 0)
+
     def test_export_and_import_as_new_profile(self):
         _seed_catalog_card()
         _own(self.default_id)
@@ -206,61 +250,3 @@ class PriceSyncScopeTests(ProfileStorageTestCase):
         self.assertEqual(full, {"LTR"})
         self.assertEqual([card["setCode"] for card in cards], ["MH3"])
         self.assertTrue(movers["absolute"]["risers"])
-
-
-class LegacyMigrationTests(ProfileStorageTestCase):
-    def _seed_legacy(self) -> None:
-        from util.schema import ensure_database_schema
-
-        conn = sqlite3.connect(self.layout.legacy_db)
-        conn.row_factory = sqlite3.Row
-        try:
-            ensure_database_schema(conn)
-            conn.execute(
-                "INSERT INTO cards (id, set_code, collector_number, name) VALUES ('x', 'LTR', '1', 'Frodo')"
-            )
-            conn.execute(
-                "INSERT INTO purchases (set_code, collector_number, finish, purchase_value) VALUES ('LTR', '1', 0, 3)"
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO user_settings (key, value) VALUES ('price_sync_checked_date', '2026-10-01')"
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def test_legacy_database_is_split(self):
-        self._seed_legacy()
-        profile_ids = self.bootstrap()
-        self.assertEqual(len(profile_ids), 1)
-        self.assertFalse(self.layout.legacy_db.exists())
-        self.assertTrue(any(self.layout.backups_dir.glob("collection-pre-profiles-*.db")))
-
-        catalog = sqlite3.connect(self.layout.catalog_db)
-        try:
-            catalog_tables = {r[0] for r in catalog.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            meta = catalog.execute(
-                "SELECT value FROM catalog_meta WHERE key = 'price_sync_checked_date'"
-            ).fetchone()
-        finally:
-            catalog.close()
-        self.assertIn("cards", catalog_tables)
-        self.assertNotIn("purchases", catalog_tables)
-        self.assertEqual(meta[0], "2026-10-01")
-
-        conn = connect_profile(profile_ids[0])
-        try:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0], 1)
-            self.assertEqual(table_schema(conn, "cards"), "catalog")
-            leaked = conn.execute(
-                "SELECT COUNT(*) FROM user_settings WHERE key = 'price_sync_checked_date'"
-            ).fetchone()[0]
-        finally:
-            conn.close()
-        self.assertEqual(leaked, 0)
-
-    def test_migration_is_not_repeated(self):
-        self._seed_legacy()
-        first = self.bootstrap()
-        second = self.bootstrap()
-        self.assertEqual(first, second)

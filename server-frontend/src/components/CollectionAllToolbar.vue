@@ -74,7 +74,7 @@ const chromeToggleLabel = computed(() =>
     ? "Restore navigation and filters"
     : "Expand catalog",
 );
-const setPriceSyncLabel = "Update prices for this set. Favourite sets and owned cards update automatically on price sync; other sets only when you ask.";
+const setPriceSyncLabel = "Update every card in this set. The regular price sync only updates favourite sets and cards you own.";
 
 const resolvedPlaceholder = computed(() => {
   if (props.searchPlaceholder) {

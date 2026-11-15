@@ -1,6 +1,5 @@
 import json
 import sqlite3
-import threading
 
 from api.cache import bump_cache_epoch
 from api.services.pricing_service import list_price_strategies, normalize_strategy
@@ -35,37 +34,12 @@ PRICE_STRATEGY_KEY = "price_strategy"
 FAVORITES_CARDS_PRICE_STRATEGY_KEY = "price_strategy_favorites_cards"
 FAVORITES_ART_STYLES_PRICE_STRATEGY_KEY = "price_strategy_favorites_art_styles"
 SELL_PRICE_STRATEGY_KEY = "price_strategy_sell"
-OBSOLETE_SETTING_KEYS = ("compare_date", "set_picker_mode")
-
-_purge_lock = threading.Lock()
-_purged_obsolete_settings = False
 
 
 class SettingsError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
-
-
-def _purge_obsolete_settings(conn: sqlite3.Connection) -> None:
-    """Drop legacy keys once per process — avoid a write lock on every GET /settings."""
-    global _purged_obsolete_settings
-    if _purged_obsolete_settings:
-        return
-    with _purge_lock:
-        if _purged_obsolete_settings:
-            return
-        placeholders = ", ".join("?" for _ in OBSOLETE_SETTING_KEYS)
-        exists = conn.execute(
-            f"SELECT 1 FROM user_settings WHERE key IN ({placeholders}) LIMIT 1",
-            OBSOLETE_SETTING_KEYS,
-        ).fetchone()
-        if exists:
-            conn.executemany(
-                "DELETE FROM user_settings WHERE key = ?",
-                [(key,) for key in OBSOLETE_SETTING_KEYS],
-            )
-        _purged_obsolete_settings = True
 
 
 def _setting_value(row):
@@ -309,7 +283,6 @@ def _settings_row_pair(row) -> tuple[str, object]:
 
 
 def get_settings(conn: sqlite3.Connection) -> dict:
-    _purge_obsolete_settings(conn)
     rows = conn.execute("SELECT key, value FROM user_settings").fetchall()
     values = {key: value for key, value in (_settings_row_pair(row) for row in rows)}
     return {
@@ -353,7 +326,6 @@ def update_settings(
     set_sort_mode: str | None = None,
     default_storage_location: str | None = None,
 ) -> dict:
-    _purge_obsolete_settings(conn)
     changed: list[str] = []
     if price_strategy is not None:
         normalized = _set_price_strategy_setting(conn, PRICE_STRATEGY_KEY, price_strategy)

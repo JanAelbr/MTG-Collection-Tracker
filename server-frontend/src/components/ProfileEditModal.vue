@@ -16,6 +16,7 @@ const color = ref("indigo");
 const avatar = ref("");
 const source = ref("blank");
 const copyFrom = ref("");
+const copyParts = ref({ collection: true, decks: true, storage: true });
 const file = ref(null);
 const preview = ref(null);
 const error = ref("");
@@ -40,6 +41,7 @@ watch(() => props.open, (isOpen) => {
   avatar.value = props.profile?.avatar || "";
   source.value = "blank";
   copyFrom.value = copyOptions.value[0]?.id || "";
+  copyParts.value = { collection: true, decks: true, storage: true };
   file.value = null;
   preview.value = null;
   error.value = "";
@@ -80,11 +82,19 @@ async function save() {
         avatar: avatar.value,
       });
     } else if (source.value === "duplicate") {
+      const copy = Object.entries(copyParts.value)
+        .filter(([, enabled]) => enabled)
+        .map(([part]) => part);
+      if (!copy.length) {
+        error.value = "Choose what to copy from that profile.";
+        return;
+      }
       saved = await createProfile({
         name: name.value,
         color: color.value,
         avatar: avatar.value,
         copyFrom: copyFrom.value,
+        copyParts: copy,
       });
     } else if (source.value === "import") {
       if (!file.value) {
@@ -160,6 +170,21 @@ async function save() {
             </option>
           </select>
         </label>
+        <div v-if="source === 'duplicate'" class="profile-copy-parts">
+          <label>
+            <input v-model="copyParts.collection" type="checkbox" />
+            Owned cards
+          </label>
+          <label>
+            <input v-model="copyParts.decks" type="checkbox" />
+            Decks
+          </label>
+          <label>
+            <input v-model="copyParts.storage" type="checkbox" />
+            Storage solutions
+          </label>
+          <p>Storage solutions are the binders and boxes. Leave the other boxes unchecked to copy only those.</p>
+        </div>
         <label><input v-model="source" type="radio" value="import" /> Import a backup file</label>
         <label v-if="source === 'import'" class="home-backup-file">
           <span>Backup file</span>

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   bindHomeChangesNavigation,
   lastPriceSyncOutcome,
-  normalizePriceSyncMovers,
   priceSyncHasMovers,
   recordCompletedPriceSync,
   shouldStartStartupPriceSync,
@@ -54,15 +53,6 @@ describe("recordCompletedPriceSync", () => {
     expect(priceSyncHasMovers(lastPriceSyncOutcome.value)).toBe(true);
     expect(opened).toBe(1);
     unbind();
-  });
-
-  it("normalizes legacy flat mover lists", () => {
-    const movers = normalizePriceSyncMovers({
-      risers: [{ id: "a" }],
-      fallers: [{ id: "b" }],
-    });
-    expect(movers.absolute.risers[0].id).toBe("a");
-    expect(movers.relative.fallers[0].id).toBe("b");
   });
 });
 

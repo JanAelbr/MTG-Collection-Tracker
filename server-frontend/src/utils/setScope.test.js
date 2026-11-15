@@ -35,10 +35,10 @@ describe("search route helpers", () => {
     });
   });
 
-  it("defaults ownership to owned and maps legacy unowned to all", () => {
+  it("defaults ownership to owned", () => {
     expect(searchFiltersFromRoute({ query: {} }).ownedFilter).toBe("owned");
     expect(searchFiltersFromRoute({ query: { owned: "all" } }).ownedFilter).toBe("all");
-    expect(searchFiltersFromRoute({ query: { owned: "unowned" } }).ownedFilter).toBe("all");
+    expect(searchFiltersFromRoute({ query: { owned: "owned" } }).ownedFilter).toBe("owned");
     expect(searchRouteQuery({ ownedFilter: "owned", searchQuery: "x" })).toEqual({ q: "x" });
     expect(searchRouteQuery({ ownedFilter: "all", searchQuery: "x" })).toEqual({
       q: "x",

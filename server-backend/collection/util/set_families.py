@@ -6,7 +6,7 @@ import sqlite3
 
 from lib.db import table_exists
 from lib.config import normalize_set_code
-from util.set_catalog import ensure_sets_columns, ensure_sets_table
+from util.set_catalog import ensure_sets_table
 
 CHILD_TYPE_PRIORITY = {
     "commander": 0,
@@ -21,7 +21,7 @@ CHILD_TYPE_PRIORITY = {
 def load_set_relations(conn: sqlite3.Connection) -> dict[str, dict]:
     """Return {SET_CODE: {set_type, parent_set_code}} for all catalog rows."""
     ensure_sets_table(conn)
-    ensure_sets_columns(conn)
+    ensure_sets_table(conn)
     rows = conn.execute(
         """
         SELECT set_code, set_type, parent_set_code

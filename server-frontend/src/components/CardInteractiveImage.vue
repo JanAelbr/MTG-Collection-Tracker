@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref } from "vue";
 import {
   effectiveDeckOwnedQty,
   isEffectivelyOwned,
@@ -8,6 +8,7 @@ import {
 } from "../composables/cardContextMenu";
 import CardContextMenu from "./CardContextMenu.vue";
 import CardCopyControls from "./CardCopyControls.vue";
+import CardPreviewDialog from "./CardPreviewDialog.vue";
 
 const props = defineProps({
   src: { type: String, default: "" },
@@ -176,28 +177,8 @@ function closeImageZoom() {
   imageZoomOpen.value = false;
 }
 
-function onImageZoomKeydown(event) {
-  if (event.key === "Escape") {
-    closeImageZoom();
-  }
-}
-
-watch(imageZoomOpen, (open) => {
-  if (open) {
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onImageZoomKeydown);
-    return;
-  }
-  document.body.style.overflow = "";
-  window.removeEventListener("keydown", onImageZoomKeydown);
-});
-
 onUnmounted(() => {
   clearLeaveTimer();
-  window.removeEventListener("keydown", onImageZoomKeydown);
-  if (imageZoomOpen.value) {
-    document.body.style.overflow = "";
-  }
 });
 </script>
 
@@ -270,30 +251,16 @@ onUnmounted(() => {
       />
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="imageZoomOpen && zoomImageSrc"
-        class="card-image-zoom-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Card image preview"
-        @click.self="closeImageZoom"
-      >
-        <button
-          type="button"
-          class="card-image-zoom-close"
-          aria-label="Close image preview"
-          @click="closeImageZoom"
-        >
-          ×
-        </button>
-        <img
-          :src="zoomImageSrc"
-          :alt="alt || card?.name || 'Card'"
-          class="card-image-zoom-image"
-        >
-      </div>
-    </Teleport>
+    <CardPreviewDialog
+      v-if="imageZoomOpen && zoomImageSrc"
+      :image-uri="zoomImageSrc"
+      :alt="alt || card?.name || 'Card'"
+      :set-code="card?.setCode"
+      :collector-number="card?.collectorNumber"
+      :finish="card?.finish ?? card?.foil"
+      :seed="card"
+      @close="closeImageZoom"
+    />
 
     <CardContextMenu
       v-if="contextMenu.open"

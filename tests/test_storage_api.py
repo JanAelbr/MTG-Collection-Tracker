@@ -14,6 +14,7 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 from api.services import settings_service, storage_service  # noqa: E402
 from util.app_tables import ensure_app_tables  # noqa: E402
 from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.storage_tables import ensure_storage_tables  # noqa: E402
 
 
@@ -38,6 +39,7 @@ class StorageApiServiceTests(unittest.TestCase):
             )
             """
         )
+        ensure_card_columns(self.conn)
         ensure_app_tables(self.conn)
         self.conn.executescript(CARD_PRICES_TABLE_SQL)
         self.conn.commit()

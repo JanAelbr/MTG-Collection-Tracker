@@ -13,10 +13,16 @@ router = APIRouter(prefix="/prices", tags=["prices"])
 def trigger_price_sync(
     conn: sqlite3.Connection = Depends(get_db),
     setCode: str | None = Query(default=None),
+    collectorNumber: str | None = Query(default=None),
     force: bool = Query(default=False),
 ):
     try:
-        return price_sync_service.start_price_sync(conn, set_code=setCode, force=force)
+        return price_sync_service.start_price_sync(
+            conn,
+            set_code=setCode,
+            collector_number=collectorNumber,
+            force=force,
+        )
     except PriceSyncError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

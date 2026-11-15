@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { api } from "../api";
 import { profileColor } from "../utils/profileColors";
-import { migrateLegacyProfileStorage, removeProfileStorage } from "../utils/profileStorage";
+import { removeProfileStorage } from "../utils/profileStorage";
 import {
   forgetProfileId,
   getActiveProfileId,
@@ -76,9 +76,6 @@ export async function initActiveProfile() {
   const needsPicker = profiles.value.length > 1 && !(remembered && known.has(remembered));
   if (chosen) {
     remember(chosen.id, { persist: !needsPicker });
-    if (!needsPicker) {
-      migrateLegacyProfileStorage(chosen.id);
-    }
   }
   profilesReady.value = true;
   return { needsPicker, profile: chosen };
@@ -111,7 +108,6 @@ export async function switchProfile(profileId, { href } = {}) {
     return;
   }
   remember(profile.id);
-  migrateLegacyProfileStorage(profile.id);
   switchingTo.value = profile;
   try {
     await api.activateProfile(profile.id);

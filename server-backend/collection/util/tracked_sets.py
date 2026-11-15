@@ -67,24 +67,3 @@ def remove_tracked_set(conn: sqlite3.Connection, set_code: str) -> bool:
         (normalized,),
     )
     return cursor.rowcount > 0
-
-
-def migrate_tracked_set_alias(
-    conn: sqlite3.Connection,
-    alias: str,
-    canonical: str,
-) -> None:
-    if not table_exists(conn, "tracked_sets"):
-        return
-    conn.execute(
-        """
-        UPDATE tracked_sets
-        SET set_code = ?
-        WHERE set_code = ?
-          AND NOT EXISTS (
-            SELECT 1 FROM tracked_sets existing WHERE existing.set_code = ?
-          )
-        """,
-        (canonical, alias, canonical),
-    )
-    conn.execute("DELETE FROM tracked_sets WHERE set_code = ?", (alias,))

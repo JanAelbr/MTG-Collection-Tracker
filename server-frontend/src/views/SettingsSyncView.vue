@@ -10,6 +10,7 @@ import {
   recordCompletedPriceSync,
   showStoredPriceSyncMovers,
 } from "../composables/startupPriceSync";
+import { homeChangesRoute } from "../utils/homeRoutes";
 
 const router = useRouter();
 const meta = ref(null);
@@ -85,7 +86,7 @@ function startPolling() {
 
 function openLastMovers() {
   showStoredPriceSyncMovers(syncStatus.value);
-  router.push({ name: "home-changes" });
+  router.push(homeChangesRoute());
 }
 
 async function triggerPriceSync(force = false) {
@@ -155,7 +156,7 @@ onUnmounted(stopPolling);
       <div class="home-sync-panel">
         <div class="home-sync-copy">
           <strong>Price sync</strong>
-          <p>Fetch Cardmarket prices for favourite sets (including unowned prints) and every owned card. Use the catalog price button on a set that is not in that list to update it on demand. Force sync re-downloads the Cardmarket guide and overwrites today's snapshot even if a sync already ran.</p>
+          <p>Downloads the Cardmarket price guide, then updates favourite sets (every print) and cards you own. Other cards are left as they are. Use the catalog price button to update every card in one set, or open a card to sync that print. Force sync also overwrites today's snapshot.</p>
           <p v-if="syncMessage" class="home-sync-message" :class="{ error: syncStatus?.status === 'failed' }">
             {{ syncMessage }}
           </p>

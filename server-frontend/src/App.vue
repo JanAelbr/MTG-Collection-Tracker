@@ -20,7 +20,7 @@ const bare = computed(() => route.meta.bare === true);
   <RouterView v-if="bare" />
   <AppLayout v-else>
     <RouterView v-slot="{ Component }">
-      <KeepAlive :include="['DecksView']" :max="3">
+      <KeepAlive :include="['DecksView', 'FavoritesHomeView']" :max="3">
         <component :is="Component" />
       </KeepAlive>
     </RouterView>

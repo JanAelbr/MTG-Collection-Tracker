@@ -71,8 +71,6 @@ def ensure_storage_tables(conn: sqlite3.Connection) -> None:
             ON card_instances(location_slug);
         """
     )
-    _ensure_card_instances_finish_column(conn)
-    _ensure_storage_location_columns(conn)
     _ensure_breakdown_snapshot_table(conn)
 
 
@@ -87,47 +85,6 @@ def _ensure_breakdown_snapshot_table(conn: sqlite3.Connection) -> None:
             price_strategy TEXT,
             payload_json TEXT NOT NULL
         )
-        """
-    )
-
-
-def _ensure_storage_location_columns(conn: sqlite3.Connection) -> None:
-    columns = conn.execute("PRAGMA table_info(storage_locations)").fetchall()
-    names = {row[1] for row in columns}
-    if "is_system" not in names:
-        conn.execute(
-            "ALTER TABLE storage_locations ADD COLUMN is_system INTEGER NOT NULL DEFAULT 1 CHECK (is_system IN (0, 1))"
-        )
-
-
-def _ensure_card_instances_finish_column(conn: sqlite3.Connection) -> None:
-    columns = conn.execute("PRAGMA table_info(card_instances)").fetchall()
-    names = {row[1] for row in columns}
-    if "finish" in names or "foil" not in names:
-        return
-    conn.executescript(
-        """
-        CREATE TABLE card_instances_new (
-            instance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            set_code TEXT NOT NULL,
-            collector_number TEXT NOT NULL,
-            finish INTEGER NOT NULL CHECK (finish IN (0, 1, 2)),
-            location_slug TEXT NOT NULL
-                REFERENCES storage_locations(location_slug),
-            purchase_value REAL
-        );
-        INSERT INTO card_instances_new (
-            instance_id, set_code, collector_number, finish, location_slug, purchase_value
-        )
-        SELECT
-            instance_id, set_code, collector_number, foil, location_slug, purchase_value
-        FROM card_instances;
-        DROP TABLE card_instances;
-        ALTER TABLE card_instances_new RENAME TO card_instances;
-        CREATE INDEX IF NOT EXISTS idx_card_instances_print
-            ON card_instances(set_code, collector_number, finish);
-        CREATE INDEX IF NOT EXISTS idx_card_instances_location
-            ON card_instances(location_slug);
         """
     )
 

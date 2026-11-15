@@ -1,5 +1,11 @@
+import { compareCollectorNumbers } from "../composables/useManagerSetTable";
 import { cardFavoriteKeyFromCard, favoriteCardKey } from "./favorites";
 import { isSetBrowserHiddenSubsetType } from "./setBrowserSubsets";
+
+export function compareCardsByCollectorNumber(left, right) {
+  return compareCollectorNumbers(left?.collectorNumber, right?.collectorNumber)
+    || (Number(left?.finish) || 0) - (Number(right?.finish) || 0);
+}
 
 export function artStyleMoverKey(row) {
   const setCode = String(row?.setCode || "").trim().toUpperCase();
@@ -206,6 +212,37 @@ export function favoriteSetDayRows(sets, cards, { catalogSets = [], includeHidde
   }).filter((row) => row.setCode);
 }
 
+export function favoriteSetsDayTotal(setRows, cards) {
+  const members = new Set();
+  for (const row of setRows || []) {
+    const codes = row.memberCodes?.length ? row.memberCodes : [row.setCode];
+    for (const code of codes) {
+      const normalized = String(code || "").trim().toUpperCase();
+      if (normalized) {
+        members.add(normalized);
+      }
+    }
+  }
+  const seen = new Set();
+  const matched = [];
+  for (const card of cards || []) {
+    if (!isCardMoverRow(card)) {
+      continue;
+    }
+    const code = String(card.setCode || "").trim().toUpperCase();
+    if (!members.has(code)) {
+      continue;
+    }
+    const key = `${code}|${card.collectorNumber}|${card.finish ?? card.finishId ?? ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    matched.push(card);
+  }
+  return signedDayChange(matched);
+}
+
 export function favoriteArtStyleDayRows(styles, cards) {
   return (styles || []).map((style) => {
     const matched = cardsForArtStyle(cards, style);
@@ -241,7 +278,10 @@ export function favoriteCardDayRows(cards, syncCards) {
     const change = signedDayChange(matched ? [matched] : []);
     const setCode = String(card?.setCode || "").trim().toUpperCase();
     const collectorNumber = String(card?.collectorNumber || "").trim();
+    const ownPrice = Number(card?.currentValue ?? card?.current_value);
+    const standing = Number.isFinite(ownPrice) ? ownPrice : change.current;
     return {
+      ...card,
       id: key || `${setCode}|${collectorNumber}`,
       kind: "card",
       setCode,
@@ -251,11 +291,41 @@ export function favoriteCardDayRows(cards, syncCards) {
       label: card?.name || card?.cardName || matched?.label || `${setCode} #${collectorNumber}`,
       imageUri: card?.imageUri || matched?.imageUri || "",
       ...change,
+      current: matched ? change.current : standing,
     };
   }).filter((row) => row.setCode && row.collectorNumber);
 }
 
-export function rankMoverRows(rows, { scale = "absolute", limit = 25 } = {}) {
+function takeRankedRows(rows, { limit, minChange }) {
+  const cap = Math.max(0, limit);
+  if (!(minChange > 0)) {
+    return rows.slice(0, cap);
+  }
+  const above = rows.filter((row) => Math.abs(Number(row.delta)) > minChange);
+  if (above.length >= cap) {
+    return above;
+  }
+  return rows.slice(0, cap);
+}
+
+export function priceChangeStrength(delta) {
+  const amount = Math.abs(Number(delta) || 0);
+  if (amount <= 0) {
+    return 0;
+  }
+  const scaled = Math.log10(amount + 1) / Math.log10(26);
+  return Math.min(1, Math.max(0.16, scaled));
+}
+
+export function priceChangeStyle(delta) {
+  const strength = priceChangeStrength(delta);
+  if (!strength) {
+    return undefined;
+  }
+  return { "--change-strength": strength.toFixed(2) };
+}
+
+export function rankMoverRows(rows, { scale = "absolute", limit = 25, minChange = 0 } = {}) {
   const risers = (rows || []).filter((row) => Number(row.delta) > 0);
   const fallers = (rows || []).filter((row) => Number(row.delta) < 0);
   const compare = scale === "relative"
@@ -269,8 +339,9 @@ export function rankMoverRows(rows, { scale = "absolute", limit = 25 } = {}) {
     );
   risers.sort(compare);
   fallers.sort(compare);
+  const options = { limit, minChange };
   return {
-    risers: risers.slice(0, Math.max(0, limit)),
-    fallers: fallers.slice(0, Math.max(0, limit)),
+    risers: takeRankedRows(risers, options),
+    fallers: takeRankedRows(fallers, options),
   };
 }

@@ -135,7 +135,7 @@ class PriceSyncContextTests(unittest.TestCase):
         self.assertEqual(cleared, 3)
         self.assertEqual(rows, [("1", 1.0, None), ("2", None, None)])
 
-    def test_load_price_sync_context_marks_small_owned_sets_as_qualifying(self):
+    def test_load_price_sync_context_does_not_qualify_a_set_from_ownership_alone(self):
         self.conn.executemany(
             "INSERT INTO cards (set_code, collector_number) VALUES (?, ?)",
             [("LTR", str(number)) for number in range(1, 41)],
@@ -146,7 +146,9 @@ class PriceSyncContextTests(unittest.TestCase):
         )
         self.conn.commit()
         context = load_price_sync_context(self.conn, {"LTR"})
-        self.assertIn("LTR", context.qualifying_sets)
+        self.assertNotIn("LTR", context.qualifying_sets)
+        self.assertTrue(should_sync_finish("LTR", "1", 0, context))
+        self.assertFalse(should_sync_finish("LTR", "40", 0, context))
 
     def test_load_price_sync_context_honours_extra_qualifying_sets(self):
         self.conn.executemany(
@@ -163,6 +165,17 @@ class PriceSyncContextTests(unittest.TestCase):
         )
         self.assertIn("LTR", with_extra.qualifying_sets)
         self.assertTrue(should_sync_finish("LTR", "40", 0, with_extra))
+
+    def test_explicit_card_syncs_every_finish(self):
+        context = load_price_sync_context(
+            self.conn,
+            {"LTR"},
+            explicit_cards={("ltr", "40")},
+        )
+        self.assertEqual(context.explicit_cards, frozenset({("LTR", "40")}))
+        self.assertTrue(should_sync_finish("LTR", "40", 0, context))
+        self.assertTrue(should_sync_finish("LTR", "40", 1, context))
+        self.assertFalse(should_sync_finish("LTR", "1", 0, context))
 
     def test_load_price_sync_context_includes_deck_owned_finishes(self):
         self.conn.executescript(

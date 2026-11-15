@@ -5,9 +5,10 @@ import pickle
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 from lib.db import table_exists
 from lib.config import DATA_DIR, HTTP_USER_AGENT
@@ -26,7 +27,6 @@ from util.card_finishes import (
     guide_uses_foil_keys,
     normalize_finish,
 )
-from util.db_migrate import ensure_card_columns
 from util.http_client import http_get
 from util.last_price_sync import empty_price_sync_movers
 
@@ -44,7 +44,8 @@ def invalidate_price_guide_memory_cache() -> None:
 PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_1.json"
 PRICE_GUIDE_CACHE = DATA_DIR / "cardmarket_price_guide.json"
 PRICE_GUIDE_INDEX_CACHE = DATA_DIR / "cardmarket_price_guide.pkl"
-PRICE_GUIDE_MAX_AGE = timedelta(hours=24)
+# Cardmarket's daily guide expires at Central European midnight (CET, CEST in summer).
+PRICE_GUIDE_TZ = ZoneInfo("Europe/Berlin")
 _PRODUCT_ID_PATTERN = re.compile(r"idProduct=(\d+)", re.IGNORECASE)
 REQUEST_HEADERS = {
     "User-Agent": HTTP_USER_AGENT,
@@ -181,6 +182,7 @@ class PriceSyncContext:
     qualifying_sets: frozenset[str]
     set_owned_counts: dict[str, int]
     set_catalog_sizes: dict[str, int]
+    explicit_cards: frozenset[tuple[str, str]] = frozenset()
 
 
 # Return the minimum owned-card count required before unowned prices are synced.
@@ -193,14 +195,27 @@ def unowned_price_threshold(set_size: int) -> int:
     )
 
 
-# Load ownership stats and the sets that qualify for unowned price sync.
+def explicit_card_keys(
+    explicit_cards: set[tuple[str, str]] | None,
+) -> frozenset[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for set_code, number in explicit_cards or ():
+        code = str(set_code or "").strip().upper()
+        collector = str(number or "").strip()
+        if code and collector:
+            keys.add((code, collector))
+    return frozenset(keys)
+
+
+# Load ownership stats. Full-set pricing is only for favourite or requested sets.
 def load_price_sync_context(
     conn: sqlite3.Connection,
     set_codes: set[str] | None = None,
     extra_qualifying_sets: set[str] | None = None,
+    explicit_cards: set[tuple[str, str]] | None = None,
 ) -> PriceSyncContext:
+    del set_codes
     owned_finishes = _load_owned_finishes(conn)
-
     catalog_rows = conn.execute(
         """
         SELECT set_code, COUNT(*) AS catalog_size
@@ -212,27 +227,17 @@ def load_price_sync_context(
         set_code.upper(): int(catalog_size)
         for set_code, catalog_size in catalog_rows
     }
-
-    set_owned_counts = _load_set_owned_counts(conn)
-
-    candidate_sets = set_codes or set(set_catalog_sizes)
-    qualifying_sets: set[str] = set()
-    for set_code in candidate_sets:
-        code = set_code.upper()
-        catalog_size = set_catalog_sizes.get(code, 0)
-        owned_count = set_owned_counts.get(code, 0)
-        if owned_count >= unowned_price_threshold(catalog_size):
-            qualifying_sets.add(code)
-    for set_code in extra_qualifying_sets or ():
-        code = str(set_code or "").strip().upper()
-        if code:
-            qualifying_sets.add(code)
-
+    qualifying_sets = {
+        str(set_code or "").strip().upper()
+        for set_code in (extra_qualifying_sets or ())
+        if str(set_code or "").strip()
+    }
     return PriceSyncContext(
         owned_finishes=owned_finishes,
         qualifying_sets=frozenset(qualifying_sets),
-        set_owned_counts=set_owned_counts,
+        set_owned_counts=_load_set_owned_counts(conn),
         set_catalog_sizes=set_catalog_sizes,
+        explicit_cards=explicit_card_keys(explicit_cards),
     )
 
 
@@ -243,11 +248,14 @@ def should_sync_finish(
     finish: int,
     context: PriceSyncContext,
 ) -> bool:
+    card_key = (set_code.upper(), str(collector_number))
+    if card_key in context.explicit_cards:
+        return True
     finish_id = normalize_finish(finish)
-    finish_key = (set_code.upper(), str(collector_number), finish_id)
+    finish_key = (card_key[0], card_key[1], finish_id)
     if finish_key in context.owned_finishes:
         return True
-    return set_code.upper() in context.qualifying_sets
+    return card_key[0] in context.qualifying_sets
 
 
 # Clear stored prices for unowned finishes in sets below the unowned threshold.
@@ -380,14 +388,26 @@ def _price_from_guide_keys(entry: dict, *, use_foil_keys: bool) -> float | None:
     return float(value)
 
 
-# Download the Cardmarket price guide when the cache is missing or stale.
+# Next Central European midnight after the cache file was written.
+def price_guide_expires_at(mtime: float) -> datetime:
+    cached_on = datetime.fromtimestamp(mtime, tz=PRICE_GUIDE_TZ).date()
+    return datetime.combine(cached_on + timedelta(days=1), time.min, tzinfo=PRICE_GUIDE_TZ)
+
+
+def price_guide_cache_is_fresh(mtime: float, *, now: datetime | None = None) -> bool:
+    current = now or datetime.now(PRICE_GUIDE_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=PRICE_GUIDE_TZ)
+    return current.astimezone(PRICE_GUIDE_TZ) < price_guide_expires_at(mtime)
+
+
+# Download the Cardmarket price guide when the cache is missing or past midnight CET.
 def ensure_price_guide(force: bool = False, logger: logging.Logger | None = None) -> Path:
     global _PRICE_GUIDE_CACHE_LOGGED
     request_log = logger or log
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not force and PRICE_GUIDE_CACHE.is_file():
-        age = datetime.now() - datetime.fromtimestamp(PRICE_GUIDE_CACHE.stat().st_mtime)
-        if age < PRICE_GUIDE_MAX_AGE:
+        if price_guide_cache_is_fresh(PRICE_GUIDE_CACHE.stat().st_mtime):
             if not _PRICE_GUIDE_CACHE_LOGGED:
                 request_log.info("Using cached Cardmarket price guide: %s", PRICE_GUIDE_CACHE)
                 _PRICE_GUIDE_CACHE_LOGGED = True
@@ -511,10 +531,23 @@ def clear_card_price_in_db(
 
 
 # List cards whose prices should be checked against the Cardmarket guide.
+def _append_explicit_card_filter(
+    query: str,
+    params: list[str],
+    explicit_cards: frozenset[tuple[str, str]],
+) -> str:
+    clauses = []
+    for code, number in sorted(explicit_cards):
+        clauses.append("(set_code = ? AND collector_number = ?)")
+        params.extend([code, number])
+    return query + " AND (" + " OR ".join(clauses) + ")"
+
+
 def list_cards_for_price_sync(
     set_codes: set[str] | None = None,
     qualifying_sets: set[str] | None = None,
     conn: sqlite3.Connection | None = None,
+    explicit_cards: set[tuple[str, str]] | None = None,
 ) -> list[sqlite3.Row]:
     query = """
         SELECT
@@ -536,11 +569,14 @@ def list_cards_for_price_sync(
            OR (cardmarket_url_foil IS NOT NULL AND TRIM(cardmarket_url_foil) != '')
     """
     params: list[str] = []
-    if set_codes:
+    explicit = explicit_card_keys(explicit_cards)
+    if set_codes and not explicit:
         placeholders = ",".join("?" for _ in set_codes)
         query += f" AND set_code IN ({placeholders})"
         params.extend(sorted(code.upper() for code in set_codes))
-    if qualifying_sets is not None:
+    if explicit:
+        query = _append_explicit_card_filter(query, params, explicit)
+    elif qualifying_sets is not None:
         if conn is not None:
             include_deck = _deck_cards_table_exists(conn)
         else:
@@ -791,6 +827,7 @@ def sync_prices_from_guide(
     extra_qualifying_sets: set[str] | None = None,
     force_download: bool = False,
     missing_only: bool = False,
+    explicit_cards: set[tuple[str, str]] | None = None,
     log=None,
     on_progress=None,
 ) -> dict:
@@ -806,27 +843,22 @@ def sync_prices_from_guide(
     )
     guide = load_price_guide_index(force_download=force_download, logger=out)
     report(12, f"Loaded {len(guide)} Cardmarket products")
-    from util.cardmarket_urls import backfill_cardmarket_urls, cardmarket_url_for_finish
+    from util.cardmarket_urls import cardmarket_url_for_finish
 
     with catalog_connection_with_demand() as conn:
-        ensure_card_columns(conn)
-        report(13, "Backfilling Cardmarket URLs")
-        backfilled_urls = backfill_cardmarket_urls(conn, guide)
-        if backfilled_urls:
-            out.info("Backfilled Cardmarket URLs for %s cards", backfilled_urls)
         report(14, "Loading cards to price")
         context = load_price_sync_context(
             conn,
             set_codes,
             extra_qualifying_sets=extra_qualifying_sets,
+            explicit_cards=explicit_cards,
         )
-        cleared_unowned = clear_unowned_prices_for_non_qualifying_sets(
-            conn, context, set_codes,
-        )
+        cleared_unowned = 0
         rows = list_cards_for_price_sync(
             set_codes,
             context.qualifying_sets,
             conn=conn,
+            explicit_cards=context.explicit_cards,
         )
 
         if cleared_unowned:
@@ -852,7 +884,7 @@ def sync_prices_from_guide(
                 "cards": [],
             }
 
-        mode = "missing values" if missing_only else "owned plus qualifying unowned cards"
+        mode = "missing values" if missing_only else "owned cards and full sets"
         out.info(
             "Updating Cardmarket prices for %s cards (%s; %s qualifying set(s))...",
             len(rows),

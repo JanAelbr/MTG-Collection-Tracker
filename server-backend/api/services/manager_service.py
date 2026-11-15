@@ -40,7 +40,6 @@ from util.card_finishes import (
     has_finish_flag,
     normalize_finish,
 )
-from util.db_migrate import ensure_card_columns
 from util.app_tables import ensure_app_tables
 from util.deck_tables import list_deck_sync_set_codes
 from util.profile_demand import other_profiles_demand
@@ -717,7 +716,6 @@ def _load_card_pricing_row(
     set_code: str,
     collector_number: str,
 ):
-    ensure_card_columns(conn)
     return conn.execute(
         """
         SELECT

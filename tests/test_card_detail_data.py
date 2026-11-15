@@ -14,6 +14,7 @@ from report.card_detail_data import (  # noqa: E402
     load_card_detail_assets,
 )
 from util.card_prices import CARD_PRICES_TABLE_SQL  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.set_catalog import SETS_TABLE_SQL  # noqa: E402
 
 
@@ -49,6 +50,7 @@ class CardDetailDataTests(unittest.TestCase):
         )
         self.conn.executescript(SETS_TABLE_SQL)
         self.conn.executescript(CARD_PRICES_TABLE_SQL)
+        ensure_card_columns(self.conn)
         self.conn.execute(
             """
             INSERT INTO cards (

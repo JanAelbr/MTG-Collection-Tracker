@@ -7,8 +7,10 @@ import {
   firstPriceSyncCards,
   favoriteArtStyleDayRows,
   favoriteSetDayRows,
+  favoriteSetsDayTotal,
   favoriteCardDayRows,
   moverRowToTileCard,
+  priceChangeStrength,
   rankMoverRows,
   signedDayChange,
 } from "./priceSyncMovers";
@@ -195,6 +197,26 @@ describe("favoriteSetDayRows", () => {
   });
 });
 
+describe("favoriteSetsDayTotal", () => {
+  it("sums each owned card once when favourite sets share a family", () => {
+    const total = favoriteSetsDayTotal(
+      [
+        { setCode: "LTR", memberCodes: ["LTR", "LTC"] },
+        { setCode: "LTC", memberCodes: ["LTR", "LTC"] },
+      ],
+      [
+        { setCode: "LTR", collectorNumber: "1", finish: 0, previous: 1, current: 3, delta: 2 },
+        { setCode: "LTC", collectorNumber: "2", finish: 0, previous: 5, current: 4, delta: -1 },
+        { setCode: "LTR", collectorNumber: "1", finish: 0, previous: 1, current: 3, delta: 2 },
+        { setCode: "MOM", collectorNumber: "3", finish: 0, previous: 2, current: 9, delta: 7 },
+      ],
+    );
+    expect(total.up).toBe(2);
+    expect(total.down).toBe(-1);
+    expect(total.delta).toBe(1);
+  });
+});
+
 describe("favoriteArtStyleDayRows", () => {
   it("builds a +/− tile per favourite art style", () => {
     const rows = favoriteArtStyleDayRows(
@@ -214,7 +236,13 @@ describe("favoriteArtStyleDayRows", () => {
 describe("favoriteCardDayRows", () => {
   it("matches last-sync owned diffs onto favourite cards", () => {
     const rows = favoriteCardDayRows(
-      [{ setCode: "LTR", collectorNumber: "1", finish: 0, name: "Gandalf" }],
+      [{
+        setCode: "LTR",
+        collectorNumber: "1",
+        finish: 0,
+        name: "Gandalf",
+        cardmarketUrl: "https://www.cardmarket.com/en/Magic/Products?idProduct=1",
+      }],
       [{
         setCode: "LTR",
         collectorNumber: "1",
@@ -228,11 +256,62 @@ describe("favoriteCardDayRows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].up).toBe(7);
     expect(rows[0].down).toBe(0);
+    expect(rows[0].current).toBe(18);
     expect(rows[0].imageUri).toBe("https://example.com/g.jpg");
+    expect(rows[0].cardmarketUrl).toBe("https://www.cardmarket.com/en/Magic/Products?idProduct=1");
+  });
+
+  it("keeps the collection price when a favourite card did not move", () => {
+    const rows = favoriteCardDayRows(
+      [{ setCode: "LTR", collectorNumber: "2", finish: 0, name: "Sam", currentValue: 4.5 }],
+      [],
+    );
+    expect(rows[0].current).toBe(4.5);
+    expect(rows[0].delta).toBe(0);
+  });
+});
+
+describe("priceChangeStrength", () => {
+  it("grows with the size of the move and caps at one", () => {
+    expect(priceChangeStrength(0)).toBe(0);
+    expect(priceChangeStrength(1)).toBeGreaterThan(priceChangeStrength(0.2));
+    expect(priceChangeStrength(20)).toBeGreaterThan(priceChangeStrength(1));
+    expect(priceChangeStrength(-40)).toBe(1);
+    expect(priceChangeStrength(2)).toBe(priceChangeStrength(-2));
   });
 });
 
 describe("rankMoverRows", () => {
+  it("keeps every move over one euro, or the top 25 when fewer qualify", () => {
+    const many = [
+      ...Array.from({ length: 30 }, (_, index) => ({ delta: 31 - index, percent: 1 })),
+      ...Array.from({ length: 28 }, (_, index) => ({ delta: -(31 - index), percent: -1 })),
+    ];
+    const ranked = rankMoverRows(many, { limit: 25, minChange: 1 });
+    expect(ranked.risers.map((row) => row.delta)).toEqual(
+      Array.from({ length: 30 }, (_, index) => 31 - index),
+    );
+    expect(ranked.fallers.map((row) => row.delta)).toEqual(
+      Array.from({ length: 28 }, (_, index) => -(31 - index)),
+    );
+
+    const few = [
+      { delta: 4, percent: 1 },
+      { delta: 1, percent: 1 },
+      ...Array.from({ length: 30 }, () => ({ delta: 0.4, percent: 1 })),
+      { delta: -3, percent: -1 },
+      { delta: -1, percent: -1 },
+      ...Array.from({ length: 30 }, () => ({ delta: -0.2, percent: -1 })),
+    ];
+    const padded = rankMoverRows(few, { limit: 25, minChange: 1 });
+    expect(padded.risers).toHaveLength(25);
+    expect(padded.risers[0].delta).toBe(4);
+    expect(padded.risers[1].delta).toBe(1);
+    expect(padded.fallers).toHaveLength(25);
+    expect(padded.fallers[0].delta).toBe(-3);
+    expect(padded.fallers[1].delta).toBe(-1);
+  });
+
   it("ranks relative movers by percent", () => {
     const ranked = rankMoverRows([
       { delta: 10, percent: 5 },

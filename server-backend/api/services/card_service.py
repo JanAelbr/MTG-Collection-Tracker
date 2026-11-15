@@ -25,7 +25,6 @@ from util.card_finishes import (
     finish_has_pricing,
 )
 from util.card_metadata import card_image_fields, card_metadata_api
-from util.db_migrate import ensure_card_columns
 from util.set_catalog import load_sets_catalog
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql, is_alchemy_collector_number
 
@@ -71,7 +70,6 @@ def load_card_detail(
     normalized_number = str(collector_number).strip()
     if is_alchemy_collector_number(normalized_number):
         raise CardError("Card not found")
-    ensure_card_columns(conn)
     row = conn.execute(CARD_QUERY, (normalized_set, normalized_number)).fetchone()
     if row is None:
         raise CardError("Card not found")

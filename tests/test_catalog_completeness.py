@@ -10,17 +10,12 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from util.db_migrate import (  # noqa: E402
-    backfill_basic_land_flags,
-    ensure_card_columns,
-    mark_complete_catalog_sets,
-)
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.price_sync import (  # noqa: E402
     count_cards_missing_power_metadata,
-    set_catalog_is_complete,
     sync_set_catalog,
 )
-from util.set_catalog import ensure_sets_columns, ensure_sets_table  # noqa: E402
+from util.set_catalog import ensure_sets_table  # noqa: E402
 
 
 class CatalogCompletenessTests(unittest.TestCase):
@@ -58,7 +53,7 @@ class CatalogCompletenessTests(unittest.TestCase):
             """
         )
         ensure_sets_table(self.conn)
-        ensure_sets_columns(self.conn)
+        ensure_sets_table(self.conn)
         ensure_card_columns(self.conn)
         self.cursor = self.conn.cursor()
 
@@ -81,26 +76,6 @@ class CatalogCompletenessTests(unittest.TestCase):
         )
         self.conn.commit()
         self.assertEqual(count_cards_missing_power_metadata(self.cursor, "40K"), 0)
-
-    def test_mark_complete_catalog_sets_stamps_synced_sets(self):
-        self.cursor.executemany(
-            """
-            INSERT INTO cards (
-                id, set_code, collector_number, name, type_line, card_type,
-                mana_cost, cmc, is_basic_land
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                ("40K-312", "40K", "312", "Plains", "Basic Land — Plains", "land", None, 0, 1),
-                ("40K-249", "40K", "249", "Sol Ring", "Artifact", "artifact", "{1}", 1, 0),
-            ],
-        )
-        self.conn.commit()
-        backfill_basic_land_flags(self.conn)
-        marked = mark_complete_catalog_sets(self.conn)
-        self.conn.commit()
-        self.assertEqual(marked, 1)
-        self.assertTrue(set_catalog_is_complete(self.cursor, "40K"))
 
     def test_sync_set_catalog_skips_complete_local_catalog(self):
         self.cursor.executemany(

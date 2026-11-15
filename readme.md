@@ -314,16 +314,16 @@ Covers tracked sets, deck helpers, Cardmarket backfill, price history, art style
 
 ## Cardmarket prices
 
-Daily price updates use the **Cardmarket price guide** (one JSON download per run, cached for 24 hours) as the sole EUR source. The parsed guide is also cached as `data/cardmarket_price_guide.pkl` for faster reloads. Scryfall is queried at most once per set, when that set is first added to the local catalog or when metadata is missing.
+Daily price updates use the **Cardmarket price guide** (one JSON download per run, cached until midnight CET) as the sole EUR source. The parsed guide is also cached as `data/cardmarket_price_guide.pkl` for faster reloads. Scryfall is queried at most once per set, when that set is first added to the local catalog or when metadata is missing.
 
 | Step | Source | When |
 |------|--------|------|
 | Catalog sync | Scryfall | Once per tracked set, when first loaded from Settings → Sets or the set browser |
 | Metadata backfill | Scryfall | When `colors`, `type_line`, or `card_type` are missing for cards in a tracked set |
 | Set metadata | Scryfall | Once per set, when the set row is not yet in `catalog.db` |
-| Price sync | Cardmarket price guide | Every run: owned cards; unowned only in qualifying sets |
+| Price sync | Cardmarket price guide | Every regular run downloads the guide, then updates owned cards and every card in favourite sets |
 
-Unowned prices in other sets are cleared and no longer updated.
+Other cards are left unchanged until you sync that set or that card.
 
 The **Settings → Sync** button in the web app runs **Cardmarket only** (no Scryfall, set metadata, or history restore). Bulk card updates use temp-table SQL for speed (typically 1–2 seconds for a full collection after the guide is cached).
 

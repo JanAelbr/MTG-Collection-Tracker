@@ -10,27 +10,14 @@ from util.app_tables import ensure_app_tables
 from util.card_prices import ensure_card_prices_table
 from util.catalog_meta import ensure_catalog_meta_table
 from util.db_migrate import (
-    backfill_basic_land_flags,
-    backfill_card_types,
-    consolidate_set_code_aliases,
-    ensure_card_columns,
-    ensure_card_detail_metadata,
     ensure_card_indexes,
     ensure_cards_fts,
     ensure_purchase_unique_index,
-    ensure_set_code_aliases,
-    mark_complete_catalog_sets,
 )
 from util.deck_tables import ensure_deck_tables
-from util.set_catalog import (
-    backfill_missing_set_icon_uris,
-    backfill_missing_set_relations,
-    ensure_sets_columns,
-    ensure_sets_table,
-)
+from util.set_catalog import ensure_sets_table
 from util.set_family_sync import ensure_tracked_family_children
-from util.alchemy_cards import prune_alchemy_cards
-from util.card_name_roles import backfill_card_name_roles, ensure_card_name_roles_table
+from util.card_name_roles import ensure_card_name_roles_table
 from util.tracked_sets import ensure_tracked_sets_ready
 
 log = get_logger(__name__)
@@ -49,11 +36,23 @@ CREATE TABLE IF NOT EXISTS cards (
     has_foil INTEGER,
     has_etched INTEGER,
     image_uri TEXT,
+    image_uri_back TEXT,
     cardmarket_url TEXT,
     cardmarket_url_foil TEXT,
+    scryfall_cardmarket_url TEXT,
     colors TEXT,
     type_line TEXT,
-    card_type TEXT
+    card_type TEXT,
+    color_identity TEXT,
+    oracle_text TEXT,
+    mana_cost TEXT,
+    cmc REAL,
+    legalities TEXT,
+    is_basic_land INTEGER,
+    scryfall_id TEXT,
+    power TEXT,
+    toughness TEXT,
+    rarity TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sets (
@@ -62,7 +61,11 @@ CREATE TABLE IF NOT EXISTS sets (
     released_at TEXT,
     scryfall_uri TEXT,
     icon_svg_uri TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    catalog_synced_at TEXT,
+    set_type TEXT,
+    parent_set_code TEXT,
+    digital INTEGER
 );
 """
 
@@ -112,16 +115,8 @@ def _database_path(conn: sqlite3.Connection) -> str:
 
 
 def _enrich_sets_from_scryfall(conn: sqlite3.Connection) -> None:
-    """Best-effort Scryfall metadata sync; never blocks local schema bootstrap."""
+    """Load missing family child sets. Never blocks local schema bootstrap."""
     headers = {"User-Agent": HTTP_USER_AGENT}
-    try:
-        backfill_missing_set_icon_uris(conn, headers)
-    except Exception:
-        log.warning("Set icon backfill skipped", exc_info=True)
-    try:
-        backfill_missing_set_relations(conn, headers)
-    except Exception:
-        log.warning("Set relation backfill skipped", exc_info=True)
     try:
         family_sync = ensure_tracked_family_children(conn, headers)
     except Exception:
@@ -138,25 +133,14 @@ def _enrich_sets_from_scryfall(conn: sqlite3.Connection) -> None:
 def _run_catalog_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(CATALOG_CORE_TABLES_SQL)
     ensure_sets_table(conn)
-    ensure_sets_columns(conn)
     ensure_tracked_sets_ready(conn)
     _enrich_sets_from_scryfall(conn)
     ensure_card_prices_table(conn)
-    ensure_card_columns(conn)
-    prune_alchemy_cards(conn)
-    backfill_card_types(conn)
-    backfill_basic_land_flags(conn)
-    mark_complete_catalog_sets(conn)
     ensure_card_indexes(conn)
     ensure_cards_fts(conn)
-    ensure_set_code_aliases(conn)
     ensure_catalog_meta_table(conn)
-    ensure_card_detail_metadata(conn)
     ensure_art_style_rules_table(conn)
     ensure_card_name_roles_table(conn)
-    roles_upserted = backfill_card_name_roles(conn)
-    if roles_upserted:
-        log.info("Card name roles backfill upserted %s name(s)", roles_upserted)
 
 
 def _run_profile_migrations(conn: sqlite3.Connection) -> None:
@@ -164,7 +148,6 @@ def _run_profile_migrations(conn: sqlite3.Connection) -> None:
     ensure_deck_tables(conn)
     ensure_purchase_unique_index(conn)
     ensure_app_tables(conn)
-    consolidate_set_code_aliases(conn)
     conn.execute(f"PRAGMA main.user_version = {PROFILE_SCHEMA_VERSION}")
     conn.commit()
 
@@ -190,11 +173,7 @@ def _ensure_once(conn: sqlite3.Connection, done: set[str], label: str, migrate) 
 
 
 def ensure_catalog_schema(conn: sqlite3.Connection) -> None:
-    """Migrate the shared catalog. ``conn`` must have catalog.db as ``main``.
-
-    Catalog migrations that read ownership (top-set reload) see every profile
-    through the TEMP demand tables installed by the caller.
-    """
+    """Create the shared catalog. ``conn`` must have catalog.db as ``main``."""
     _ensure_once(conn, _initialized_db_paths, "catalog", _run_catalog_migrations)
 
 

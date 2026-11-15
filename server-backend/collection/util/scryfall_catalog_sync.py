@@ -5,7 +5,6 @@ import sqlite3
 
 from lib.config import HTTP_USER_AGENT
 from lib.config import normalize_set_code
-from util.db_migrate import ensure_card_columns
 from util.price_sync import set_catalog_is_complete, sync_set_catalog
 from util.set_catalog import ensure_sets_table, sync_set_metadata
 
@@ -30,7 +29,6 @@ def import_set_catalog_from_scryfall(
         raise ValueError("Set code is required")
 
     ensure_sets_table(conn)
-    ensure_card_columns(conn)
 
     cursor = conn.cursor()
     today = date.today().isoformat()

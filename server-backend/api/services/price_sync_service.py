@@ -210,7 +210,23 @@ def scope_price_moves_to_profile(
     }, scoped_cards
 
 
-def _run_price_sync(set_codes: set[str], extra_qualifying_sets: set[str], force: bool) -> None:
+def _mark_price_sync_checked() -> None:
+    from util.price_history import mark_price_sync_checked
+
+    try:
+        mark_price_sync_checked()
+    except Exception:
+        log.exception("Could not mark price sync as checked")
+
+
+def _run_price_sync(
+    set_codes: set[str],
+    extra_qualifying_sets: set[str],
+    force: bool,
+    download_guide: bool = False,
+    explicit_cards: set[tuple[str, str]] | None = None,
+    persist_summary: bool = True,
+) -> None:
     log.info(
         "Price sync running for %s set(s)%s",
         len(set_codes),
@@ -240,59 +256,65 @@ def _run_price_sync(set_codes: set[str], extra_qualifying_sets: set[str], force:
         result = update_cardmarket_prices_only(
             set_codes=set_codes,
             extra_qualifying_sets=extra_qualifying_sets,
-            force_cardmarket=force,
+            explicit_cards=explicit_cards,
+            force_cardmarket=download_guide,
             on_progress=on_progress,
         ) or {}
         from api.cache import bump_catalog_epoch
         from api.services.pricing_service import refresh_guide_cache
-        from util.price_history import mark_price_sync_checked
 
         applied = bool(result.get("applied") or (result.get("updated_fields") or 0) > 0)
         movers = normalize_price_sync_movers(result.get("movers"))
         message = "Prices unchanged since last sync." if not applied else "Price sync completed"
         if force and not applied:
             message = "Price sync completed. Guide values matched the current prices."
-        if applied or force:
+        if applied or force or download_guide:
             on_progress(92, "Refreshing price cache")
             refresh_guide_cache()
             bump_catalog_epoch()
-            on_progress(95, "Saving collection snapshots")
-            _record_profile_snapshots(force=force)
-            try:
-                mark_price_sync_checked()
-            except Exception:
-                log.exception("Could not mark price sync as checked")
+            if persist_summary and (applied or force):
+                on_progress(95, "Saving collection snapshots")
+                _record_profile_snapshots(force=force)
+                _mark_price_sync_checked()
+            elif persist_summary:
+                message = "Prices unchanged since last sync."
+                _mark_price_sync_checked()
+                log.info("Price sync found no changes")
+        elif persist_summary:
+            message = "Prices unchanged since last sync."
+            _mark_price_sync_checked()
+            log.info("Price sync found no changes")
         else:
             message = "Prices unchanged since last sync."
-            try:
-                mark_price_sync_checked()
-            except Exception:
-                log.exception("Could not mark price sync as checked")
             log.info("Price sync found no changes")
-        try:
-            previous = load_last_price_sync() or {}
-            new_cards = list(result.get("cards") or [])
-            if applied:
-                cards = new_cards
-                if not movers_have_rows(movers):
-                    movers = empty_price_sync_movers()
-            else:
-                cards = new_cards or list(previous.get("cards") or [])
-                if not movers_have_rows(movers):
-                    movers = normalize_price_sync_movers(previous.get("movers"))
-            stored = save_last_price_sync({
-                "syncedAt": _utc_now(),
-                "applied": applied,
-                "pricesUnchanged": not applied,
-                "message": message,
-                "movers": movers,
-                "cards": cards,
-            })
-            movers = stored["movers"]
-            cards = stored.get("cards") or []
-        except Exception:
-            log.exception("Could not store last price sync")
-            cards = result.get("cards") or []
+        cards: list = []
+        if persist_summary:
+            try:
+                previous = load_last_price_sync() or {}
+                new_cards = list(result.get("cards") or [])
+                if applied:
+                    cards = new_cards
+                    if not movers_have_rows(movers):
+                        movers = empty_price_sync_movers()
+                else:
+                    cards = new_cards or list(previous.get("cards") or [])
+                    if not movers_have_rows(movers):
+                        movers = normalize_price_sync_movers(previous.get("movers"))
+                stored = save_last_price_sync({
+                    "syncedAt": _utc_now(),
+                    "applied": applied,
+                    "pricesUnchanged": not applied,
+                    "message": message,
+                    "movers": movers,
+                    "cards": cards,
+                })
+                movers = stored["movers"]
+                cards = stored.get("cards") or []
+            except Exception:
+                log.exception("Could not store last price sync")
+                cards = result.get("cards") or []
+        else:
+            movers = empty_price_sync_movers()
         with _lock:
             _state["status"] = "completed"
             _state["finished_at"] = _utc_now()
@@ -324,9 +346,24 @@ def start_price_sync(
     conn: sqlite3.Connection,
     *,
     set_code: str | None = None,
+    collector_number: str | None = None,
     force: bool = False,
 ) -> dict:
-    set_codes, extra_qualifying_sets = resolve_price_sync_scope(conn, set_code=set_code)
+    number = str(collector_number or "").strip()
+    explicit_cards: set[tuple[str, str]] = set()
+    if number:
+        code = normalize_set_code(set_code)
+        if not code:
+            raise PriceSyncError("A set code is required to sync one card")
+        set_codes = {code}
+        extra_qualifying_sets: set[str] = set()
+        explicit_cards = {(code, number)}
+        download_guide = force
+        persist_summary = False
+    else:
+        set_codes, extra_qualifying_sets = resolve_price_sync_scope(conn, set_code=set_code)
+        download_guide = force or not set_code
+        persist_summary = True
     with _lock:
         if _state["status"] == "running":
             raise PriceSyncError("Price sync is already running", status_code=409)
@@ -342,21 +379,27 @@ def start_price_sync(
         _state["movers"] = empty_price_sync_movers()
         _state["cards"] = []
 
-    if set_code:
+    if number:
         log.info(
-            "Price sync started for set %s%s",
+            "Price sync started for %s #%s%s",
+            code,
+            number,
+            " (forced)" if force else "",
+        )
+    elif set_code:
+        log.info(
+            "Price sync started for every card in set %s%s",
             normalize_set_code(set_code) or set_code,
             " (forced)" if force else "",
         )
     else:
         log.info(
-            "Price sync started for favourite sets and owned cards (%s set(s))%s",
+            "Price sync started for favourite sets and owned cards (%s set(s)); downloading Cardmarket guide",
             len(set_codes),
-            " (forced)" if force else "",
         )
     thread = threading.Thread(
         target=_run_price_sync,
-        args=(set_codes, extra_qualifying_sets, force),
+        args=(set_codes, extra_qualifying_sets, force, download_guide, explicit_cards, persist_summary),
         daemon=True,
     )
     thread.start()
@@ -524,15 +567,7 @@ def get_price_sync_status(conn: sqlite3.Connection) -> dict:
     with _lock:
         state_movers = _state.get("movers")
         state_cards = list(_state.get("cards") or [])
-        status = _state["status"]
-    movers, cards = scope_price_moves_to_profile(conn, state_movers, state_cards)
-    if status != "running" and not movers_have_rows(movers) and last_sync:
-        movers = last_sync.get("movers") or empty_price_sync_movers()
-    if not cards and last_sync:
-        cards = last_sync.get("cards") or []
-    cards = hydrate_price_sync_cards(conn, cards)
-    with _lock:
-        payload = {
+        snapshot = {
             "status": _state["status"],
             "startedAt": _state["started_at"],
             "finishedAt": _state["finished_at"],
@@ -542,10 +577,18 @@ def get_price_sync_status(conn: sqlite3.Connection) -> dict:
             "progress": _state.get("progress"),
             "processed": int(_state.get("processed") or 0),
             "total": int(_state.get("total") or 0),
-            "movers": movers,
-            "cards": cards,
-            "lastSync": last_sync,
-            "lastPriceUpdate": load_last_updated_display(conn),
-            "pricesOutdated": prices_are_outdated(conn),
         }
-    return payload
+    movers, cards = scope_price_moves_to_profile(conn, state_movers, state_cards)
+    if snapshot["status"] != "running" and not movers_have_rows(movers) and last_sync:
+        movers = last_sync.get("movers") or empty_price_sync_movers()
+    if not cards and last_sync:
+        cards = last_sync.get("cards") or []
+    cards = hydrate_price_sync_cards(conn, cards)
+    return {
+        **snapshot,
+        "movers": movers,
+        "cards": cards,
+        "lastSync": last_sync,
+        "lastPriceUpdate": load_last_updated_display(conn),
+        "pricesOutdated": prices_are_outdated(conn),
+    }

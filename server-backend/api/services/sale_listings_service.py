@@ -13,7 +13,6 @@ from report.serialize_helpers import deck_card_display_name, str_or_empty
 from util.app_tables import ensure_app_tables
 from util.card_finishes import finish_label
 from util.card_metadata import card_image_fields, card_metadata_api
-from util.db_migrate import ensure_card_columns
 from util.sale_listings import ensure_sale_listings_table
 from util.set_catalog import load_set_display_names
 
@@ -58,7 +57,6 @@ def _location_labels(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def _catalog_row(conn: sqlite3.Connection, set_code: str, collector_number: str):
-    ensure_card_columns(conn)
     return conn.execute(
         """
         SELECT *

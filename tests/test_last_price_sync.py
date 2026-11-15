@@ -11,7 +11,6 @@ runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from util.last_price_sync import (  # noqa: E402
     load_last_price_sync,
-    normalize_price_sync_movers,
     save_last_price_sync,
 )
 
@@ -51,14 +50,6 @@ class LastPriceSyncCacheTests(unittest.TestCase):
         self.assertEqual(loaded["cards"][0]["id"], "card-1")
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(payload["message"], "second")
-
-    def test_normalizes_legacy_flat_movers(self):
-        movers = normalize_price_sync_movers({
-            "risers": [{"id": "up"}],
-            "fallers": [{"id": "down"}],
-        })
-        self.assertEqual(movers["absolute"]["risers"][0]["id"], "up")
-        self.assertEqual(movers["relative"]["fallers"][0]["id"], "down")
 
 
 if __name__ == "__main__":

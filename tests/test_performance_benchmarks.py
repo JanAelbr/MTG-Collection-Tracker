@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import sqlite3
 import sys
 import tempfile
@@ -71,6 +72,7 @@ class PerformanceBenchmarkTests(unittest.TestCase):
             item.stop()
         cls._single_db.__exit__(None, None, None)
         cls.conn.close()
+        gc.collect()
         cls._temp_dir.cleanup()
         if cls._results:
             print("\n--- Performance benchmarks ---", file=sys.stderr)
@@ -445,7 +447,9 @@ class PerformanceHttpBenchmarkTests(unittest.TestCase):
     def tearDownClass(cls):
         for item in reversed(cls._patches):
             item.stop()
+        cls.client.close()
         cls._single_db.__exit__(None, None, None)
+        gc.collect()
         cls._temp_dir.cleanup()
         if cls._results:
             print("\n--- HTTP performance benchmarks ---", file=sys.stderr)

@@ -41,14 +41,8 @@ class SchemaBootstrapTests(unittest.TestCase):
             conn = sqlite3.connect(db_path)
             conn.execute("PRAGMA foreign_keys = ON")
             with patch(
-                "util.schema.backfill_missing_set_icon_uris",
-                side_effect=requests.exceptions.ReadTimeout("timed out"),
-            ), patch(
-                "util.schema.backfill_missing_set_relations",
-                return_value=0,
-            ), patch(
                 "util.schema.ensure_tracked_family_children",
-                return_value={"added": [], "skipped": 0, "families": 0},
+                side_effect=requests.exceptions.ReadTimeout("timed out"),
             ):
                 ensure_database_schema(conn)
             conn.commit()

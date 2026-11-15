@@ -32,20 +32,16 @@ export function normalizePriceSyncMovers(raw) {
   if (!raw || typeof raw !== "object") {
     return emptyPriceSyncMovers();
   }
-  if (raw.absolute || raw.relative) {
-    return {
-      absolute: {
-        risers: raw.absolute?.risers || [],
-        fallers: raw.absolute?.fallers || [],
-      },
-      relative: {
-        risers: raw.relative?.risers || [],
-        fallers: raw.relative?.fallers || [],
-      },
-    };
-  }
-  const pair = { risers: raw.risers || [], fallers: raw.fallers || [] };
-  return { absolute: pair, relative: pair };
+  return {
+    absolute: {
+      risers: raw.absolute?.risers || [],
+      fallers: raw.absolute?.fallers || [],
+    },
+    relative: {
+      risers: raw.relative?.risers || [],
+      fallers: raw.relative?.fallers || [],
+    },
+  };
 }
 
 export function priceSyncHasMovers(status) {

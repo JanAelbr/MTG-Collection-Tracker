@@ -2,7 +2,7 @@ import json
 import sqlite3
 
 from lib.art_style_seed import BUNDLED_ART_STYLE_RULES
-from lib.config import ART_STYLES_DIR, canonical_set_code_lower
+from lib.config import canonical_set_code_lower
 from lib.db import table_exists
 from lib.run_log import get_logger
 from util.alchemy_cards import exclude_alchemy_art_style_sql, exclude_alchemy_sql
@@ -99,7 +99,6 @@ def _ensure_art_style_rules_table(conn: sqlite3.Connection) -> None:
 
 def ensure_art_style_rules_table(conn: sqlite3.Connection) -> None:
     _ensure_art_style_rules_table(conn)
-    _migrate_art_style_rules_from_files(conn)
     _seed_bundled_art_style_rules(conn)
 
 
@@ -109,26 +108,6 @@ def _set_has_art_style_rules(conn: sqlite3.Connection, set_code: str) -> bool:
         (canonical_set_code_lower(set_code),),
     ).fetchone()
     return row is not None
-
-
-def _migrate_art_style_rules_from_files(conn: sqlite3.Connection) -> None:
-    if not ART_STYLES_DIR.is_dir():
-        return
-    for path in sorted(ART_STYLES_DIR.glob("*.json")):
-        set_code = path.stem.lower()
-        if _set_has_art_style_rules(conn, set_code):
-            continue
-        try:
-            rules = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(rules, list) or not rules:
-            continue
-        try:
-            normalized_rules = normalize_art_style_rules(rules)
-        except ValueError:
-            continue
-        _upsert_art_style_rules(conn, set_code, normalized_rules)
 
 
 def _seed_bundled_art_style_rules(conn: sqlite3.Connection) -> None:

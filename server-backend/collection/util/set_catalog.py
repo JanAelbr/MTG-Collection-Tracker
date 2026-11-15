@@ -18,18 +18,12 @@ CREATE TABLE IF NOT EXISTS sets (
     scryfall_uri TEXT,
     icon_svg_uri TEXT,
     updated_at TEXT NOT NULL,
+    catalog_synced_at TEXT,
     set_type TEXT,
-    parent_set_code TEXT
+    parent_set_code TEXT,
+    digital INTEGER
 );
 """
-
-SET_COLUMNS = {
-    "icon_svg_uri": "TEXT",
-    "catalog_synced_at": "TEXT",
-    "set_type": "TEXT",
-    "parent_set_code": "TEXT",
-    "digital": "INTEGER",
-}
 
 UPSERT_SET_SQL = """
 INSERT INTO sets (
@@ -60,18 +54,6 @@ def ensure_sets_table(conn: sqlite3.Connection) -> None:
     if is_attached_table(conn, "sets"):
         return
     conn.executescript(SETS_TABLE_SQL)
-
-
-# Add missing sets columns without recreating the database.
-def ensure_sets_columns(conn: sqlite3.Connection) -> None:
-    ensure_sets_table(conn)
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(sets)")
-    existing = {row[1] for row in cursor.fetchall()}
-    for column_name, column_type in SET_COLUMNS.items():
-        if column_name in existing:
-            continue
-        cursor.execute(f"ALTER TABLE sets ADD COLUMN {column_name} {column_type}")
 
 
 def _normalize_parent_set_code(value: str | None) -> str | None:
@@ -257,7 +239,6 @@ def load_set_display_names(conn: sqlite3.Connection) -> dict[str, str]:
 # Load set metadata keyed by uppercase set code for client payloads.
 def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
     ensure_sets_table(conn)
-    ensure_sets_columns(conn)
     rows = conn.execute(
         """
         SELECT set_code, name, released_at, scryfall_uri, icon_svg_uri, set_type, parent_set_code, digital
@@ -291,7 +272,6 @@ def load_sets_catalog(conn: sqlite3.Connection) -> dict[str, dict]:
 # Load Scryfall icon URIs keyed by uppercase set code.
 def load_set_icon_uris(conn: sqlite3.Connection) -> dict[str, str]:
     ensure_sets_table(conn)
-    ensure_sets_columns(conn)
     rows = conn.execute(
         """
         SELECT set_code, icon_svg_uri
@@ -352,183 +332,6 @@ def sets_needing_metadata_sync(cursor: sqlite3.Cursor, set_codes: list[str]) -> 
     return needing
 
 
-# Return distinct catalog set codes that do not have a stored icon URI yet.
-def load_set_codes_missing_icon(conn: sqlite3.Connection) -> list[str]:
-    ensure_sets_table(conn)
-    ensure_sets_columns(conn)
-    if not table_exists(conn, "cards"):
-        return []
-    rows = conn.execute(
-        """
-        SELECT DISTINCT c.set_code
-        FROM cards c
-        LEFT JOIN sets s ON s.set_code = c.set_code
-        WHERE COALESCE(s.icon_svg_uri, '') = ''
-        ORDER BY c.set_code
-        """
-    ).fetchall()
-    return [set_code.upper() for set_code, in rows]
-
-
-# Return tracked/owned/deck set codes that still need Scryfall type/parent metadata.
-def load_set_codes_missing_relations(conn: sqlite3.Connection) -> list[str]:
-    ensure_sets_table(conn)
-    ensure_sets_columns(conn)
-    from util.tracked_sets import list_tracked_set_codes
-
-    candidates: set[str] = set(load_catalog_set_codes(conn))
-    if table_exists(conn, "tracked_sets"):
-        for raw in list_tracked_set_codes(conn):
-            code = (raw or "").upper()
-            if code:
-                candidates.add(code)
-
-    needing: list[str] = []
-    for code in sorted(candidates):
-        row = conn.execute(
-            "SELECT set_type FROM sets WHERE set_code = ? LIMIT 1",
-            (code,),
-        ).fetchone()
-        if not row or row[0] is None or not str(row[0]).strip():
-            needing.append(code)
-    return needing
-
-
-# Apply set_type / parent_set_code from one Scryfall /sets index payload list.
-def apply_scryfall_set_relations(
-    conn: sqlite3.Connection,
-    scryfall_sets: list[dict],
-    *,
-    only_codes: set[str] | None = None,
-) -> int:
-    ensure_sets_table(conn)
-    ensure_sets_columns(conn)
-    cursor = conn.cursor()
-    stamp = date.today().isoformat()
-    updated = 0
-    for item in scryfall_sets or []:
-        code = (item.get("code") or "").upper()
-        if not code:
-            continue
-        if only_codes is not None and code not in only_codes:
-            continue
-        name = item.get("name") or code
-        exists = cursor.execute(
-            "SELECT 1 FROM sets WHERE set_code = ? LIMIT 1",
-            (code,),
-        ).fetchone()
-        if exists:
-            update_set_relations(
-                cursor,
-                code,
-                set_type=item.get("set_type"),
-                parent_set_code=item.get("parent_set_code"),
-            )
-            cursor.execute(
-                """
-                UPDATE sets
-                SET digital = ?,
-                    icon_svg_uri = COALESCE(?, icon_svg_uri),
-                    name = COALESCE(?, name),
-                    released_at = COALESCE(?, released_at),
-                    scryfall_uri = COALESCE(?, scryfall_uri),
-                    updated_at = ?
-                WHERE set_code = ?
-                """,
-                (
-                    1 if item.get("digital") else 0,
-                    item.get("icon_svg_uri"),
-                    name,
-                    item.get("released_at"),
-                    item.get("scryfall_uri"),
-                    stamp,
-                    code,
-                ),
-            )
-        else:
-            upsert_set_row(
-                cursor,
-                code,
-                name,
-                item.get("released_at"),
-                item.get("scryfall_uri"),
-                stamp,
-                item.get("icon_svg_uri"),
-                set_type=item.get("set_type"),
-                parent_set_code=item.get("parent_set_code"),
-                digital=bool(item.get("digital")),
-            )
-            update_set_relations(
-                cursor,
-                code,
-                set_type=item.get("set_type"),
-                parent_set_code=item.get("parent_set_code"),
-            )
-        updated += 1
-    return updated
-
-
-# Fetch and store icon URIs for catalog sets that are missing them.
-def backfill_missing_set_icon_uris(
-    conn: sqlite3.Connection,
-    headers: dict[str, str],
-    *,
-    force_scryfall: bool = False,
-) -> int:
-    codes = load_set_codes_missing_icon(conn)
-    if not codes:
-        return 0
-
-    cursor = conn.cursor()
-    stamp = date.today().isoformat()
-    synced = 0
-    for index, set_code in enumerate(codes):
-        if sync_set_metadata(cursor, set_code, headers, stamp, force_scryfall=force_scryfall):
-            synced += 1
-            continue
-        remaining = len(codes) - index - 1
-        if remaining:
-            log.warning(
-                "Stopping set icon backfill after failure for %s (%s remaining)",
-                set_code.upper(),
-                remaining,
-            )
-        break
-    return synced
-
-
-# Fetch set_type / parent_set_code for tracked sets that still lack Scryfall relations.
-def backfill_missing_set_relations(
-    conn: sqlite3.Connection,
-    headers: dict[str, str],
-    *,
-    force_scryfall: bool = False,
-) -> int:
-    codes = load_set_codes_missing_relations(conn)
-    if not codes:
-        return 0
-
-    # Prefer one bulk /sets fetch over N per-set requests.
-    scryfall_sets = fetch_all_scryfall_sets(headers, force=force_scryfall)
-    if scryfall_sets:
-        updated = apply_scryfall_set_relations(
-            conn,
-            scryfall_sets,
-            only_codes=set(codes),
-        )
-        conn.commit()
-        if updated:
-            log.info("Backfilled Scryfall set relations for %s set(s)", updated)
-        return updated
-
-    # Bulk fetch returned nothing (often network failure) — avoid N timed-out retries.
-    log.warning(
-        "Skipping per-set relation backfill for %s set(s); Scryfall sets index unavailable",
-        len(codes),
-    )
-    return 0
-
-
 # Fetch and store Scryfall metadata for owned and deck-list sets.
 def sync_catalog_set_metadata(
     conn: sqlite3.Connection,
@@ -538,7 +341,6 @@ def sync_catalog_set_metadata(
     force_scryfall: bool = False,
 ) -> int:
     ensure_sets_table(conn)
-    ensure_sets_columns(conn)
     catalog_codes = sorted(load_catalog_set_codes(conn))
     if not catalog_codes:
         return 0

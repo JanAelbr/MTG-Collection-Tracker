@@ -635,8 +635,56 @@
 }
 
 .card-detail-guide-panel h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 16px;
+}
+
+.card-detail-guide-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.card-detail-image-pending {
+  min-height: 280px;
+  background: #f4f6f8;
+}
+
+.card-detail-inline-spinner {
+  margin-left: 8px;
+  vertical-align: 2px;
+}
+
+.card-detail-sync-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #78909c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.card-detail-sync-retry {
+  border: 0;
+  background: transparent;
+  color: #b71c1c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0;
+}
+
+.card-detail-sync-message {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #455a64;
+}
+
+.card-detail-sync-message.is-error {
+  color: #b71c1c;
 }
 
 .card-detail-external-links {

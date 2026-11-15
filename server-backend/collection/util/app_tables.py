@@ -33,7 +33,6 @@ def ensure_app_tables(conn: sqlite3.Connection, *, force: bool = False) -> None:
         ensure_sale_listings_table(conn)
         _ensure_user_settings_table(conn)
         seed_storage_locations(conn)
-        _backfill_system_location_flags(conn)
         if cacheable:
             _ready_db_paths.add(db_path)
 
@@ -51,39 +50,5 @@ def _ensure_user_settings_table(conn: sqlite3.Connection) -> None:
         """
         INSERT OR IGNORE INTO user_settings (key, value)
         VALUES ('price_strategy', 'trend')
-        """
-    )
-
-
-def _backfill_system_location_flags(conn: sqlite3.Connection) -> None:
-    """Mark built-in locations as system once (schema may predate is_system)."""
-    columns = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(storage_locations)").fetchall()
-    }
-    if "is_system" not in columns:
-        return
-    needs_backfill = conn.execute(
-        """
-        SELECT 1
-        FROM storage_locations
-        WHERE is_system = 0
-          AND (
-            location_slug LIKE 'binder:%'
-            OR location_slug LIKE 'deck:%'
-            OR location_slug = 'storage:general'
-          )
-        LIMIT 1
-        """
-    ).fetchone()
-    if not needs_backfill:
-        return
-    conn.execute(
-        """
-        UPDATE storage_locations
-        SET is_system = 1
-        WHERE location_slug LIKE 'binder:%'
-           OR location_slug LIKE 'deck:%'
-           OR location_slug = 'storage:general'
         """
     )

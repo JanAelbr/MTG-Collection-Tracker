@@ -55,7 +55,12 @@ class DeckOwnedScopeTests(unittest.TestCase):
                 name TEXT NOT NULL,
                 released_at TEXT,
                 scryfall_uri TEXT,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                icon_svg_uri TEXT,
+                catalog_synced_at TEXT,
+                set_type TEXT,
+                parent_set_code TEXT,
+                digital INTEGER
             );
             """
         )

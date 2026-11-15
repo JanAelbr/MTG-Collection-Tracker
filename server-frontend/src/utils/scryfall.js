@@ -17,6 +17,15 @@ export function scryfallSetIconCode(setCode) {
   return SCRYFALL_SET_ICON_CODES[normalized] || normalized.toLowerCase();
 }
 
+/** Scryfall `small` rendition, so dense home thumbnails do not download the full card. */
+export function scryfallSmallImageUri(uri) {
+  const text = String(uri || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.replace(/\/(normal|large|png)\//, "/small/");
+}
+
 export function scryfallSetIconUri(setCode) {
   const iconCode = scryfallSetIconCode(setCode);
   if (!iconCode) {

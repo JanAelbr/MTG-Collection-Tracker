@@ -2,13 +2,13 @@
 import "../styles/card-detail.css";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api, clearClientCache } from "../api";
+import { api, clearClientCache, ignoreAborted } from "../api";
+import { cacheKeyFor, getCachedEntry } from "../apiCache";
+import CardPreviewDialog from "../components/CardPreviewDialog.vue";
 import CardVariantGallery from "../components/CardVariantGallery.vue";
 import CardDetailOwnershipPanel from "../components/CardDetailOwnershipPanel.vue";
 import CardmarketIcon from "../components/CardmarketIcon.vue";
-import LoadingIndicator from "../components/LoadingIndicator.vue";
 import ScryfallIcon from "../components/ScryfallIcon.vue";
-import { useAsyncLoad } from "../composables/useAsyncLoad";
 import { displayCardmarketUrl } from "../utils/cardmarketUrl";
 import { formatEuro } from "../utils/format";
 import { priceStrategyDescription } from "../utils/priceStrategies";
@@ -23,6 +23,8 @@ import {
 } from "../utils/finishes";
 import CollectionSetLink from "../components/CollectionSetLink.vue";
 import { fetchFavorites, useFavorites } from "../composables/favorites";
+import { PRICE_SYNC_POLL_MS } from "../composables/startupPriceSync";
+import { catalogVisibleFamilyCodes } from "../utils/priceSyncMovers";
 import { scryfallCardUri, scryfallPrintsSearchUri } from "../utils/scryfall";
 
 const route = useRoute();
@@ -31,8 +33,10 @@ const router = useRouter();
 const card = ref(null);
 const selectedFinish = ref(FINISH_NONFOIL);
 const priceStrategy = ref("trend");
-const { loading, run } = useAsyncLoad();
+const detailLoading = ref(false);
 const { isCardFavorite, toggleCardFavorite } = useFavorites();
+const favoriteSetCodes = ref(new Set());
+let favoriteCoveragePromise = null;
 const availableFinishes = computed(() =>
   Array.from(
     new Set(
@@ -109,6 +113,12 @@ const sessionDeckId = ref("");
 const activeDeckId = computed(() => routeDeckId.value || sessionDeckId.value);
 const imageZoomOpen = ref(false);
 const showBackFace = ref(false);
+const priceSyncing = ref(false);
+const priceSyncMessage = ref("");
+const priceSyncFailed = ref(false);
+let priceSyncPoll = null;
+let loadToken = 0;
+let syncGeneration = 0;
 
 const hasBackImage = computed(() => Boolean(card.value?.imageUriBack));
 const displayImageUri = computed(() => {
@@ -140,47 +150,139 @@ function closeImageZoom() {
   imageZoomOpen.value = false;
 }
 
-function onImageZoomKeydown(event) {
-  if (event.key === "Escape") {
-    closeImageZoom();
+function routeFinish() {
+  return route.query.finish == null ? undefined : normalizeFinish(route.query.finish);
+}
+
+function cardDetailPath() {
+  const finishQuery = routeFinish();
+  const query = new URLSearchParams();
+  if (finishQuery != null) {
+    query.set("finish", String(finishQuery));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return `/cards/${encodeURIComponent(route.params.setCode)}/${encodeURIComponent(route.params.collectorNumber)}${suffix}`;
+}
+
+function cardMatchesRoute(value) {
+  if (!value?.setCode || value.collectorNumber == null) {
+    return false;
+  }
+  return String(value.setCode).toUpperCase() === String(route.params.setCode || "").toUpperCase()
+    && String(value.collectorNumber) === String(route.params.collectorNumber || "");
+}
+
+function shellFromRoute() {
+  const finish = routeFinish();
+  return {
+    setCode: String(route.params.setCode || "").toUpperCase(),
+    collectorNumber: String(route.params.collectorNumber || ""),
+    name: "",
+    setLabel: String(route.params.setCode || "").toUpperCase(),
+    artStyle: "",
+    imageUri: "",
+    finishes: {},
+    guidePriceMatrix: null,
+    selectedFinish: finish == null ? FINISH_NONFOIL : finish,
+  };
+}
+
+function readCachedCard() {
+  const cached = getCachedEntry(cacheKeyFor("GET", cardDetailPath()));
+  return cached?.data && cardMatchesRoute(cached.data) ? cached.data : null;
+}
+
+function applyKnownCard() {
+  const cached = readCachedCard();
+  if (cached) {
+    card.value = cached;
+    selectedFinish.value = normalizeFinish(cached.selectedFinish ?? FINISH_NONFOIL);
+    priceStrategy.value = cached.priceStrategy || "trend";
+    return;
+  }
+  if (!cardMatchesRoute(card.value) || !card.value?.name) {
+    card.value = shellFromRoute();
+    selectedFinish.value = card.value.selectedFinish;
   }
 }
 
-watch(imageZoomOpen, (open) => {
-  if (open) {
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onImageZoomKeydown);
-    return;
-  }
-  document.body.style.overflow = "";
-  window.removeEventListener("keydown", onImageZoomKeydown);
-});
+function cardSetIsFavourite(setCode) {
+  return favoriteSetCodes.value.has(String(setCode || "").trim().toUpperCase());
+}
 
-async function loadCard() {
-  await run(async (isCurrent) => {
-    const finishQuery = route.query.finish == null
-      ? undefined
-      : normalizeFinish(route.query.finish);
-    const nextCard = await api.getCardDetail(
+async function ensureFavoriteCoverage() {
+  if (!favoriteCoveragePromise) {
+    favoriteCoveragePromise = ignoreAborted(api.getReportsMeta()).then((meta) => {
+      const codes = new Set();
+      const catalog = meta?.sets || [];
+      for (const code of meta?.favoriteSets || []) {
+        const normalized = String(code || "").trim().toUpperCase();
+        if (!normalized) {
+          continue;
+        }
+        codes.add(normalized);
+        for (const member of catalogVisibleFamilyCodes(
+          { setCode: normalized },
+          catalog,
+          { includeHiddenSubsets: true },
+        )) {
+          codes.add(member);
+        }
+      }
+      favoriteSetCodes.value = codes;
+      return codes;
+    }).catch((error) => {
+      favoriteCoveragePromise = null;
+      throw error;
+    });
+  }
+  return favoriteCoveragePromise;
+}
+
+async function loadCard({ background = false, syncAfter = false } = {}) {
+  const token = ++loadToken;
+  if (!background) {
+    applyKnownCard();
+  }
+  const waitingForRecord = !card.value?.name;
+  if (waitingForRecord) {
+    detailLoading.value = true;
+  }
+  try {
+    const nextCard = await ignoreAborted(api.getCardDetail(
       route.params.setCode,
       route.params.collectorNumber,
-      { finish: finishQuery },
-    );
-    if (!isCurrent()) {
+      { finish: routeFinish() },
+    ));
+    if (!nextCard || token !== loadToken || !cardMatchesRoute(nextCard)) {
       return;
     }
     card.value = nextCard;
-    showBackFace.value = false;
+    if (!background) {
+      showBackFace.value = false;
+    }
     selectedFinish.value = normalizeFinish(card.value.selectedFinish ?? FINISH_NONFOIL);
     priceStrategy.value = card.value.priceStrategy || "trend";
-  });
+    if (syncAfter) {
+      void maybeAutoSync(token);
+    }
+  } catch (error) {
+    if (token === loadToken && waitingForRecord) {
+      priceSyncFailed.value = true;
+      priceSyncMessage.value = error.message || "Could not load this card.";
+    }
+  } finally {
+    if (token === loadToken) {
+      detailLoading.value = false;
+    }
+  }
 }
 
 async function onOwnershipChanged() {
-  if (!card.value) {
+  if (!card.value?.name) {
     return;
   }
-  await loadCard();
+  await loadCard({ background: true });
 }
 
 async function onFinishSelected(finish) {
@@ -198,6 +300,98 @@ async function onFinishSelected(finish) {
   });
 }
 
+function stopPriceSyncPoll() {
+  if (priceSyncPoll) {
+    clearInterval(priceSyncPoll);
+    priceSyncPoll = null;
+  }
+}
+
+async function pollCardPriceSync() {
+  const generation = syncGeneration;
+  try {
+    const status = await api.getPriceSyncStatus();
+    if (generation !== syncGeneration) {
+      return;
+    }
+    if (status?.status === "running") {
+      return;
+    }
+    stopPriceSyncPoll();
+    priceSyncing.value = false;
+    if (status?.status === "failed") {
+      priceSyncFailed.value = true;
+      priceSyncMessage.value = status.error || status.message || "Could not sync this card.";
+      return;
+    }
+    priceSyncFailed.value = false;
+    priceSyncMessage.value = "";
+    clearClientCache();
+    await loadCard({ background: true });
+  } catch (error) {
+    if (generation !== syncGeneration) {
+      return;
+    }
+    stopPriceSyncPoll();
+    priceSyncing.value = false;
+    priceSyncFailed.value = true;
+    priceSyncMessage.value = error.message || "Could not sync this card.";
+  }
+}
+
+function watchPriceSync() {
+  stopPriceSyncPoll();
+  void pollCardPriceSync();
+  priceSyncPoll = setInterval(pollCardPriceSync, PRICE_SYNC_POLL_MS);
+}
+
+async function syncThisCard() {
+  if (!card.value?.name || priceSyncing.value || cardSetIsFavourite(card.value.setCode)) {
+    return;
+  }
+  priceSyncFailed.value = false;
+  priceSyncMessage.value = "";
+  priceSyncing.value = true;
+  try {
+    await api.triggerPriceSync({
+      setCode: card.value.setCode,
+      collectorNumber: String(card.value.collectorNumber),
+    });
+    watchPriceSync();
+  } catch (error) {
+    const message = error.message || "";
+    if (/already running/i.test(message)) {
+      watchPriceSync();
+      return;
+    }
+    priceSyncing.value = false;
+    priceSyncFailed.value = true;
+    priceSyncMessage.value = message || "Could not sync this card.";
+  }
+}
+
+async function retryCardSync() {
+  priceSyncFailed.value = false;
+  priceSyncMessage.value = "";
+  if (!card.value?.name) {
+    await loadCard({ syncAfter: true });
+    return;
+  }
+  await syncThisCard();
+}
+
+async function maybeAutoSync(token) {
+  try {
+    await ensureFavoriteCoverage();
+  } catch {
+    return;
+  }
+  if (token !== loadToken || !card.value?.name || cardSetIsFavourite(card.value.setCode)) {
+    return;
+  }
+  await syncThisCard();
+}
+
 async function onToggleFavorite() {
   if (!card.value) {
     return;
@@ -207,19 +401,34 @@ async function onToggleFavorite() {
 
 watch(
   () => [route.params.setCode, route.params.collectorNumber, route.query.finish],
-  () => {
-    loadCard();
+  (next, previous) => {
+    const printChanged = !previous
+      || next[0] !== previous[0]
+      || next[1] !== previous[1];
+    if (printChanged) {
+      syncGeneration += 1;
+      stopPriceSyncPoll();
+      priceSyncing.value = false;
+      priceSyncMessage.value = "";
+      priceSyncFailed.value = false;
+    }
+    loadCard({ syncAfter: printChanged });
   },
 );
 
-onMounted(async () => {
-  await fetchFavorites();
-  await loadCard();
+applyKnownCard();
+
+onMounted(() => {
+  fetchFavorites();
+  ensureFavoriteCoverage().catch(() => {});
+  loadCard({ syncAfter: true });
 });
 
 onUnmounted(() => {
+  syncGeneration += 1;
+  loadToken += 1;
+  stopPriceSyncPoll();
   document.body.style.overflow = "";
-  window.removeEventListener("keydown", onImageZoomKeydown);
 });
 </script>
 
@@ -240,10 +449,15 @@ onUnmounted(() => {
         >
           <img
             :src="displayImageUri"
-            :alt="card.name"
+            :alt="card.name || `${card.setCode} #${card.collectorNumber}`"
             class="card-detail-image"
           >
         </button>
+        <div
+          v-else-if="detailLoading"
+          class="card-detail-image card-detail-image-pending"
+          aria-hidden="true"
+        ></div>
         <div v-else class="card-detail-image card-detail-image-empty">No image</div>
         <button
           v-if="hasBackImage"
@@ -257,7 +471,14 @@ onUnmounted(() => {
 
       <div class="card-detail-meta">
         <div class="card-detail-title-row">
-          <h1>{{ card.name }}</h1>
+          <h1>
+            {{ card.name || `${card.setCode} #${card.collectorNumber}` }}
+            <span
+              v-if="detailLoading && !card.name"
+              class="loading-spinner card-detail-inline-spinner"
+              aria-label="Loading card"
+            ></span>
+          </h1>
           <button
             type="button"
             class="card-detail-favorite"
@@ -282,10 +503,10 @@ onUnmounted(() => {
 
         <div class="card-detail-actions">
           <CardDetailOwnershipPanel
-            v-if="menuCard"
+            v-if="menuCard && card.name"
             :card="menuCard"
             :manageable-finishes="manageableFinishes"
-            :loading="loading"
+            :loading="false"
             :default-deck-id="activeDeckId"
             @ownership-changed="onOwnershipChanged"
             @finish-selected="onFinishSelected"
@@ -296,8 +517,29 @@ onUnmounted(() => {
 
       <div class="card-detail-side">
         <div class="card-detail-guide-panel">
-          <h2>Cardmarket prices (EUR)</h2>
-          <div class="card-detail-guide-table-wrap">
+          <div class="card-detail-guide-heading">
+            <h2>Cardmarket prices (EUR)</h2>
+            <span v-if="priceSyncing || (detailLoading && card.name)" class="card-detail-sync-note">
+              <span class="loading-spinner" aria-hidden="true"></span>
+              Updating
+            </span>
+            <button
+              v-else-if="priceSyncFailed"
+              type="button"
+              class="card-detail-sync-retry"
+              @click="retryCardSync"
+            >
+              Retry
+            </button>
+          </div>
+          <p
+            v-if="priceSyncMessage"
+            class="card-detail-sync-message"
+            :class="{ 'is-error': priceSyncFailed }"
+          >
+            {{ priceSyncMessage }}
+          </p>
+          <div v-if="card.guidePriceMatrix?.rows?.length" class="card-detail-guide-table-wrap">
             <table class="card-detail-guide-table">
               <thead>
                 <tr>
@@ -383,41 +625,15 @@ onUnmounted(() => {
       show-arrows
     />
 
-    <Teleport to="body">
-      <div
-        v-if="imageZoomOpen && displayImageUri"
-        class="card-image-zoom-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Card image preview"
-        @click.self="closeImageZoom"
-      >
-        <button
-          type="button"
-          class="card-image-zoom-close"
-          aria-label="Close image preview"
-          @click="closeImageZoom"
-        >
-          ×
-        </button>
-        <button
-          v-if="hasBackImage"
-          type="button"
-          class="btn btn-secondary btn-small card-image-zoom-face-toggle"
-          @click.stop="toggleCardFace"
-        >
-          {{ showBackFace ? "View front" : "View back" }}
-        </button>
-        <img
-          :src="displayImageUri"
-          :alt="card.name"
-          class="card-image-zoom-image"
-        >
-      </div>
-    </Teleport>
-  </div>
-
-  <div v-else class="card-detail-page">
-    <LoadingIndicator label="Loading card…" />
+    <CardPreviewDialog
+      v-if="imageZoomOpen && displayImageUri"
+      :image-uri="displayImageUri"
+      :alt="card.name"
+      :set-code="card.setCode"
+      :collector-number="card.collectorNumber"
+      :finish="selectedFinish"
+      :seed="card"
+      @close="closeImageZoom"
+    />
   </div>
 </template>

@@ -4,17 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import time
 from datetime import datetime, timezone
 
 from lib.db import is_attached_table
-from lib.run_log import format_duration, get_logger
 from util.card_role_seed import card_roles_for
-from util.catalog_meta import get_catalog_meta, set_catalog_meta
-
-log = get_logger(__name__)
-
-CARD_NAME_ROLES_BACKFILL_KEY = "card_name_roles_backfill_v1"
 
 
 def ensure_card_name_roles_table(conn: sqlite3.Connection) -> None:
@@ -106,53 +99,6 @@ def roles_for_card_name(conn: sqlite3.Connection, name: str) -> list[str]:
     if row is None:
         return []
     return parse_roles(row[0])
-
-
-def backfill_card_name_roles(conn: sqlite3.Connection, *, force: bool = False) -> int:
-    """Fill card_name_roles from distinct catalog names. Returns upserted count."""
-    ensure_card_name_roles_table(conn)
-
-    if not force and get_catalog_meta(conn, CARD_NAME_ROLES_BACKFILL_KEY) == "done":
-        log.debug("Card name roles backfill skipped (already done)")
-        return 0
-
-    started = time.perf_counter()
-    rows = conn.execute(
-        """
-        SELECT name, type_line, oracle_text, card_type
-        FROM cards
-        WHERE name IS NOT NULL AND TRIM(name) != ''
-        GROUP BY LOWER(TRIM(name))
-        """
-    ).fetchall()
-    log.info("Backfilling card name roles for %s distinct name(s)", len(rows))
-
-    upserted = 0
-    for name, type_line, oracle_text, card_type in rows:
-        card = {
-            "name": name,
-            "type_line": type_line,
-            "oracle_text": oracle_text,
-            "card_type": card_type,
-        }
-        upsert_card_name_roles(conn, str(name), card=card)
-        upserted += 1
-
-    set_catalog_meta(conn, CARD_NAME_ROLES_BACKFILL_KEY, "done")
-    conn.commit()
-    log.info(
-        "Card name roles backfill finished: %s name(s) (%s)",
-        upserted,
-        format_duration(time.perf_counter() - started),
-    )
-    if upserted:
-        try:
-            from api.cache import bump_catalog_epoch
-
-            bump_catalog_epoch()
-        except ImportError:
-            pass
-    return upserted
 
 
 def refresh_card_name_roles_for_card(conn: sqlite3.Connection, card: dict) -> list[str]:

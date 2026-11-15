@@ -325,9 +325,6 @@ export function searchFiltersFromRoute(route) {
     ownedFilter = "all";
   } else if (owned === "owned") {
     ownedFilter = "owned";
-  } else if (owned === "unowned") {
-    // Search no longer exposes Unowned; treat legacy links as All.
-    ownedFilter = "all";
   }
 
   const finish = route.query?.finish;

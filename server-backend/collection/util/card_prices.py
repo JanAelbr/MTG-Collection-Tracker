@@ -93,11 +93,8 @@ def _purchase_exists(
 
 # Create the card_prices history table when missing.
 def ensure_card_prices_table(conn: sqlite3.Connection) -> None:
-    from util.finish_migration import ensure_finish_migration
-
     if not is_attached_table(conn, "card_prices"):
         conn.executescript(CARD_PRICES_TABLE_SQL)
-    ensure_finish_migration(conn)
 
 
 # Store one owned finish snapshot for a date and source.

@@ -27,13 +27,10 @@ def normalize_price_sync_movers(raw) -> dict:
     empty = empty_price_sync_movers()
     if not isinstance(raw, dict):
         return empty
-    if "absolute" in raw or "relative" in raw:
-        return {
-            "absolute": _pair(raw.get("absolute")),
-            "relative": _pair(raw.get("relative")),
-        }
-    pair = _pair(raw)
-    return {"absolute": pair, "relative": pair}
+    return {
+        "absolute": _pair(raw.get("absolute")),
+        "relative": _pair(raw.get("relative")),
+    }
 
 
 def movers_have_rows(movers: dict | None) -> bool:

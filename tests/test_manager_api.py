@@ -503,9 +503,8 @@ class ManagerApiServiceTests(unittest.TestCase):
             {"LTR": {"set_type": "expansion", "parent_set_code": None}},
         )
         ensure_sets_table(self.conn)
-        from util.set_catalog import ensure_sets_columns, upsert_set_row
+        from util.set_catalog import upsert_set_row
 
-        ensure_sets_columns(self.conn)
         cursor = self.conn.cursor()
         upsert_set_row(cursor, "LTR", "LOTR", None, None, "2023-01-01", set_type="expansion")
         upsert_set_row(

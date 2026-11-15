@@ -358,6 +358,18 @@ class ProfileCreate(BaseModel):
     color: str | None = Field(default=None, max_length=16)
     avatar: str | None = Field(default=None, max_length=4)
     copyFrom: str | None = Field(default=None, pattern="^[0-9a-f]{32}$")
+    copyParts: list[str] | None = None
+
+    @model_validator(mode="after")
+    def validate_copy_parts(self):
+        if self.copyParts is None:
+            return self
+        allowed = {"collection", "decks", "storage"}
+        if not self.copyFrom:
+            raise ValueError("Choose a profile to copy from")
+        if not self.copyParts or any(part not in allowed for part in self.copyParts):
+            raise ValueError("Choose collection, decks, or storage to copy")
+        return self
 
 
 class ProfileUpdate(BaseModel):

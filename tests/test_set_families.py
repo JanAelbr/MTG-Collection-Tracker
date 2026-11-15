@@ -8,7 +8,7 @@ import sys
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
-from util.set_catalog import SETS_TABLE_SQL, ensure_sets_columns, upsert_set_row  # noqa: E402
+from util.set_catalog import SETS_TABLE_SQL, ensure_sets_table, upsert_set_row  # noqa: E402
 from util.set_families import (  # noqa: E402
     build_family_index,
     effective_family_root,
@@ -23,7 +23,7 @@ class SetFamiliesTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.conn = sqlite3.connect(Path(self.temp_dir.name) / "test.db")
         self.conn.executescript(SETS_TABLE_SQL)
-        ensure_sets_columns(self.conn)
+        ensure_sets_table(self.conn)
         self.cursor = self.conn.cursor()
 
     def tearDown(self):

@@ -15,10 +15,8 @@ import {
   setActiveProfileId,
 } from "./profileSession.js";
 import {
-  migrateLegacyProfileStorage,
   profileLocalStorage,
   profileStorageKey,
-  PROFILE_STORAGE_MIGRATED_KEY,
 } from "./profileStorage.js";
 
 const PROFILE_A = "a".repeat(32);
@@ -59,18 +57,15 @@ describe("profile session and storage", () => {
     expect(globalThis.localStorage.getItem("lotr.lastProfileId")).toBe(PROFILE_A);
   });
 
-  it("namespaces profile data and migrates legacy keys once", () => {
-    globalThis.localStorage.setItem("lotr.printList", "[1]");
-    expect(migrateLegacyProfileStorage(PROFILE_A, ["lotr.printList"])).toBe(1);
-    expect(globalThis.localStorage.getItem(profileStorageKey("lotr.printList", PROFILE_A))).toBe("[1]");
-    expect(migrateLegacyProfileStorage(PROFILE_B, ["lotr.printList"])).toBe(0);
-
+  it("namespaces profile data by profile id", () => {
     setActiveProfileId(PROFILE_A);
+    profileLocalStorage.setItem("lotr.printList", "[1]");
+    expect(globalThis.localStorage.getItem(profileStorageKey("lotr.printList", PROFILE_A))).toBe("[1]");
     expect(profileLocalStorage.getItem("lotr.printList")).toBe("[1]");
     setActiveProfileId(PROFILE_B);
     profileLocalStorage.setItem("lotr.printList", "[2]");
     expect(globalThis.localStorage.getItem(profileStorageKey("lotr.printList", PROFILE_B))).toBe("[2]");
-    expect(globalThis.localStorage.getItem(PROFILE_STORAGE_MIGRATED_KEY)).toBe("1");
+    expect(profileLocalStorage.getItem("lotr.printList")).toBe("[2]");
   });
 
   it("scopes cache keys by profile and treats epochs as strings", () => {

@@ -1,5 +1,3 @@
-import sqlite3
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,8 +20,6 @@ from util.card_finishes import (  # noqa: E402
     resolve_valuation_finish,
 )
 from util.cardmarket_prices import price_from_guide_entry  # noqa: E402
-from util.db_migrate import ensure_card_columns  # noqa: E402
-from util.finish_migration import ensure_finish_migration  # noqa: E402
 
 
 class CardFinishesTests(unittest.TestCase):
@@ -178,52 +174,6 @@ class CardFinishesTests(unittest.TestCase):
             ),
             FINISH_FOIL,
         )
-
-
-class FinishMigrationTests(unittest.TestCase):
-    def test_migrates_foil_column_to_finish(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "test.db"
-            conn = sqlite3.connect(db_path)
-            try:
-                conn.executescript(
-                    """
-                    CREATE TABLE cards (
-                        set_code TEXT,
-                        collector_number TEXT,
-                        has_nonfoil INTEGER,
-                        has_foil INTEGER,
-                        has_etched INTEGER,
-                        market_value REAL,
-                        market_value_foil REAL,
-                        market_value_etched REAL
-                    );
-                    INSERT INTO cards VALUES ('CMR', '518', 0, 0, 1, NULL, NULL, NULL);
-                    CREATE TABLE purchases (
-                        purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        set_code TEXT,
-                        collector_number TEXT,
-                        foil INTEGER NOT NULL,
-                        purchase_value REAL NOT NULL DEFAULT 0
-                    );
-                    INSERT INTO purchases (set_code, collector_number, foil, purchase_value)
-                    VALUES ('CMR', '518', 1, 3.5);
-                    """
-                )
-                ensure_finish_migration(conn)
-                conn.commit()
-                columns = {
-                    row[1]
-                    for row in conn.execute("PRAGMA table_info(purchases)").fetchall()
-                }
-                self.assertIn("finish", columns)
-                self.assertNotIn("foil", columns)
-                finish = conn.execute(
-                    "SELECT finish FROM purchases WHERE set_code = 'CMR'"
-                ).fetchone()[0]
-                self.assertEqual(finish, FINISH_ETCHED)
-            finally:
-                conn.close()
 
 
 if __name__ == "__main__":

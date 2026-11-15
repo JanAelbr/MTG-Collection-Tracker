@@ -29,6 +29,7 @@ def create_profile(body: ProfileCreate) -> dict:
             color=body.color,
             avatar=body.avatar,
             duplicate_from=body.copyFrom,
+            copy_parts=set(body.copyParts) if body.copyParts is not None else None,
         )
     except ProfileError as exc:
         _raise(exc)

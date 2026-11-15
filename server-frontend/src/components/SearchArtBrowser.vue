@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../api";
 import CardDetailOwnershipPanel from "./CardDetailOwnershipPanel.vue";
 import CardInteractiveImage from "./CardInteractiveImage.vue";
+import CardPreviewDialog from "./CardPreviewDialog.vue";
 import CardVariantGallery from "./CardVariantGallery.vue";
 import CollectionSetLink from "./CollectionSetLink.vue";
 import LoadingIndicator from "./LoadingIndicator.vue";
@@ -197,11 +198,19 @@ function closeImageZoom() {
   imageZoomOpen.value = false;
 }
 
-function onImageZoomKeydown(event) {
-  if (event.key === "Escape") {
-    closeImageZoom();
+const previewSeed = computed(() => {
+  const variant = selectedVariant.value;
+  const detail = cardDetail.value;
+  if (
+    detail
+    && variant
+    && String(detail.setCode || "").toUpperCase() === String(variant.setCode || "").toUpperCase()
+    && String(detail.collectorNumber || "") === String(variant.collectorNumber || "")
+  ) {
+    return detail;
   }
-}
+  return variant;
+});
 
 function scrollPanelIntoView() {
   if (props.sidebar) {
@@ -239,19 +248,8 @@ watch(
   },
 );
 
-watch(imageZoomOpen, (open) => {
-  if (open) {
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onImageZoomKeydown);
-    return;
-  }
-  document.body.style.overflow = "";
-  window.removeEventListener("keydown", onImageZoomKeydown);
-});
-
 onBeforeUnmount(() => {
-  document.body.style.overflow = "";
-  window.removeEventListener("keydown", onImageZoomKeydown);
+  imageZoomOpen.value = false;
 });
 </script>
 
@@ -390,29 +388,15 @@ onBeforeUnmount(() => {
       @select="onGallerySelect"
     />
 
-    <Teleport to="body">
-      <div
-        v-if="imageZoomOpen && selectedVariant?.imageUri"
-        class="card-image-zoom-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Card image preview"
-        @click.self="closeImageZoom"
-      >
-        <button
-          type="button"
-          class="card-image-zoom-close"
-          aria-label="Close image preview"
-          @click="closeImageZoom"
-        >
-          ×
-        </button>
-        <img
-          :src="selectedVariant.imageUri"
-          :alt="name"
-          class="card-image-zoom-image"
-        >
-      </div>
-    </Teleport>
+    <CardPreviewDialog
+      v-if="imageZoomOpen && selectedVariant?.imageUri"
+      :image-uri="selectedVariant.imageUri"
+      :alt="name"
+      :set-code="selectedVariant.setCode"
+      :collector-number="selectedVariant.collectorNumber"
+      :finish="activeFinish"
+      :seed="previewSeed"
+      @close="closeImageZoom"
+    />
   </section>
 </template>

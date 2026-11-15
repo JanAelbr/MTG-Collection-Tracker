@@ -8,6 +8,9 @@ export function homeChangesRoute({ setCode = "", artStyle = "" } = {}) {
   if (style) {
     query.art = style;
   }
+  if (!query.set && !query.art) {
+    return { name: "home", hash: "#home-movers" };
+  }
   return { name: "home-changes", query };
 }
 

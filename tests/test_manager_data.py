@@ -2,15 +2,13 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
 import runpy
 
 runpy.run_path(str(Path(__file__).resolve().with_name("_paths.py")))
 
 from api.services import manager_service  # noqa: E402
 from report import manager_data  # noqa: E402
-from util.db_migrate import backfill_card_types, ensure_card_columns  # noqa: E402
+from util.db_migrate import ensure_card_columns  # noqa: E402
 from util.schema import ensure_database_schema  # noqa: E402
 
 
@@ -78,6 +76,7 @@ class ManagerDataPerformanceTests(unittest.TestCase):
             """,
             rows,
         )
+        ensure_card_columns(self.conn)
         self.conn.commit()
 
     def tearDown(self):
@@ -149,12 +148,7 @@ class ManagerDataPerformanceTests(unittest.TestCase):
         self.assertFalse(card["has_foil"])
         self.assertTrue(card["owned_etched"])
 
-    def test_ensure_card_columns_does_not_backfill(self):
-        with patch("util.db_migrate.backfill_card_types") as mock_backfill:
-            ensure_card_columns(self.conn)
-        mock_backfill.assert_not_called()
-
-    def test_schema_bootstrap_runs_backfill_once(self):
+    def test_schema_bootstrap_keeps_existing_card_types(self):
         ensure_database_schema(self.conn)
         updated = self.conn.execute(
             "SELECT COUNT(1) FROM cards WHERE card_type = 'creature'"

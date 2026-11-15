@@ -1,19 +1,17 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { api, ignoreAborted } from "../api";
-import CardFinishBadge from "./CardFinishBadge.vue";
-import CardInteractiveImage from "./CardInteractiveImage.vue";
-import EdgeCarousel from "./EdgeCarousel.vue";
 import FavoriteDayChangeTiles from "./FavoriteDayChangeTiles.vue";
+import PriceSyncMiniCardList from "./PriceSyncMiniCardList.vue";
 import { formatEuro, formatProfit, setShortName } from "../utils/format";
-import { cardFinish, cardRouteQuery } from "../utils/finishes";
 import {
   cardsForArtStyle,
+  compareCardsByCollectorNumber,
   collectPriceSyncCards,
   collectPriceSyncStyleRows,
-  moverRowToTileCard,
+  priceChangeStyle,
   rankMoverRows,
 } from "../utils/priceSyncMovers";
 import { applySetGalleryIconFallback, resolveSetIconUri } from "../utils/scryfall";
@@ -23,14 +21,31 @@ const props = defineProps({
   cards: { type: Array, default: () => [] },
   movers: { type: Object, default: () => ({}) },
   setDayTiles: { type: Array, default: () => [] },
+  sourceCards: { type: Array, default: () => [] },
+  variant: { type: String, default: "full" },
+  side: { type: String, default: "" },
+  fixedSetCode: { type: String, default: "" },
+  embedded: { type: Boolean, default: false },
 });
 
 const route = useRoute();
 const router = useRouter();
 const setsByCode = ref(new Map());
+const openStyleKeys = ref(new Set());
 
-const routeSetCode = computed(() => homeRouteQueryValue(route.query.set).toUpperCase());
-const routeArtStyle = computed(() => homeRouteQueryValue(route.query.art));
+const routeSetCode = computed(() => {
+  const fixed = String(props.fixedSetCode || "").trim().toUpperCase();
+  if (fixed) {
+    return fixed;
+  }
+  return homeRouteQueryValue(route.query.set).toUpperCase();
+});
+const routeArtStyle = computed(() => {
+  if (String(props.fixedSetCode || "").trim()) {
+    return "";
+  }
+  return homeRouteQueryValue(route.query.art);
+});
 const setScope = computed(() => {
   const setCode = routeSetCode.value;
   if (!setCode) {
@@ -137,17 +152,58 @@ const activeRows = computed(() => {
   return storedCards.value;
 });
 
-function columnsFor(rankedRows) {
+function columnsFor(rankedRows, { keepEmpty = false } = {}) {
   const columns = [
     { id: "up", title: "Risers", rows: rankedRows.risers, empty: "No risers this sync." },
     { id: "down", title: "Fallers", rows: rankedRows.fallers, empty: "No fallers this sync." },
   ];
+  if (keepEmpty) {
+    return columns;
+  }
   const filled = columns.filter((column) => column.rows.length);
   return filled.length === 1 ? filled : columns;
 }
 
+function stylesByTotalChange(rows) {
+  return [...(rows || [])].sort((left, right) => {
+    const byChange = (Number(right.delta) || 0) - (Number(left.delta) || 0);
+    if (byChange) {
+      return byChange;
+    }
+    return String(left.artStyle || left.label || "").localeCompare(
+      String(right.artStyle || right.label || ""),
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    );
+  });
+}
+
+function rowChangeClass(row, column) {
+  if (column.id === "up") {
+    return "is-up";
+  }
+  if (column.id === "down") {
+    return "is-down";
+  }
+  return Number(row?.delta) < 0 ? "is-down" : "is-up";
+}
+
 const pageSections = computed(() => {
   if (!showingOverview.value) {
+    if (props.embedded && showingStyles.value) {
+      return [{
+        id: "main",
+        heading: "",
+        tiles: false,
+        styles: true,
+        columns: [{
+          id: "all",
+          title: "",
+          rows: stylesByTotalChange(visibleStyleRows.value),
+          empty: "No art style changes this sync.",
+        }],
+      }];
+    }
     return [{
       id: "main",
       heading: "",
@@ -155,6 +211,7 @@ const pageSections = computed(() => {
       styles: showingStyles.value,
       columns: columnsFor(rankMoverRows(activeRows.value, {
         limit: 25,
+        minChange: styleFilter.value ? 1 : 0,
       })),
     }];
   }
@@ -164,8 +221,9 @@ const pageSections = computed(() => {
     tiles: true,
     styles: false,
     columns: columnsFor(rankMoverRows(storedCards.value, {
-      limit: 10,
-    })),
+      limit: 25,
+      minChange: 1,
+    }), { keepEmpty: true }),
   }];
   const styleRanked = rankMoverRows(styleRows.value, {
     limit: 25,
@@ -180,6 +238,24 @@ const pageSections = computed(() => {
     });
   }
   return sections;
+});
+const visibleSections = computed(() => {
+  let sections = props.variant === "cards"
+    ? pageSections.value.filter((section) => section.tiles)
+    : pageSections.value;
+  if (props.variant !== "cards") {
+    return sections;
+  }
+  return sections.map((section) => {
+    let columns = section.columns;
+    if (props.side) {
+      columns = columns.filter((column) => column.id === props.side);
+    } else {
+      const filled = columns.filter((column) => column.rows.length);
+      columns = filled.length === 1 ? filled : columns;
+    }
+    return { ...section, columns };
+  });
 });
 const title = computed(() => {
   if (styleFilter.value) {
@@ -203,7 +279,7 @@ const intro = computed(() => {
   if (showingStyles.value) {
     const family = scopeMemberCodes(setScope.value).size > 1;
     const scopeLabel = family ? "set family" : "set";
-    return `Owned-card changes from the last price update for this ${scopeLabel}. Top 25 art styles, ranked by euro change.`;
+    return `Owned-card changes from the last price update for this ${scopeLabel}. Top 25 art styles, ranked by euro change. Open an art style to see its cards.`;
   }
   return "Top 10 owned card risers and fallers, then art styles, from the last price update, ranked by euro change.";
 });
@@ -230,21 +306,40 @@ function rowMeta(row, section) {
   return `#${row.collectorNumber}`;
 }
 
-function tileCard(row) {
-  return moverRowToTileCard(row);
+function styleKey(row) {
+  return row?.id || `${row?.setCode}|${row?.artStyle}`;
 }
 
-function tileRoute(row) {
-  const card = tileCard(row);
-  if (!card.setCode || !card.collectorNumber) {
-    return null;
-  }
-  return {
-    name: "card",
-    params: { setCode: card.setCode, collectorNumber: card.collectorNumber },
-    query: cardRouteQuery(cardFinish(card)),
-  };
+function isStyleOpen(row) {
+  return openStyleKeys.value.has(styleKey(row));
 }
+
+function toggleStyle(row) {
+  const key = styleKey(row);
+  const next = new Set(openStyleKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  openStyleKeys.value = next;
+}
+
+function styleCards(row) {
+  return [...cardsForArtStyle(storedCards.value, row)].sort(compareCardsByCollectorNumber);
+}
+
+function onStyleClick(row) {
+  if (showingStyles.value) {
+    toggleStyle(row);
+    return;
+  }
+  openStyle(row);
+}
+
+watch(routeSetCode, () => {
+  openStyleKeys.value = new Set();
+});
 
 function openStyle(row) {
   const setCode = String(row?.setCode || "").trim();
@@ -265,8 +360,14 @@ function openSet(row) {
 </script>
 
 <template>
-  <section class="home-panel price-sync-movers-page">
-    <div class="price-sync-movers-header">
+  <section
+    class="price-sync-movers-page"
+    :class="{
+      'home-panel': variant !== 'cards' && !embedded,
+      'is-embedded': variant === 'cards' || embedded,
+    }"
+  >
+    <div v-if="variant !== 'cards' && !embedded" class="price-sync-movers-header">
       <h2 id="price-sync-movers-title">
         <img
           v-if="titleSet && setIcon(titleSet)"
@@ -278,7 +379,7 @@ function openSet(row) {
           @error="onSetIconError($event, titleSet)"
         >
         <nav v-if="showBreadcrumb" class="price-sync-breadcrumb" aria-label="Price changes">
-          <RouterLink :to="homeChangesRoute()">Changes</RouterLink>
+          <RouterLink :to="homeChangesRoute()">Home</RouterLink>
           <template v-if="setScope">
             <span class="price-sync-breadcrumb-sep" aria-hidden="true">/</span>
             <RouterLink
@@ -297,8 +398,8 @@ function openSet(row) {
         <span v-else>{{ title }}</span>
       </h2>
     </div>
-    <p class="price-sync-movers-intro">{{ intro }}</p>
-    <div v-if="showingOverview && setDayTiles.length" class="price-sync-favorite-day">
+    <p v-if="variant !== 'cards' && !embedded" class="price-sync-movers-intro">{{ intro }}</p>
+    <div v-if="variant !== 'cards' && showingOverview && setDayTiles.length" class="price-sync-favorite-day">
       <h3>Favourite sets</h3>
       <FavoriteDayChangeTiles
         :items="setDayTiles"
@@ -306,11 +407,11 @@ function openSet(row) {
       />
     </div>
     <div
-      v-for="section in pageSections"
+      v-for="section in visibleSections"
       :key="section.id"
       class="price-sync-movers-section"
     >
-      <h3 v-if="section.heading" class="price-sync-section-heading">{{ section.heading }}</h3>
+      <h3 v-if="section.heading && variant !== 'cards'" class="price-sync-section-heading">{{ section.heading }}</h3>
     <div
       class="price-sync-movers-columns"
       :class="{ 'is-single': section.columns.length === 1 }"
@@ -320,68 +421,13 @@ function openSet(row) {
         :key="column.id"
         class="price-sync-movers-column"
       >
-        <h3>{{ column.title }}</h3>
-        <EdgeCarousel
+        <h3 v-if="!side && column.title">{{ column.title }}</h3>
+        <PriceSyncMiniCardList
           v-if="section.tiles && column.rows.length"
-          :label="column.title.toLowerCase()"
-        >
-        <ol class="price-sync-movers-list is-tiles is-edge-carousel-track">
-          <li v-for="row in column.rows" :key="row.id || row.label">
-            <figure
-              v-if="section.tiles"
-              class="price-sync-mover-tile"
-            >
-              <div class="price-sync-mover-tile-image">
-                <CardInteractiveImage
-                  v-if="tileCard(row).imageUri"
-                  :src="tileCard(row).imageUri"
-                  :alt="tileCard(row).name"
-                  :card="tileCard(row)"
-                  img-class="price-sync-mover-tile-art"
-                  :show-details="false"
-                  :show-copy-controls="false"
-                />
-                <div v-else class="price-sync-mover-tile-placeholder">
-                  {{ tileCard(row).name || rowLabel(row, section) }}
-                </div>
-                <CardFinishBadge
-                  :card="tileCard(row)"
-                  variant="overlay"
-                  compact
-                />
-              </div>
-              <figcaption class="price-sync-mover-tile-caption">
-                <RouterLink
-                  v-if="tileRoute(row)"
-                  :to="tileRoute(row)"
-                  class="price-sync-mover-tile-name"
-                  :title="tileCard(row).name || rowLabel(row, section)"
-                >
-                  {{ tileCard(row).name || rowLabel(row, section) }}
-                </RouterLink>
-                <span
-                  v-else
-                  class="price-sync-mover-tile-name"
-                  :title="tileCard(row).name || rowLabel(row, section)"
-                >
-                  {{ tileCard(row).name || rowLabel(row, section) }}
-                </span>
-                <strong
-                  class="price-sync-movers-change"
-                  :class="column.id === 'up' ? 'is-up' : 'is-down'"
-                >
-                  <span class="price-sync-movers-range">
-                    {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
-                  </span>
-                  <span class="price-sync-movers-deltas">
-                    <span class="is-primary">{{ formatDelta(row) }}</span>
-                  </span>
-                </strong>
-              </figcaption>
-            </figure>
-          </li>
-        </ol>
-        </EdgeCarousel>
+          :rows="column.rows"
+          :source-cards="sourceCards"
+          :direction="column.id"
+        />
         <ol
           v-else-if="column.rows.length"
           class="price-sync-movers-list"
@@ -390,10 +436,22 @@ function openSet(row) {
             <component
               :is="section.styles ? 'button' : 'div'"
               class="price-sync-movers-item"
-              :class="{ 'has-set-icon': section.styles }"
-              v-bind="section.styles ? { type: 'button' } : {}"
-              @click="section.styles ? openStyle(row) : undefined"
+              :class="{
+                'has-set-icon': section.styles,
+                'has-style-toggle': showingStyles && section.styles,
+                'is-open': section.styles && isStyleOpen(row),
+                'is-up': rowChangeClass(row, column) === 'is-up',
+                'is-down': rowChangeClass(row, column) === 'is-down',
+              }"
+              :style="priceChangeStyle(row.delta)"
+              v-bind="section.styles ? { type: 'button', 'aria-expanded': showingStyles ? String(isStyleOpen(row)) : undefined } : {}"
+              @click="section.styles ? onStyleClick(row) : undefined"
             >
+              <span
+                v-if="showingStyles && section.styles"
+                class="price-sync-style-chevron"
+                aria-hidden="true"
+              >{{ isStyleOpen(row) ? "▾" : "▸" }}</span>
               <img
                 v-if="section.styles && setIcon(row)"
                 :src="setIcon(row)"
@@ -409,7 +467,7 @@ function openSet(row) {
               </span>
               <strong
                 class="price-sync-movers-change"
-                :class="column.id === 'up' ? 'is-up' : 'is-down'"
+                :class="rowChangeClass(row, column)"
               >
                 <span class="price-sync-movers-range">
                   {{ formatPrice(row.previous) }} → {{ formatPrice(row.current) }}
@@ -419,6 +477,17 @@ function openSet(row) {
                 </span>
               </strong>
             </component>
+            <div
+              v-if="showingStyles && section.styles && isStyleOpen(row)"
+              class="price-sync-style-cards"
+            >
+              <PriceSyncMiniCardList
+                v-if="styleCards(row).length"
+                :rows="styleCards(row)"
+                :source-cards="sourceCards"
+              />
+              <p v-else class="price-sync-movers-empty">No card changes in this art style.</p>
+            </div>
           </li>
         </ol>
         <p v-else class="price-sync-movers-empty">{{ column.empty }}</p>

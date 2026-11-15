@@ -13,9 +13,8 @@ from lib.run_log import BuildTimer, get_logger
 from util.cardmarket_prices import sync_prices_from_guide
 from util.last_price_sync import empty_price_sync_movers
 from util.card_finishes import card_finish_flags
-from util.card_prices import load_existing_card_prices
+from util.card_prices import ensure_card_prices_table, load_existing_card_prices
 from util.cardmarket_urls import load_existing_cardmarket_urls, merge_cardmarket_urls
-from util.db_migrate import ensure_card_columns, ensure_card_prices_table
 from util.scryfall_card import (
     card_cmc,
     card_color_identity_json,
@@ -336,6 +335,7 @@ def update_cardmarket_prices_only(
     force_cardmarket: bool = False,
     set_codes: set[str] | None = None,
     extra_qualifying_sets: set[str] | None = None,
+    explicit_cards: set[tuple[str, str]] | None = None,
     on_progress=None,
 ) -> dict:
     if not set_codes:
@@ -371,6 +371,7 @@ def update_cardmarket_prices_only(
             set_codes=tracked_set_codes,
             extra_qualifying_sets=full_sets or None,
             force_download=force_cardmarket,
+            explicit_cards=explicit_cards,
             log=log,
             on_progress=on_progress,
         )

@@ -1019,6 +1019,9 @@ export const api = {
     if (options.setCode) {
       params.set("setCode", options.setCode);
     }
+    if (options.collectorNumber) {
+      params.set("collectorNumber", options.collectorNumber);
+    }
     if (options.force) {
       params.set("force", "true");
     }
@@ -1076,10 +1079,10 @@ export const api = {
 
   getProfile: (profileId) => apiRequest(`/profiles/${encodeURIComponent(profileId)}`),
 
-  createProfile: ({ name, color = null, avatar = null, copyFrom = null }) =>
+  createProfile: ({ name, color = null, avatar = null, copyFrom = null, copyParts = null }) =>
     apiRequest("/profiles", {
       method: "POST",
-      body: JSON.stringify({ name, color, avatar, copyFrom }),
+      body: JSON.stringify({ name, color, avatar, copyFrom, copyParts }),
     }),
 
   updateProfile: (profileId, patch) =>
